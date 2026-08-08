@@ -593,8 +593,19 @@ function Playground() {
   const removeAttribute = (attributeId: string) => {
     if (!selectedData) return
     removedConnectionWhileEditing.current = true
-    const removedSocketIds = selectedData.sockets.filter((socket) => socket.attributeId === attributeId).map((socket) => socket.id)
-    updateSelectedNode({ attributes: selectedData.attributes.filter((attribute) => attribute.id !== attributeId), sockets: selectedData.sockets.filter((socket) => socket.attributeId !== attributeId) })
+    const removedAttributeIds = new Set([attributeId])
+    let foundLinkedOutput = true
+    while (foundLinkedOutput) {
+      foundLinkedOutput = false
+      selectedData.attributes.forEach((attribute) => {
+        if (attribute.passFrom && removedAttributeIds.has(attribute.passFrom) && !removedAttributeIds.has(attribute.id)) {
+          removedAttributeIds.add(attribute.id)
+          foundLinkedOutput = true
+        }
+      })
+    }
+    const removedSocketIds = selectedData.sockets.filter((socket) => socket.attributeId && removedAttributeIds.has(socket.attributeId)).map((socket) => socket.id)
+    updateSelectedNode({ attributes: selectedData.attributes.filter((attribute) => !removedAttributeIds.has(attribute.id)), sockets: selectedData.sockets.filter((socket) => !socket.attributeId || !removedAttributeIds.has(socket.attributeId)) })
     setEdges((currentEdges) => currentEdges.filter((edge) => !removedSocketIds.includes(edge.sourceHandle ?? '') && !removedSocketIds.includes(edge.targetHandle ?? '')))
   }
 
