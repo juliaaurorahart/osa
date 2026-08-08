@@ -41,9 +41,7 @@ type ShapeNode = Node<ShapeData, 'shape'>
 type SavedBoard = { id: string; name: string; nodes: Node[]; edges: Edge[]; functions?: OsaFunction[]; updatedAt: string }
 
 const SAVE_KEY = 'osa-react-flow-saves-v1'
-const LEGACY_SAVE_KEY = 'oso-react-flow-saves-v1'
 const MOOD_KEY = 'osa-visual-mood-v1'
-const LEGACY_MOOD_KEY = 'oso-visual-mood-v1'
 const SPARKLE_KEY = 'osa-sparkles-v1'
 const dataTypes: DataType[] = ['Relationship', 'Text', 'Number', 'Boolean', 'File', 'Any']
 
@@ -226,23 +224,14 @@ function CanvasShapeNode({ id, data }: NodeProps<ShapeNode>) {
 
 const nodeTypes = { drawing: FreehandNode, osa: OsaObjectNode, shape: CanvasShapeNode }
 
-function migrateBoard(board: SavedBoard): SavedBoard {
-  return {
-    ...board,
-    nodes: board.nodes.map((node) => node.type !== 'oso' ? node : { ...node, type: 'osa', className: node.className?.replace('oso-node', 'osa-node') }),
-  }
-}
-
 function Playground() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, onEdgesChangeBase] = useEdgesState(initialEdges)
   const [saves, setSaves] = useState<SavedBoard[]>(() => {
     try {
       const saved = localStorage.getItem(SAVE_KEY)
-      const legacy = localStorage.getItem(LEGACY_SAVE_KEY)
-      if (!saved && legacy) localStorage.setItem(SAVE_KEY, legacy)
-      const parsed = JSON.parse(saved ?? legacy ?? '[]')
-      return Array.isArray(parsed) ? parsed.map(migrateBoard) : []
+      const parsed = JSON.parse(saved ?? '[]')
+      return Array.isArray(parsed) ? parsed : []
     } catch {
       return []
     }
@@ -251,7 +240,7 @@ function Playground() {
   const [boardName, setBoardName] = useState('Untitled board')
   const [functions, setFunctions] = useState<OsaFunction[]>(defaultFunctions)
   const [functionLibraryOpen, setFunctionLibraryOpen] = useState(false)
-  const [visualMood, setVisualMood] = useState(() => Number(localStorage.getItem(MOOD_KEY) ?? localStorage.getItem(LEGACY_MOOD_KEY) ?? .42))
+  const [visualMood, setVisualMood] = useState(() => Number(localStorage.getItem(MOOD_KEY) ?? .42))
   const [sparkles, setSparkles] = useState(() => localStorage.getItem(SPARKLE_KEY) === 'true')
   const [drawingMode, setDrawingMode] = useState(false)
   const [activeStroke, setActiveStroke] = useState<Point[] | null>(null)
