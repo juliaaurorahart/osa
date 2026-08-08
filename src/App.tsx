@@ -263,9 +263,8 @@ function Playground() {
           const source = incoming.get(`${node.id}:${socket.id}`)
           if (!source || !socket.attributeId) return
           const attribute = nodeAttributes.find((item) => item.id === socket.attributeId)
-          const fn = functions.find((item) => item.id === socket.functionId)
-          const receivedType = fn?.output ?? source.type
-          const receivedValue = source.type === 'Relationship' ? 'Cub' : runFunction(source.value, fn)
+          const receivedType = source.type
+          const receivedValue = source.type === 'Relationship' ? 'Cub' : source.value
           const receivedName = source.type === 'Relationship' ? attribute?.key ?? socket.name : source.name
           const attributeNeedsUpdate = attribute && (attribute.key !== receivedName || attribute.type !== receivedType || attribute.value !== receivedValue || attribute.mode !== 'driven')
           const socketNeedsUpdate = socket.direction !== 'slot' || socket.payload !== receivedType || socket.name !== receivedName
@@ -309,14 +308,12 @@ function Playground() {
     if (!sourceNode || !sourceSocket) return undefined
     const targetNode = nodes.find((node) => node.id === nodeId)
     const targetSocket = socketsFor(targetNode).find((socket) => socket.id === socketId)
-    const fn = functions.find((currentFunction) => currentFunction.id === targetSocket?.functionId)
     const source = sourceSocket ? detailsFor(sourceNode, sourceSocket) : undefined
     const target = targetSocket ? detailsFor(targetNode, targetSocket) : undefined
     return {
       name: String(sourceNode.data.label ?? 'Object'),
       socket: { ...sourceSocket, name: source?.name ?? sourceSocket.name, payload: source?.payload ?? sourceSocket.payload },
-      output: target?.attribute?.type === 'Relationship' && target.attribute.mode === 'driven' ? 'Child' : runFunction(source?.value ?? '', fn),
-      functionName: fn?.name,
+      output: target?.attribute?.type === 'Relationship' && target.attribute.mode === 'driven' ? 'Child' : source?.value ?? '',
     }
   }
 
@@ -1019,10 +1016,7 @@ function Playground() {
                       </div>
                       <p className="connector-attribute">{detailsFor(selectedNode, socket).name} · {detailsFor(selectedNode, socket).payload}</p>
                       {socket.direction === 'signal' && socket.attributeId && <label className="child-node-toggle"><input type="checkbox" checked={Boolean(selectedData.attributes.find((attribute) => attribute.id === socket.attributeId)?.createdChildId)} onChange={(event) => setChildNodeForSignal(socket.attributeId!, event.target.checked)} />{selectedData.attributes.find((attribute) => attribute.id === socket.attributeId)?.createdChildId ? 'Created node attached' : 'Connector only'}</label>}
-                      {socket.direction === 'slot' && <select value={socket.functionId ?? ''} aria-label="Receive function" onChange={(event) => updateSocket(socket.id, { functionId: event.target.value || undefined })}>
-                        <option value="">Receive unchanged</option>
-                        {functions.filter((fn) => fn.input === 'Any' || fn.input === detailsFor(selectedNode, socket).payload).map((fn) => <option key={fn.id} value={fn.id}>{fn.name} → {fn.output}</option>)}
-                      </select>}
+                      {socket.direction === 'slot' && <p className="receive-unchanged">Receives unchanged</p>}
                     </div>
                   ))}
                 </section>

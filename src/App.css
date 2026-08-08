@@ -193,6 +193,7 @@
 .connector-mode:has(input:checked) input { accent-color: #a43268; }
 .connector-attribute { margin: 0; padding: 7px 9px; border-radius: 6px; color: #f0d1c7; background: rgba(40, 24, 22, .55); font-size: 13px; font-weight: 700; }
 .connector-card select { width: 100%; border: 1px solid #765d67; border-radius: 6px; padding: 7px; color: #fff4ee; background: #382725; font: 13px inherit; }
+.receive-unchanged { margin: 0; color: #a8dfe4; font-size: 11px; font-weight: 700; }
 .child-node-toggle { display: flex !important; align-items: center; gap: 6px; margin: 0 !important; color: #f0c4d2 !important; font-size: 11px !important; font-weight: 700 !important; letter-spacing: .02em !important; text-transform: none !important; }
 .child-node-toggle input { width: 14px; height: 14px; margin: 0; accent-color: #d35a8b; }
 .function-card { display: grid; gap: 6px; margin-top: 8px; padding: 8px; border: 1px solid #51485e; border-radius: 8px; background: rgba(34, 27, 47, .55); }
