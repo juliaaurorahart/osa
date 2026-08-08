@@ -24,11 +24,11 @@ import './App.css'
 
 type Point = { x: number; y: number }
 type SocketDirection = 'signal' | 'slot'
-type DataType = 'Relationship' | 'Text' | 'Number' | 'Boolean' | 'File' | 'Any'
+type DataType = 'Relationship' | 'Object' | 'Text' | 'Number' | 'Boolean' | 'File' | 'Any'
 type AttributeMode = 'driving' | 'driven'
 type Socket = { id: string; name: string; direction: SocketDirection; payload: DataType; attributeId?: string; value?: string; functionId?: string; drivenBy?: string; drivenValue?: string; drivenType?: DataType }
 type Attribute = { id: string; key: string; value: string; type: DataType; mode?: AttributeMode; passFrom?: string }
-type FunctionOperation = 'identity' | 'uppercase' | 'increment' | 'append-note'
+type FunctionOperation = 'identity' | 'uppercase' | 'increment' | 'double' | 'halve' | 'round' | 'append-note'
 type OsaFunction = { id: string; name: string; input: DataType; output: DataType; operation: FunctionOperation }
 type CanvasData = { label: string; note?: string; isSeed?: boolean; sockets: Socket[]; attributes: Attribute[]; removeMode?: boolean; onRemove?: () => void }
 type OsaData = CanvasData
@@ -43,7 +43,7 @@ type SavedBoard = { id: string; name: string; nodes: Node[]; edges: Edge[]; func
 const SAVE_KEY = 'osa-react-flow-saves-v1'
 const MOOD_KEY = 'osa-visual-mood-v1'
 const SPARKLE_KEY = 'osa-sparkles-v1'
-const dataTypes: DataType[] = ['Relationship', 'Text', 'Number', 'Boolean', 'File', 'Any']
+const dataTypes: DataType[] = ['Relationship', 'Object', 'Text', 'Number', 'Boolean', 'File', 'Any']
 
 function relationshipSockets(): Socket[] {
   return [
@@ -62,6 +62,10 @@ function relationshipAttributes(): Attribute[] {
 function defaultFunctions(): OsaFunction[] {
   return [
     { id: 'receive-parent', name: 'Receive parent relationship', input: 'Relationship', output: 'Relationship', operation: 'identity' },
+    { id: 'double-number', name: 'Double number', input: 'Number', output: 'Number', operation: 'double' },
+    { id: 'halve-number', name: 'Halve number', input: 'Number', output: 'Number', operation: 'halve' },
+    { id: 'round-number', name: 'Round number', input: 'Number', output: 'Number', operation: 'round' },
+    { id: 'uppercase-text', name: 'Make text uppercase', input: 'Text', output: 'Text', operation: 'uppercase' },
   ]
 }
 
@@ -84,7 +88,9 @@ function detailsFor(node: Node | undefined, socket: Socket) {
     attribute,
     name: attribute?.key || socket.name,
     payload: attribute?.type || socket.payload,
-    value: relationshipValue ?? attribute?.value ?? socket.value ?? '',
+    value: attribute?.type === 'Object' && attribute.key === 'Self'
+      ? `${String(node?.data.label ?? 'Untitled object')} · ${node?.id ?? ''}`
+      : relationshipValue ?? attribute?.value ?? socket.value ?? '',
   }
 }
 
@@ -92,6 +98,9 @@ function runFunction(value: string, fn: OsaFunction | undefined) {
   if (!fn || fn.operation === 'identity') return value
   if (fn.operation === 'uppercase') return value.toUpperCase()
   if (fn.operation === 'increment') return String((Number(value) || 0) + 1)
+  if (fn.operation === 'double') return String((Number(value) || 0) * 2)
+  if (fn.operation === 'halve') return String((Number(value) || 0) / 2)
+  if (fn.operation === 'round') return String(Math.round(Number(value) || 0))
   return `${value} · handled by ${fn.name}`
 }
 
@@ -131,6 +140,7 @@ function pointsToPath(points: Point[]) {
 function connectorColor(type: DataType) {
   return {
     Relationship: '#ef9ec1',
+    Object: '#ffb6ed',
     Text: '#79d7ff',
     Number: '#ffe08a',
     Boolean: '#83e6ad',
@@ -267,14 +277,14 @@ function Playground() {
   }, [onEdgesChangeBase])
 
   useEffect(() => {
-    const incoming = new Map<string, { type: DataType; value: string }>()
+    const incoming = new Map<string, { type: DataType; value: string; name: string }>()
     edges.forEach((edge) => {
       if (!edge.sourceHandle || !edge.targetHandle) return
       const sourceNode = nodes.find((node) => node.id === edge.source)
       const sourceSocket = socketsFor(sourceNode).find((socket) => socket.id === edge.sourceHandle)
       if (!sourceSocket) return
       const source = detailsFor(sourceNode, sourceSocket)
-      incoming.set(`${edge.target}:${edge.targetHandle}`, { type: source.payload, value: source.payload === 'Relationship' ? 'Cub' : source.value })
+      incoming.set(`${edge.target}:${edge.targetHandle}`, { type: source.payload, value: source.payload === 'Relationship' ? 'Cub' : source.value, name: source.name })
     })
 
     if (!incoming.size) return
@@ -294,15 +304,16 @@ function Playground() {
           const fn = functions.find((item) => item.id === socket.functionId)
           const receivedType = fn?.output ?? source.type
           const receivedValue = source.type === 'Relationship' ? 'Cub' : runFunction(source.value, fn)
-          const attributeNeedsUpdate = attribute && (attribute.type !== receivedType || attribute.value !== receivedValue || attribute.mode !== 'driven')
-          const socketNeedsUpdate = socket.direction !== 'slot' || socket.payload !== receivedType
+          const receivedName = source.type === 'Relationship' ? attribute?.key ?? socket.name : source.name
+          const attributeNeedsUpdate = attribute && (attribute.key !== receivedName || attribute.type !== receivedType || attribute.value !== receivedValue || attribute.mode !== 'driven')
+          const socketNeedsUpdate = socket.direction !== 'slot' || socket.payload !== receivedType || socket.name !== receivedName
           if (!attributeNeedsUpdate && !socketNeedsUpdate) return
           if (attributeNeedsUpdate) {
-            nextAttributes = nextAttributes.map((item) => item.id !== socket.attributeId ? item : { ...item, type: receivedType, value: receivedValue, mode: 'driven' })
+            nextAttributes = nextAttributes.map((item) => item.id !== socket.attributeId ? item : { ...item, key: receivedName, type: receivedType, value: receivedValue, mode: 'driven' })
             nextAttributes = nextAttributes.map((item) => item.passFrom !== socket.attributeId ? item : { ...item, type: receivedType, value: receivedValue })
           }
           if (socketNeedsUpdate) {
-            nextSockets = nextSockets.map((currentSocket) => currentSocket.id !== socket.id ? currentSocket : { ...currentSocket, direction: 'slot', payload: receivedType })
+            nextSockets = nextSockets.map((currentSocket) => currentSocket.id !== socket.id ? currentSocket : { ...currentSocket, name: receivedName, direction: 'slot', payload: receivedType })
           }
           nodeChanged = true
         })
@@ -565,6 +576,14 @@ function Playground() {
     const slot: Socket = { id: `socket-${crypto.randomUUID()}`, name: attribute.key, direction: 'slot', payload: attribute.type, attributeId: attribute.id }
     updateSelectedNode({ attributes: [...selectedData.attributes, attribute], sockets: [...selectedData.sockets, slot] })
     if (selectedNodeId) requestAnimationFrame(() => updateNodeInternals(selectedNodeId))
+  }
+
+  const addSelfAttribute = () => {
+    if (!selectedData || !selectedNodeId || selectedData.attributes.some((attribute) => attribute.key === 'Self' && attribute.type === 'Object')) return
+    const attribute: Attribute = { id: `attribute-${crypto.randomUUID()}`, key: 'Self', value: '', type: 'Object', mode: 'driving' }
+    const signal: Socket = { id: `socket-${crypto.randomUUID()}`, name: attribute.key, direction: 'signal', payload: attribute.type, attributeId: attribute.id }
+    updateSelectedNode({ attributes: [...selectedData.attributes, attribute], sockets: [...selectedData.sockets, signal] })
+    requestAnimationFrame(() => updateNodeInternals(selectedNodeId))
   }
 
   const passAttributeOnward = (attributeId: string) => {
@@ -929,13 +948,14 @@ function Playground() {
                     <span>Attributes</span>
                     <div>
                       <button type="button" onClick={addAttribute}>+ Add</button>
+                      <button type="button" onClick={addSelfAttribute}>+ Me</button>
                       {selectedData?.isSeed && <button type="button" onClick={addSeedSlot}>+ Slot</button>}
                     </div>
                   </div>
                   {selectedData?.attributes.map((attribute) => (
                     <div className={`${editorRemovalMode ? 'attribute-row removable' : 'attribute-row'} ${(attribute.mode ?? 'driving') === 'driven' ? 'received-attribute' : ''}`} key={attribute.id}>
-                      <input value={attribute.key} aria-label="Attribute name" onChange={(event) => updateAttribute(attribute.id, { key: event.target.value })} />
-                      <select value={attribute.type ?? 'Text'} aria-label="Attribute data type" onChange={(event) => updateAttribute(attribute.id, { type: event.target.value as DataType })}>
+                      <input value={attribute.key} aria-label="Attribute name" disabled={(attribute.mode ?? 'driving') === 'driven'} onChange={(event) => updateAttribute(attribute.id, { key: event.target.value })} />
+                      <select value={attribute.type ?? 'Text'} aria-label="Attribute data type" disabled={(attribute.mode ?? 'driving') === 'driven'} onChange={(event) => updateAttribute(attribute.id, { type: event.target.value as DataType })}>
                         {dataTypes.map((type) => <option key={type}>{type}</option>)}
                       </select>
                       {attribute.type === 'Relationship' ? (
@@ -943,7 +963,7 @@ function Playground() {
                           <option value="Sow/Cub">Sow/Cub</option>
                         </select>
                       ) : (
-                        <input value={attribute.value} aria-label="Attribute value" placeholder={attribute.mode === 'driven' ? 'Received value' : 'Value to send'} onChange={(event) => updateAttribute(attribute.id, { value: event.target.value })} />
+                        <input value={attribute.type === 'Object' && attribute.key === 'Self' ? `${String(selectedNode.data.label ?? 'Untitled object')} · ${selectedNode.id}` : attribute.value} aria-label="Attribute value" disabled={attribute.type === 'Object' && attribute.key === 'Self' || (attribute.mode ?? 'driving') === 'driven'} placeholder={attribute.mode === 'driven' ? 'Received value' : 'Value to send'} onChange={(event) => updateAttribute(attribute.id, { value: event.target.value })} />
                       )}
                       <label className="attribute-drive"><input type="checkbox" checked={(attribute.mode ?? 'driving') === 'driving'} onChange={(event) => updateAttribute(attribute.id, { mode: event.target.checked ? 'driving' : 'driven' })} />{(attribute.mode ?? 'driving') === 'driving' ? '↑ Sends' : '↓ Receives'}</label>
                       {(attribute.mode ?? 'driving') === 'driven' && <button className="attribute-pass" type="button" onClick={() => passAttributeOnward(attribute.id)}>Pass onward</button>}
@@ -1004,6 +1024,9 @@ function Playground() {
                     <option value="identity">Pass through</option>
                     <option value="uppercase">Make text uppercase</option>
                     <option value="increment">Increment number</option>
+                    <option value="double">Double number</option>
+                    <option value="halve">Halve number</option>
+                    <option value="round">Round number</option>
                     <option value="append-note">Annotate received value</option>
                   </select>
                 </div>
