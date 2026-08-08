@@ -220,7 +220,7 @@
 .connector-mode:has(input:checked) input { accent-color: #a43268; }
 .connector-attribute { margin: 0; padding: 7px 9px; border-radius: 6px; color: #f0d1c7; background: rgba(40, 24, 22, .55); font-size: 13px; font-weight: 700; }
 .connector-card select { width: 100%; border: 1px solid #765d67; border-radius: 6px; padding: 7px; color: #fff4ee; background: #382725; font: 13px inherit; }
-.function-port { display: grid; grid-template-columns: minmax(0, 1fr) 100px; gap: 6px; margin-top: 7px; }
+.function-port { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 6px; margin-top: 7px; }
 .function-port select { min-width: 0; border: 1px solid #765d67; border-radius: 6px; padding: 7px; color: #fff4ee; background: #382725; font: 13px inherit; }
 .attached-function { display: grid; gap: 3px; margin-top: 7px; padding: 8px; border: 1px solid #775c82; border-radius: 8px; color: #f6e9ff; background: rgba(67, 43, 80, .52); }
 .attached-function span { color: #f1bad9; font-size: 12px; }

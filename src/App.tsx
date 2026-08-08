@@ -1059,15 +1059,15 @@ function Playground() {
                 <section className="editor-section">
                   <div className="editor-section-heading"><span>Arguments · slots</span><button type="button" onClick={() => addFunctionPort('slot')}>+ Arg</button></div>
                   {(selectedNode.data as FunctionData).sockets.filter((socket) => socket.direction === 'slot').map((socket) => <div className="function-port" key={socket.id}>
-                    <input value={socket.name} aria-label="Argument name" onChange={(event) => updateFunctionPort(socket.id, { name: event.target.value })} />
                     <select value={socket.payload} aria-label="Argument type" onChange={(event) => updateFunctionPort(socket.id, { payload: event.target.value as DataType })}>{dataTypes.map((type) => <option key={type}>{type}</option>)}</select>
+                    <input value={socket.name} aria-label="Argument name" onChange={(event) => updateFunctionPort(socket.id, { name: event.target.value })} />
                   </div>)}
                 </section>
                 <section className="editor-section">
                   <div className="editor-section-heading"><span>Returns · signals</span><button type="button" onClick={() => addFunctionPort('signal')}>+ Return</button></div>
                   {(selectedNode.data as FunctionData).sockets.filter((socket) => socket.direction === 'signal').map((socket) => <div className="function-port" key={socket.id}>
-                    <input value={socket.name} aria-label="Return name" onChange={(event) => updateFunctionPort(socket.id, { name: event.target.value })} />
                     <select value={socket.payload} aria-label="Return type" onChange={(event) => updateFunctionPort(socket.id, { payload: event.target.value as DataType })}>{dataTypes.map((type) => <option key={type}>{type}</option>)}</select>
+                    <input value={socket.name} aria-label="Return name" onChange={(event) => updateFunctionPort(socket.id, { name: event.target.value })} />
                   </div>)}
                 </section>
                 <p className="inspector-note">Drag this function’s bottom connector to the top of a seed to attach it.</p>
