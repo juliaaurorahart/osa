@@ -175,6 +175,7 @@
 .attribute-drive input { width: 13px; height: 13px; margin: 0; accent-color: #4c9aa5; }
 .attribute-drive:has(input:checked) { color: #ef9ec1 !important; }
 .attribute-card .attribute-remove { width: 28px; border: 1px solid #d8798e; border-radius: 6px; color: #fff3f5; background: #872f50; font-size: 18px; line-height: 1; }
+.attribute-passthroughs { display: grid; gap: 6px; }
 .attribute-pass-line { display: grid; grid-template-columns: auto minmax(110px, 1fr) minmax(90px, 1fr) auto; gap: 6px; align-items: center; padding-top: 2px; }
 .attribute-pass-line > span { color: #efb6cc; font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
 .attribute-pass-line select { min-width: 0; border: 1px solid #9b7192; border-radius: 6px; padding: 6px 8px; color: #ffe4ed; background: #432c3d; font: 12px inherit; }

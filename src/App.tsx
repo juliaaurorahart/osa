@@ -280,7 +280,7 @@ function Playground() {
             nextAttributes = nextAttributes.map((item) => item.id !== socket.attributeId ? item : { ...item, key: receivedName, type: receivedType, value: receivedValue, mode: 'driven' })
             nextAttributes = nextAttributes.map((item) => {
               if (item.passFrom !== socket.attributeId) return item
-              const onwardFunction = functions.find((fn) => fn.id === attribute?.passFunctionId)
+              const onwardFunction = functions.find((fn) => fn.id === item.passFunctionId)
               return {
                 ...item,
                 type: onwardFunction?.output ?? receivedType,
@@ -551,15 +551,14 @@ function Playground() {
 
   const passAttributeOnward = (attributeId: string) => {
     if (!selectedData || !selectedNodeId) return
-    if (selectedData.attributes.some((attribute) => attribute.passFrom === attributeId)) return
     const source = selectedData.attributes.find((attribute) => attribute.id === attributeId)
     if (!source) return
-    const transform = functions.find((fn) => fn.id === source.passFunctionId)
+    const number = selectedData.attributes.filter((attribute) => attribute.passFrom === attributeId).length + 1
     const attribute: Attribute = {
       id: `attribute-${crypto.randomUUID()}`,
-      key: `${source.key} onward`,
-      value: runFunction(source.value, transform),
-      type: transform?.output ?? source.type,
+      key: `${source.key} onward${number > 1 ? ` ${number}` : ''}`,
+      value: source.value,
+      type: source.type,
       mode: 'driving',
       passFrom: source.id,
     }
@@ -953,8 +952,7 @@ function Playground() {
                     </div>
                   </div>
                   {selectedData?.attributes.filter((attribute) => !attribute.passFrom).map((attribute) => {
-                    const onward = selectedData.attributes.find((candidate) => candidate.passFrom === attribute.id)
-                    const source = attribute.passFrom ? selectedData.attributes.find((candidate) => candidate.id === attribute.passFrom) : undefined
+                    const onwardAttributes = selectedData.attributes.filter((candidate) => candidate.passFrom === attribute.id)
                     const received = (attribute.mode ?? 'driving') === 'driven'
                     return (
                       <div className={`attribute-card${received ? ' received-attribute' : ''}`} key={attribute.id}>
@@ -971,16 +969,18 @@ function Playground() {
                           )}
                           <label className="attribute-drive"><input type="checkbox" checked={!received} disabled={received} onChange={(event) => updateAttribute(attribute.id, { mode: event.target.checked ? 'driving' : 'driven' })} />{received ? '↓ Receives' : '↑ Sends'}</label>
                         </div>
-                        {received && <div className="attribute-pass-line">
-                          <span>Pass</span>
-                          <select value={attribute.passFunctionId ?? ''} aria-label="Onward transformation" onChange={(event) => updateAttribute(attribute.id, { passFunctionId: event.target.value || undefined })}>
-                            <option value="">Send unchanged</option>
-                            {functions.filter((fn) => fn.input === 'Any' || fn.input === attribute.type).map((fn) => <option key={fn.id} value={fn.id}>{fn.name} → {fn.output}</option>)}
-                          </select>
-                          <input aria-label="Result sent onward" readOnly value={onward ? `${onward.type}: ${onward.value || '—'}` : 'No output yet'} />
-                          <button className="attribute-pass" type="button" disabled={Boolean(onward)} onClick={() => passAttributeOnward(attribute.id)}>{onward ? 'Sending' : 'Pass onward'}</button>
+                        {received && <div className="attribute-passthroughs">
+                          {onwardAttributes.map((onward) => <div className="attribute-pass-line" key={onward.id}>
+                            <span>Pass</span>
+                            <select value={onward.passFunctionId ?? ''} aria-label={`Onward transformation for ${onward.key}`} onChange={(event) => updateAttribute(onward.id, { passFunctionId: event.target.value || undefined })}>
+                              <option value="">Send unchanged</option>
+                              {functions.filter((fn) => fn.input === 'Any' || fn.input === attribute.type).map((fn) => <option key={fn.id} value={fn.id}>{fn.name} → {fn.output}</option>)}
+                            </select>
+                            <input aria-label={`Result sent onward for ${onward.key}`} readOnly value={`${onward.type}: ${onward.value || '—'}`} />
+                            {editorRemovalMode && <button className="attribute-remove" type="button" onClick={() => removeAttribute(onward.id)} aria-label={`Remove ${onward.key}`}>×</button>}
+                          </div>)}
+                          <button className="attribute-pass" type="button" onClick={() => passAttributeOnward(attribute.id)}>+ Pass onward</button>
                         </div>}
-                        {source && <p className="attribute-source">Passes the received <strong>{source.key}</strong> value onward.</p>}
                       </div>
                     )
                   })}
