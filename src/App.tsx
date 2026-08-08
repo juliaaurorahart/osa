@@ -952,7 +952,7 @@ function Playground() {
                       {selectedData?.isSeed && <button type="button" onClick={addSeedSlot}>+ Slot</button>}
                     </div>
                   </div>
-                  {selectedData?.attributes.map((attribute) => {
+                  {selectedData?.attributes.filter((attribute) => !attribute.passFrom).map((attribute) => {
                     const onward = selectedData.attributes.find((candidate) => candidate.passFrom === attribute.id)
                     const source = attribute.passFrom ? selectedData.attributes.find((candidate) => candidate.id === attribute.passFrom) : undefined
                     const received = (attribute.mode ?? 'driving') === 'driven'
@@ -971,12 +971,14 @@ function Playground() {
                           )}
                           <label className="attribute-drive"><input type="checkbox" checked={!received} disabled={received} onChange={(event) => updateAttribute(attribute.id, { mode: event.target.checked ? 'driving' : 'driven' })} />{received ? '↓ Receives' : '↑ Sends'}</label>
                         </div>
-                        {received && <div className="attribute-pass-controls">
+                        {received && <div className="attribute-pass-line">
+                          <span>Pass</span>
                           <select value={attribute.passFunctionId ?? ''} aria-label="Onward transformation" onChange={(event) => updateAttribute(attribute.id, { passFunctionId: event.target.value || undefined })}>
                             <option value="">Send unchanged</option>
                             {functions.filter((fn) => fn.input === 'Any' || fn.input === attribute.type).map((fn) => <option key={fn.id} value={fn.id}>{fn.name} → {fn.output}</option>)}
                           </select>
-                          <button className="attribute-pass" type="button" disabled={Boolean(onward)} onClick={() => passAttributeOnward(attribute.id)}>{onward ? `Output: ${onward.key}` : attribute.passFunctionId ? 'Pass changed' : 'Pass onward'}</button>
+                          <input aria-label="Result sent onward" readOnly value={onward ? `${onward.type}: ${onward.value || '—'}` : 'No output yet'} />
+                          <button className="attribute-pass" type="button" disabled={Boolean(onward)} onClick={() => passAttributeOnward(attribute.id)}>{onward ? 'Sending' : 'Pass onward'}</button>
                         </div>}
                         {source && <p className="attribute-source">Passes the received <strong>{source.key}</strong> value onward.</p>}
                       </div>
