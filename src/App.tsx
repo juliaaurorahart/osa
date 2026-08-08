@@ -27,7 +27,7 @@ type SocketDirection = 'signal' | 'slot'
 type DataType = 'Relationship' | 'Object' | 'Text' | 'Number' | 'Boolean' | 'File' | 'Any'
 type AttributeMode = 'driving' | 'driven'
 type Socket = { id: string; name: string; direction: SocketDirection; payload: DataType; attributeId?: string; value?: string; functionId?: string; drivenBy?: string; drivenValue?: string; drivenType?: DataType }
-type Attribute = { id: string; key: string; value: string; type: DataType; mode?: AttributeMode; passFrom?: string; passFunctionId?: string; createdChildId?: string }
+type Attribute = { id: string; key: string; value: string; type: DataType; mode?: AttributeMode; passFrom?: string; passFunctionId?: string; createdChildId?: string; isSelf?: boolean }
 type FunctionOperation = 'identity' | 'uppercase' | 'increment' | 'double' | 'halve' | 'round' | 'append-note'
 type OsaFunction = { id: string; name: string; input: DataType; output: DataType; operation: FunctionOperation }
 type CanvasData = { label: string; note?: string; isSeed?: boolean; sockets: Socket[]; attributes: Attribute[]; removeMode?: boolean; onRemove?: () => void }
@@ -67,14 +67,15 @@ function attributesFor(node: Node | undefined): Attribute[] {
 
 function detailsFor(node: Node | undefined, socket: Socket) {
   const attribute = attributesFor(node).find((item) => item.id === socket.attributeId)
+  const isSelf = attribute?.isSelf || (attribute?.type === 'Object' && attribute.key === 'Self')
   const relationshipValue = attribute?.type === 'Relationship'
     ? socket.direction === 'signal' ? 'Sow' : 'Cub'
     : undefined
   return {
     attribute,
-    name: attribute?.key || socket.name,
+    name: isSelf ? String(node?.data.label ?? 'Untitled object') : attribute?.key || socket.name,
     payload: attribute?.type || socket.payload,
-    value: attribute?.type === 'Object' && attribute.key === 'Self'
+    value: isSelf
       ? `${String(node?.data.label ?? 'Untitled object')} · ${node?.id ?? ''}`
       : relationshipValue ?? attribute?.value ?? socket.value ?? '',
   }
@@ -463,7 +464,20 @@ function Playground() {
   }
 
   const selectedData = selectedNode?.data as CanvasData | undefined
-  const selfIsShared = Boolean(selectedData?.attributes.some((attribute) => attribute.key === 'Self' && attribute.type === 'Object'))
+  const selfIsShared = Boolean(selectedData?.attributes.some((attribute) => attribute.isSelf || (attribute.key === 'Self' && attribute.type === 'Object')))
+
+  const updateObjectName = (label: string) => {
+    if (!selectedData || !selectedNodeId) return
+    const selfAttributeIds = new Set(selectedData.attributes.filter((attribute) => attribute.isSelf || (attribute.key === 'Self' && attribute.type === 'Object')).map((attribute) => attribute.id))
+    const attributes = selectedData.attributes.map((attribute) => {
+      if (selfAttributeIds.has(attribute.id)) return { ...attribute, key: label, isSelf: true }
+      if (attribute.passFrom && selfAttributeIds.has(attribute.passFrom)) return { ...attribute, value: `${label} · ${selectedNodeId}` }
+      return attribute
+    })
+    const sockets = selectedData.sockets.map((socket) => selfAttributeIds.has(socket.attributeId ?? '') ? { ...socket, name: label } : socket)
+    updateSelectedNode({ label, attributes, sockets })
+    requestAnimationFrame(() => updateNodeInternals(selectedNodeId))
+  }
 
   const updateSocket = (socketId: string, changes: Partial<Socket>) => {
     if (!selectedData) return
@@ -536,7 +550,7 @@ function Playground() {
 
   const addSelfAttribute = () => {
     if (!selectedData || !selectedNodeId || selectedData.attributes.some((attribute) => attribute.key === 'Self' && attribute.type === 'Object')) return
-    const attribute: Attribute = { id: `attribute-${crypto.randomUUID()}`, key: 'Self', value: '', type: 'Object', mode: 'driving' }
+    const attribute: Attribute = { id: `attribute-${crypto.randomUUID()}`, key: String(selectedNode?.data.label ?? 'Untitled object'), value: '', type: 'Object', mode: 'driving', isSelf: true }
     const signal: Socket = { id: `socket-${crypto.randomUUID()}`, name: attribute.key, direction: 'signal', payload: attribute.type, attributeId: attribute.id }
     const onward: Attribute = { id: `attribute-${crypto.randomUUID()}`, key: 'Self onward', value: `${String(selectedNode?.data.label ?? 'Untitled object')} · ${selectedNodeId}`, type: 'Object', mode: 'driving', passFrom: attribute.id }
     const onwardSignal: Socket = { id: `socket-${crypto.randomUUID()}`, name: onward.key, direction: 'signal', payload: onward.type, attributeId: onward.id }
@@ -936,7 +950,7 @@ function Playground() {
                   <input
                     ref={nameEditor}
                     value={String(selectedNode.data.label ?? '')}
-                    onChange={(event) => updateSelectedNode({ label: event.target.value })}
+                    onChange={(event) => updateObjectName(event.target.value)}
                   />
                 </label>
                 <label>
@@ -960,10 +974,11 @@ function Playground() {
                   {selectedData?.attributes.filter((attribute) => !attribute.passFrom).map((attribute) => {
                     const onwardAttributes = selectedData.attributes.filter((candidate) => candidate.passFrom === attribute.id)
                     const received = (attribute.mode ?? 'driving') === 'driven'
+                    const isSelfAttribute = attribute.isSelf || (attribute.key === 'Self' && attribute.type === 'Object')
                     return (
                       <div className={`attribute-card${received ? ' received-attribute' : ''}`} key={attribute.id}>
                         <div className="attribute-topline">
-                          <input value={attribute.key} aria-label="Attribute name" disabled={received} onChange={(event) => updateAttribute(attribute.id, { key: event.target.value })} />
+                          <input value={isSelfAttribute ? String(selectedNode.data.label ?? 'Untitled object') : attribute.key} aria-label="Attribute name" disabled={received || isSelfAttribute} onChange={(event) => updateAttribute(attribute.id, { key: event.target.value })} />
                           {editorRemovalMode && <button className="attribute-remove" type="button" onClick={() => removeAttribute(attribute.id)} aria-label={`Remove ${attribute.key}`}>×</button>}
                         </div>
                         <div className="attribute-controls">
@@ -971,7 +986,7 @@ function Playground() {
                             {dataTypes.map((type) => <option key={type}>{type}</option>)}
                           </select>
                           {attribute.type === 'Relationship' ? <select value="Sow/Cub" aria-label="Relationship value" disabled><option value="Sow/Cub">Sow/Cub</option></select> : (
-                            <input value={attribute.type === 'Object' && attribute.key === 'Self' ? `${String(selectedNode.data.label ?? 'Untitled object')} · ${selectedNode.id}` : attribute.value} aria-label="Attribute value" disabled={attribute.type === 'Object' && attribute.key === 'Self' || received} placeholder={received ? 'Received value' : 'Value to send'} onChange={(event) => updateAttribute(attribute.id, { value: event.target.value })} />
+                            <input value={isSelfAttribute ? `${String(selectedNode.data.label ?? 'Untitled object')} · ${selectedNode.id}` : attribute.value} aria-label="Attribute value" disabled={isSelfAttribute || received} placeholder={received ? 'Received value' : 'Value to send'} onChange={(event) => updateAttribute(attribute.id, { value: event.target.value })} />
                           )}
                           <label className="attribute-drive"><input type="checkbox" checked={!received} disabled={received} onChange={(event) => updateAttribute(attribute.id, { mode: event.target.checked ? 'driving' : 'driven' })} />{received ? '↓ Receives' : '↑ Sends'}</label>
                         </div>
