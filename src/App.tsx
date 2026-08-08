@@ -566,7 +566,7 @@ function Playground() {
     setNodes((currentNodes) => [
       ...currentNodes.map((node) => node.id !== selectedNode.id ? node : {
         ...node,
-        data: { ...node.data, attributes: [...selectedData.attributes, attribute], sockets: [...selectedData.sockets, signal] },
+        data: { ...node.data, isSeed: false, attributes: [...selectedData.attributes, attribute], sockets: [...selectedData.sockets, signal] },
       }),
       {
         id: childId,
