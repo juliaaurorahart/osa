@@ -175,6 +175,8 @@
 .attribute-drive input { width: 13px; height: 13px; margin: 0; accent-color: #4c9aa5; }
 .attribute-drive:has(input:checked) { color: #ef9ec1 !important; }
 .attribute-card .attribute-remove { width: 28px; border: 1px solid #d8798e; border-radius: 6px; color: #fff3f5; background: #872f50; font-size: 18px; line-height: 1; }
+.attribute-pass-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; }
+.attribute-pass-controls select { min-width: 0; border: 1px solid #9b7192; border-radius: 6px; padding: 6px 8px; color: #ffe4ed; background: #432c3d; font: 12px inherit; }
 .attribute-card .attribute-pass { justify-self: start; padding: 6px 9px; border: 1px solid #d5879b; border-radius: 6px; color: #ffe4ed; background: #7d3d58; font: 800 10px inherit; cursor: pointer; }
 .attribute-card .attribute-pass:hover:not(:disabled) { border-color: #ffc0d3; background: #a44c70; }
 .attribute-card .attribute-pass:disabled { border-color: #73666b; color: #c6b1b7; background: #4b3b40; cursor: default; }
