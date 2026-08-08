@@ -222,7 +222,6 @@ function Playground() {
   const [visualMood, setVisualMood] = useState(() => Number(localStorage.getItem(MOOD_KEY) ?? .42))
   const [sparkles, setSparkles] = useState(() => localStorage.getItem(SPARKLE_KEY) === 'true')
   const [drawingMode, setDrawingMode] = useState(false)
-  const [seedShape, setSeedShape] = useState<'object' | ShapeKind>('object')
   const [activeStroke, setActiveStroke] = useState<Point[] | null>(null)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [editorTab, setEditorTab] = useState<'object' | 'all'>('object')
@@ -817,14 +816,14 @@ function Playground() {
           ✦ {sparkles ? 'Sparkles on' : 'Sparkles'}
         </button>
         <button type="button" className="tool-button" onClick={() => setFunctionLibraryOpen(true)}>ƒ Functions</button>
-        <div className="seed-tools" aria-label="Make a seed">
-          <select value={seedShape} onChange={(event) => setSeedShape(event.target.value as 'object' | ShapeKind)} aria-label="Seed shape">
-            <option value="object">Object</option>
-            <option value="rectangle">Rectangle</option>
-            <option value="circle">Circle</option>
-            <option value="diamond">Diamond</option>
-          </select>
-          <button type="button" onClick={() => addNode(seedShape)}>+ Make seed</button>
+        <div className="seed-tools" aria-label="Plant a seed">
+          <span>Plant Seed</span>
+          <div className="seed-shapes">
+            <button type="button" className="seed-shape object" onClick={() => addNode('object')} aria-label="Plant an object seed" title="Object seed" />
+            <button type="button" className="seed-shape rectangle" onClick={() => addNode('rectangle')} aria-label="Plant a rectangle seed" title="Rectangle seed" />
+            <button type="button" className="seed-shape circle" onClick={() => addNode('circle')} aria-label="Plant a circle seed" title="Circle seed" />
+            <button type="button" className="seed-shape diamond" onClick={() => addNode('diamond')} aria-label="Plant a diamond seed" title="Diamond seed" />
+          </div>
         </div>
         <button type="button" className={drawingMode ? 'tool-button active' : 'tool-button'} onClick={() => setDrawingMode((active) => !active)}>
           ✎ {drawingMode ? 'Drawing on' : 'Draw'}

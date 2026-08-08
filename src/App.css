@@ -48,9 +48,16 @@
 .save-tools .tool-button { padding: 8px 9px; font-size: 11px; }
 .mood-control { display: flex; align-items: center; gap: 7px; color: #eac9b5; font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
 .mood-control input { width: 78px; accent-color: #f08f79; cursor: ew-resize; }
-.seed-tools { display: flex; gap: 5px; }
-.seed-tools select { border: 1px solid #73584b; border-radius: 8px; padding: 8px; color: #fff1df; background: #473129; font: 12px inherit; }
-.seed-tools button { white-space: nowrap; }
+.seed-tools { display: grid; gap: 5px; padding: 6px 8px 7px; border: 1px solid #73584b; border-radius: 10px; background: rgba(38, 25, 22, .74); }
+.seed-tools > span { color: #ffd8bd; font-size: 9px; font-weight: 800; letter-spacing: .09em; text-align: center; text-transform: uppercase; }
+.seed-shapes { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 28px; }
+.toolbar .seed-shape { width: 25px; height: 22px; padding: 0; border: 2px solid #f4ad87; color: transparent; background: transparent; box-shadow: none; }
+.toolbar .seed-shape:hover { border-color: #fff0d8; background: rgba(255, 164, 123, .16); box-shadow: 0 0 12px rgba(255, 149, 113, .28); }
+.toolbar .seed-shape.object { border-radius: 7px; }
+.toolbar .seed-shape.rectangle { width: 30px; height: 18px; border-radius: 3px; }
+.toolbar .seed-shape.circle { width: 23px; height: 23px; border-radius: 50%; }
+.toolbar .seed-shape.diamond { width: 19px; height: 19px; margin: 0 4px; border-radius: 2px; transform: rotate(45deg); }
+.toolbar .seed-shape.diamond:hover { transform: rotate(45deg) scale(1.05); }
 .hint { margin: 0 0 0 auto; color: #d0aca1; font-size: 12px; text-align: right; }
 
 .flow-area { position: relative; min-height: 0; flex: 1; }
