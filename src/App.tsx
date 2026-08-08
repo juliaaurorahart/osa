@@ -175,18 +175,11 @@ function SocketHandles({ sockets }: { sockets: Socket[] }) {
 }
 
 function OsaObjectNode({ id, data }: NodeProps<OsaNode>) {
-  const slots = data.sockets.filter((socket) => socket.direction === 'slot')
-  const signals = data.sockets.filter((socket) => socket.direction === 'signal')
-
   return (
     <div className="osa-object">
       <SocketHandles sockets={data.sockets} />
       {data.removeMode && <button className="node-remove" style={removeButtonStyle(id)} type="button" aria-label={`Remove ${data.label}`} onClick={(event) => { event.stopPropagation(); data.onRemove?.() }}><span className="node-remove-mark">×</span></button>}
       <strong>{data.label}</strong>
-      <div className="socket-row">
-        <span className={slots[0]?.drivenBy ? 'driven' : undefined}>{slots.length ? `← ${slots[0].drivenBy ? 'Driven: ' : ''}${slots[0].name}` : 'No slots'}</span>
-        <span>{signals.length ? `${signals[0].name} →` : 'No signals'}</span>
-      </div>
     </div>
   )
 }
@@ -545,7 +538,9 @@ function Playground() {
     if (!selectedData || !selectedNodeId || selectedData.attributes.some((attribute) => attribute.key === 'Self' && attribute.type === 'Object')) return
     const attribute: Attribute = { id: `attribute-${crypto.randomUUID()}`, key: 'Self', value: '', type: 'Object', mode: 'driving' }
     const signal: Socket = { id: `socket-${crypto.randomUUID()}`, name: attribute.key, direction: 'signal', payload: attribute.type, attributeId: attribute.id }
-    updateSelectedNode({ attributes: [...selectedData.attributes, attribute], sockets: [...selectedData.sockets, signal] })
+    const onward: Attribute = { id: `attribute-${crypto.randomUUID()}`, key: 'Self onward', value: `${String(selectedNode?.data.label ?? 'Untitled object')} · ${selectedNodeId}`, type: 'Object', mode: 'driving', passFrom: attribute.id }
+    const onwardSignal: Socket = { id: `socket-${crypto.randomUUID()}`, name: onward.key, direction: 'signal', payload: onward.type, attributeId: onward.id }
+    updateSelectedNode({ attributes: [...selectedData.attributes, attribute, onward], sockets: [...selectedData.sockets, signal, onwardSignal] })
     requestAnimationFrame(() => updateNodeInternals(selectedNodeId))
   }
 
