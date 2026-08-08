@@ -40,7 +40,8 @@ type ShapeData = CanvasData & { shape: ShapeKind }
 type ShapeNode = Node<ShapeData, 'shape'>
 type FunctionData = CanvasData & { functionId: string; code?: string }
 type FunctionNode = Node<FunctionData, 'function'>
-type SavedBoard = { id: string; name: string; nodes: Node[]; edges: Edge[]; functions?: OsaFunction[]; updatedAt: string }
+type ProjectFrame = { intention: string; feeling: string; question: string }
+type SavedBoard = { id: string; name: string; nodes: Node[]; edges: Edge[]; functions?: OsaFunction[]; project?: ProjectFrame; updatedAt: string }
 
 const SAVE_KEY = 'osa-react-flow-saves-v1'
 const MOOD_KEY = 'osa-visual-mood-v1'
@@ -233,6 +234,8 @@ function Playground() {
   const [boardName, setBoardName] = useState('Untitled board')
   const [functions, setFunctions] = useState<OsaFunction[]>(defaultFunctions)
   const [functionLibraryOpen, setFunctionLibraryOpen] = useState(false)
+  const [workspaceView, setWorkspaceView] = useState<'canvas' | 'frame'>('canvas')
+  const [projectFrame, setProjectFrame] = useState<ProjectFrame>({ intention: '', feeling: '', question: '' })
   const [visualMood, setVisualMood] = useState(() => Number(localStorage.getItem(MOOD_KEY) ?? .42))
   const [sparkles, setSparkles] = useState(() => localStorage.getItem(SPARKLE_KEY) === 'true')
   const [drawingMode, setDrawingMode] = useState(false)
@@ -753,7 +756,7 @@ function Playground() {
     if (!requestedName?.trim()) return
 
     const id = saveAs || !existing ? crypto.randomUUID() : existing.id
-    const saved: SavedBoard = { id, name: requestedName.trim(), nodes, edges, functions, updatedAt: new Date().toISOString() }
+    const saved: SavedBoard = { id, name: requestedName.trim(), nodes, edges, functions, project: projectFrame, updatedAt: new Date().toISOString() }
     persistSaves([...saves.filter((save) => save.id !== id), saved])
     setActiveSaveId(id)
     setBoardName(saved.name)
@@ -765,6 +768,7 @@ function Playground() {
     setNodes(saved.nodes)
     setEdges(saved.edges)
     setFunctions(saved.functions ?? defaultFunctions())
+    setProjectFrame(saved.project ?? { intention: '', feeling: '', question: '' })
     setActiveSaveId(saved.id)
     setBoardName(saved.name)
     setSelectedNodeId(null)
@@ -776,6 +780,7 @@ function Playground() {
     setFunctions(defaultFunctions())
     setActiveSaveId(null)
     setBoardName('Untitled board')
+    setProjectFrame({ intention: '', feeling: '', question: '' })
     setSelectedNodeId(null)
   }
 
@@ -905,6 +910,10 @@ function Playground() {
           <p className="eyebrow">OSA LAB 001</p>
           <h1>OSA Playground</h1>
         </div>
+        <div className="view-switch" role="group" aria-label="Workspace view">
+          <button type="button" className={workspaceView === 'canvas' ? 'active' : ''} onClick={() => setWorkspaceView('canvas')}>Canvas</button>
+          <button type="button" className={workspaceView === 'frame' ? 'active' : ''} onClick={() => setWorkspaceView('frame')}>Project Frame</button>
+        </div>
         <div className="save-tools" aria-label="Saved boards">
           <select value={activeSaveId ?? ''} aria-label="Choose a saved board" onChange={(event) => event.target.value && loadBoard(event.target.value)}>
             <option value="">{boardName}</option>
@@ -938,7 +947,7 @@ function Playground() {
         <p className="hint">{drawingMode ? 'Draw on empty canvas · Esc or Draw to return to node mode' : 'Drag nodes · pull handles to connect · double-click to rename · Delete to remove'}</p>
       </header>
 
-      <section className="flow-area" aria-label="Node playground">
+      {workspaceView === 'canvas' ? <section className="flow-area" aria-label="Node playground">
         <ReactFlow
           nodes={renderedNodes}
           edges={edges}
@@ -1174,7 +1183,26 @@ function Playground() {
             </section>
           </aside>
         )}
-      </section>
+      </section> : <section className="project-frame" aria-label="Project framework">
+        <aside className="project-pulse">
+          <p className="frame-kicker">PROJECT PULSE</p><h2>Hold the feeling first.</h2>
+          <label>Intention<textarea rows={4} value={projectFrame.intention} placeholder="What are we making?" onChange={(event) => setProjectFrame((current) => ({ ...current, intention: event.target.value }))} /></label>
+          <label>Experience<textarea rows={4} value={projectFrame.feeling} placeholder="What should this feel like?" onChange={(event) => setProjectFrame((current) => ({ ...current, feeling: event.target.value }))} /></label>
+          <label>Open question<textarea rows={4} value={projectFrame.question} placeholder="What are we still wondering?" onChange={(event) => setProjectFrame((current) => ({ ...current, question: event.target.value }))} /></label>
+        </aside>
+        <section className="project-map">
+          <div className="frame-heading"><div><p className="frame-kicker">SYSTEM MAP</p><h2>Things taking shape</h2></div><button type="button" onClick={() => setWorkspaceView('canvas')}>Open canvas</button></div>
+          <div className="project-object-grid">{nodes.filter((node) => node.type !== 'drawing').map((node) => <button type="button" className="project-object" key={node.id} onClick={() => { selectObject(node.id); setWorkspaceView('canvas') }}><span>{node.type === 'function' ? 'ƒ' : node.type === 'shape' ? '◇' : '●'}</span><strong>{String(node.data.label ?? 'Untitled')}</strong><small>{node.type === 'function' ? `${socketsFor(node).filter((socket) => socket.direction === 'slot').length} inputs · ${socketsFor(node).filter((socket) => socket.direction === 'signal').length} returns` : `${attributesFor(node).length} attributes · ${socketsFor(node).length} connectors`}</small></button>)}</div>
+          {!nodes.some((node) => node.type !== 'drawing') && <p className="frame-empty">Plant a seed on the canvas, then return here to see its place in the project.</p>}
+        </section>
+        <aside className="project-reading">
+          <p className="frame-kicker">FRAMEWORK READING</p><h2>What OSA sees</h2>
+          <div className="reading-stat"><strong>{nodes.filter((node) => node.type !== 'drawing').length}</strong><span>objects and ideas</span></div>
+          <div className="reading-stat"><strong>{edges.length}</strong><span>relationships or flows</span></div>
+          <div className="reading-stat"><strong>{nodes.filter((node) => node.type === 'function').length}</strong><span>function objects</span></div>
+          <p>Use the canvas for the messy version. Use this frame to notice what is becoming a system, what is still a question, and what wants its own function.</p>
+        </aside>
+      </section>}
     </main>
   )
 }
