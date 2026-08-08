@@ -27,7 +27,7 @@ type SocketDirection = 'signal' | 'slot'
 type DataType = 'Relationship' | 'Text' | 'Number' | 'Boolean' | 'File' | 'Any'
 type AttributeMode = 'driving' | 'driven'
 type Socket = { id: string; name: string; direction: SocketDirection; payload: DataType; attributeId?: string; value?: string; functionId?: string; drivenBy?: string; drivenValue?: string; drivenType?: DataType }
-type Attribute = { id: string; key: string; value: string; type: DataType; mode?: AttributeMode }
+type Attribute = { id: string; key: string; value: string; type: DataType; mode?: AttributeMode; passFrom?: string }
 type FunctionOperation = 'identity' | 'uppercase' | 'increment' | 'append-note'
 type OsaFunction = { id: string; name: string; input: DataType; output: DataType; operation: FunctionOperation }
 type CanvasData = { label: string; note?: string; isSeed?: boolean; sockets: Socket[]; attributes: Attribute[]; removeMode?: boolean; onRemove?: () => void }
@@ -291,14 +291,18 @@ function Playground() {
           const source = incoming.get(`${node.id}:${socket.id}`)
           if (!source || !socket.attributeId) return
           const attribute = nodeAttributes.find((item) => item.id === socket.attributeId)
-          const attributeNeedsUpdate = attribute && (attribute.type !== source.type || attribute.value !== source.value || attribute.mode !== 'driven')
-          const socketNeedsUpdate = socket.direction !== 'slot' || socket.payload !== source.type
+          const fn = functions.find((item) => item.id === socket.functionId)
+          const receivedType = fn?.output ?? source.type
+          const receivedValue = source.type === 'Relationship' ? 'Cub' : runFunction(source.value, fn)
+          const attributeNeedsUpdate = attribute && (attribute.type !== receivedType || attribute.value !== receivedValue || attribute.mode !== 'driven')
+          const socketNeedsUpdate = socket.direction !== 'slot' || socket.payload !== receivedType
           if (!attributeNeedsUpdate && !socketNeedsUpdate) return
           if (attributeNeedsUpdate) {
-            nextAttributes = nextAttributes.map((item) => item.id !== socket.attributeId ? item : { ...item, type: source.type, value: source.value, mode: 'driven' })
+            nextAttributes = nextAttributes.map((item) => item.id !== socket.attributeId ? item : { ...item, type: receivedType, value: receivedValue, mode: 'driven' })
+            nextAttributes = nextAttributes.map((item) => item.passFrom !== socket.attributeId ? item : { ...item, type: receivedType, value: receivedValue })
           }
           if (socketNeedsUpdate) {
-            nextSockets = nextSockets.map((currentSocket) => currentSocket.id !== socket.id ? currentSocket : { ...currentSocket, direction: 'slot', payload: source.type })
+            nextSockets = nextSockets.map((currentSocket) => currentSocket.id !== socket.id ? currentSocket : { ...currentSocket, direction: 'slot', payload: receivedType })
           }
           nodeChanged = true
         })
@@ -309,7 +313,7 @@ function Playground() {
       })
       return changed ? synchronized : currentNodes
     })
-  }, [edges, nodes, setNodes])
+  }, [edges, nodes, functions, setNodes])
 
   const driverFor = (nodeId: string, socketId: string) => {
     const edge = edges.find((currentEdge) => currentEdge.target === nodeId && currentEdge.targetHandle === socketId)
@@ -561,6 +565,23 @@ function Playground() {
     const slot: Socket = { id: `socket-${crypto.randomUUID()}`, name: attribute.key, direction: 'slot', payload: attribute.type, attributeId: attribute.id }
     updateSelectedNode({ attributes: [...selectedData.attributes, attribute], sockets: [...selectedData.sockets, slot] })
     if (selectedNodeId) requestAnimationFrame(() => updateNodeInternals(selectedNodeId))
+  }
+
+  const passAttributeOnward = (attributeId: string) => {
+    if (!selectedData || !selectedNodeId) return
+    const source = selectedData.attributes.find((attribute) => attribute.id === attributeId)
+    if (!source) return
+    const attribute: Attribute = {
+      id: `attribute-${crypto.randomUUID()}`,
+      key: `${source.key} onward`,
+      value: source.value,
+      type: source.type,
+      mode: 'driving',
+      passFrom: source.id,
+    }
+    const signal: Socket = { id: `socket-${crypto.randomUUID()}`, name: attribute.key, direction: 'signal', payload: attribute.type, attributeId: attribute.id }
+    updateSelectedNode({ attributes: [...selectedData.attributes, attribute], sockets: [...selectedData.sockets, signal] })
+    requestAnimationFrame(() => updateNodeInternals(selectedNodeId))
   }
 
   const removeAttribute = (attributeId: string) => {
@@ -912,7 +933,7 @@ function Playground() {
                     </div>
                   </div>
                   {selectedData?.attributes.map((attribute) => (
-                    <div className={editorRemovalMode ? 'attribute-row removable' : 'attribute-row'} key={attribute.id}>
+                    <div className={`${editorRemovalMode ? 'attribute-row removable' : 'attribute-row'} ${(attribute.mode ?? 'driving') === 'driven' ? 'received-attribute' : ''}`} key={attribute.id}>
                       <input value={attribute.key} aria-label="Attribute name" onChange={(event) => updateAttribute(attribute.id, { key: event.target.value })} />
                       <select value={attribute.type ?? 'Text'} aria-label="Attribute data type" onChange={(event) => updateAttribute(attribute.id, { type: event.target.value as DataType })}>
                         {dataTypes.map((type) => <option key={type}>{type}</option>)}
@@ -925,6 +946,7 @@ function Playground() {
                         <input value={attribute.value} aria-label="Attribute value" placeholder={attribute.mode === 'driven' ? 'Received value' : 'Value to send'} onChange={(event) => updateAttribute(attribute.id, { value: event.target.value })} />
                       )}
                       <label className="attribute-drive"><input type="checkbox" checked={(attribute.mode ?? 'driving') === 'driving'} onChange={(event) => updateAttribute(attribute.id, { mode: event.target.checked ? 'driving' : 'driven' })} />{(attribute.mode ?? 'driving') === 'driving' ? '↑ Sends' : '↓ Receives'}</label>
+                      {(attribute.mode ?? 'driving') === 'driven' && <button className="attribute-pass" type="button" onClick={() => passAttributeOnward(attribute.id)}>Pass onward</button>}
                       {editorRemovalMode && <button className="attribute-remove" type="button" onClick={() => removeAttribute(attribute.id)} aria-label={`Remove ${attribute.key}`}>×</button>}
                     </div>
                   ))}
@@ -941,6 +963,10 @@ function Playground() {
                         <label className="connector-mode"><input type="checkbox" checked={socket.direction === 'signal'} onChange={(event) => setConnectorDirection(socket, event.target.checked ? 'signal' : 'slot')} />{socket.direction === 'signal' ? '↑ Signal sends' : '↓ Slot receives'}</label>
                       </div>
                       <p className="connector-attribute">{detailsFor(selectedNode, socket).name} · {detailsFor(selectedNode, socket).payload}</p>
+                      {socket.direction === 'slot' && <select value={socket.functionId ?? ''} aria-label="Receive function" onChange={(event) => updateSocket(socket.id, { functionId: event.target.value || undefined })}>
+                        <option value="">Receive unchanged</option>
+                        {functions.filter((fn) => fn.input === 'Any' || fn.input === detailsFor(selectedNode, socket).payload).map((fn) => <option key={fn.id} value={fn.id}>{fn.name} → {fn.output}</option>)}
+                      </select>}
                     </div>
                   ))}
                 </section>

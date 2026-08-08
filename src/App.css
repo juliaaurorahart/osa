@@ -157,14 +157,17 @@
 .editor-section-heading > div { display: flex; gap: 4px; }
 .editor-section button { border: 1px solid #5d536b; border-radius: 6px; padding: 4px 6px; color: #d8c7ef; background: #302a39; font: 11px inherit; cursor: pointer; }
 .editor-section button:hover { border-color: #b995ef; background: #453653; }
-.attribute-row { display: grid; grid-template-columns: 1fr 86px 1fr 58px; gap: 5px; margin-top: 6px; }
-.attribute-row.removable { grid-template-columns: 1fr 86px 1fr 58px 24px; }
+.attribute-row { display: grid; grid-template-columns: minmax(0, 1fr) 86px minmax(0, 1fr) 58px auto; gap: 5px; margin-top: 6px; }
+.attribute-row.removable { grid-template-columns: minmax(0, 1fr) 86px minmax(0, 1fr) 58px auto 24px; }
+.attribute-row.received-attribute { padding: 4px; border-left: 2px solid #7fdfe8; border-radius: 6px; background: rgba(70, 158, 166, .12); }
 .attribute-row input, .connector-card input, .connector-card select { min-width: 0; padding: 6px; font-size: 12px; }
 .attribute-row input:disabled { color: #9e93a8; background: #292431; }
 .attribute-drive { display: flex !important; align-items: center; gap: 3px; margin: 0 !important; color: #86d5df !important; font-size: 8px !important; letter-spacing: 0 !important; text-transform: uppercase; }
 .attribute-drive input { width: 13px; height: 13px; margin: 0; accent-color: #4c9aa5; }
 .attribute-drive:has(input:checked) { color: #ef9ec1 !important; }
 .attribute-row button, .connector-topline button { padding: 0; font-size: 16px; line-height: 1; }
+.attribute-row .attribute-pass { padding: 0 6px; border-color: #d5879b; color: #ffe4ed; background: #7d3d58; font-size: 9px; font-weight: 800; letter-spacing: .02em; white-space: nowrap; }
+.attribute-row .attribute-pass:hover { border-color: #ffc0d3; background: #a44c70; }
 .empty-state { margin: 0; color: #938b9e; font-size: 12px; }
 .connector-card { display: grid; gap: 6px; margin-top: 8px; padding: 8px; border: 1px solid #51485e; border-radius: 8px; background: rgba(20, 18, 27, .45); }
 .connector-topline { display: grid; grid-template-columns: 1fr auto; gap: 6px; }
@@ -173,6 +176,7 @@
 .connector-mode:has(input:checked) { color: #ef9ec1 !important; }
 .connector-mode:has(input:checked) input { accent-color: #a43268; }
 .connector-attribute { margin: 0; padding: 6px 8px; border-radius: 6px; color: #beb1ca; background: rgba(13, 11, 18, .55); font-size: 11px; font-weight: 700; }
+.connector-card select { width: 100%; border: 1px solid #765d67; border-radius: 6px; padding: 6px; color: #fff4ee; background: #382725; font: 11px inherit; }
 .function-card { display: grid; gap: 6px; margin-top: 8px; padding: 8px; border: 1px solid #51485e; border-radius: 8px; background: rgba(34, 27, 47, .55); }
 .function-card select, .function-types select { min-width: 0; border: 1px solid #5d536b; border-radius: 6px; padding: 6px; color: #fbf9ff; background: #201d28; font: 12px inherit; }
 .function-types { display: grid; grid-template-columns: 1fr 18px 1fr; align-items: center; gap: 5px; color: #c6a9ee; text-align: center; }
