@@ -38,6 +38,8 @@ type DrawingNode = Node<DrawingData, 'drawing'>
 type ShapeKind = 'rectangle' | 'circle' | 'diamond'
 type ShapeData = CanvasData & { shape: ShapeKind }
 type ShapeNode = Node<ShapeData, 'shape'>
+type FunctionData = CanvasData & { functionId: string; code?: string }
+type FunctionNode = Node<FunctionData, 'function'>
 type SavedBoard = { id: string; name: string; nodes: Node[]; edges: Edge[]; functions?: OsaFunction[]; updatedAt: string }
 
 const SAVE_KEY = 'osa-react-flow-saves-v1'
@@ -155,6 +157,7 @@ function SocketHandles({ sockets }: { sockets: Socket[] }) {
           type="target"
           id={socket.id}
           className="osa-handle nodrag nopan"
+          data-label={`${socket.name} · receives ${socket.payload}`}
           position={Position.Left}
           style={{ top: `${((index + 1) / (slots.length + 1)) * 100}%`, background: socket.drivenBy ? connectorColor(socket.drivenType ?? socket.payload) : undefined, borderColor: socket.drivenBy ? '#fff7fb' : undefined, boxShadow: socket.drivenBy ? `0 0 18px ${connectorColor(socket.drivenType ?? socket.payload)}` : undefined }}
           title={`${socket.name} · receives ${socket.payload}`}
@@ -166,6 +169,7 @@ function SocketHandles({ sockets }: { sockets: Socket[] }) {
           type="source"
           id={socket.id}
           className="osa-handle nodrag nopan"
+          data-label={`${socket.name} · sends ${socket.payload}`}
           position={Position.Right}
           style={{ top: `${((index + 1) / (signals.length + 1)) * 100}%`, background: connectorColor(socket.payload), boxShadow: `0 0 14px ${connectorColor(socket.payload)}` }}
           title={`${socket.name} · sends ${socket.payload}`}
@@ -179,6 +183,7 @@ function OsaObjectNode({ id, data }: NodeProps<OsaNode>) {
   return (
     <div className="osa-object">
       <SocketHandles sockets={data.sockets} />
+      {data.isSeed && <Handle type="target" id="function-attachment" className="function-attachment-handle nodrag nopan" position={Position.Top} data-label="Attach a function" title="Attach a function" />}
       {data.removeMode && <button className="node-remove" style={removeButtonStyle(id)} type="button" aria-label={`Remove ${data.label}`} onClick={(event) => { event.stopPropagation(); data.onRemove?.() }}><span className="node-remove-mark">×</span></button>}
       <strong>{data.label}</strong>
     </div>
@@ -189,13 +194,28 @@ function CanvasShapeNode({ id, data }: NodeProps<ShapeNode>) {
   return (
     <div className={`canvas-shape ${data.shape}`}>
       <SocketHandles sockets={data.sockets} />
+      {data.isSeed && <Handle type="target" id="function-attachment" className="function-attachment-handle nodrag nopan" position={Position.Top} data-label="Attach a function" title="Attach a function" />}
       {data.removeMode && <button className="node-remove" style={removeButtonStyle(id, data.shape === 'diamond' ? '-45deg' : '0deg')} type="button" aria-label={`Remove ${data.label}`} onClick={(event) => { event.stopPropagation(); data.onRemove?.() }}><span className="node-remove-mark">×</span></button>}
       <span>{data.label}</span>
     </div>
   )
 }
 
-const nodeTypes = { drawing: FreehandNode, osa: OsaObjectNode, shape: CanvasShapeNode }
+function FunctionObjectNode({ id, data }: NodeProps<FunctionNode>) {
+  const slots = data.sockets.filter((socket) => socket.direction === 'slot')
+  const signals = data.sockets.filter((socket) => socket.direction === 'signal')
+  return (
+    <div className="function-object">
+      {data.removeMode && <button className="node-remove" style={removeButtonStyle(id)} type="button" aria-label={`Remove ${data.label}`} onClick={(event) => { event.stopPropagation(); data.onRemove?.() }}><span className="node-remove-mark">×</span></button>}
+      <strong>{data.label}</strong>
+      <p>{slots.length} arg{slots.length === 1 ? '' : 's'} · {signals.length} return{signals.length === 1 ? '' : 's'}</p>
+      <div className="function-ports" aria-hidden="true"><span>{slots.map((socket) => socket.name).join(' · ') || 'no args'}</span><span>{signals.map((socket) => socket.name).join(' · ') || 'no returns'}</span></div>
+      <Handle type="source" id="function-attach" className="function-output-handle nodrag nopan" position={Position.Bottom} data-label="Drag to a seed" title="Drag to a seed" />
+    </div>
+  )
+}
+
+const nodeTypes = { drawing: FreehandNode, osa: OsaObjectNode, shape: CanvasShapeNode, function: FunctionObjectNode }
 
 function Playground() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
@@ -343,6 +363,16 @@ function Playground() {
     (connection: Connection) => {
       const sourceNode = nodes.find((node) => node.id === connection.source)
       const targetNode = nodes.find((node) => node.id === connection.target)
+      const functionAttachment = sourceNode?.type === 'function'
+        && connection.sourceHandle === 'function-attach'
+        && Boolean((targetNode?.data as CanvasData | undefined)?.isSeed)
+        && connection.targetHandle === 'function-attachment'
+      if (functionAttachment) {
+        const functionId = (sourceNode.data as FunctionData).functionId
+        const fn = functions.find((item) => item.id === functionId)
+        setEdges((currentEdges) => addEdge({ ...connection, id: `function-edge-${crypto.randomUUID()}`, label: fn?.name ?? 'Function', animated: true, markerEnd: { type: MarkerType.ArrowClosed } }, currentEdges))
+        return
+      }
       const sourceSocket = socketsFor(sourceNode).find((socket) => socket.id === connection.sourceHandle)
       const targetSocket = socketsFor(targetNode).find((socket) => socket.id === connection.targetHandle)
       const source = sourceSocket ? detailsFor(sourceNode, sourceSocket) : undefined
@@ -382,7 +412,7 @@ function Playground() {
         }))
       }
     },
-    [nodes, setEdges, setNodes],
+    [nodes, functions, setEdges, setNodes],
   )
 
   const openPositionNearViewportCenter = () => {
@@ -545,6 +575,28 @@ function Playground() {
     if (selectedNodeId) requestAnimationFrame(() => updateNodeInternals(selectedNodeId))
   }
 
+  const turnSeedIntoFunction = () => {
+    if (!selectedNode || !selectedData?.isSeed) return
+    const functionId = `function-${crypto.randomUUID()}`
+    const argument: Socket = { id: `argument-${crypto.randomUUID()}`, name: 'value', direction: 'slot', payload: 'Any' }
+    const result: Socket = { id: `return-${crypto.randomUUID()}`, name: 'result', direction: 'signal', payload: 'Any' }
+    const fn: OsaFunction = { id: functionId, name: `${String(selectedNode.data.label)} function`, input: 'Any', output: 'Any', operation: 'identity' }
+    setFunctions((currentFunctions) => [...currentFunctions, fn])
+    setNodes((currentNodes) => currentNodes.map((node) => node.id !== selectedNode.id ? node : {
+      ...node,
+      type: 'function',
+      data: { label: fn.name, functionId, sockets: [argument, result], attributes: [], code: '// Write what this function does here.' },
+    } as FunctionNode))
+  }
+
+  const addFunctionPort = (direction: SocketDirection) => {
+    if (!selectedNode || selectedNode.type !== 'function') return
+    const data = selectedNode.data as FunctionData
+    const count = data.sockets.filter((socket) => socket.direction === direction).length + 1
+    const socket: Socket = { id: `${direction}-${crypto.randomUUID()}`, name: direction === 'slot' ? `arg ${count}` : `return ${count}`, direction, payload: 'Any' }
+    updateSelectedNode({ sockets: [...data.sockets, socket] })
+  }
+
   const addSelfAttribute = () => {
     if (!selectedData || !selectedNodeId || selectedData.attributes.some((attribute) => attribute.key === 'Self' && attribute.type === 'Object')) return
     const attribute: Attribute = { id: `attribute-${crypto.randomUUID()}`, key: String(selectedNode?.data.label ?? 'Untitled object'), value: '', type: 'Object', mode: 'driving', isSelf: true }
@@ -643,6 +695,24 @@ function Playground() {
 
   const updateFunction = (functionId: string, changes: Partial<OsaFunction>) => {
     setFunctions((currentFunctions) => currentFunctions.map((fn) => fn.id === functionId ? { ...fn, ...changes } : fn))
+  }
+
+  const attachedFunctionsFor = (nodeId: string) => {
+    const ids = edges
+      .filter((edge) => edge.target === nodeId && edge.targetHandle === 'function-attachment')
+      .map((edge) => (nodes.find((node) => node.id === edge.source)?.data as FunctionData | undefined)?.functionId)
+      .filter((id): id is string => Boolean(id))
+    return functions.filter((fn) => ids.includes(fn.id))
+  }
+
+  const updateFunctionPort = (socketId: string, changes: Partial<Socket>) => {
+    if (!selectedData || selectedNode?.type !== 'function') return
+    const sockets = selectedData.sockets.map((socket) => socket.id === socketId ? { ...socket, ...changes } : socket)
+    updateSelectedNode({ sockets })
+    const data = selectedNode.data as FunctionData
+    const input = sockets.find((socket) => socket.direction === 'slot')?.payload ?? 'Any'
+    const output = sockets.find((socket) => socket.direction === 'signal')?.payload ?? 'Any'
+    updateFunction(data.functionId, { input, output })
   }
 
   const addFunction = () => {
@@ -818,6 +888,9 @@ function Playground() {
     const targetNode = nodes.find((node) => node.id === connection.target)
     const sourceSocket = socketsFor(sourceNode).find((socket) => socket.id === connection.sourceHandle)
     const targetSocket = socketsFor(targetNode).find((socket) => socket.id === connection.targetHandle)
+    if (sourceNode?.type === 'function' && connection.sourceHandle === 'function-attach') {
+      return Boolean((targetNode?.data as CanvasData | undefined)?.isSeed && connection.targetHandle === 'function-attachment')
+    }
     const source = sourceSocket ? detailsFor(sourceNode, sourceSocket) : undefined
     const target = targetSocket ? detailsFor(targetNode, targetSocket) : undefined
     return sourceSocket?.direction === 'signal'
@@ -911,7 +984,7 @@ function Playground() {
             <div className="inspector-heading">
               <div>
                 <p>OBJECT EDITOR</p>
-                <h2>{selectedNode.type === 'shape' ? 'Shape' : selectedNode.type === 'drawing' ? 'Sketch' : 'Object'}</h2>
+                <h2>{selectedNode.type === 'shape' ? 'Shape' : selectedNode.type === 'drawing' ? 'Sketch' : selectedNode.type === 'function' ? 'Function' : 'Object'}</h2>
               </div>
               <div className="inspector-actions">
                 <button type="button" onClick={() => setSelectedNodeId(null)} aria-label="Close editor">×</button>
@@ -940,6 +1013,35 @@ function Playground() {
               </section>
             ) : selectedNode.type === 'drawing' ? (
               <p className="inspector-note">This is a freehand sketch. You can move it or select it and press Delete.</p>
+            ) : selectedNode.type === 'function' ? (
+              <>
+                <label>
+                  Function name
+                  <input value={String(selectedNode.data.label ?? '')} onChange={(event) => {
+                    updateSelectedNode({ label: event.target.value })
+                    updateFunction((selectedNode.data as FunctionData).functionId, { name: event.target.value })
+                  }} />
+                </label>
+                <label>
+                  Function code / notes
+                  <textarea rows={6} value={(selectedNode.data as FunctionData).code ?? ''} placeholder="Describe or write this function here." onChange={(event) => updateSelectedNode({ code: event.target.value })} />
+                </label>
+                <section className="editor-section">
+                  <div className="editor-section-heading"><span>Arguments · slots</span><button type="button" onClick={() => addFunctionPort('slot')}>+ Arg</button></div>
+                  {(selectedNode.data as FunctionData).sockets.filter((socket) => socket.direction === 'slot').map((socket) => <div className="function-port" key={socket.id}>
+                    <input value={socket.name} aria-label="Argument name" onChange={(event) => updateFunctionPort(socket.id, { name: event.target.value })} />
+                    <select value={socket.payload} aria-label="Argument type" onChange={(event) => updateFunctionPort(socket.id, { payload: event.target.value as DataType })}>{dataTypes.map((type) => <option key={type}>{type}</option>)}</select>
+                  </div>)}
+                </section>
+                <section className="editor-section">
+                  <div className="editor-section-heading"><span>Returns · signals</span><button type="button" onClick={() => addFunctionPort('signal')}>+ Return</button></div>
+                  {(selectedNode.data as FunctionData).sockets.filter((socket) => socket.direction === 'signal').map((socket) => <div className="function-port" key={socket.id}>
+                    <input value={socket.name} aria-label="Return name" onChange={(event) => updateFunctionPort(socket.id, { name: event.target.value })} />
+                    <select value={socket.payload} aria-label="Return type" onChange={(event) => updateFunctionPort(socket.id, { payload: event.target.value as DataType })}>{dataTypes.map((type) => <option key={type}>{type}</option>)}</select>
+                  </div>)}
+                </section>
+                <p className="inspector-note">Drag this function’s bottom connector to the top of a seed to attach it.</p>
+              </>
             ) : (
               <>
                 <label>
@@ -966,6 +1068,7 @@ function Playground() {
                       <button type="button" onClick={addAttribute}>+ Add</button>
                       <button type="button" onClick={addSelfAttribute} disabled={selfIsShared}>{selfIsShared ? 'Self ready' : '+ Me'}</button>
                       {selectedData?.isSeed && <button type="button" onClick={addSeedSlot}>+ Slot</button>}
+                      {selectedData?.isSeed && <button type="button" onClick={turnSeedIntoFunction}>Become function</button>}
                     </div>
                   </div>
                   {selectedData?.attributes.filter((attribute) => !attribute.passFrom).map((attribute) => {
@@ -992,7 +1095,7 @@ function Playground() {
                             <span>Pass</span>
                             <select value={onward.passFunctionId ?? ''} aria-label={`Onward transformation for ${onward.key}`} onChange={(event) => updateAttribute(onward.id, { passFunctionId: event.target.value || undefined })}>
                               <option value="">Send unchanged</option>
-                              {functions.filter((fn) => fn.input === 'Any' || fn.input === attribute.type).map((fn) => <option key={fn.id} value={fn.id}>{fn.name} → {fn.output}</option>)}
+                              {attachedFunctionsFor(selectedNode.id).filter((fn) => fn.input === 'Any' || fn.input === attribute.type).map((fn) => <option key={fn.id} value={fn.id}>{fn.name} → {fn.output}</option>)}
                             </select>
                             <input aria-label={`Result sent onward for ${onward.key}`} readOnly value={`${onward.type}: ${onward.value || '—'}`} />
                             {editorRemovalMode && <button className="attribute-remove" type="button" onClick={() => removeAttribute(onward.id)} aria-label={`Remove ${onward.key}`}>×</button>}
@@ -1004,6 +1107,13 @@ function Playground() {
                   })}
                   {!selectedData?.attributes.length && <p className="empty-state">No attributes yet.</p>}
                 </section>
+                {selectedData?.isSeed && attachedFunctionsFor(selectedNode.id).length > 0 && <section className="editor-section">
+                  <div className="editor-section-heading"><span>Functions</span><span className="auto-note">Attached to this seed</span></div>
+                  {attachedFunctionsFor(selectedNode.id).map((fn) => {
+                    const ports = socketsFor(nodes.find((node) => node.type === 'function' && (node.data as FunctionData).functionId === fn.id))
+                    return <div className="attached-function" key={fn.id}><strong>{fn.name}</strong><span>{fn.input} → {fn.output}</span><small>{ports.filter((socket) => socket.direction === 'slot').length} slots · {ports.filter((socket) => socket.direction === 'signal').length} signals</small></div>
+                  })}
+                </section>}
                 <section className="editor-section">
                   <div className="editor-section-heading">
                     <span>Connectors</span>
