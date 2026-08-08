@@ -48,9 +48,9 @@
 .save-tools .tool-button { padding: 8px 9px; font-size: 11px; }
 .mood-control { display: flex; align-items: center; gap: 7px; color: #eac9b5; font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
 .mood-control input { width: 78px; accent-color: #f08f79; cursor: ew-resize; }
-.shape-tools { display: flex; gap: 5px; }
-.toolbar .shape-tools button { width: 34px; padding: 7px 0; border-color: #73584b; color: #ffd39e; background: #473129; font-size: 19px; line-height: 1; }
-.toolbar .shape-tools button:hover { border-color: #ffc487; background: #754337; }
+.seed-tools { display: flex; gap: 5px; }
+.seed-tools select { border: 1px solid #73584b; border-radius: 8px; padding: 8px; color: #fff1df; background: #473129; font: 12px inherit; }
+.seed-tools button { white-space: nowrap; }
 .hint { margin: 0 0 0 auto; color: #d0aca1; font-size: 12px; text-align: right; }
 
 .flow-area { position: relative; min-height: 0; flex: 1; }
@@ -157,17 +157,21 @@
 .editor-section-heading > div { display: flex; gap: 4px; }
 .editor-section button { border: 1px solid #5d536b; border-radius: 6px; padding: 4px 6px; color: #d8c7ef; background: #302a39; font: 11px inherit; cursor: pointer; }
 .editor-section button:hover { border-color: #b995ef; background: #453653; }
-.attribute-row { display: grid; grid-template-columns: minmax(0, 1fr) 86px minmax(0, 1fr) 58px auto; gap: 5px; margin-top: 6px; }
-.attribute-row.removable { grid-template-columns: minmax(0, 1fr) 86px minmax(0, 1fr) 58px auto 24px; }
-.attribute-row.received-attribute { padding: 4px; border-left: 2px solid #7fdfe8; border-radius: 6px; background: rgba(70, 158, 166, .12); }
-.attribute-row input, .connector-card input, .connector-card select { min-width: 0; padding: 7px; font-size: 13px; }
-.attribute-row input:disabled { color: #9e93a8; background: #292431; }
+.attribute-card { display: grid; gap: 7px; margin-top: 8px; padding: 9px; border: 1px solid #765d67; border-radius: 9px; background: rgba(43, 28, 26, .58); }
+.attribute-card.received-attribute { border-color: #63bfc8; background: rgba(51, 121, 126, .16); box-shadow: inset 3px 0 #75dae2; }
+.attribute-topline { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
+.attribute-controls { display: grid; grid-template-columns: 92px minmax(0, 1fr) 74px; gap: 6px; align-items: center; }
+.attribute-card input, .connector-card input, .connector-card select { min-width: 0; padding: 7px; font-size: 13px; }
+.attribute-card select { min-width: 0; border: 1px solid #86685d; border-radius: 7px; padding: 7px; color: #fff8ef; background: #30221f; font: 13px inherit; }
+.attribute-card input:disabled { color: #9e93a8; background: #292431; }
 .attribute-drive { display: flex !important; align-items: center; gap: 3px; margin: 0 !important; color: #86d5df !important; font-size: 8px !important; letter-spacing: 0 !important; text-transform: uppercase; }
 .attribute-drive input { width: 13px; height: 13px; margin: 0; accent-color: #4c9aa5; }
 .attribute-drive:has(input:checked) { color: #ef9ec1 !important; }
-.attribute-row button, .connector-topline button { padding: 0; font-size: 16px; line-height: 1; }
-.attribute-row .attribute-pass { padding: 0 6px; border-color: #d5879b; color: #ffe4ed; background: #7d3d58; font-size: 9px; font-weight: 800; letter-spacing: .02em; white-space: nowrap; }
-.attribute-row .attribute-pass:hover { border-color: #ffc0d3; background: #a44c70; }
+.attribute-card .attribute-remove { width: 28px; border: 1px solid #d8798e; border-radius: 6px; color: #fff3f5; background: #872f50; font-size: 18px; line-height: 1; }
+.attribute-card .attribute-pass { justify-self: start; padding: 6px 9px; border: 1px solid #d5879b; border-radius: 6px; color: #ffe4ed; background: #7d3d58; font: 800 10px inherit; cursor: pointer; }
+.attribute-card .attribute-pass:hover:not(:disabled) { border-color: #ffc0d3; background: #a44c70; }
+.attribute-card .attribute-pass:disabled { border-color: #73666b; color: #c6b1b7; background: #4b3b40; cursor: default; }
+.attribute-source { margin: 0; color: #e9b4c7; font-size: 11px; line-height: 1.35; }
 .empty-state { margin: 0; color: #938b9e; font-size: 12px; }
 .connector-card { display: grid; gap: 6px; margin-top: 8px; padding: 8px; border: 1px solid #51485e; border-radius: 8px; background: rgba(20, 18, 27, .45); }
 .connector-topline { display: grid; grid-template-columns: 1fr auto; gap: 6px; }
@@ -177,6 +181,8 @@
 .connector-mode:has(input:checked) input { accent-color: #a43268; }
 .connector-attribute { margin: 0; padding: 7px 9px; border-radius: 6px; color: #f0d1c7; background: rgba(40, 24, 22, .55); font-size: 13px; font-weight: 700; }
 .connector-card select { width: 100%; border: 1px solid #765d67; border-radius: 6px; padding: 7px; color: #fff4ee; background: #382725; font: 13px inherit; }
+.child-node-toggle { display: flex !important; align-items: center; gap: 6px; margin: 0 !important; color: #f0c4d2 !important; font-size: 11px !important; font-weight: 700 !important; letter-spacing: .02em !important; text-transform: none !important; }
+.child-node-toggle input { width: 14px; height: 14px; margin: 0; accent-color: #d35a8b; }
 .function-card { display: grid; gap: 6px; margin-top: 8px; padding: 8px; border: 1px solid #51485e; border-radius: 8px; background: rgba(34, 27, 47, .55); }
 .function-card select, .function-types select { min-width: 0; border: 1px solid #5d536b; border-radius: 6px; padding: 6px; color: #fbf9ff; background: #201d28; font: 12px inherit; }
 .function-types { display: grid; grid-template-columns: 1fr 18px 1fr; align-items: center; gap: 5px; color: #c6a9ee; text-align: center; }
