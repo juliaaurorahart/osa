@@ -44,6 +44,7 @@ const SAVE_KEY = 'osa-react-flow-saves-v1'
 const LEGACY_SAVE_KEY = 'oso-react-flow-saves-v1'
 const MOOD_KEY = 'osa-visual-mood-v1'
 const LEGACY_MOOD_KEY = 'oso-visual-mood-v1'
+const SPARKLE_KEY = 'osa-sparkles-v1'
 const dataTypes: DataType[] = ['Relationship', 'Text', 'Number', 'Boolean', 'File', 'Any']
 
 function relationshipSockets(): Socket[] {
@@ -251,6 +252,7 @@ function Playground() {
   const [functions, setFunctions] = useState<OsaFunction[]>(defaultFunctions)
   const [functionLibraryOpen, setFunctionLibraryOpen] = useState(false)
   const [visualMood, setVisualMood] = useState(() => Number(localStorage.getItem(MOOD_KEY) ?? localStorage.getItem(LEGACY_MOOD_KEY) ?? .42))
+  const [sparkles, setSparkles] = useState(() => localStorage.getItem(SPARKLE_KEY) === 'true')
   const [drawingMode, setDrawingMode] = useState(false)
   const [activeStroke, setActiveStroke] = useState<Point[] | null>(null)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
@@ -752,6 +754,10 @@ function Playground() {
     localStorage.setItem(MOOD_KEY, String(visualMood))
   }, [visualMood])
 
+  useEffect(() => {
+    localStorage.setItem(SPARKLE_KEY, String(sparkles))
+  }, [sparkles])
+
   const startDrawing = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!drawingMode || event.button !== 0) return
 
@@ -778,11 +784,11 @@ function Playground() {
   }
 
   return (
-    <main className="app-shell" style={{ '--mood': Math.min(1, Math.max(0, visualMood)), '--bright': `${Math.min(1, Math.max(0, visualMood)) * 100}%`, '--canvas-brightness': `${.72 + Math.min(1, Math.max(0, visualMood)) * 1.15}`, '--canvas-saturation': `${.65 + Math.min(1, Math.max(0, visualMood)) * 1.75}`, '--toolbar-radius': `${Math.min(1, Math.max(0, visualMood)) * 18}px`, '--node-radius': `${13 + Math.min(1, Math.max(0, visualMood)) * 16}px`, '--node-lift': `${Math.min(1, Math.max(0, visualMood)) * -8}px`, '--node-glow': `${12 + Math.min(1, Math.max(0, visualMood)) * 72}px`, '--node-glow-alpha': `${.08 + Math.min(1, Math.max(0, visualMood)) * .72}`, '--node-outline-alpha': `${.06 + Math.min(1, Math.max(0, visualMood)) * .42}`, '--shape-radius': `${6 + Math.min(1, Math.max(0, visualMood)) * 26}px`, '--stroke-width': `${2 + Math.min(1, Math.max(0, visualMood)) * 7}px` } as CSSProperties}>
+    <main className={`app-shell${sparkles ? ' sparkles' : ''}`} style={{ '--mood': Math.min(1, Math.max(0, visualMood)), '--bright': `${Math.min(1, Math.max(0, visualMood)) * 100}%`, '--canvas-brightness': `${.72 + Math.min(1, Math.max(0, visualMood)) * 1.15}`, '--canvas-saturation': `${.65 + Math.min(1, Math.max(0, visualMood)) * 1.75}`, '--toolbar-radius': `${Math.min(1, Math.max(0, visualMood)) * 18}px`, '--node-radius': `${13 + Math.min(1, Math.max(0, visualMood)) * 16}px`, '--node-lift': `${Math.min(1, Math.max(0, visualMood)) * -8}px`, '--node-glow': `${12 + Math.min(1, Math.max(0, visualMood)) * 72}px`, '--node-glow-alpha': `${.08 + Math.min(1, Math.max(0, visualMood)) * .72}`, '--node-outline-alpha': `${.06 + Math.min(1, Math.max(0, visualMood)) * .42}`, '--shape-radius': `${6 + Math.min(1, Math.max(0, visualMood)) * 26}px`, '--stroke-width': `${2 + Math.min(1, Math.max(0, visualMood)) * 7}px` } as CSSProperties}>
       <header className="toolbar">
         <div>
           <p className="eyebrow">OSA LAB 001</p>
-          <h1>React Flow Playground</h1>
+          <h1>OSA Playground</h1>
         </div>
         <div className="save-tools" aria-label="Saved boards">
           <select value={activeSaveId ?? ''} aria-label="Choose a saved board" onChange={(event) => event.target.value && loadBoard(event.target.value)}>
@@ -798,6 +804,9 @@ function Playground() {
           <input type="range" min="0" max="1" step="0.01" value={visualMood} onChange={(event) => setVisualMood(Number(event.target.value))} aria-label="Visual mood, drab to brighter" />
           <span>Brighter</span>
         </label>
+        <button type="button" className={sparkles ? 'tool-button sparkle-toggle active' : 'tool-button sparkle-toggle'} onClick={() => setSparkles((active) => !active)}>
+          ✦ {sparkles ? 'Sparkles on' : 'Sparkles'}
+        </button>
         <button type="button" className="tool-button" onClick={() => setFunctionLibraryOpen(true)}>ƒ Functions</button>
         <button type="button" onClick={addNode}>+ Add seed node</button>
         <div className="shape-tools" aria-label="Add a shape">

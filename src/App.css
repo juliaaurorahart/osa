@@ -54,6 +54,11 @@
 .hint { margin: 0 0 0 auto; color: #d0aca1; font-size: 12px; text-align: right; }
 
 .flow-area { position: relative; min-height: 0; flex: 1; }
+.sparkles .flow-area::before { content: '✦  ·  ✧  ·  ✦  ·  ✧  ·  ✦  ·  ✧'; position: absolute; z-index: 4; inset: 28px 6% auto; overflow: hidden; color: rgba(255, 163, 207, .8); font-size: clamp(12px, 1.9vw, 24px); letter-spacing: 5.5vw; text-shadow: 0 0 12px #ff6fab, 0 0 28px #ffa358; white-space: nowrap; pointer-events: none; animation: sparkle-drift 8s ease-in-out infinite alternate; }
+.sparkles .react-flow__node.osa-node { box-shadow: 0 0 0 2px rgba(255, 184, 213, .4), 0 0 calc(var(--node-glow) * 1.3) rgba(255, 83, 159, .55), 0 9px 24px rgba(0, 0, 0, .3); }
+.sparkles .react-flow__edge-path { stroke: #ff8dba; filter: drop-shadow(0 0 5px rgba(255, 108, 178, .8)); }
+.sparkle-toggle.active { border-color: #ffb3d3 !important; color: #fff7f2 !important; background: linear-gradient(135deg, #d64d87, #f18a54) !important; box-shadow: 0 0 17px rgba(255, 101, 173, .45); }
+@keyframes sparkle-drift { from { transform: translateX(-1%) rotate(-1deg); opacity: .58; } to { transform: translateX(3%) rotate(1deg); opacity: 1; } }
 
 .react-flow__node.osa-node {
   min-width: 150px;
@@ -112,8 +117,8 @@
 .draw-surface { position: absolute; z-index: 5; inset: 0; cursor: crosshair; }
 .active-stroke { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
 
-.inspector { position: absolute; z-index: 10; top: 18px; right: 18px; width: 290px; max-height: calc(100% - 36px); overflow-y: auto; padding: 15px; border: 1px solid #655b72; border-radius: 13px; color: #f6f2fb; background: rgba(35, 31, 44, .96); box-shadow: 0 14px 40px rgba(0, 0, 0, .42), 0 0 22px rgba(174, 113, 255, .15); backdrop-filter: blur(12px); }
-.function-library { position: absolute; z-index: 10; top: 18px; left: 18px; width: 310px; max-height: calc(100% - 36px); overflow-y: auto; padding: 15px; border: 1px solid #655b72; border-radius: 13px; color: #f6f2fb; background: rgba(35, 31, 44, .96); box-shadow: 0 14px 40px rgba(0, 0, 0, .42), 0 0 22px rgba(174, 113, 255, .15); backdrop-filter: blur(12px); }
+.inspector { position: absolute; z-index: 10; top: 18px; right: 18px; width: 290px; max-height: calc(100% - 36px); overflow-y: auto; padding: 15px; border: 1px solid #a76a61; border-radius: 13px; color: #fff4e9; background: rgba(62, 36, 34, .96); box-shadow: 0 14px 40px rgba(0, 0, 0, .42), 0 0 22px rgba(255, 109, 151, .2); backdrop-filter: blur(12px); }
+.function-library { position: absolute; z-index: 10; top: 18px; left: 18px; width: 310px; max-height: calc(100% - 36px); overflow-y: auto; padding: 15px; border: 1px solid #a76a61; border-radius: 13px; color: #fff4e9; background: rgba(62, 36, 34, .96); box-shadow: 0 14px 40px rgba(0, 0, 0, .42), 0 0 22px rgba(255, 109, 151, .2); backdrop-filter: blur(12px); }
 .function-library > .inspector-heading button { border: 0; color: #cbbbdc; background: transparent; font-size: 22px; line-height: 1; cursor: pointer; }
 .inspector-heading { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 14px; }
 .inspector-heading p { margin: 0 0 2px; color: #b89de7; font-size: 10px; font-weight: 800; letter-spacing: .12em; }
