@@ -26,11 +26,12 @@ type Point = { x: number; y: number }
 type SocketDirection = 'signal' | 'slot'
 type DataType = 'Relationship' | 'Object' | 'Text' | 'Number' | 'Boolean' | 'File' | 'Any'
 type AttributeMode = 'driving' | 'driven'
+type ThoughtKind = 'Idea' | 'Question' | 'Feeling' | 'Decision' | 'Reference' | 'Experiment' | 'Task'
 type Socket = { id: string; name: string; direction: SocketDirection; payload: DataType; attributeId?: string; value?: string; functionId?: string; drivenBy?: string; drivenValue?: string; drivenType?: DataType }
 type Attribute = { id: string; key: string; value: string; type: DataType; mode?: AttributeMode; passFrom?: string; passFunctionId?: string; createdChildId?: string; isSelf?: boolean }
 type FunctionOperation = 'identity' | 'uppercase' | 'increment' | 'double' | 'halve' | 'round' | 'append-note'
 type OsaFunction = { id: string; name: string; input: DataType; output: DataType; operation: FunctionOperation }
-type CanvasData = { label: string; note?: string; isSeed?: boolean; sockets: Socket[]; attributes: Attribute[]; removeMode?: boolean; onRemove?: () => void }
+type CanvasData = { label: string; note?: string; privateNote?: string; provenance?: string; kind?: ThoughtKind; isSeed?: boolean; sockets: Socket[]; attributes: Attribute[]; removeMode?: boolean; onRemove?: () => void }
 type OsaData = CanvasData
 type OsaNode = Node<OsaData, 'osa'>
 type DrawingData = { points: Point[]; width: number; height: number; removeMode?: boolean; onRemove?: () => void }
@@ -40,6 +41,8 @@ type ShapeData = CanvasData & { shape: ShapeKind }
 type ShapeNode = Node<ShapeData, 'shape'>
 type FunctionData = CanvasData & { functionId: string; code?: string }
 type FunctionNode = Node<FunctionData, 'function'>
+type TextData = CanvasData & { content: string }
+type TextNode = Node<TextData, 'text'>
 type ProjectFrame = { intention: string; feeling: string; question: string }
 type SavedBoard = { id: string; name: string; nodes: Node[]; edges: Edge[]; functions?: OsaFunction[]; project?: ProjectFrame; updatedAt: string }
 
@@ -47,6 +50,7 @@ const SAVE_KEY = 'osa-react-flow-saves-v1'
 const MOOD_KEY = 'osa-visual-mood-v1'
 const SPARKLE_KEY = 'osa-sparkles-v1'
 const dataTypes: DataType[] = ['Relationship', 'Object', 'Text', 'Number', 'Boolean', 'File', 'Any']
+const thoughtKinds: ThoughtKind[] = ['Idea', 'Question', 'Feeling', 'Decision', 'Reference', 'Experiment', 'Task']
 
 function defaultFunctions(): OsaFunction[] {
   return [
@@ -216,7 +220,11 @@ function FunctionObjectNode({ id, data }: NodeProps<FunctionNode>) {
   )
 }
 
-const nodeTypes = { drawing: FreehandNode, osa: OsaObjectNode, shape: CanvasShapeNode, function: FunctionObjectNode }
+function TextFragmentNode({ id, data }: NodeProps<TextNode>) {
+  return <div className="text-fragment"><span className="fragment-kind">{data.kind ?? 'Fragment'}</span>{data.removeMode && <button className="node-remove" style={removeButtonStyle(id)} type="button" aria-label="Remove text fragment" onClick={(event) => { event.stopPropagation(); data.onRemove?.() }}><span className="node-remove-mark">×</span></button>}<strong>{data.label}</strong><p>{data.content || 'A text fragment…'}</p></div>
+}
+
+const nodeTypes = { drawing: FreehandNode, osa: OsaObjectNode, shape: CanvasShapeNode, function: FunctionObjectNode, text: TextFragmentNode }
 
 function Playground() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
@@ -249,6 +257,7 @@ function Playground() {
   const automaticEdgeIds = useRef(new Set<string>())
   const nextNodeNumber = useRef(2)
   const nextDrawingNumber = useRef(1)
+  const nextTextNumber = useRef(1)
   const strokePoints = useRef<Point[]>([])
   const drawSurfaceBounds = useRef<DOMRect | null>(null)
   const isDrawing = useRef(false)
@@ -484,6 +493,11 @@ function Playground() {
         ? { id: `seed-${number}`, type: 'osa', position, data: { label: `Seed ${number}`, isSeed: true, sockets: [], attributes: [] }, className: 'osa-node idea-node' } as OsaNode
         : { id: `${shape}-seed-${number}`, type: 'shape', position, data: { label: labels[shape], shape, isSeed: true, sockets: [], attributes: [] } } as ShapeNode,
     ])
+  }
+
+  const addTextFragment = () => {
+    const number = nextTextNumber.current++
+    setNodes((currentNodes) => [...currentNodes, { id: `fragment-${number}`, type: 'text', position: openPositionNearViewportCenter(), data: { label: `Fragment ${number}`, content: '', kind: 'Idea', sockets: [], attributes: [] } } as TextNode])
   }
 
   const updateSelectedNode = (changes: Record<string, unknown>) => {
@@ -941,6 +955,7 @@ function Playground() {
             <button type="button" className="seed-shape diamond" onClick={() => addNode('diamond')} aria-label="Plant a diamond seed" title="Diamond seed" />
           </div>
         </div>
+        <button type="button" className="tool-button" onClick={addTextFragment}>+ Text</button>
         <button type="button" className={drawingMode ? 'tool-button active' : 'tool-button'} onClick={() => setDrawingMode((active) => !active)}>
           ✎ {drawingMode ? 'Drawing on' : 'Draw'}
         </button>
@@ -1022,6 +1037,12 @@ function Playground() {
               </section>
             ) : selectedNode.type === 'drawing' ? (
               <p className="inspector-note">This is a freehand sketch. You can move it or select it and press Delete.</p>
+            ) : selectedNode.type === 'text' ? (
+              <>
+                <label>Fragment title<input value={String(selectedNode.data.label ?? '')} onChange={(event) => updateSelectedNode({ label: event.target.value })} /></label>
+                <label>Text fragment<textarea rows={7} value={(selectedNode.data as TextData).content ?? ''} placeholder="A sentence, fragment, quote, or thought…" onChange={(event) => updateSelectedNode({ content: event.target.value })} /></label>
+                <label>What is this?<select value={(selectedNode.data as TextData).kind ?? 'Idea'} onChange={(event) => updateSelectedNode({ kind: event.target.value as ThoughtKind })}>{thoughtKinds.map((kind) => <option key={kind}>{kind}</option>)}</select></label>
+              </>
             ) : selectedNode.type === 'function' ? (
               <>
                 <label>
@@ -1069,6 +1090,18 @@ function Playground() {
                     placeholder="What does this object mean?"
                     onChange={(event) => updateSelectedNode({ note: event.target.value })}
                   />
+                </label>
+                <label>
+                  What is this?
+                  <select value={selectedData?.kind ?? 'Idea'} onChange={(event) => updateSelectedNode({ kind: event.target.value as ThoughtKind })}>{thoughtKinds.map((kind) => <option key={kind}>{kind}</option>)}</select>
+                </label>
+                <label>
+                  Private reflection
+                  <textarea rows={3} value={selectedData?.privateNote ?? ''} placeholder="Only held here, for you." onChange={(event) => updateSelectedNode({ privateNote: event.target.value })} />
+                </label>
+                <label>
+                  Came from
+                  <input value={selectedData?.provenance ?? ''} placeholder="A conversation, a sketch, a source…" onChange={(event) => updateSelectedNode({ provenance: event.target.value })} />
                 </label>
                 <section className="editor-section">
                   <div className="editor-section-heading">
