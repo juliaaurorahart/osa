@@ -283,6 +283,8 @@
 .field-zoom { display: flex; align-items: center; gap: 6px; justify-self: start; padding: 4px; border: 1px solid rgba(255,203,229,.38); border-radius: 999px; background: rgba(70,34,60,.6); }.field-tools .field-zoom button { min-width: 32px; padding: 4px 9px; border: 0; background: transparent; font-size: 17px; line-height: 1; }.field-tools .field-zoom button:hover { background: rgba(255,155,207,.24); }.field-zoom span { min-width: 43px; color: #ffd9ed; font-size: 11px; font-weight: 800; text-align: center; }
 .field-ink-controls { display: grid; grid-template-columns: auto minmax(110px, 1fr); gap: 8px; width: 100%; padding: 10px; border: 1px solid rgba(255,192,227,.38); border-radius: 12px; background: rgba(56,29,51,.58); }.field-ink-controls label { display: flex; align-items: center; gap: 7px; color: #ffd4e8; font-size: 12px; font-weight: 800; }.field-ink-controls label:nth-child(2) { min-width: 0; }.field-ink-controls input[type="color"] { width: 28px; height: 25px; border: 0; padding: 0; background: transparent; }.field-ink-controls input[type="range"] { min-width: 0; flex: 1; accent-color: #ff8fc4; }.field-ink-controls span { min-width: 12px; text-align: center; }.field-tools .field-ink-controls button { justify-self: stretch; padding: 7px 8px; border-radius: 8px; background: rgba(157,69,115,.46); font-size: 12px; }.field-tools .field-ink-controls button:disabled { opacity: .42; cursor: default; }
 
+.field-canvas { cursor: grab; }.field-canvas:active { cursor: grabbing; }.field-plane { width: 10000px; height: 10000px; }
+
 @media (max-width: 700px) {
   .app-shell { height: 100dvh; }
   .toolbar { align-items: flex-start; gap: 9px; padding: 10px 14px; }
