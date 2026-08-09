@@ -272,6 +272,12 @@
 .drive-status { margin: 0; color: #99909f; font-size: 11px; line-height: 1.35; }
 .drive-status.active { color: #89e9b4; }
 
+/* A Field shape is the object itself, not a note card describing a shape. */
+.field-item.shape { display: grid; place-items: center; width: 164px; min-height: 164px; padding: 14px; border: 3px solid color-mix(in srgb, var(--field-color) 76%, white); border-radius: 8px; background: color-mix(in srgb, var(--field-color) 48%, transparent); box-shadow: 0 0 30px color-mix(in srgb, var(--field-color) 38%, transparent), inset 0 0 24px color-mix(in srgb, var(--field-color) 18%, transparent); }
+.field-item.shape input { position: relative; z-index: 1; align-self: end; border-bottom-color: color-mix(in srgb, var(--field-color) 75%, #452c42); text-align: center; }
+.field-item.shape small { position: relative; z-index: 1; align-self: end; color: rgba(69,36,56,.8); }
+.field-shape-mark { position: absolute; inset: 12px; border: 1px dashed color-mix(in srgb, var(--field-color) 72%, #57354c); border-radius: 3px; opacity: .55; pointer-events: none; }
+
 @media (max-width: 700px) {
   .app-shell { height: 100dvh; }
   .toolbar { align-items: flex-start; gap: 9px; padding: 10px 14px; }

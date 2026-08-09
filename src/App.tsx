@@ -1153,7 +1153,7 @@ function Playground() {
           {fieldItems.length === 0 && fieldStrokes.length === 0 && <div className="field-empty"><span>✧</span><h2>Start anywhere.</h2><p>Choose a tool, then tap or draw directly on the open field.</p></div>}
           {fieldItems.map((item) => <article key={item.id} className={`field-item ${item.kind}`} style={{ left: item.x, top: item.y, '--field-color': item.color } as CSSProperties}>
             <input aria-label="Field item title" value={item.title} onChange={(event) => updateFieldItem(item.id, { title: event.target.value })} />
-            {item.kind === 'note' ? <textarea data-field-note={item.id} aria-label="Field note" value={item.content} placeholder="A thought, a question, a tiny beginning…" onChange={(event) => updateFieldItem(item.id, { content: event.target.value })} /> : <div className="field-mark" aria-label="shape"><span /><span /><span /></div>}
+            {item.kind === 'note' ? <textarea data-field-note={item.id} aria-label="Field note" value={item.content} placeholder="A thought, a question, a tiny beginning…" onChange={(event) => updateFieldItem(item.id, { content: event.target.value })} /> : <div className="field-shape-mark" aria-label="square shape" />}
             <small>{item.kind}</small>
           </article>)}
         </div>
