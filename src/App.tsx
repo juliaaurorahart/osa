@@ -35,7 +35,6 @@ type OsaFunction = { id: string; name: string; input: DataType; output: DataType
 type CanvasData = { label: string; note?: string; privateNote?: string; provenance?: string; kind?: ThoughtKind; isSeed?: boolean; isNode?: boolean; isTree?: boolean; sockets: Socket[]; attributes: Attribute[]; removeMode?: boolean; onRemove?: () => void }
 type OsaData = CanvasData
 type OsaNode = Node<OsaData, 'osa'>
-type GroundNode = Node<{ label: string }, 'ground'>
 type DrawingData = { points: Point[]; width: number; height: number; removeMode?: boolean; onRemove?: () => void }
 type DrawingNode = Node<DrawingData, 'drawing'>
 type ShapeKind = 'rectangle' | 'circle' | 'diamond'
@@ -203,15 +202,11 @@ function OsaObjectNode({ id, data }: NodeProps<OsaNode>) {
     <div className="osa-object">
       <SocketHandles sockets={data.sockets} />
       {data.isTree && <Handle type="target" id="function-attachment" className="function-attachment-handle nodrag nopan" position={Position.Top} data-label="Attach a function to this tree" title="Attach a function to this tree" />}
-      <Handle type="source" id={`ground-${id}`} className="ground-root-handle nodrag nopan" position={Position.Bottom} data-label="Root connection to Gaia" title="Root connection to Gaia" />
+      <span className="gaia-root" aria-label="Rooted in Gaia" />
       {data.removeMode && <button className="node-remove" style={removeButtonStyle(id)} type="button" aria-label={`Remove ${data.label}`} onClick={(event) => { event.stopPropagation(); data.onRemove?.() }}><span className="node-remove-mark">×</span></button>}
       <strong>{data.label}</strong>
     </div>
   )
-}
-
-function GaiaGroundNode({ data }: NodeProps<GroundNode>) {
-  return <div className="gaia-ground"><Handle type="target" id="gaia-root" className="gaia-ground-handle nodrag nopan" position={Position.Top} /><span>✦</span><strong>{data.label}</strong></div>
 }
 
 function CanvasShapeNode({ id, data }: NodeProps<ShapeNode>) {
@@ -243,7 +238,7 @@ function TextFragmentNode({ id, data }: NodeProps<TextNode>) {
   return <div className="text-fragment"><span className="fragment-kind">{data.kind ?? 'Fragment'}</span>{data.removeMode && <button className="node-remove" style={removeButtonStyle(id)} type="button" aria-label="Remove text fragment" onClick={(event) => { event.stopPropagation(); data.onRemove?.() }}><span className="node-remove-mark">×</span></button>}<strong>{data.label}</strong><p>{data.content || 'A text fragment…'}</p></div>
 }
 
-const nodeTypes = { drawing: FreehandNode, osa: OsaObjectNode, shape: CanvasShapeNode, function: FunctionObjectNode, text: TextFragmentNode, ground: GaiaGroundNode }
+const nodeTypes = { drawing: FreehandNode, osa: OsaObjectNode, shape: CanvasShapeNode, function: FunctionObjectNode, text: TextFragmentNode }
 
 function Playground() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
@@ -411,7 +406,6 @@ function Playground() {
   }
 
   const renderedNodes = nodes.map((node) => {
-    if (node.type === 'ground') return node
     return {
       ...node,
       className: `${node.className ?? ''}${(node.data as CanvasData).isTree ? ' tree-head' : ''}`.trim(),
@@ -547,11 +541,7 @@ function Playground() {
     const nextNode = shape === 'object'
       ? { id, type: 'osa', position, data: { label: `Node ${number}`, isSeed: true, sockets: [], attributes: [] }, className: 'osa-node idea-node' } as OsaNode
       : { id, type: 'shape', position, data: { label: `Node ${number}`, shape, isSeed: true, sockets: [], attributes: [] } } as ShapeNode
-    setNodes((currentNodes) => {
-      const hasGround = currentNodes.some((node) => node.id === 'gaia-ground')
-      return hasGround ? [...currentNodes, nextNode] : [...currentNodes, { id: 'gaia-ground', type: 'ground', position: { x: -800, y: 560 }, data: { label: 'Gaia · ground' }, selectable: false, draggable: false } as GroundNode, nextNode]
-    })
-    if (shape === 'object') setEdges((currentEdges) => [...currentEdges, { id: `gaia-${id}`, source: id, sourceHandle: `ground-${id}`, target: 'gaia-ground', targetHandle: 'gaia-root', label: 'rooted', animated: true, markerEnd: { type: MarkerType.ArrowClosed } }])
+    setNodes((currentNodes) => [...currentNodes, nextNode])
   }
 
   const addTextFragment = () => {
@@ -792,11 +782,7 @@ function Playground() {
     setFieldItems((current) => [...current, item])
     if (kind === 'shape') setSelectedFieldItemId(id)
     const object: OsaNode = { id, type: 'osa', position: { x: 180 + (number % 4) * 210, y: 150 + (number % 3) * 145 }, data: { label: title, note: item.content, provenance: 'The Field', kind: 'Idea', sockets: [], attributes: [] }, className: 'osa-node idea-node' }
-    setNodes((current) => {
-      const hasGround = current.some((node) => node.id === 'gaia-ground')
-      return hasGround ? [...current, object] : [...current, { id: 'gaia-ground', type: 'ground', position: { x: -800, y: 560 }, data: { label: 'Gaia · ground' }, selectable: false, draggable: false } as GroundNode, object]
-    })
-    setEdges((current) => [...current, { id: `gaia-${id}`, source: id, sourceHandle: `ground-${id}`, target: 'gaia-ground', targetHandle: 'gaia-root', label: 'rooted', animated: true, markerEnd: { type: MarkerType.ArrowClosed } }])
+    setNodes((current) => [...current, object])
     if (kind === 'note') requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(`[data-field-note="${id}"]`)?.focus())
   }
 
@@ -902,17 +888,8 @@ function Playground() {
     const saved = saves.find((save) => save.id === id)
     if (!saved) return
     const loadedFieldItems = saved.fieldItems ?? []
-    const fieldIds = new Set(loadedFieldItems.map((item) => item.id))
-    const hasGround = saved.nodes.some((node) => node.id === 'gaia-ground')
-    const loadedNodes = saved.nodes.filter((node) => node.id !== 'gaia-board').map((node) => node.id === 'gaia-ground' ? { ...node, position: { x: -800, y: 560 } } : node)
-    if (loadedFieldItems.length && !hasGround) loadedNodes.push({ id: 'gaia-ground', type: 'ground', position: { x: -800, y: 560 }, data: { label: 'Gaia · ground' }, selectable: false, draggable: false } as GroundNode)
-    const groundedSources = new Set(saved.edges.filter((edge) => edge.target === 'gaia-board' || edge.target === 'gaia-ground').map((edge) => edge.source))
-    const loadedEdges = saved.edges
-      .filter((edge) => edge.target !== 'gaia-board' || fieldIds.has(edge.source))
-      .map((edge) => edge.target === 'gaia-board' ? { ...edge, target: 'gaia-ground', sourceHandle: `ground-${edge.source}`, targetHandle: 'gaia-root', label: 'rooted' } : edge)
-    loadedFieldItems.forEach((item) => {
-      if (!groundedSources.has(item.id)) loadedEdges.push({ id: `gaia-${item.id}`, source: item.id, sourceHandle: `ground-${item.id}`, target: 'gaia-ground', targetHandle: 'gaia-root', label: 'rooted', animated: true, markerEnd: { type: MarkerType.ArrowClosed } })
-    })
+    const loadedNodes = saved.nodes.filter((node) => node.id !== 'gaia-board' && node.id !== 'gaia-ground')
+    const loadedEdges = saved.edges.filter((edge) => edge.target !== 'gaia-board' && edge.target !== 'gaia-ground')
     setNodes(loadedNodes)
     setEdges(loadedEdges)
     setFunctions(saved.functions ?? defaultFunctions())
@@ -1118,10 +1095,8 @@ function Playground() {
     setNodes((current) => {
       if (current.some((node) => node.id === bucketId)) return current
       const bucket: OsaNode = { id: bucketId, type: 'osa', position: { x: 610, y: 260 }, data: { label: 'Sketch bucket', note: 'Uncharacterized ink from The Field.', provenance: 'The Field · ink', kind: 'Idea', sockets: [], attributes: [] }, className: 'osa-node idea-node' }
-      const hasGround = current.some((node) => node.id === 'gaia-ground')
-      return hasGround ? [...current, bucket] : [...current, { id: 'gaia-ground', type: 'ground', position: { x: -800, y: 560 }, data: { label: 'Gaia · ground' }, selectable: false, draggable: false } as GroundNode, bucket]
+      return [...current, bucket]
     })
-    setEdges((current) => current.some((edge) => edge.source === bucketId && edge.target === 'gaia-ground') ? current : [...current, { id: `gaia-${bucketId}`, source: bucketId, sourceHandle: `ground-${bucketId}`, target: 'gaia-ground', targetHandle: 'gaia-root', label: 'rooted', animated: true, markerEnd: { type: MarkerType.ArrowClosed } }])
   }
 
   const isValidConnection = (connection: Connection | Edge) => {
@@ -1215,11 +1190,10 @@ function Playground() {
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
-          onNodeClick={(_event, node) => { if (node.type !== 'ground') selectObject(node.id) }}
+          onNodeClick={(_event, node) => selectObject(node.id)}
           onNodeDoubleClick={openNameEditor}
           onPaneClick={() => setSelectedNodeId(null)}
           fitView
-          fitViewOptions={{ nodes: renderedNodes.filter((node) => node.type !== 'ground') }}
           colorMode="dark"
           deleteKeyCode={['Backspace', 'Delete']}
           selectionOnDrag
@@ -1483,12 +1457,12 @@ function Playground() {
         </aside>
         <section className="project-map">
           <div className="frame-heading"><div><p className="frame-kicker">SYSTEM MAP</p><h2>Things taking shape</h2></div><button type="button" onClick={() => setWorkspaceView('canvas')}>Open canvas</button></div>
-          <div className="project-object-grid">{nodes.filter((node) => node.type !== 'drawing' && node.type !== 'ground').map((node) => <button type="button" className="project-object" key={node.id} onClick={() => { selectObject(node.id); setWorkspaceView('canvas') }}><span>{node.type === 'function' ? 'ƒ' : node.type === 'shape' ? '◇' : '●'}</span><strong>{String(node.data.label ?? 'Untitled')}</strong><small>{node.type === 'function' ? `${socketsFor(node).filter((socket) => socket.direction === 'slot').length} inputs · ${socketsFor(node).filter((socket) => socket.direction === 'signal').length} returns` : `${attributesFor(node).length} attributes · ${socketsFor(node).length} connectors`}</small></button>)}</div>
-          {!nodes.some((node) => node.type !== 'drawing' && node.type !== 'ground') && <p className="frame-empty">Plant a seed on the canvas, then return here to see its place in the project.</p>}
+          <div className="project-object-grid">{nodes.filter((node) => node.type !== 'drawing').map((node) => <button type="button" className="project-object" key={node.id} onClick={() => { selectObject(node.id); setWorkspaceView('canvas') }}><span>{node.type === 'function' ? 'ƒ' : node.type === 'shape' ? '◇' : '●'}</span><strong>{String(node.data.label ?? 'Untitled')}</strong><small>{node.type === 'function' ? `${socketsFor(node).filter((socket) => socket.direction === 'slot').length} inputs · ${socketsFor(node).filter((socket) => socket.direction === 'signal').length} returns` : `${attributesFor(node).length} attributes · ${socketsFor(node).length} connectors`}</small></button>)}</div>
+          {!nodes.some((node) => node.type !== 'drawing') && <p className="frame-empty">Plant a seed on the canvas, then return here to see its place in the project.</p>}
         </section>
         <aside className="project-reading">
           <p className="frame-kicker">FRAMEWORK READING</p><h2>What OSA sees</h2>
-          <div className="reading-stat"><strong>{nodes.filter((node) => node.type !== 'drawing' && node.type !== 'ground').length}</strong><span>objects and ideas</span></div>
+          <div className="reading-stat"><strong>{nodes.filter((node) => node.type !== 'drawing').length}</strong><span>objects and ideas</span></div>
           <div className="reading-stat"><strong>{edges.length}</strong><span>relationships or flows</span></div>
           <div className="reading-stat"><strong>{nodes.filter((node) => node.type === 'function').length}</strong><span>function objects</span></div>
           <p>Use the canvas for the messy version. Use this frame to notice what is becoming a system, what is still a question, and what wants its own function.</p>
