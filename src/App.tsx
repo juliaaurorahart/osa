@@ -46,9 +46,10 @@ type FunctionNode = Node<FunctionData, 'function'>
 type TextData = CanvasData & { content: string }
 type TextNode = Node<TextData, 'text'>
 type ProjectFrame = { intention: string; feeling: string; question: string }
-type FieldItemKind = 'note' | 'shape' | 'sketch'
+type FieldItemKind = 'note' | 'shape'
 type FieldItem = { id: string; kind: FieldItemKind; title: string; content: string; x: number; y: number; color: string }
-type SavedBoard = { id: string; name: string; nodes: Node[]; edges: Edge[]; functions?: OsaFunction[]; project?: ProjectFrame; fieldItems?: FieldItem[]; updatedAt: string }
+type FieldStroke = { id: string; points: Point[] }
+type SavedBoard = { id: string; name: string; nodes: Node[]; edges: Edge[]; functions?: OsaFunction[]; project?: ProjectFrame; fieldItems?: FieldItem[]; fieldStrokes?: FieldStroke[]; updatedAt: string }
 
 const SAVE_KEY = 'osa-react-flow-saves-v1'
 const MOOD_KEY = 'osa-visual-mood-v1'
@@ -201,7 +202,7 @@ function OsaObjectNode({ id, data }: NodeProps<OsaNode>) {
     <div className="osa-object">
       <SocketHandles sockets={data.sockets} />
       {data.isTree && <Handle type="target" id="function-attachment" className="function-attachment-handle nodrag nopan" position={Position.Top} data-label="Attach a function to this tree" title="Attach a function to this tree" />}
-      {data.isTree && <Handle type="source" id={`ground-${id}`} className="ground-root-handle nodrag nopan" position={Position.Bottom} data-label="Root connection to Gaia" title="Root connection to Gaia" />}
+      <Handle type="source" id={`ground-${id}`} className="ground-root-handle nodrag nopan" position={Position.Bottom} data-label="Root connection to Gaia" title="Root connection to Gaia" />
       {data.removeMode && <button className="node-remove" style={removeButtonStyle(id)} type="button" aria-label={`Remove ${data.label}`} onClick={(event) => { event.stopPropagation(); data.onRemove?.() }}><span className="node-remove-mark">×</span></button>}
       <strong>{data.label}</strong>
     </div>
@@ -262,7 +263,12 @@ function Playground() {
   const [functionLibraryOpen, setFunctionLibraryOpen] = useState(false)
   const [workspaceView, setWorkspaceView] = useState<'field' | 'canvas' | 'frame'>(() => new URLSearchParams(window.location.search).get('view') === 'field' ? 'field' : 'canvas')
   const [fieldItems, setFieldItems] = useState<FieldItem[]>([])
+  const [fieldStrokes, setFieldStrokes] = useState<FieldStroke[]>([])
+  const [fieldTool, setFieldTool] = useState<'note' | 'shape' | 'sketch' | null>(null)
+  const [activeFieldStroke, setActiveFieldStroke] = useState<Point[] | null>(null)
   const fieldNumber = useRef(1)
+  const fieldCanvas = useRef<HTMLDivElement>(null)
+  const fieldStroke = useRef<Point[] | null>(null)
   const [projectFrame, setProjectFrame] = useState<ProjectFrame>({ intention: '', feeling: '', question: '' })
   const [visualMood, setVisualMood] = useState(() => Number(localStorage.getItem(MOOD_KEY) ?? .42))
   const [sparkles, setSparkles] = useState(() => localStorage.getItem(SPARKLE_KEY) === 'true')
@@ -529,12 +535,15 @@ function Playground() {
   const addNode = (shape: 'object' | ShapeKind) => {
     const number = nextNodeNumber.current++
     const position = openPositionNearViewportCenter()
-    setNodes((currentNodes) => [
-      ...currentNodes,
-      shape === 'object'
-        ? { id: `seed-${number}`, type: 'osa', position, data: { label: `Node ${number}`, isSeed: true, sockets: [], attributes: [] }, className: 'osa-node idea-node' } as OsaNode
-        : { id: `${shape}-seed-${number}`, type: 'shape', position, data: { label: `Node ${number}`, shape, isSeed: true, sockets: [], attributes: [] } } as ShapeNode,
-    ])
+    const id = shape === 'object' ? `seed-${number}` : `${shape}-seed-${number}`
+    const nextNode = shape === 'object'
+      ? { id, type: 'osa', position, data: { label: `Node ${number}`, isSeed: true, sockets: [], attributes: [] }, className: 'osa-node idea-node' } as OsaNode
+      : { id, type: 'shape', position, data: { label: `Node ${number}`, shape, isSeed: true, sockets: [], attributes: [] } } as ShapeNode
+    setNodes((currentNodes) => {
+      const hasGround = currentNodes.some((node) => node.id === 'gaia-ground')
+      return hasGround ? [...currentNodes, nextNode] : [...currentNodes, { id: 'gaia-ground', type: 'ground', position: { x: -420, y: 660 }, data: { label: 'Gaia · ground' }, selectable: false, draggable: false } as GroundNode, nextNode]
+    })
+    if (shape === 'object') setEdges((currentEdges) => [...currentEdges, { id: `gaia-${id}`, source: id, sourceHandle: `ground-${id}`, target: 'gaia-ground', targetHandle: 'gaia-root', label: 'rooted', animated: true, markerEnd: { type: MarkerType.ArrowClosed } }])
   }
 
   const addTextFragment = () => {
@@ -767,27 +776,17 @@ function Playground() {
     setFunctions((currentFunctions) => currentFunctions.map((fn) => fn.id === functionId ? { ...fn, ...changes } : fn))
   }
 
-  const addFieldItem = (kind: FieldItemKind) => {
+  const addFieldItem = (kind: FieldItemKind, position: Point) => {
     const id = `field-${crypto.randomUUID()}`
     const number = fieldNumber.current++
-    const title = kind === 'note' ? `Note ${number}` : kind === 'shape' ? `Shape ${number}` : `Sketch ${number}`
-    const item: FieldItem = { id, kind, title, content: kind === 'note' ? '' : 'A field fragment waiting to become more.', x: 90 + (number % 4) * 150, y: 110 + (number % 3) * 125, color: ['#ffc0d9', '#cbb7ff', '#ffda91', '#a9e9d0'][number % 4] }
-    const gaiaId = 'gaia-ground'
-    const tree: OsaNode = { id, type: 'osa', position: { x: 260 + (number % 4) * 210, y: 160 + (number % 3) * 150 }, data: { label: title, note: item.content, kind: 'Idea', isTree: true, sockets: [], attributes: [] }, className: 'osa-node tree-node' }
+    const title = kind === 'note' ? `Note ${number}` : `Shape ${number}`
+    const item: FieldItem = { id, kind, title, content: kind === 'note' ? '' : 'A field fragment waiting to become more.', x: position.x, y: position.y, color: ['#ffc0d9', '#cbb7ff', '#ffda91', '#a9e9d0'][number % 4] }
     setFieldItems((current) => [...current, item])
-    setNodes((current) => {
-      const withoutLegacyGaia = current.filter((node) => node.id !== 'gaia-board')
-      const ground = withoutLegacyGaia.some((node) => node.id === gaiaId)
-        ? withoutLegacyGaia
-        : [...withoutLegacyGaia, { id: gaiaId, type: 'ground', position: { x: 90, y: 660 }, data: { label: 'Gaia · ground' }, selectable: false, draggable: false } as GroundNode]
-      return [...ground, tree]
-    })
-    setEdges((current) => [...current.filter((edge) => edge.target !== 'gaia-board'), { id: `gaia-${id}`, source: id, sourceHandle: `ground-${id}`, target: gaiaId, targetHandle: 'gaia-root', label: 'rooted', animated: true, markerEnd: { type: MarkerType.ArrowClosed } }])
+    if (kind === 'note') requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(`[data-field-note="${id}"]`)?.focus())
   }
 
   const updateFieldItem = (id: string, changes: Partial<FieldItem>) => {
     setFieldItems((current) => current.map((item) => item.id === id ? { ...item, ...changes } : item))
-    setNodes((current) => current.map((node) => node.id !== id ? node : { ...node, data: { ...node.data, ...(changes.title ? { label: changes.title } : {}), ...(changes.content !== undefined ? { note: changes.content } : {}) } }))
   }
 
   const attachedFunctionsFor = (nodeId: string) => {
@@ -877,7 +876,7 @@ function Playground() {
     if (!requestedName?.trim()) return
 
     const id = saveAs || !existing ? crypto.randomUUID() : existing.id
-    const saved: SavedBoard = { id, name: requestedName.trim(), nodes, edges, functions, project: projectFrame, fieldItems, updatedAt: new Date().toISOString() }
+    const saved: SavedBoard = { id, name: requestedName.trim(), nodes, edges, functions, project: projectFrame, fieldItems, fieldStrokes, updatedAt: new Date().toISOString() }
     persistSaves([...saves.filter((save) => save.id !== id), saved])
     setActiveSaveId(id)
     setBoardName(saved.name)
@@ -903,6 +902,7 @@ function Playground() {
     setFunctions(saved.functions ?? defaultFunctions())
     setProjectFrame(saved.project ?? { intention: '', feeling: '', question: '' })
     setFieldItems(loadedFieldItems)
+    setFieldStrokes(saved.fieldStrokes ?? [])
     setActiveSaveId(saved.id)
     setBoardName(saved.name)
     setSelectedNodeId(null)
@@ -916,6 +916,7 @@ function Playground() {
     setBoardName('Untitled board')
     setProjectFrame({ intention: '', feeling: '', question: '' })
     setFieldItems([])
+    setFieldStrokes([])
     setSelectedNodeId(null)
   }
 
@@ -1022,6 +1023,41 @@ function Playground() {
     setActiveStroke([{ x: event.clientX - drawSurfaceBounds.current.left, y: event.clientY - drawSurfaceBounds.current.top }])
   }
 
+  const fieldPoint = (event: React.PointerEvent<HTMLDivElement>) => {
+    const canvas = fieldCanvas.current
+    if (!canvas) return { x: 0, y: 0 }
+    const bounds = canvas.getBoundingClientRect()
+    return { x: event.clientX - bounds.left + canvas.scrollLeft, y: event.clientY - bounds.top + canvas.scrollTop }
+  }
+
+  const startFieldInteraction = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || !fieldTool || (event.target as HTMLElement).closest('.field-item')) return
+    const point = fieldPoint(event)
+    if (fieldTool === 'note' || fieldTool === 'shape') {
+      addFieldItem(fieldTool, { x: Math.max(18, point.x - 18), y: Math.max(18, point.y - 18) })
+      setFieldTool(null)
+      return
+    }
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    fieldStroke.current = [point]
+    setActiveFieldStroke([point])
+  }
+
+  const continueFieldSketch = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!fieldStroke.current) return
+    const points = [...fieldStroke.current, fieldPoint(event)]
+    fieldStroke.current = points
+    setActiveFieldStroke(points)
+  }
+
+  const finishFieldSketch = () => {
+    const points = fieldStroke.current
+    fieldStroke.current = null
+    setActiveFieldStroke(null)
+    if (points && points.length > 1) setFieldStrokes((current) => [...current, { id: crypto.randomUUID(), points }])
+  }
+
   const isValidConnection = (connection: Connection | Edge) => {
     if (connection.source === connection.target) return false
     const sourceNode = nodes.find((node) => node.id === connection.source)
@@ -1092,14 +1128,17 @@ function Playground() {
       </header>
 
       {workspaceView === 'field' ? <section className="field-workspace" aria-label="The Field notebook canvas">
-        <aside className="field-tools"><p>THE FIELD</p><h2>Let it arrive<br />before it has to explain itself.</h2><button type="button" onClick={() => addFieldItem('note')}>+ Note</button><button type="button" onClick={() => addFieldItem('shape')}>+ Shape</button><button type="button" onClick={() => addFieldItem('sketch')}>+ Sketch</button><small>Every item here also grows as a tree in OSA, connected to Gaia.</small></aside>
-        <div className="field-canvas">
-          <div className="field-ground"><span>✦</span><strong>Gaia · ground</strong></div>
-          {fieldItems.length === 0 && <div className="field-empty"><span>✧</span><h2>Start anywhere.</h2><p>Put down a note, a shape, or a small sketch. OSA can hold the structure later.</p></div>}
+        <aside className="field-tools"><p>THE FIELD</p><h2>Let it arrive<br />before it has to explain itself.</h2><button type="button" className={fieldTool === 'note' ? 'active' : ''} onClick={() => setFieldTool(fieldTool === 'note' ? null : 'note')}>+ Note</button><button type="button" className={fieldTool === 'shape' ? 'active' : ''} onClick={() => setFieldTool(fieldTool === 'shape' ? null : 'shape')}>+ Shape</button><button type="button" className={fieldTool === 'sketch' ? 'active' : ''} onClick={() => setFieldTool(fieldTool === 'sketch' ? null : 'sketch')}>✎ Sketch</button><small>{fieldTool === 'note' ? 'Tap the field where the note belongs, then begin typing.' : fieldTool === 'shape' ? 'Tap the field to place a shape.' : fieldTool === 'sketch' ? 'Draw directly on the field.' : 'Choose a tool, then use the open field.'}</small></aside>
+        <div ref={fieldCanvas} className={`field-canvas${fieldTool === 'sketch' ? ' sketching' : ''}`} onPointerDown={startFieldInteraction} onPointerMove={continueFieldSketch} onPointerUp={finishFieldSketch} onPointerCancel={finishFieldSketch}>
+          <svg className="field-strokes" width="2400" height="1600" aria-hidden="true">
+            {fieldStrokes.map((stroke) => <path key={stroke.id} d={pointsToPath(stroke.points)} />)}
+            {activeFieldStroke && activeFieldStroke.length > 1 && <path className="field-active-stroke" d={pointsToPath(activeFieldStroke)} />}
+          </svg>
+          {fieldItems.length === 0 && fieldStrokes.length === 0 && <div className="field-empty"><span>✧</span><h2>Start anywhere.</h2><p>Choose a tool, then tap or draw directly on the open field.</p></div>}
           {fieldItems.map((item) => <article key={item.id} className={`field-item ${item.kind}`} style={{ left: item.x, top: item.y, '--field-color': item.color } as CSSProperties}>
             <input aria-label="Field item title" value={item.title} onChange={(event) => updateFieldItem(item.id, { title: event.target.value })} />
-            {item.kind === 'note' ? <textarea aria-label="Field note" value={item.content} placeholder="A thought, a question, a tiny beginning…" onChange={(event) => updateFieldItem(item.id, { content: event.target.value })} /> : <div className="field-mark" aria-label={`${item.kind} placeholder`}><span /><span /><span /></div>}
-            <small>{item.kind} · OSA tree</small>
+            {item.kind === 'note' ? <textarea data-field-note={item.id} aria-label="Field note" value={item.content} placeholder="A thought, a question, a tiny beginning…" onChange={(event) => updateFieldItem(item.id, { content: event.target.value })} /> : <div className="field-mark" aria-label="shape"><span /><span /><span /></div>}
+            <small>{item.kind}</small>
           </article>)}
         </div>
       </section> : workspaceView === 'canvas' ? <section className="flow-area" aria-label="Node playground">
