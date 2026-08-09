@@ -47,7 +47,8 @@ type TextData = CanvasData & { content: string }
 type TextNode = Node<TextData, 'text'>
 type ProjectFrame = { intention: string; feeling: string; question: string }
 type FieldItemKind = 'note' | 'shape'
-type FieldItem = { id: string; kind: FieldItemKind; title: string; content: string; x: number; y: number; color: string }
+type FieldShapeKind = 'square' | 'circle' | 'diamond' | 'rounded'
+type FieldItem = { id: string; kind: FieldItemKind; title: string; content: string; x: number; y: number; color: string; shape?: FieldShapeKind; width?: number; height?: number }
 type FieldStroke = { id: string; points: Point[] }
 type SavedBoard = { id: string; name: string; nodes: Node[]; edges: Edge[]; functions?: OsaFunction[]; project?: ProjectFrame; fieldItems?: FieldItem[]; fieldStrokes?: FieldStroke[]; updatedAt: string }
 
@@ -263,6 +264,7 @@ function Playground() {
   const [functionLibraryOpen, setFunctionLibraryOpen] = useState(false)
   const [workspaceView, setWorkspaceView] = useState<'field' | 'canvas' | 'frame'>(() => new URLSearchParams(window.location.search).get('view') === 'field' ? 'field' : 'canvas')
   const [fieldItems, setFieldItems] = useState<FieldItem[]>([])
+  const [selectedFieldItemId, setSelectedFieldItemId] = useState<string | null>(null)
   const [fieldStrokes, setFieldStrokes] = useState<FieldStroke[]>([])
   const [fieldTool, setFieldTool] = useState<'note' | 'shape' | 'sketch' | null>(null)
   const [activeFieldStroke, setActiveFieldStroke] = useState<Point[] | null>(null)
@@ -293,6 +295,7 @@ function Playground() {
   const { screenToFlowPosition } = useReactFlow()
   const updateNodeInternals = useUpdateNodeInternals()
   const selectedNode = nodes.find((node) => node.id === selectedNodeId)
+  const selectedFieldShape = fieldItems.find((item) => item.id === selectedFieldItemId && item.kind === 'shape')
 
   const onEdgesChange = useCallback((changes: Parameters<typeof onEdgesChangeBase>[0]) => {
     onEdgesChangeBase(changes.filter((change) => change.type !== 'remove' || !automaticEdgeIds.current.has(change.id)))
@@ -780,8 +783,9 @@ function Playground() {
     const id = `field-${crypto.randomUUID()}`
     const number = fieldNumber.current++
     const title = kind === 'note' ? `Note ${number}` : `Shape ${number}`
-    const item: FieldItem = { id, kind, title, content: kind === 'note' ? '' : 'A field fragment waiting to become more.', x: position.x, y: position.y, color: ['#ffc0d9', '#cbb7ff', '#ffda91', '#a9e9d0'][number % 4] }
+    const item: FieldItem = { id, kind, title, content: kind === 'note' ? '' : 'A field fragment waiting to become more.', x: position.x, y: position.y, color: ['#ffc0d9', '#cbb7ff', '#ffda91', '#a9e9d0'][number % 4], ...(kind === 'shape' ? { shape: 'square' as FieldShapeKind, width: 164, height: 164 } : {}) }
     setFieldItems((current) => [...current, item])
+    if (kind === 'shape') setSelectedFieldItemId(id)
     const object: OsaNode = { id, type: 'osa', position: { x: 180 + (number % 4) * 210, y: 150 + (number % 3) * 145 }, data: { label: title, note: item.content, provenance: 'The Field', kind: 'Idea', sockets: [], attributes: [] }, className: 'osa-node idea-node' }
     setNodes((current) => {
       const hasGround = current.some((node) => node.id === 'gaia-ground')
@@ -910,6 +914,7 @@ function Playground() {
     setProjectFrame(saved.project ?? { intention: '', feeling: '', question: '' })
     setFieldItems(loadedFieldItems)
     setFieldStrokes(saved.fieldStrokes ?? [])
+    setSelectedFieldItemId(null)
     setActiveSaveId(saved.id)
     setBoardName(saved.name)
     setSelectedNodeId(null)
@@ -924,6 +929,7 @@ function Playground() {
     setProjectFrame({ intention: '', feeling: '', question: '' })
     setFieldItems([])
     setFieldStrokes([])
+    setSelectedFieldItemId(null)
     setSelectedNodeId(null)
   }
 
@@ -1144,14 +1150,14 @@ function Playground() {
       </header>
 
       {workspaceView === 'field' ? <section className="field-workspace" aria-label="The Field notebook canvas">
-        <aside className="field-tools"><p>THE FIELD</p><h2>Let it arrive<br />before it has to explain itself.</h2><button type="button" className={fieldTool === 'note' ? 'active' : ''} onClick={() => setFieldTool(fieldTool === 'note' ? null : 'note')}>+ Note</button><button type="button" className={fieldTool === 'shape' ? 'active' : ''} onClick={() => setFieldTool(fieldTool === 'shape' ? null : 'shape')}>+ Shape</button><button type="button" className={fieldTool === 'sketch' ? 'active' : ''} onClick={() => setFieldTool(fieldTool === 'sketch' ? null : 'sketch')}>✎ Sketch</button><small>{fieldTool === 'note' ? 'Tap the field where the note belongs, then begin typing.' : fieldTool === 'shape' ? 'Tap the field to place a shape.' : fieldTool === 'sketch' ? 'Draw directly on the field.' : 'Choose a tool, then use the open field.'}</small></aside>
+        <aside className="field-tools"><p>THE FIELD</p><h2>Let it arrive<br />before it has to explain itself.</h2><button type="button" className={fieldTool === 'note' ? 'active' : ''} onClick={() => setFieldTool(fieldTool === 'note' ? null : 'note')}>+ Note</button><button type="button" className={fieldTool === 'shape' ? 'active' : ''} onClick={() => setFieldTool(fieldTool === 'shape' ? null : 'shape')}>+ Shape</button><button type="button" className={fieldTool === 'sketch' ? 'active' : ''} onClick={() => setFieldTool(fieldTool === 'sketch' ? null : 'sketch')}>✎ Sketch</button><small>{fieldTool === 'note' ? 'Tap the field where the note belongs, then begin typing.' : fieldTool === 'shape' ? 'Tap the field to place a shape.' : fieldTool === 'sketch' ? 'Draw directly on the field.' : 'Choose a tool, then use the open field.'}</small>{selectedFieldShape && <div className="field-shape-controls"><strong>Edit shape</strong><label>Form<select value={selectedFieldShape.shape ?? 'square'} onChange={(event) => updateFieldItem(selectedFieldShape.id, { shape: event.target.value as FieldShapeKind })}><option value="square">Square</option><option value="circle">Circle</option><option value="diamond">Diamond</option><option value="rounded">Rounded</option></select></label><label>Width<input type="range" min="70" max="420" value={selectedFieldShape.width ?? 164} onChange={(event) => updateFieldItem(selectedFieldShape.id, { width: Number(event.target.value) })} /><span>{selectedFieldShape.width ?? 164}px</span></label><label>Height<input type="range" min="70" max="420" value={selectedFieldShape.height ?? 164} onChange={(event) => updateFieldItem(selectedFieldShape.id, { height: Number(event.target.value) })} /><span>{selectedFieldShape.height ?? 164}px</span></label><label>Color<input type="color" value={selectedFieldShape.color} onChange={(event) => updateFieldItem(selectedFieldShape.id, { color: event.target.value })} /></label></div>}</aside>
         <div ref={fieldCanvas} className={`field-canvas${fieldTool === 'sketch' ? ' sketching' : ''}`} onPointerDown={startFieldInteraction} onPointerMove={continueFieldSketch} onPointerUp={finishFieldSketch} onPointerCancel={finishFieldSketch}>
           <svg className="field-strokes" width="2400" height="1600" aria-hidden="true">
             {fieldStrokes.map((stroke) => <path key={stroke.id} d={pointsToPath(stroke.points)} />)}
             {activeFieldStroke && activeFieldStroke.length > 1 && <path className="field-active-stroke" d={pointsToPath(activeFieldStroke)} />}
           </svg>
           {fieldItems.length === 0 && fieldStrokes.length === 0 && <div className="field-empty"><span>✧</span><h2>Start anywhere.</h2><p>Choose a tool, then tap or draw directly on the open field.</p></div>}
-          {fieldItems.map((item) => <article key={item.id} className={`field-item ${item.kind}`} style={{ left: item.x, top: item.y, '--field-color': item.color } as CSSProperties}>
+          {fieldItems.map((item) => <article key={item.id} onPointerDown={() => { if (item.kind === 'shape') setSelectedFieldItemId(item.id) }} className={`field-item ${item.kind} ${item.kind === 'shape' ? `shape-${item.shape ?? 'square'}` : ''}${selectedFieldItemId === item.id ? ' selected' : ''}`} style={{ left: item.x, top: item.y, '--field-color': item.color, '--field-width': `${item.width ?? 240}px`, '--field-height': `${item.height ?? 160}px` } as CSSProperties}>
             <input aria-label="Field item title" value={item.title} onChange={(event) => updateFieldItem(item.id, { title: event.target.value })} />
             {item.kind === 'note' ? <textarea data-field-note={item.id} aria-label="Field note" value={item.content} placeholder="A thought, a question, a tiny beginning…" onChange={(event) => updateFieldItem(item.id, { content: event.target.value })} /> : <div className="field-shape-mark" aria-label="square shape" />}
             <small>{item.kind}</small>
