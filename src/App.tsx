@@ -566,7 +566,7 @@ function Playground() {
     setNodes((currentNodes) => [
       ...currentNodes.map((node) => node.id !== selectedNode.id ? node : {
         ...node,
-        data: { ...node.data, isSeed: false, attributes: [...selectedData.attributes, attribute], sockets: [...selectedData.sockets, signal] },
+        data: { ...node.data, attributes: [...selectedData.attributes, attribute], sockets: [...selectedData.sockets, signal] },
       }),
       {
         id: childId,
@@ -625,21 +625,25 @@ function Playground() {
   }
 
   const passAttributeOnward = (attributeId: string) => {
-    if (!selectedData || !selectedNodeId) return
+    if (!selectedData || !selectedNodeId || !selectedNode) return
     const source = selectedData.attributes.find((attribute) => attribute.id === attributeId)
     if (!source) return
     const number = selectedData.attributes.filter((attribute) => attribute.passFrom === attributeId).length + 1
-    const attribute: Attribute = {
-      id: `attribute-${crypto.randomUUID()}`,
-      key: `${source.key} onward${number > 1 ? ` ${number}` : ''}`,
-      value: source.value,
-      type: source.type,
-      mode: 'driving',
-      passFrom: source.id,
-    }
+    const childId = `object-${crypto.randomUUID()}`
+    const attribute: Attribute = { id: `attribute-${crypto.randomUUID()}`, key: `${source.key} onward${number > 1 ? ` ${number}` : ''}`, value: source.value, type: source.type, mode: 'driving', passFrom: source.id, createdChildId: childId }
     const signal: Socket = { id: `socket-${crypto.randomUUID()}`, name: attribute.key, direction: 'signal', payload: attribute.type, attributeId: attribute.id }
-    updateSelectedNode({ attributes: [...selectedData.attributes, attribute], sockets: [...selectedData.sockets, signal] })
-    requestAnimationFrame(() => updateNodeInternals(selectedNodeId))
+    const childAttribute: Attribute = { id: `attribute-${crypto.randomUUID()}`, key: attribute.key, value: '', type: attribute.type, mode: 'driven' }
+    const slot: Socket = { id: `socket-${crypto.randomUUID()}`, name: childAttribute.key, direction: 'slot', payload: childAttribute.type, attributeId: childAttribute.id }
+    const edge: Edge = { id: `edge-${crypto.randomUUID()}`, source: selectedNode.id, sourceHandle: signal.id, target: childId, targetHandle: slot.id, label: `${attribute.key} → ${childAttribute.key}`, animated: true, markerEnd: { type: MarkerType.ArrowClosed } }
+    automaticEdgeIds.current.add(edge.id)
+    setNodes((currentNodes) => [
+      ...currentNodes.map((node) => node.id === selectedNode.id ? { ...node, data: { ...node.data, attributes: [...selectedData.attributes, attribute], sockets: [...selectedData.sockets, signal] } } : node),
+      { id: childId, type: 'osa', position: openPositionNearParent(selectedNode), data: { label: 'New node', sockets: [slot], attributes: [childAttribute] }, className: 'osa-node idea-node' },
+    ])
+    window.setTimeout(() => {
+      updateNodeInternals([selectedNode.id, childId])
+      setEdges((currentEdges) => [...currentEdges, edge])
+    }, 40)
   }
 
   const setChildNodeForSignal = (attributeId: string, createChild: boolean) => {
