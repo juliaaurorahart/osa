@@ -35,6 +35,7 @@ type OsaFunction = { id: string; name: string; input: DataType; output: DataType
 type CanvasData = { label: string; note?: string; privateNote?: string; provenance?: string; kind?: ThoughtKind; isSeed?: boolean; isNode?: boolean; isTree?: boolean; sockets: Socket[]; attributes: Attribute[]; removeMode?: boolean; onRemove?: () => void }
 type OsaData = CanvasData
 type OsaNode = Node<OsaData, 'osa'>
+type GroundNode = Node<{ label: string }, 'ground'>
 type DrawingData = { points: Point[]; width: number; height: number; removeMode?: boolean; onRemove?: () => void }
 type DrawingNode = Node<DrawingData, 'drawing'>
 type ShapeKind = 'rectangle' | 'circle' | 'diamond'
@@ -200,10 +201,15 @@ function OsaObjectNode({ id, data }: NodeProps<OsaNode>) {
     <div className="osa-object">
       <SocketHandles sockets={data.sockets} />
       {data.isTree && <Handle type="target" id="function-attachment" className="function-attachment-handle nodrag nopan" position={Position.Top} data-label="Attach a function to this tree" title="Attach a function to this tree" />}
+      {data.isTree && <Handle type="source" id={`ground-${id}`} className="ground-root-handle nodrag nopan" position={Position.Bottom} data-label="Root connection to Gaia" title="Root connection to Gaia" />}
       {data.removeMode && <button className="node-remove" style={removeButtonStyle(id)} type="button" aria-label={`Remove ${data.label}`} onClick={(event) => { event.stopPropagation(); data.onRemove?.() }}><span className="node-remove-mark">×</span></button>}
       <strong>{data.label}</strong>
     </div>
   )
+}
+
+function GaiaGroundNode({ data }: NodeProps<GroundNode>) {
+  return <div className="gaia-ground"><Handle type="target" id="gaia-root" className="gaia-ground-handle nodrag nopan" position={Position.Top} /><span>✦</span><strong>{data.label}</strong></div>
 }
 
 function CanvasShapeNode({ id, data }: NodeProps<ShapeNode>) {
@@ -235,7 +241,7 @@ function TextFragmentNode({ id, data }: NodeProps<TextNode>) {
   return <div className="text-fragment"><span className="fragment-kind">{data.kind ?? 'Fragment'}</span>{data.removeMode && <button className="node-remove" style={removeButtonStyle(id)} type="button" aria-label="Remove text fragment" onClick={(event) => { event.stopPropagation(); data.onRemove?.() }}><span className="node-remove-mark">×</span></button>}<strong>{data.label}</strong><p>{data.content || 'A text fragment…'}</p></div>
 }
 
-const nodeTypes = { drawing: FreehandNode, osa: OsaObjectNode, shape: CanvasShapeNode, function: FunctionObjectNode, text: TextFragmentNode }
+const nodeTypes = { drawing: FreehandNode, osa: OsaObjectNode, shape: CanvasShapeNode, function: FunctionObjectNode, text: TextFragmentNode, ground: GaiaGroundNode }
 
 function Playground() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
@@ -390,21 +396,24 @@ function Playground() {
     setSelectedNodeId((currentId) => currentId === nodeId ? remainingNodes[0]?.id ?? null : currentId)
   }
 
-  const renderedNodes = nodes.map((node) => ({
-    ...node,
-    className: `${node.className ?? ''}${(node.data as CanvasData).isTree ? ' tree-head' : ''}`.trim(),
-    data: {
-      ...node.data,
-      removeMode,
-      onRemove: () => deleteObject(node.id),
-      sockets: socketsFor(node).map((socket) => {
-        const details = detailsFor(node, socket)
-        const driver = socket.direction === 'slot' ? driverFor(node.id, socket.id) : undefined
-        const resolved = { ...socket, name: details.name, payload: details.payload, value: details.value }
-        return driver ? { ...resolved, drivenBy: `${driver.name} · ${driver.socket.name}`, drivenValue: driver.output, drivenType: driver.socket.payload } : resolved
-      }),
-    },
-  }))
+  const renderedNodes = nodes.map((node) => {
+    if (node.type === 'ground') return node
+    return {
+      ...node,
+      className: `${node.className ?? ''}${(node.data as CanvasData).isTree ? ' tree-head' : ''}`.trim(),
+      data: {
+        ...node.data,
+        removeMode,
+        onRemove: () => deleteObject(node.id),
+        sockets: socketsFor(node).map((socket) => {
+          const details = detailsFor(node, socket)
+          const driver = socket.direction === 'slot' ? driverFor(node.id, socket.id) : undefined
+          const resolved = { ...socket, name: details.name, payload: details.payload, value: details.value }
+          return driver ? { ...resolved, drivenBy: `${driver.name} · ${driver.socket.name}`, drivenValue: driver.output, drivenType: driver.socket.payload } : resolved
+        }),
+      },
+    }
+  })
 
   const onConnect = useCallback(
     (connection: Connection) => {
@@ -763,16 +772,17 @@ function Playground() {
     const number = fieldNumber.current++
     const title = kind === 'note' ? `Note ${number}` : kind === 'shape' ? `Shape ${number}` : `Sketch ${number}`
     const item: FieldItem = { id, kind, title, content: kind === 'note' ? '' : 'A field fragment waiting to become more.', x: 90 + (number % 4) * 150, y: 110 + (number % 3) * 125, color: ['#ffc0d9', '#cbb7ff', '#ffda91', '#a9e9d0'][number % 4] }
-    const gaiaId = 'gaia-board'
+    const gaiaId = 'gaia-ground'
     const tree: OsaNode = { id, type: 'osa', position: { x: 260 + (number % 4) * 210, y: 160 + (number % 3) * 150 }, data: { label: title, note: item.content, kind: 'Idea', isTree: true, sockets: [], attributes: [] }, className: 'osa-node tree-node' }
     setFieldItems((current) => [...current, item])
     setNodes((current) => {
-      const gaia = current.some((node) => node.id === gaiaId)
-        ? current
-        : [...current, { id: gaiaId, type: 'osa', position: { x: 680, y: 540 }, data: { label: 'Gaia', note: 'This board holds the field together.', kind: 'Idea', isTree: true, sockets: [], attributes: [] }, className: 'osa-node tree-node' } as OsaNode]
-      return [...gaia, tree]
+      const withoutLegacyGaia = current.filter((node) => node.id !== 'gaia-board')
+      const ground = withoutLegacyGaia.some((node) => node.id === gaiaId)
+        ? withoutLegacyGaia
+        : [...withoutLegacyGaia, { id: gaiaId, type: 'ground', position: { x: 90, y: 660 }, data: { label: 'Gaia · ground' }, selectable: false, draggable: false } as GroundNode]
+      return [...ground, tree]
     })
-    setEdges((current) => [...current, { id: `gaia-${id}`, source: id, target: gaiaId, label: 'of Gaia', animated: true, markerEnd: { type: MarkerType.ArrowClosed } }])
+    setEdges((current) => [...current.filter((edge) => edge.target !== 'gaia-board'), { id: `gaia-${id}`, source: id, sourceHandle: `ground-${id}`, target: gaiaId, targetHandle: 'gaia-root', label: 'rooted', animated: true, markerEnd: { type: MarkerType.ArrowClosed } }])
   }
 
   const updateFieldItem = (id: string, changes: Partial<FieldItem>) => {
@@ -876,11 +886,23 @@ function Playground() {
   const loadBoard = (id: string) => {
     const saved = saves.find((save) => save.id === id)
     if (!saved) return
-    setNodes(saved.nodes)
-    setEdges(saved.edges)
+    const loadedFieldItems = saved.fieldItems ?? []
+    const fieldIds = new Set(loadedFieldItems.map((item) => item.id))
+    const hasGround = saved.nodes.some((node) => node.id === 'gaia-ground')
+    const loadedNodes = saved.nodes.filter((node) => node.id !== 'gaia-board')
+    if (loadedFieldItems.length && !hasGround) loadedNodes.push({ id: 'gaia-ground', type: 'ground', position: { x: 90, y: 660 }, data: { label: 'Gaia · ground' }, selectable: false, draggable: false } as GroundNode)
+    const groundedSources = new Set(saved.edges.filter((edge) => edge.target === 'gaia-board' || edge.target === 'gaia-ground').map((edge) => edge.source))
+    const loadedEdges = saved.edges
+      .filter((edge) => edge.target !== 'gaia-board' || fieldIds.has(edge.source))
+      .map((edge) => edge.target === 'gaia-board' ? { ...edge, target: 'gaia-ground', sourceHandle: `ground-${edge.source}`, targetHandle: 'gaia-root', label: 'rooted' } : edge)
+    loadedFieldItems.forEach((item) => {
+      if (!groundedSources.has(item.id)) loadedEdges.push({ id: `gaia-${item.id}`, source: item.id, sourceHandle: `ground-${item.id}`, target: 'gaia-ground', targetHandle: 'gaia-root', label: 'rooted', animated: true, markerEnd: { type: MarkerType.ArrowClosed } })
+    })
+    setNodes(loadedNodes)
+    setEdges(loadedEdges)
     setFunctions(saved.functions ?? defaultFunctions())
     setProjectFrame(saved.project ?? { intention: '', feeling: '', question: '' })
-    setFieldItems(saved.fieldItems ?? [])
+    setFieldItems(loadedFieldItems)
     setActiveSaveId(saved.id)
     setBoardName(saved.name)
     setSelectedNodeId(null)
@@ -1047,30 +1069,32 @@ function Playground() {
           <input type="range" min="0" max="1" step="0.01" value={visualMood} onChange={(event) => setVisualMood(Number(event.target.value))} aria-label="Visual mood, drab to brighter" />
           <span>Brighter</span>
         </label>
-        <button type="button" className={sparkles ? 'tool-button sparkle-toggle active' : 'tool-button sparkle-toggle'} onClick={() => setSparkles((active) => !active)}>
-          ✦ {sparkles ? 'Sparkles on' : 'Sparkles'}
-        </button>
-        <button type="button" className="tool-button" onClick={() => setFunctionLibraryOpen(true)}>ƒ Functions</button>
-        <div className="seed-tools" aria-label="Plant a seed">
-          <span>Plant Seed</span>
-          <div className="seed-shapes">
-            <button type="button" className="seed-shape object" onClick={() => addNode('object')} aria-label="Plant an object seed" title="Object seed" />
-            <button type="button" className="seed-shape rectangle" onClick={() => addNode('rectangle')} aria-label="Plant a rectangle seed" title="Rectangle seed" />
-            <button type="button" className="seed-shape circle" onClick={() => addNode('circle')} aria-label="Plant a circle seed" title="Circle seed" />
-            <button type="button" className="seed-shape diamond" onClick={() => addNode('diamond')} aria-label="Plant a diamond seed" title="Diamond seed" />
+        {workspaceView !== 'field' && <>
+          <button type="button" className={sparkles ? 'tool-button sparkle-toggle active' : 'tool-button sparkle-toggle'} onClick={() => setSparkles((active) => !active)}>
+            ✦ {sparkles ? 'Sparkles on' : 'Sparkles'}
+          </button>
+          <button type="button" className="tool-button" onClick={() => setFunctionLibraryOpen(true)}>ƒ Functions</button>
+          <div className="seed-tools" aria-label="Plant a seed">
+            <span>Plant Seed</span>
+            <div className="seed-shapes">
+              <button type="button" className="seed-shape object" onClick={() => addNode('object')} aria-label="Plant an object seed" title="Object seed" />
+              <button type="button" className="seed-shape rectangle" onClick={() => addNode('rectangle')} aria-label="Plant a rectangle seed" title="Rectangle seed" />
+              <button type="button" className="seed-shape circle" onClick={() => addNode('circle')} aria-label="Plant a circle seed" title="Circle seed" />
+              <button type="button" className="seed-shape diamond" onClick={() => addNode('diamond')} aria-label="Plant a diamond seed" title="Diamond seed" />
+            </div>
           </div>
-        </div>
-        <button type="button" className="tool-button" onClick={addTextFragment}>+ Text</button>
-        <button type="button" className={drawingMode ? 'tool-button active' : 'tool-button'} onClick={() => setDrawingMode((active) => !active)}>
-          ✎ {drawingMode ? 'Drawing on' : 'Draw'}
-        </button>
-        <p className="hint">{drawingMode ? 'Draw on empty canvas · Esc or Draw to return to node mode' : 'Drag nodes · pull handles to connect · double-click to rename · Delete to remove'}</p>
+          <button type="button" className="tool-button" onClick={addTextFragment}>+ Text</button>
+          <button type="button" className={drawingMode ? 'tool-button active' : 'tool-button'} onClick={() => setDrawingMode((active) => !active)}>
+            ✎ {drawingMode ? 'Drawing on' : 'Draw'}
+          </button>
+          <p className="hint">{drawingMode ? 'Draw on empty canvas · Esc or Draw to return to node mode' : 'Drag nodes · pull handles to connect · double-click to rename · Delete to remove'}</p>
+        </>}
       </header>
 
       {workspaceView === 'field' ? <section className="field-workspace" aria-label="The Field notebook canvas">
         <aside className="field-tools"><p>THE FIELD</p><h2>Let it arrive<br />before it has to explain itself.</h2><button type="button" onClick={() => addFieldItem('note')}>+ Note</button><button type="button" onClick={() => addFieldItem('shape')}>+ Shape</button><button type="button" onClick={() => addFieldItem('sketch')}>+ Sketch</button><small>Every item here also grows as a tree in OSA, connected to Gaia.</small></aside>
         <div className="field-canvas">
-          <div className="field-gaia"><span>✦</span><strong>Gaia</strong><small>this board</small></div>
+          <div className="field-ground"><span>✦</span><strong>Gaia · ground</strong></div>
           {fieldItems.length === 0 && <div className="field-empty"><span>✧</span><h2>Start anywhere.</h2><p>Put down a note, a shape, or a small sketch. OSA can hold the structure later.</p></div>}
           {fieldItems.map((item) => <article key={item.id} className={`field-item ${item.kind}`} style={{ left: item.x, top: item.y, '--field-color': item.color } as CSSProperties}>
             <input aria-label="Field item title" value={item.title} onChange={(event) => updateFieldItem(item.id, { title: event.target.value })} />
@@ -1085,7 +1109,7 @@ function Playground() {
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
-          onNodeClick={(_event, node) => selectObject(node.id)}
+          onNodeClick={(_event, node) => { if (node.type !== 'ground') selectObject(node.id) }}
           onNodeDoubleClick={openNameEditor}
           onPaneClick={() => setSelectedNodeId(null)}
           fitView
@@ -1352,12 +1376,12 @@ function Playground() {
         </aside>
         <section className="project-map">
           <div className="frame-heading"><div><p className="frame-kicker">SYSTEM MAP</p><h2>Things taking shape</h2></div><button type="button" onClick={() => setWorkspaceView('canvas')}>Open canvas</button></div>
-          <div className="project-object-grid">{nodes.filter((node) => node.type !== 'drawing').map((node) => <button type="button" className="project-object" key={node.id} onClick={() => { selectObject(node.id); setWorkspaceView('canvas') }}><span>{node.type === 'function' ? 'ƒ' : node.type === 'shape' ? '◇' : '●'}</span><strong>{String(node.data.label ?? 'Untitled')}</strong><small>{node.type === 'function' ? `${socketsFor(node).filter((socket) => socket.direction === 'slot').length} inputs · ${socketsFor(node).filter((socket) => socket.direction === 'signal').length} returns` : `${attributesFor(node).length} attributes · ${socketsFor(node).length} connectors`}</small></button>)}</div>
-          {!nodes.some((node) => node.type !== 'drawing') && <p className="frame-empty">Plant a seed on the canvas, then return here to see its place in the project.</p>}
+          <div className="project-object-grid">{nodes.filter((node) => node.type !== 'drawing' && node.type !== 'ground').map((node) => <button type="button" className="project-object" key={node.id} onClick={() => { selectObject(node.id); setWorkspaceView('canvas') }}><span>{node.type === 'function' ? 'ƒ' : node.type === 'shape' ? '◇' : '●'}</span><strong>{String(node.data.label ?? 'Untitled')}</strong><small>{node.type === 'function' ? `${socketsFor(node).filter((socket) => socket.direction === 'slot').length} inputs · ${socketsFor(node).filter((socket) => socket.direction === 'signal').length} returns` : `${attributesFor(node).length} attributes · ${socketsFor(node).length} connectors`}</small></button>)}</div>
+          {!nodes.some((node) => node.type !== 'drawing' && node.type !== 'ground') && <p className="frame-empty">Plant a seed on the canvas, then return here to see its place in the project.</p>}
         </section>
         <aside className="project-reading">
           <p className="frame-kicker">FRAMEWORK READING</p><h2>What OSA sees</h2>
-          <div className="reading-stat"><strong>{nodes.filter((node) => node.type !== 'drawing').length}</strong><span>objects and ideas</span></div>
+          <div className="reading-stat"><strong>{nodes.filter((node) => node.type !== 'drawing' && node.type !== 'ground').length}</strong><span>objects and ideas</span></div>
           <div className="reading-stat"><strong>{edges.length}</strong><span>relationships or flows</span></div>
           <div className="reading-stat"><strong>{nodes.filter((node) => node.type === 'function').length}</strong><span>function objects</span></div>
           <p>Use the canvas for the messy version. Use this frame to notice what is becoming a system, what is still a question, and what wants its own function.</p>
