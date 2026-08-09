@@ -32,7 +32,7 @@ type Socket = { id: string; name: string; direction: SocketDirection; payload: D
 type Attribute = { id: string; key: string; value: string; type: DataType; mode?: AttributeMode; passFrom?: string; passFunctionId?: string; createdChildId?: string; isSelf?: boolean; isEmptySlot?: boolean }
 type FunctionOperation = 'identity' | 'uppercase' | 'increment' | 'double' | 'halve' | 'round' | 'append-note' | 'custom'
 type OsaFunction = { id: string; name: string; input: DataType; output: DataType; operation: FunctionOperation; code?: string }
-type CanvasData = { label: string; note?: string; privateNote?: string; provenance?: string; kind?: ThoughtKind; isSeed?: boolean; isNode?: boolean; isTree?: boolean; sockets: Socket[]; attributes: Attribute[]; removeMode?: boolean; onRemove?: () => void }
+type CanvasData = { label: string; note?: string; privateNote?: string; provenance?: string; kind?: ThoughtKind; isSeed?: boolean; isNode?: boolean; isTree?: boolean; sockets: Socket[]; attributes: Attribute[]; removeMode?: boolean; onRemove?: () => void; showGaiaRoot?: boolean; onToggleGaiaRoot?: () => void }
 type OsaData = CanvasData
 type OsaNode = Node<OsaData, 'osa'>
 type DrawingData = { points: Point[]; width: number; height: number; removeMode?: boolean; onRemove?: () => void }
@@ -111,15 +111,7 @@ function runFunction(value: string, fn: OsaFunction | undefined) {
   return `${value} · handled by ${fn.name}`
 }
 
-const initialNodes: Node[] = [
-  {
-    id: 'seed-1',
-    type: 'osa',
-    position: { x: 410, y: 260 },
-    data: { label: 'Node 1', isSeed: true, sockets: [], attributes: [] },
-    className: 'osa-node idea-node',
-  },
-]
+const initialNodes: Node[] = []
 
 const initialEdges: Edge[] = []
 
@@ -202,7 +194,8 @@ function OsaObjectNode({ id, data }: NodeProps<OsaNode>) {
     <div className="osa-object">
       <SocketHandles sockets={data.sockets} />
       {data.isTree && <Handle type="target" id="function-attachment" className="function-attachment-handle nodrag nopan" position={Position.Top} data-label="Attach a function to this tree" title="Attach a function to this tree" />}
-      <span className="gaia-root" aria-label="Rooted in Gaia" />
+      <button type="button" className={`gaia-root-toggle nodrag nopan${data.showGaiaRoot ? ' revealed' : ''}`} aria-label={data.showGaiaRoot ? 'Hide Gaia connection' : 'Show Gaia connection'} title={data.showGaiaRoot ? 'Hide Gaia connection' : 'Show Gaia connection'} onClick={(event) => { event.stopPropagation(); data.onToggleGaiaRoot?.() }} />
+      {data.showGaiaRoot && <span className="gaia-root" aria-label="Rooted in Gaia" />}
       {data.removeMode && <button className="node-remove" style={removeButtonStyle(id)} type="button" aria-label={`Remove ${data.label}`} onClick={(event) => { event.stopPropagation(); data.onRemove?.() }}><span className="node-remove-mark">×</span></button>}
       <strong>{data.label}</strong>
     </div>
@@ -414,6 +407,7 @@ function Playground() {
         ...node.data,
         removeMode,
         onRemove: () => deleteObject(node.id),
+        onToggleGaiaRoot: () => setNodes((current) => current.map((candidate) => candidate.id === node.id ? { ...candidate, data: { ...candidate.data, showGaiaRoot: !(candidate.data as CanvasData).showGaiaRoot } } : candidate)),
         sockets: socketsFor(node).map((socket) => {
           const details = detailsFor(node, socket)
           const driver = socket.direction === 'slot' ? driverFor(node.id, socket.id) : undefined

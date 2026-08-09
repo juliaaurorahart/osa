@@ -123,7 +123,7 @@
 .react-flow__node.requirement-node { background: #4d3b38; border-color: #a1786b; }
 .react-flow__node.evidence-node { background: #3c493c; border-color: #799171; }
 .osa-object { position: relative; display: grid; min-height: 46px; align-content: center; gap: 7px; }
-.gaia-root { position: absolute; left: 50%; bottom: -21px; width: 3px; height: 18px; transform: translateX(-50%); border-radius: 999px; background: linear-gradient(#aaf7bd, rgba(91,205,124,.08)); box-shadow: 0 0 12px rgba(132,255,171,.75); pointer-events: none; }
+.gaia-root-toggle { position: absolute; z-index: 3; left: 50%; bottom: -10px; width: 13px; height: 13px; transform: translateX(-50%); border: 2px solid rgba(179,255,200,.72); border-radius: 50%; padding: 0; background: #4ba96b; box-shadow: 0 0 10px rgba(123,255,161,.48); cursor: pointer; }.gaia-root-toggle.revealed { background: #b8ffd0; box-shadow: 0 0 18px rgba(137,255,177,.95); }.gaia-root { position: absolute; left: 50%; bottom: -30px; width: 3px; height: 25px; transform: translateX(-50%); border-radius: 999px; background: linear-gradient(#aaf7bd, rgba(91,205,124,.08)); box-shadow: 0 0 12px rgba(132,255,171,.75); pointer-events: none; }
 .osa-object strong { font-size: 14px; }
 .socket-row { display: flex; justify-content: space-between; gap: 12px; color: #e8c4b4; font-size: 9px; font-weight: 600; text-transform: uppercase; white-space: nowrap; }
 .socket-row .driven { color: #8ff1bd; text-shadow: 0 0 10px rgba(104, 235, 163, .55); }
