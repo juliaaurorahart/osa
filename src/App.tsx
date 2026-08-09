@@ -1007,9 +1007,11 @@ function Playground() {
           <button type="button" className="tool-button" onClick={() => saveBoard()}>Save</button>
           <button type="button" className="tool-button" onClick={() => saveBoard(true)}>Save as</button>
           <button type="button" className="tool-button" onClick={newBoard}>New</button>
-          <span className={`save-status ${cloudSaveState}`} title={cloudSaveState === 'private' ? 'Your boards are privately stored in your OSA account.' : 'Browser-only boards are kept on this device.'}>
-            {cloudSaveState === 'checking' ? 'Checking private save…' : cloudSaveState === 'private' ? 'Private cloud save' : 'This device only'}
-          </span>
+          {cloudSaveState === 'private'
+            ? <span className="save-status private" title="Your boards are privately stored in your OSA account.">Private cloud save</span>
+            : <button type="button" className="private-save-button" title="Sign in to save boards privately across your devices." onClick={() => { window.location.assign('/api/login') }}>
+              {cloudSaveState === 'checking' ? 'Checking private save…' : '☁ Private save'}
+            </button>}
         </div>
         <label className="mood-control">
           <span>Drab</span>

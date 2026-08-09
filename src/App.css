@@ -49,6 +49,8 @@
 .save-tools { display: flex; align-items: center; gap: 5px; padding-left: 4px; }
 .save-tools select { max-width: 150px; border: 1px solid #73584b; border-radius: 8px; padding: 8px; color: #fff1df; background: #473129; font: 12px inherit; }
 .save-tools .tool-button { padding: 8px 9px; font-size: 11px; }
+.toolbar .private-save-button { border-color: #84cdb6; background: rgba(58, 120, 98, .42); color: #e4fff5; font-size: 11px; }
+.toolbar .private-save-button:hover { border-color: #c0ffe7; background: rgba(78, 157, 126, .62); box-shadow: 0 0 16px rgba(118, 255, 197, .22); }
 .save-status { align-self: center; border: 1px solid rgba(255,255,255,.22); border-radius: 999px; padding: 7px 9px; color: #f4d7c3; font-size: 10px; font-weight: 800; letter-spacing: .02em; white-space: nowrap; }
 .save-status.private { border-color: rgba(109,246,186,.55); background: rgba(109,246,186,.12); color: #c1ffe2; }
 .save-status.local { border-color: rgba(255,203,120,.42); background: rgba(255,203,120,.10); color: #ffe1a6; }

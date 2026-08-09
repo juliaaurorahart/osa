@@ -4,7 +4,9 @@ type CloudResponse<T> = { boards?: T; error?: string }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T | null> {
   try {
-    const response = await fetch(path, { ...init, credentials: 'same-origin' })
+    // Do not let an ordinary public visit follow the private Access redirect.
+    // A signed-in owner gets a normal 200 response; everyone else stays local.
+    const response = await fetch(path, { ...init, credentials: 'same-origin', redirect: 'manual' })
     if (!response.ok) return null
     return await response.json() as T
   } catch {
