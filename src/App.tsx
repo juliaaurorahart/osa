@@ -21,6 +21,7 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import './App.css'
+import { fetchPrivateBoards, storePrivateBoards, type CloudSaveState } from './cloudBoards'
 
 type Point = { x: number; y: number }
 type SocketDirection = 'signal' | 'slot'
@@ -247,6 +248,7 @@ function Playground() {
     }
   })
   const [activeSaveId, setActiveSaveId] = useState<string | null>(null)
+  const [cloudSaveState, setCloudSaveState] = useState<CloudSaveState>('checking')
   const [boardName, setBoardName] = useState('Untitled board')
   const [functions, setFunctions] = useState<OsaFunction[]>(defaultFunctions)
   const [functionLibraryOpen, setFunctionLibraryOpen] = useState(false)
@@ -791,9 +793,28 @@ function Playground() {
     })))
   }
 
+  useEffect(() => {
+    let active = true
+    void fetchPrivateBoards<SavedBoard>().then((privateBoards) => {
+      if (!active) return
+      if (privateBoards) {
+        setSaves(privateBoards)
+        setCloudSaveState('private')
+      } else {
+        setCloudSaveState('local')
+      }
+    })
+    return () => { active = false }
+  }, [])
+
   const persistSaves = (nextSaves: SavedBoard[]) => {
     setSaves(nextSaves)
     localStorage.setItem(SAVE_KEY, JSON.stringify(nextSaves))
+    if (cloudSaveState === 'private') {
+      void storePrivateBoards(nextSaves).then((saved) => {
+        if (!saved) setCloudSaveState('local')
+      })
+    }
   }
 
   const saveBoard = (saveAs = false) => {
@@ -970,6 +991,9 @@ function Playground() {
           <button type="button" className="tool-button" onClick={() => saveBoard()}>Save</button>
           <button type="button" className="tool-button" onClick={() => saveBoard(true)}>Save as</button>
           <button type="button" className="tool-button" onClick={newBoard}>New</button>
+          <span className={`save-status ${cloudSaveState}`} title={cloudSaveState === 'private' ? 'Your boards are privately stored in your OSA account.' : 'Browser-only boards are kept on this device.'}>
+            {cloudSaveState === 'checking' ? 'Checking private save…' : cloudSaveState === 'private' ? 'Private cloud save' : 'This device only'}
+          </span>
         </div>
         <label className="mood-control">
           <span>Drab</span>
