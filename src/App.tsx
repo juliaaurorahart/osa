@@ -31,7 +31,7 @@ type Socket = { id: string; name: string; direction: SocketDirection; payload: D
 type Attribute = { id: string; key: string; value: string; type: DataType; mode?: AttributeMode; passFrom?: string; passFunctionId?: string; createdChildId?: string; isSelf?: boolean }
 type FunctionOperation = 'identity' | 'uppercase' | 'increment' | 'double' | 'halve' | 'round' | 'append-note'
 type OsaFunction = { id: string; name: string; input: DataType; output: DataType; operation: FunctionOperation }
-type CanvasData = { label: string; note?: string; privateNote?: string; provenance?: string; kind?: ThoughtKind; isSeed?: boolean; sockets: Socket[]; attributes: Attribute[]; removeMode?: boolean; onRemove?: () => void }
+type CanvasData = { label: string; note?: string; privateNote?: string; provenance?: string; kind?: ThoughtKind; isSeed?: boolean; isNode?: boolean; sockets: Socket[]; attributes: Attribute[]; removeMode?: boolean; onRemove?: () => void }
 type OsaData = CanvasData
 type OsaNode = Node<OsaData, 'osa'>
 type DrawingData = { points: Point[]; width: number; height: number; removeMode?: boolean; onRemove?: () => void }
@@ -606,6 +606,11 @@ function Playground() {
     } as FunctionNode))
   }
 
+  const turnSeedIntoNode = () => {
+    if (!selectedData?.isSeed) return
+    updateSelectedNode({ isNode: true })
+  }
+
   const addFunctionPort = (direction: SocketDirection) => {
     if (!selectedNode || selectedNode.type !== 'function') return
     const data = selectedNode.data as FunctionData
@@ -1107,6 +1112,11 @@ function Playground() {
                   Came from
                   <input value={selectedData?.provenance ?? ''} placeholder="A conversation, a sketch, a source…" onChange={(event) => updateSelectedNode({ provenance: event.target.value })} />
                 </label>
+                {selectedData?.isSeed && !selectedData.isNode ? <section className="seed-paths">
+                  <p>A seed can grow into a function or an object.</p>
+                  <button type="button" className="seed-path function-path" onClick={turnSeedIntoFunction}><span>ƒ</span><strong>Become function</strong><small>Give it arguments, returns, and code.</small></button>
+                  <button type="button" className="seed-path node-path" onClick={turnSeedIntoNode}><span>●</span><strong>Become node</strong><small>Give it attributes, signals, and slots.</small></button>
+                </section> : <>
                 <section className="editor-section">
                   <div className="editor-section-heading">
                     <span>Attributes</span>
@@ -1114,7 +1124,6 @@ function Playground() {
                       <button type="button" onClick={addAttribute}>+ Add</button>
                       <button type="button" onClick={addSelfAttribute} disabled={selfIsShared}>{selfIsShared ? 'Self ready' : '+ Me'}</button>
                       {selectedData?.isSeed && <button type="button" onClick={addSeedSlot}>+ Slot</button>}
-                      {selectedData?.isSeed && <button type="button" onClick={turnSeedIntoFunction}>Become function</button>}
                     </div>
                   </div>
                   {selectedData?.attributes.filter((attribute) => !attribute.passFrom).map((attribute) => {
@@ -1176,6 +1185,7 @@ function Playground() {
                     </div>
                   ))}
                 </section>
+                </>}
               </>
             )}
           </aside>
