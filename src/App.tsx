@@ -782,11 +782,18 @@ function Playground() {
     const title = kind === 'note' ? `Note ${number}` : `Shape ${number}`
     const item: FieldItem = { id, kind, title, content: kind === 'note' ? '' : 'A field fragment waiting to become more.', x: position.x, y: position.y, color: ['#ffc0d9', '#cbb7ff', '#ffda91', '#a9e9d0'][number % 4] }
     setFieldItems((current) => [...current, item])
+    const object: OsaNode = { id, type: 'osa', position: { x: 180 + (number % 4) * 210, y: 150 + (number % 3) * 145 }, data: { label: title, note: item.content, provenance: 'The Field', kind: 'Idea', sockets: [], attributes: [] }, className: 'osa-node idea-node' }
+    setNodes((current) => {
+      const hasGround = current.some((node) => node.id === 'gaia-ground')
+      return hasGround ? [...current, object] : [...current, { id: 'gaia-ground', type: 'ground', position: { x: -420, y: 660 }, data: { label: 'Gaia · ground' }, selectable: false, draggable: false } as GroundNode, object]
+    })
+    setEdges((current) => [...current, { id: `gaia-${id}`, source: id, sourceHandle: `ground-${id}`, target: 'gaia-ground', targetHandle: 'gaia-root', label: 'rooted', animated: true, markerEnd: { type: MarkerType.ArrowClosed } }])
     if (kind === 'note') requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(`[data-field-note="${id}"]`)?.focus())
   }
 
   const updateFieldItem = (id: string, changes: Partial<FieldItem>) => {
     setFieldItems((current) => current.map((item) => item.id === id ? { ...item, ...changes } : item))
+    setNodes((current) => current.map((node) => node.id !== id ? node : { ...node, data: { ...node.data, ...(changes.title ? { label: changes.title } : {}), ...(changes.content !== undefined ? { note: changes.content } : {}) } }))
   }
 
   const attachedFunctionsFor = (nodeId: string) => {
@@ -1055,7 +1062,16 @@ function Playground() {
     const points = fieldStroke.current
     fieldStroke.current = null
     setActiveFieldStroke(null)
-    if (points && points.length > 1) setFieldStrokes((current) => [...current, { id: crypto.randomUUID(), points }])
+    if (!points || points.length < 2) return
+    setFieldStrokes((current) => [...current, { id: crypto.randomUUID(), points }])
+    const bucketId = 'field-sketch-bucket'
+    setNodes((current) => {
+      if (current.some((node) => node.id === bucketId)) return current
+      const bucket: OsaNode = { id: bucketId, type: 'osa', position: { x: 610, y: 260 }, data: { label: 'Sketch bucket', note: 'Uncharacterized ink from The Field.', provenance: 'The Field · ink', kind: 'Idea', sockets: [], attributes: [] }, className: 'osa-node idea-node' }
+      const hasGround = current.some((node) => node.id === 'gaia-ground')
+      return hasGround ? [...current, bucket] : [...current, { id: 'gaia-ground', type: 'ground', position: { x: -420, y: 660 }, data: { label: 'Gaia · ground' }, selectable: false, draggable: false } as GroundNode, bucket]
+    })
+    setEdges((current) => current.some((edge) => edge.source === bucketId && edge.target === 'gaia-ground') ? current : [...current, { id: `gaia-${bucketId}`, source: bucketId, sourceHandle: `ground-${bucketId}`, target: 'gaia-ground', targetHandle: 'gaia-root', label: 'rooted', animated: true, markerEnd: { type: MarkerType.ArrowClosed } }])
   }
 
   const isValidConnection = (connection: Connection | Edge) => {
