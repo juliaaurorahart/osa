@@ -211,6 +211,7 @@
 .attribute-card input, .connector-card input, .connector-card select { min-width: 0; padding: 7px; font-size: 13px; }
 .attribute-card select { min-width: 0; border: 1px solid #86685d; border-radius: 7px; padding: 7px; color: #fff8ef; background: #30221f; font: 13px inherit; }
 .attribute-card input:disabled { color: #9e93a8; background: #292431; }
+.empty-slot-field { display: grid; min-height: 34px; place-items: center start; border: 1px dashed #65818d; border-radius: 7px; padding: 0 7px; color: #9fd3dc; background: rgba(41, 76, 87, .35); font-size: 12px; font-style: italic; }
 .attribute-drive { display: flex !important; align-items: center; gap: 3px; margin: 0 !important; color: #86d5df !important; font-size: 8px !important; letter-spacing: 0 !important; text-transform: uppercase; }
 .attribute-drive input { width: 13px; height: 13px; margin: 0; accent-color: #4c9aa5; }
 .attribute-drive:has(input:checked) { color: #ef9ec1 !important; }

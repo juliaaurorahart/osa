@@ -27,8 +27,8 @@ type SocketDirection = 'signal' | 'slot'
 type DataType = 'Relationship' | 'Object' | 'Text' | 'Number' | 'Boolean' | 'File' | 'Any'
 type AttributeMode = 'driving' | 'driven'
 type ThoughtKind = 'Idea' | 'Question' | 'Feeling' | 'Decision' | 'Reference' | 'Experiment' | 'Task'
-type Socket = { id: string; name: string; direction: SocketDirection; payload: DataType; attributeId?: string; value?: string; functionId?: string; drivenBy?: string; drivenValue?: string; drivenType?: DataType }
-type Attribute = { id: string; key: string; value: string; type: DataType; mode?: AttributeMode; passFrom?: string; passFunctionId?: string; createdChildId?: string; isSelf?: boolean }
+type Socket = { id: string; name: string; direction: SocketDirection; payload: DataType; attributeId?: string; value?: string; functionId?: string; empty?: boolean; drivenBy?: string; drivenValue?: string; drivenType?: DataType }
+type Attribute = { id: string; key: string; value: string; type: DataType; mode?: AttributeMode; passFrom?: string; passFunctionId?: string; createdChildId?: string; isSelf?: boolean; isEmptySlot?: boolean }
 type FunctionOperation = 'identity' | 'uppercase' | 'increment' | 'double' | 'halve' | 'round' | 'append-note' | 'custom'
 type OsaFunction = { id: string; name: string; input: DataType; output: DataType; operation: FunctionOperation; code?: string }
 type CanvasData = { label: string; note?: string; privateNote?: string; provenance?: string; kind?: ThoughtKind; isSeed?: boolean; isNode?: boolean; isTree?: boolean; sockets: Socket[]; attributes: Attribute[]; removeMode?: boolean; onRemove?: () => void }
@@ -310,7 +310,7 @@ function Playground() {
           const socketNeedsUpdate = socket.direction !== 'slot' || socket.payload !== receivedType || socket.name !== receivedName
           if (!attributeNeedsUpdate && !socketNeedsUpdate) return
           if (attributeNeedsUpdate) {
-            nextAttributes = nextAttributes.map((item) => item.id !== socket.attributeId ? item : { ...item, key: receivedName, type: receivedType, value: receivedValue, mode: 'driven' })
+            nextAttributes = nextAttributes.map((item) => item.id !== socket.attributeId ? item : { ...item, key: receivedName, type: receivedType, value: receivedValue, mode: 'driven', isEmptySlot: false })
             nextAttributes = nextAttributes.map((item) => {
               if (item.passFrom !== socket.attributeId) return item
               const onwardFunction = functions.find((fn) => fn.id === item.passFunctionId)
@@ -327,7 +327,7 @@ function Playground() {
             })
           }
           if (socketNeedsUpdate) {
-            nextSockets = nextSockets.map((currentSocket) => currentSocket.id !== socket.id ? currentSocket : { ...currentSocket, name: receivedName, direction: 'slot', payload: receivedType })
+            nextSockets = nextSockets.map((currentSocket) => currentSocket.id !== socket.id ? currentSocket : { ...currentSocket, name: receivedName, direction: 'slot', payload: receivedType, empty: false })
           }
           nodeChanged = true
         })
@@ -421,13 +421,14 @@ function Playground() {
             ...attribute,
             type: isReceiver ? source.payload : attribute.type,
             value: source.payload === 'Relationship' ? (node.id === connection.source ? 'Sow' : 'Cub') : node.id === connection.source ? attribute.value : source.value,
+            isEmptySlot: isReceiver ? false : attribute.isEmptySlot,
           })
           return {
             ...node,
             data: {
               ...node.data,
               attributes,
-              sockets: isReceiver ? socketsFor(node).map((socket) => socket.attributeId === attributeId ? { ...socket, direction: 'slot', payload: source.payload } : socket) : socketsFor(node),
+              sockets: isReceiver ? socketsFor(node).map((socket) => socket.attributeId === attributeId ? { ...socket, direction: 'slot', payload: source.payload, empty: false } : socket) : socketsFor(node),
             },
           }
         }))
@@ -593,10 +594,10 @@ function Playground() {
     }, 40)
   }
 
-  const addSeedSlot = () => {
-    if (!selectedData?.isSeed) return
-    const attribute: Attribute = { id: `attribute-${crypto.randomUUID()}`, key: 'New input', value: '', type: 'Text', mode: 'driven' }
-    const slot: Socket = { id: `socket-${crypto.randomUUID()}`, name: attribute.key, direction: 'slot', payload: attribute.type, attributeId: attribute.id }
+  const addSlot = () => {
+    if (!selectedData) return
+    const attribute: Attribute = { id: `attribute-${crypto.randomUUID()}`, key: 'Waiting for signal', value: '', type: 'Any', mode: 'driven', isEmptySlot: true }
+    const slot: Socket = { id: `socket-${crypto.randomUUID()}`, name: attribute.key, direction: 'slot', payload: 'Any', attributeId: attribute.id, empty: true }
     updateSelectedNode({ attributes: [...selectedData.attributes, attribute], sockets: [...selectedData.sockets, slot] })
     if (selectedNodeId) requestAnimationFrame(() => updateNodeInternals(selectedNodeId))
   }
@@ -1151,24 +1152,23 @@ function Playground() {
                     <div>
                       <button type="button" onClick={addAttribute}>+ Add</button>
                       <button type="button" onClick={addSelfAttribute} disabled={selfIsShared}>{selfIsShared ? 'Self ready' : '+ Me'}</button>
-                      {selectedData?.isSeed && <button type="button" onClick={addSeedSlot}>+ Slot</button>}
+                      <button type="button" onClick={addSlot}>+ Slot</button>
                     </div>
                   </div>
                   {selectedData?.attributes.filter((attribute) => !attribute.passFrom).map((attribute) => {
                     const onwardAttributes = selectedData.attributes.filter((candidate) => candidate.passFrom === attribute.id)
                     const received = (attribute.mode ?? 'driving') === 'driven'
                     const isSelfAttribute = attribute.isSelf || (attribute.key === 'Self' && attribute.type === 'Object')
+                    const isEmptySlot = Boolean(attribute.isEmptySlot)
                     return (
                       <div className={`attribute-card${received ? ' received-attribute' : ''}`} key={attribute.id}>
                         <div className="attribute-topline">
-                          <input value={isSelfAttribute ? String(selectedNode.data.label ?? 'Untitled object') : attribute.key} aria-label="Attribute name" disabled={received || isSelfAttribute} onChange={(event) => updateAttribute(attribute.id, { key: event.target.value })} />
+                          <input value={isEmptySlot ? 'Waiting for signal' : isSelfAttribute ? String(selectedNode.data.label ?? 'Untitled object') : attribute.key} aria-label="Attribute name" disabled={received || isSelfAttribute || isEmptySlot} onChange={(event) => updateAttribute(attribute.id, { key: event.target.value })} />
                           {editorRemovalMode && <button className="attribute-remove" type="button" onClick={() => removeAttribute(attribute.id)} aria-label={`Remove ${attribute.key}`}>×</button>}
                         </div>
                         <div className="attribute-controls">
-                          <select value={attribute.type ?? 'Text'} aria-label="Attribute data type" disabled={received} onChange={(event) => updateAttribute(attribute.id, { type: event.target.value as DataType })}>
-                            {dataTypes.map((type) => <option key={type}>{type}</option>)}
-                          </select>
-                          {attribute.type === 'Relationship' ? <select value="Sow/Cub" aria-label="Relationship value" disabled><option value="Sow/Cub">Sow/Cub</option></select> : (
+                          {isEmptySlot ? <span className="empty-slot-field">No type yet</span> : <select value={attribute.type ?? 'Text'} aria-label="Attribute data type" disabled={received} onChange={(event) => updateAttribute(attribute.id, { type: event.target.value as DataType })}>{dataTypes.map((type) => <option key={type}>{type}</option>)}</select>}
+                          {isEmptySlot ? <span className="empty-slot-field">Waiting</span> : attribute.type === 'Relationship' ? <select value="Sow/Cub" aria-label="Relationship value" disabled><option value="Sow/Cub">Sow/Cub</option></select> : (
                             <input value={isSelfAttribute ? `${String(selectedNode.data.label ?? 'Untitled object')} · ${selectedNode.id}` : attribute.value} aria-label="Attribute value" disabled={isSelfAttribute || received} placeholder={received ? 'Received value' : 'Value to send'} onChange={(event) => updateAttribute(attribute.id, { value: event.target.value })} />
                           )}
                           <label className="attribute-drive"><input type="checkbox" checked={!received} disabled={received} onChange={(event) => updateAttribute(attribute.id, { mode: event.target.checked ? 'driving' : 'driven' })} />{received ? '↓ Receives' : '↑ Sends'}</label>
@@ -1207,7 +1207,7 @@ function Playground() {
                       <div className="connector-topline">
                         <label className="connector-mode"><input type="checkbox" checked={socket.direction === 'signal'} onChange={(event) => setConnectorDirection(socket, event.target.checked ? 'signal' : 'slot')} />{socket.direction === 'signal' ? '↑ Signal sends' : '↓ Slot receives'}</label>
                       </div>
-                      <p className="connector-attribute">{detailsFor(selectedNode, socket).name} · {detailsFor(selectedNode, socket).payload}</p>
+                      <p className="connector-attribute">{socket.empty ? 'Empty slot · waiting for a signal' : `${detailsFor(selectedNode, socket).name} · ${detailsFor(selectedNode, socket).payload}`}</p>
                       {socket.direction === 'signal' && socket.attributeId && <label className="child-node-toggle"><input type="checkbox" checked={Boolean(selectedData.attributes.find((attribute) => attribute.id === socket.attributeId)?.createdChildId)} onChange={(event) => setChildNodeForSignal(socket.attributeId!, event.target.checked)} />{selectedData.attributes.find((attribute) => attribute.id === socket.attributeId)?.createdChildId ? 'Created node attached' : 'Connector only'}</label>}
                       {socket.direction === 'slot' && <p className="receive-unchanged">Receives unchanged</p>}
                     </div>
