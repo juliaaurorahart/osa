@@ -4,6 +4,6 @@
  * Until they are replaced, every database request is deliberately denied.
  */
 export const accessConfig = {
-  domain: 'https://YOUR-TEAM.cloudflareaccess.com',
-  aud: 'YOUR-ACCESS-APPLICATION-AUDIENCE',
+  domain: 'https://winter-bush-800e.cloudflareaccess.com',
+  aud: '8f84943dec23e364c7345e94644dc4ca39332532272399ee8bb7ada77115621b',
 }
