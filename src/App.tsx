@@ -45,7 +45,9 @@ type FunctionNode = Node<FunctionData, 'function'>
 type TextData = CanvasData & { content: string }
 type TextNode = Node<TextData, 'text'>
 type ProjectFrame = { intention: string; feeling: string; question: string }
-type SavedBoard = { id: string; name: string; nodes: Node[]; edges: Edge[]; functions?: OsaFunction[]; project?: ProjectFrame; updatedAt: string }
+type FieldItemKind = 'note' | 'shape' | 'sketch'
+type FieldItem = { id: string; kind: FieldItemKind; title: string; content: string; x: number; y: number; color: string }
+type SavedBoard = { id: string; name: string; nodes: Node[]; edges: Edge[]; functions?: OsaFunction[]; project?: ProjectFrame; fieldItems?: FieldItem[]; updatedAt: string }
 
 const SAVE_KEY = 'osa-react-flow-saves-v1'
 const MOOD_KEY = 'osa-visual-mood-v1'
@@ -252,7 +254,9 @@ function Playground() {
   const [boardName, setBoardName] = useState('Untitled board')
   const [functions, setFunctions] = useState<OsaFunction[]>(defaultFunctions)
   const [functionLibraryOpen, setFunctionLibraryOpen] = useState(false)
-  const [workspaceView, setWorkspaceView] = useState<'canvas' | 'frame'>('canvas')
+  const [workspaceView, setWorkspaceView] = useState<'field' | 'canvas' | 'frame'>(() => new URLSearchParams(window.location.search).get('view') === 'field' ? 'field' : 'canvas')
+  const [fieldItems, setFieldItems] = useState<FieldItem[]>([])
+  const fieldNumber = useRef(1)
   const [projectFrame, setProjectFrame] = useState<ProjectFrame>({ intention: '', feeling: '', question: '' })
   const [visualMood, setVisualMood] = useState(() => Number(localStorage.getItem(MOOD_KEY) ?? .42))
   const [sparkles, setSparkles] = useState(() => localStorage.getItem(SPARKLE_KEY) === 'true')
@@ -754,6 +758,28 @@ function Playground() {
     setFunctions((currentFunctions) => currentFunctions.map((fn) => fn.id === functionId ? { ...fn, ...changes } : fn))
   }
 
+  const addFieldItem = (kind: FieldItemKind) => {
+    const id = `field-${crypto.randomUUID()}`
+    const number = fieldNumber.current++
+    const title = kind === 'note' ? `Note ${number}` : kind === 'shape' ? `Shape ${number}` : `Sketch ${number}`
+    const item: FieldItem = { id, kind, title, content: kind === 'note' ? '' : 'A field fragment waiting to become more.', x: 90 + (number % 4) * 150, y: 110 + (number % 3) * 125, color: ['#ffc0d9', '#cbb7ff', '#ffda91', '#a9e9d0'][number % 4] }
+    const gaiaId = 'gaia-board'
+    const tree: OsaNode = { id, type: 'osa', position: { x: 260 + (number % 4) * 210, y: 160 + (number % 3) * 150 }, data: { label: title, note: item.content, kind: 'Idea', isTree: true, sockets: [], attributes: [] }, className: 'osa-node tree-node' }
+    setFieldItems((current) => [...current, item])
+    setNodes((current) => {
+      const gaia = current.some((node) => node.id === gaiaId)
+        ? current
+        : [...current, { id: gaiaId, type: 'osa', position: { x: 680, y: 540 }, data: { label: 'Gaia', note: 'This board holds the field together.', kind: 'Idea', isTree: true, sockets: [], attributes: [] }, className: 'osa-node tree-node' } as OsaNode]
+      return [...gaia, tree]
+    })
+    setEdges((current) => [...current, { id: `gaia-${id}`, source: id, target: gaiaId, label: 'of Gaia', animated: true, markerEnd: { type: MarkerType.ArrowClosed } }])
+  }
+
+  const updateFieldItem = (id: string, changes: Partial<FieldItem>) => {
+    setFieldItems((current) => current.map((item) => item.id === id ? { ...item, ...changes } : item))
+    setNodes((current) => current.map((node) => node.id !== id ? node : { ...node, data: { ...node.data, ...(changes.title ? { label: changes.title } : {}), ...(changes.content !== undefined ? { note: changes.content } : {}) } }))
+  }
+
   const attachedFunctionsFor = (nodeId: string) => {
     const treeHeads = nodes.filter((node) => (node.data as CanvasData).isTree).map((node) => node.id)
     const ordinaryEdges = edges.filter((edge) => edge.targetHandle !== 'function-attachment')
@@ -841,7 +867,7 @@ function Playground() {
     if (!requestedName?.trim()) return
 
     const id = saveAs || !existing ? crypto.randomUUID() : existing.id
-    const saved: SavedBoard = { id, name: requestedName.trim(), nodes, edges, functions, project: projectFrame, updatedAt: new Date().toISOString() }
+    const saved: SavedBoard = { id, name: requestedName.trim(), nodes, edges, functions, project: projectFrame, fieldItems, updatedAt: new Date().toISOString() }
     persistSaves([...saves.filter((save) => save.id !== id), saved])
     setActiveSaveId(id)
     setBoardName(saved.name)
@@ -854,6 +880,7 @@ function Playground() {
     setEdges(saved.edges)
     setFunctions(saved.functions ?? defaultFunctions())
     setProjectFrame(saved.project ?? { intention: '', feeling: '', question: '' })
+    setFieldItems(saved.fieldItems ?? [])
     setActiveSaveId(saved.id)
     setBoardName(saved.name)
     setSelectedNodeId(null)
@@ -866,6 +893,7 @@ function Playground() {
     setActiveSaveId(null)
     setBoardName('Untitled board')
     setProjectFrame({ intention: '', feeling: '', question: '' })
+    setFieldItems([])
     setSelectedNodeId(null)
   }
 
@@ -996,7 +1024,8 @@ function Playground() {
           <h1>OSA Playground</h1>
         </div>
         <div className="view-switch" role="group" aria-label="Workspace view">
-          <button type="button" className={workspaceView === 'canvas' ? 'active' : ''} onClick={() => setWorkspaceView('canvas')}>Canvas</button>
+          <button type="button" className={workspaceView === 'field' ? 'active' : ''} onClick={() => setWorkspaceView('field')}>The Field</button>
+          <button type="button" className={workspaceView === 'canvas' ? 'active' : ''} onClick={() => setWorkspaceView('canvas')}>OSA</button>
           <button type="button" className={workspaceView === 'frame' ? 'active' : ''} onClick={() => setWorkspaceView('frame')}>Project Frame</button>
         </div>
         <div className="save-tools" aria-label="Saved boards">
@@ -1038,7 +1067,18 @@ function Playground() {
         <p className="hint">{drawingMode ? 'Draw on empty canvas · Esc or Draw to return to node mode' : 'Drag nodes · pull handles to connect · double-click to rename · Delete to remove'}</p>
       </header>
 
-      {workspaceView === 'canvas' ? <section className="flow-area" aria-label="Node playground">
+      {workspaceView === 'field' ? <section className="field-workspace" aria-label="The Field notebook canvas">
+        <aside className="field-tools"><p>THE FIELD</p><h2>Let it arrive<br />before it has to explain itself.</h2><button type="button" onClick={() => addFieldItem('note')}>+ Note</button><button type="button" onClick={() => addFieldItem('shape')}>+ Shape</button><button type="button" onClick={() => addFieldItem('sketch')}>+ Sketch</button><small>Every item here also grows as a tree in OSA, connected to Gaia.</small></aside>
+        <div className="field-canvas">
+          <div className="field-gaia"><span>✦</span><strong>Gaia</strong><small>this board</small></div>
+          {fieldItems.length === 0 && <div className="field-empty"><span>✧</span><h2>Start anywhere.</h2><p>Put down a note, a shape, or a small sketch. OSA can hold the structure later.</p></div>}
+          {fieldItems.map((item) => <article key={item.id} className={`field-item ${item.kind}`} style={{ left: item.x, top: item.y, '--field-color': item.color } as CSSProperties}>
+            <input aria-label="Field item title" value={item.title} onChange={(event) => updateFieldItem(item.id, { title: event.target.value })} />
+            {item.kind === 'note' ? <textarea aria-label="Field note" value={item.content} placeholder="A thought, a question, a tiny beginning…" onChange={(event) => updateFieldItem(item.id, { content: event.target.value })} /> : <div className="field-mark" aria-label={`${item.kind} placeholder`}><span /><span /><span /></div>}
+            <small>{item.kind} · OSA tree</small>
+          </article>)}
+        </div>
+      </section> : workspaceView === 'canvas' ? <section className="flow-area" aria-label="Node playground">
         <ReactFlow
           nodes={renderedNodes}
           edges={edges}
