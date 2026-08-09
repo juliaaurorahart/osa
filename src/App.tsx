@@ -111,7 +111,7 @@ const initialNodes: Node[] = [
     id: 'seed-1',
     type: 'osa',
     position: { x: 410, y: 260 },
-    data: { label: 'Seed 1', isSeed: true, sockets: [], attributes: [] },
+    data: { label: 'Node 1', isSeed: true, sockets: [], attributes: [] },
     className: 'osa-node idea-node',
   },
 ]
@@ -264,6 +264,8 @@ function Playground() {
   const removedConnectionWhileEditing = useRef(false)
   const automaticEdgeIds = useRef(new Set<string>())
   const nextNodeNumber = useRef(2)
+  const nextAttributeNumber = useRef(1)
+  const nextFunctionNumber = useRef(1)
   const nextDrawingNumber = useRef(1)
   const nextTextNumber = useRef(1)
   const strokePoints = useRef<Point[]>([])
@@ -496,12 +498,11 @@ function Playground() {
   const addNode = (shape: 'object' | ShapeKind) => {
     const number = nextNodeNumber.current++
     const position = openPositionNearViewportCenter()
-    const labels: Record<ShapeKind, string> = { rectangle: 'Rectangle seed', circle: 'Circle seed', diamond: 'Diamond seed' }
     setNodes((currentNodes) => [
       ...currentNodes,
       shape === 'object'
-        ? { id: `seed-${number}`, type: 'osa', position, data: { label: `Seed ${number}`, isSeed: true, sockets: [], attributes: [] }, className: 'osa-node idea-node' } as OsaNode
-        : { id: `${shape}-seed-${number}`, type: 'shape', position, data: { label: labels[shape], shape, isSeed: true, sockets: [], attributes: [] } } as ShapeNode,
+        ? { id: `seed-${number}`, type: 'osa', position, data: { label: `Node ${number}`, isSeed: true, sockets: [], attributes: [] }, className: 'osa-node idea-node' } as OsaNode
+        : { id: `${shape}-seed-${number}`, type: 'shape', position, data: { label: `Node ${number}`, shape, isSeed: true, sockets: [], attributes: [] } } as ShapeNode,
     ])
   }
 
@@ -547,7 +548,7 @@ function Playground() {
     const matchingSocket = selectedData.sockets.find((socket) => socket.attributeId === attributeId)
     const sockets = matchingSocket
       ? selectedData.sockets.map((socket) => socket.attributeId !== attributeId ? socket : { ...socket, direction, name: edited?.key ?? socket.name, payload: edited?.type ?? socket.payload })
-      : [...selectedData.sockets, { id: `socket-${crypto.randomUUID()}`, name: edited?.key ?? 'New attribute', direction, payload: edited?.type ?? 'Any', attributeId }]
+      : [...selectedData.sockets, { id: `socket-${crypto.randomUUID()}`, name: edited?.key ?? 'Attr', direction, payload: edited?.type ?? 'Any', attributeId }]
     updateSelectedNode({ attributes, sockets })
     if (selectedNodeId) requestAnimationFrame(() => updateNodeInternals(selectedNodeId))
   }
@@ -555,7 +556,9 @@ function Playground() {
   const addAttribute = () => {
     if (!selectedData || !selectedNode) return
     const childId = `object-${crypto.randomUUID()}`
-    const attribute: Attribute = { id: `attribute-${crypto.randomUUID()}`, key: 'New attribute', value: '', type: 'Text', mode: 'driving', createdChildId: childId }
+    const attributeName = `Attr ${nextAttributeNumber.current++}`
+    const childName = `Node ${nextNodeNumber.current++}`
+    const attribute: Attribute = { id: `attribute-${crypto.randomUUID()}`, key: attributeName, value: '', type: 'Text', mode: 'driving', createdChildId: childId }
     const signal: Socket = { id: `socket-${crypto.randomUUID()}`, name: attribute.key, direction: 'signal', payload: attribute.type, attributeId: attribute.id }
     const childAttribute: Attribute = { id: `attribute-${crypto.randomUUID()}`, key: attribute.key, value: '', type: attribute.type, mode: 'driven' }
     const slot: Socket = { id: `socket-${crypto.randomUUID()}`, name: childAttribute.key, direction: 'slot', payload: childAttribute.type, attributeId: childAttribute.id }
@@ -582,7 +585,7 @@ function Playground() {
         id: childId,
         type: 'osa',
         position: childPosition,
-        data: { label: 'New node', sockets: [slot], attributes: [childAttribute] },
+        data: { label: childName, sockets: [slot], attributes: [childAttribute] },
         className: 'osa-node idea-node',
       },
     ])
@@ -607,7 +610,7 @@ function Playground() {
     const functionId = `function-${crypto.randomUUID()}`
     const argument: Socket = { id: `argument-${crypto.randomUUID()}`, name: 'value', direction: 'slot', payload: 'Any' }
     const result: Socket = { id: `return-${crypto.randomUUID()}`, name: 'result', direction: 'signal', payload: 'Any' }
-    const fn: OsaFunction = { id: functionId, name: `${String(selectedNode.data.label)} function`, input: 'Any', output: 'Any', operation: 'custom', code: 'return value' }
+    const fn: OsaFunction = { id: functionId, name: `Func ${nextFunctionNumber.current++}`, input: 'Any', output: 'Any', operation: 'custom', code: 'return value' }
     setFunctions((currentFunctions) => [...currentFunctions, fn])
     setNodes((currentNodes) => currentNodes.map((node) => node.id !== selectedNode.id ? node : {
       ...node,
@@ -644,9 +647,8 @@ function Playground() {
     if (!selectedData || !selectedNodeId || !selectedNode) return
     const source = selectedData.attributes.find((attribute) => attribute.id === attributeId)
     if (!source) return
-    const number = selectedData.attributes.filter((attribute) => attribute.passFrom === attributeId).length + 1
     const childId = `object-${crypto.randomUUID()}`
-    const attribute: Attribute = { id: `attribute-${crypto.randomUUID()}`, key: `${source.key} onward${number > 1 ? ` ${number}` : ''}`, value: source.value, type: source.type, mode: 'driving', passFrom: source.id, createdChildId: childId }
+    const attribute: Attribute = { id: `attribute-${crypto.randomUUID()}`, key: `Attr ${nextAttributeNumber.current++}`, value: source.value, type: source.type, mode: 'driving', passFrom: source.id, createdChildId: childId }
     const signal: Socket = { id: `socket-${crypto.randomUUID()}`, name: attribute.key, direction: 'signal', payload: attribute.type, attributeId: attribute.id }
     const childAttribute: Attribute = { id: `attribute-${crypto.randomUUID()}`, key: attribute.key, value: '', type: attribute.type, mode: 'driven' }
     const slot: Socket = { id: `socket-${crypto.randomUUID()}`, name: childAttribute.key, direction: 'slot', payload: childAttribute.type, attributeId: childAttribute.id }
@@ -654,7 +656,7 @@ function Playground() {
     automaticEdgeIds.current.add(edge.id)
     setNodes((currentNodes) => [
       ...currentNodes.map((node) => node.id === selectedNode.id ? { ...node, data: { ...node.data, attributes: [...selectedData.attributes, attribute], sockets: [...selectedData.sockets, signal] } } : node),
-      { id: childId, type: 'osa', position: openPositionNearParent(selectedNode), data: { label: 'New node', sockets: [slot], attributes: [childAttribute] }, className: 'osa-node idea-node' },
+      { id: childId, type: 'osa', position: openPositionNearParent(selectedNode), data: { label: `Node ${nextNodeNumber.current++}`, sockets: [slot], attributes: [childAttribute] }, className: 'osa-node idea-node' },
     ])
     window.setTimeout(() => {
       updateNodeInternals([selectedNode.id, childId])
@@ -682,7 +684,7 @@ function Playground() {
       const slot: Socket = { id: `socket-${crypto.randomUUID()}`, name: childAttribute.key, direction: 'slot', payload: childAttribute.type, attributeId: childAttribute.id }
       const edge: Edge = { id: `edge-${crypto.randomUUID()}`, source: selectedNode.id, sourceHandle: signal.id, target: childId, targetHandle: slot.id, label: `${attribute.key} → ${childAttribute.key}`, animated: true, markerEnd: { type: MarkerType.ArrowClosed } }
       updateSelectedNode({ attributes: selectedData.attributes.map((item) => item.id === attributeId ? { ...item, createdChildId: childId } : item) })
-      setNodes((currentNodes) => [...currentNodes, { id: childId, type: 'osa', position: openPositionNearParent(selectedNode), data: { label: 'New node', sockets: [slot], attributes: [childAttribute] }, className: 'osa-node idea-node' }])
+      setNodes((currentNodes) => [...currentNodes, { id: childId, type: 'osa', position: openPositionNearParent(selectedNode), data: { label: `Node ${nextNodeNumber.current++}`, sockets: [slot], attributes: [childAttribute] }, className: 'osa-node idea-node' }])
       window.setTimeout(() => {
         updateNodeInternals([selectedNode.id, childId])
         setEdges((currentEdges) => [...currentEdges, edge])
@@ -769,7 +771,7 @@ function Playground() {
       ...currentFunctions,
       {
         id: `function-${crypto.randomUUID()}`,
-        name: 'New function',
+        name: `Func ${nextFunctionNumber.current++}`,
         input: 'Any',
         output: 'Any',
         operation: 'identity',
@@ -1205,7 +1207,7 @@ function Playground() {
                   {selectedData?.sockets.map((socket) => (
                     <div className="connector-card" key={socket.id}>
                       <div className="connector-topline">
-                        <label className="connector-mode"><input type="checkbox" checked={socket.direction === 'signal'} onChange={(event) => setConnectorDirection(socket, event.target.checked ? 'signal' : 'slot')} />{socket.direction === 'signal' ? '↑ Signal sends' : '↓ Slot receives'}</label>
+                        <label className="connector-mode"><input type="checkbox" checked={socket.direction === 'signal'} onChange={(event) => setConnectorDirection(socket, event.target.checked ? 'signal' : 'slot')} />{socket.direction === 'signal' ? '↑ Sends' : '↓ Receives'}</label>
                       </div>
                       <p className="connector-attribute">{socket.empty ? 'Empty slot · waiting for a signal' : `${detailsFor(selectedNode, socket).name} · ${detailsFor(selectedNode, socket).payload}`}</p>
                       {socket.direction === 'signal' && socket.attributeId && <label className="child-node-toggle"><input type="checkbox" checked={Boolean(selectedData.attributes.find((attribute) => attribute.id === socket.attributeId)?.createdChildId)} onChange={(event) => setChildNodeForSignal(socket.attributeId!, event.target.checked)} />{selectedData.attributes.find((attribute) => attribute.id === socket.attributeId)?.createdChildId ? 'Created node attached' : 'Connector only'}</label>}
