@@ -268,9 +268,12 @@ function Playground() {
   const [fieldStrokes, setFieldStrokes] = useState<FieldStroke[]>([])
   const [fieldTool, setFieldTool] = useState<'note' | 'shape' | 'sketch' | null>(null)
   const [activeFieldStroke, setActiveFieldStroke] = useState<Point[] | null>(null)
+  const [fieldZoom, setFieldZoom] = useState(1)
   const fieldNumber = useRef(1)
   const fieldCanvas = useRef<HTMLDivElement>(null)
   const fieldStroke = useRef<Point[] | null>(null)
+  const fieldPointers = useRef(new Map<number, { x: number; y: number }>())
+  const fieldPinch = useRef<{ distance: number; zoom: number } | null>(null)
   const [projectFrame, setProjectFrame] = useState<ProjectFrame>({ intention: '', feeling: '', question: '' })
   const [visualMood, setVisualMood] = useState(() => Number(localStorage.getItem(MOOD_KEY) ?? .42))
   const [sparkles, setSparkles] = useState(() => localStorage.getItem(SPARKLE_KEY) === 'true')
@@ -1040,11 +1043,32 @@ function Playground() {
     const canvas = fieldCanvas.current
     if (!canvas) return { x: 0, y: 0 }
     const bounds = canvas.getBoundingClientRect()
-    return { x: event.clientX - bounds.left + canvas.scrollLeft, y: event.clientY - bounds.top + canvas.scrollTop }
+    return { x: (event.clientX - bounds.left + canvas.scrollLeft) / fieldZoom, y: (event.clientY - bounds.top + canvas.scrollTop) / fieldZoom }
+  }
+
+  const rememberFieldPointer = (event: React.PointerEvent<HTMLDivElement>) => {
+    fieldPointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
+    if (fieldPointers.current.size === 2) {
+      const [first, second] = [...fieldPointers.current.values()]
+      fieldStroke.current = null
+      setActiveFieldStroke(null)
+      fieldPinch.current = { distance: Math.hypot(first.x - second.x, first.y - second.y), zoom: fieldZoom }
+    }
+  }
+
+  const zoomWithPointers = () => {
+    if (fieldPointers.current.size < 2 || !fieldPinch.current) return false
+    const [first, second] = [...fieldPointers.current.values()]
+    const distance = Math.hypot(first.x - second.x, first.y - second.y)
+    setFieldZoom(Math.min(2, Math.max(.45, fieldPinch.current.zoom * distance / fieldPinch.current.distance)))
+    return true
   }
 
   const startFieldInteraction = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0 || !fieldTool || (event.target as HTMLElement).closest('.field-item')) return
+    if (event.button !== 0 || (event.target as HTMLElement).closest('.field-item')) return
+    rememberFieldPointer(event)
+    if (fieldPointers.current.size > 1) return
+    if (!fieldTool) return
     const point = fieldPoint(event)
     if (fieldTool === 'note' || fieldTool === 'shape') {
       addFieldItem(fieldTool, { x: Math.max(18, point.x - 18), y: Math.max(18, point.y - 18) })
@@ -1058,13 +1082,18 @@ function Playground() {
   }
 
   const continueFieldSketch = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (fieldPointers.current.has(event.pointerId)) fieldPointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
+    if (zoomWithPointers()) return
     if (!fieldStroke.current) return
     const points = [...fieldStroke.current, fieldPoint(event)]
     fieldStroke.current = points
     setActiveFieldStroke(points)
   }
 
-  const finishFieldSketch = () => {
+  const finishFieldSketch = (event?: React.PointerEvent<HTMLDivElement>) => {
+    if (event) fieldPointers.current.delete(event.pointerId)
+    if (fieldPointers.current.size > 0) return
+    fieldPinch.current = null
     const points = fieldStroke.current
     fieldStroke.current = null
     setActiveFieldStroke(null)
@@ -1150,8 +1179,9 @@ function Playground() {
       </header>
 
       {workspaceView === 'field' ? <section className="field-workspace" aria-label="The Field notebook canvas">
-        <aside className="field-tools"><p>THE FIELD</p><h2>Let it arrive<br />before it has to explain itself.</h2><button type="button" className={fieldTool === 'note' ? 'active' : ''} onClick={() => setFieldTool(fieldTool === 'note' ? null : 'note')}>+ Note</button><button type="button" className={fieldTool === 'shape' ? 'active' : ''} onClick={() => setFieldTool(fieldTool === 'shape' ? null : 'shape')}>+ Shape</button><button type="button" className={fieldTool === 'sketch' ? 'active' : ''} onClick={() => setFieldTool(fieldTool === 'sketch' ? null : 'sketch')}>✎ Sketch</button><small>{fieldTool === 'note' ? 'Tap the field where the note belongs, then begin typing.' : fieldTool === 'shape' ? 'Tap the field to place a shape.' : fieldTool === 'sketch' ? 'Draw directly on the field.' : 'Choose a tool, then use the open field.'}</small>{selectedFieldShape && <div className="field-shape-controls"><strong>Edit shape</strong><label>Form<select value={selectedFieldShape.shape ?? 'square'} onChange={(event) => updateFieldItem(selectedFieldShape.id, { shape: event.target.value as FieldShapeKind })}><option value="square">Square</option><option value="circle">Circle</option><option value="diamond">Diamond</option><option value="rounded">Rounded</option></select></label><label>Width<input type="range" min="70" max="420" value={selectedFieldShape.width ?? 164} onChange={(event) => updateFieldItem(selectedFieldShape.id, { width: Number(event.target.value) })} /><span>{selectedFieldShape.width ?? 164}px</span></label><label>Height<input type="range" min="70" max="420" value={selectedFieldShape.height ?? 164} onChange={(event) => updateFieldItem(selectedFieldShape.id, { height: Number(event.target.value) })} /><span>{selectedFieldShape.height ?? 164}px</span></label><label>Color<input type="color" value={selectedFieldShape.color} onChange={(event) => updateFieldItem(selectedFieldShape.id, { color: event.target.value })} /></label></div>}</aside>
+        <aside className="field-tools"><p>THE FIELD</p><h2>Let it arrive<br />before it has to explain itself.</h2><button type="button" className={fieldTool === 'note' ? 'active' : ''} onClick={() => setFieldTool(fieldTool === 'note' ? null : 'note')}>+ Note</button><button type="button" className={fieldTool === 'shape' ? 'active' : ''} onClick={() => setFieldTool(fieldTool === 'shape' ? null : 'shape')}>+ Shape</button><button type="button" className={fieldTool === 'sketch' ? 'active' : ''} onClick={() => setFieldTool(fieldTool === 'sketch' ? null : 'sketch')}>✎ Sketch</button><div className="field-zoom"><button type="button" onClick={() => setFieldZoom((zoom) => Math.max(.45, Number((zoom - .15).toFixed(2))))}>−</button><span>{Math.round(fieldZoom * 100)}%</span><button type="button" onClick={() => setFieldZoom((zoom) => Math.min(2, Number((zoom + .15).toFixed(2))))}>+</button></div><small>{fieldTool === 'note' ? 'Tap the field where the note belongs, then begin typing.' : fieldTool === 'shape' ? 'Tap the field to place a shape.' : fieldTool === 'sketch' ? 'Draw directly on the field. Two fingers zoom.' : 'Choose a tool, then use the open field. Two fingers zoom.'}</small>{selectedFieldShape && <div className="field-shape-controls"><strong>Edit shape</strong><label>Form<select value={selectedFieldShape.shape ?? 'square'} onChange={(event) => updateFieldItem(selectedFieldShape.id, { shape: event.target.value as FieldShapeKind })}><option value="square">Square</option><option value="circle">Circle</option><option value="diamond">Diamond</option><option value="rounded">Rounded</option></select></label><label>Width<input type="range" min="70" max="420" value={selectedFieldShape.width ?? 164} onChange={(event) => updateFieldItem(selectedFieldShape.id, { width: Number(event.target.value) })} /><span>{selectedFieldShape.width ?? 164}px</span></label><label>Height<input type="range" min="70" max="420" value={selectedFieldShape.height ?? 164} onChange={(event) => updateFieldItem(selectedFieldShape.id, { height: Number(event.target.value) })} /><span>{selectedFieldShape.height ?? 164}px</span></label><label>Color<input type="color" value={selectedFieldShape.color} onChange={(event) => updateFieldItem(selectedFieldShape.id, { color: event.target.value })} /></label></div>}</aside>
         <div ref={fieldCanvas} className={`field-canvas${fieldTool === 'sketch' ? ' sketching' : ''}`} onPointerDown={startFieldInteraction} onPointerMove={continueFieldSketch} onPointerUp={finishFieldSketch} onPointerCancel={finishFieldSketch}>
+          <div className="field-plane" style={{ transform: `scale(${fieldZoom})` }}>
           <svg className="field-strokes" width="2400" height="1600" aria-hidden="true">
             {fieldStrokes.map((stroke) => <path key={stroke.id} d={pointsToPath(stroke.points)} />)}
             {activeFieldStroke && activeFieldStroke.length > 1 && <path className="field-active-stroke" d={pointsToPath(activeFieldStroke)} />}
@@ -1161,7 +1191,7 @@ function Playground() {
             <input aria-label="Field item title" value={item.title} onChange={(event) => updateFieldItem(item.id, { title: event.target.value })} />
             {item.kind === 'note' ? <textarea data-field-note={item.id} aria-label="Field note" value={item.content} placeholder="A thought, a question, a tiny beginning…" onChange={(event) => updateFieldItem(item.id, { content: event.target.value })} /> : <div className="field-shape-mark" aria-label="square shape" />}
             <small>{item.kind}</small>
-          </article>)}
+          </article>)}</div>
         </div>
       </section> : workspaceView === 'canvas' ? <section className="flow-area" aria-label="Node playground">
         <ReactFlow
