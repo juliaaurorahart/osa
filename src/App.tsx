@@ -31,7 +31,7 @@ type Socket = { id: string; name: string; direction: SocketDirection; payload: D
 type Attribute = { id: string; key: string; value: string; type: DataType; mode?: AttributeMode; passFrom?: string; passFunctionId?: string; createdChildId?: string; isSelf?: boolean }
 type FunctionOperation = 'identity' | 'uppercase' | 'increment' | 'double' | 'halve' | 'round' | 'append-note'
 type OsaFunction = { id: string; name: string; input: DataType; output: DataType; operation: FunctionOperation }
-type CanvasData = { label: string; note?: string; privateNote?: string; provenance?: string; kind?: ThoughtKind; isSeed?: boolean; isNode?: boolean; sockets: Socket[]; attributes: Attribute[]; removeMode?: boolean; onRemove?: () => void }
+type CanvasData = { label: string; note?: string; privateNote?: string; provenance?: string; kind?: ThoughtKind; isSeed?: boolean; isNode?: boolean; isTree?: boolean; sockets: Socket[]; attributes: Attribute[]; removeMode?: boolean; onRemove?: () => void }
 type OsaData = CanvasData
 type OsaNode = Node<OsaData, 'osa'>
 type DrawingData = { points: Point[]; width: number; height: number; removeMode?: boolean; onRemove?: () => void }
@@ -188,7 +188,7 @@ function OsaObjectNode({ id, data }: NodeProps<OsaNode>) {
   return (
     <div className="osa-object">
       <SocketHandles sockets={data.sockets} />
-      {data.isSeed && <Handle type="target" id="function-attachment" className="function-attachment-handle nodrag nopan" position={Position.Top} data-label="Attach a function" title="Attach a function" />}
+      {data.isTree && <Handle type="target" id="function-attachment" className="function-attachment-handle nodrag nopan" position={Position.Top} data-label="Attach a function to this tree" title="Attach a function to this tree" />}
       {data.removeMode && <button className="node-remove" style={removeButtonStyle(id)} type="button" aria-label={`Remove ${data.label}`} onClick={(event) => { event.stopPropagation(); data.onRemove?.() }}><span className="node-remove-mark">×</span></button>}
       <strong>{data.label}</strong>
     </div>
@@ -199,7 +199,7 @@ function CanvasShapeNode({ id, data }: NodeProps<ShapeNode>) {
   return (
     <div className={`canvas-shape ${data.shape}`}>
       <SocketHandles sockets={data.sockets} />
-      {data.isSeed && <Handle type="target" id="function-attachment" className="function-attachment-handle nodrag nopan" position={Position.Top} data-label="Attach a function" title="Attach a function" />}
+      {data.isTree && <Handle type="target" id="function-attachment" className="function-attachment-handle nodrag nopan" position={Position.Top} data-label="Attach a function to this tree" title="Attach a function to this tree" />}
       {data.removeMode && <button className="node-remove" style={removeButtonStyle(id, data.shape === 'diamond' ? '-45deg' : '0deg')} type="button" aria-label={`Remove ${data.label}`} onClick={(event) => { event.stopPropagation(); data.onRemove?.() }}><span className="node-remove-mark">×</span></button>}
       <span>{data.label}</span>
     </div>
@@ -358,6 +358,7 @@ function Playground() {
 
   const renderedNodes = nodes.map((node) => ({
     ...node,
+    className: `${node.className ?? ''}${(node.data as CanvasData).isTree ? ' tree-head' : ''}`.trim(),
     data: {
       ...node.data,
       removeMode,
@@ -377,7 +378,7 @@ function Playground() {
       const targetNode = nodes.find((node) => node.id === connection.target)
       const functionAttachment = sourceNode?.type === 'function'
         && connection.sourceHandle === 'function-attach'
-        && Boolean((targetNode?.data as CanvasData | undefined)?.isSeed)
+        && Boolean((targetNode?.data as CanvasData | undefined)?.isTree)
         && connection.targetHandle === 'function-attachment'
       if (functionAttachment) {
         const functionId = (sourceNode.data as FunctionData).functionId
@@ -611,6 +612,12 @@ function Playground() {
     updateSelectedNode({ isNode: true })
   }
 
+  const turnNodeIntoTreeHead = () => {
+    if (!selectedData?.isSeed || !selectedData.isNode) return
+    updateSelectedNode({ isTree: true })
+    if (selectedNodeId) requestAnimationFrame(() => updateNodeInternals(selectedNodeId))
+  }
+
   const addFunctionPort = (direction: SocketDirection) => {
     if (!selectedNode || selectedNode.type !== 'function') return
     const data = selectedNode.data as FunctionData
@@ -724,8 +731,20 @@ function Playground() {
   }
 
   const attachedFunctionsFor = (nodeId: string) => {
+    const treeHeads = nodes.filter((node) => (node.data as CanvasData).isTree).map((node) => node.id)
+    const ordinaryEdges = edges.filter((edge) => edge.targetHandle !== 'function-attachment')
+    const connectedTo = new Set<string>([nodeId])
+    const queue = [nodeId]
+    while (queue.length) {
+      const current = queue.shift()!
+      ordinaryEdges.forEach((edge) => {
+        const neighbor = edge.source === current ? edge.target : edge.target === current ? edge.source : undefined
+        if (neighbor && !connectedTo.has(neighbor)) { connectedTo.add(neighbor); queue.push(neighbor) }
+      })
+    }
+    const relevantHeads = treeHeads.filter((id) => connectedTo.has(id))
     const ids = edges
-      .filter((edge) => edge.target === nodeId && edge.targetHandle === 'function-attachment')
+      .filter((edge) => relevantHeads.includes(edge.target ?? '') && edge.targetHandle === 'function-attachment')
       .map((edge) => (nodes.find((node) => node.id === edge.source)?.data as FunctionData | undefined)?.functionId)
       .filter((id): id is string => Boolean(id))
     return functions.filter((fn) => ids.includes(fn.id))
@@ -917,7 +936,7 @@ function Playground() {
     const sourceSocket = socketsFor(sourceNode).find((socket) => socket.id === connection.sourceHandle)
     const targetSocket = socketsFor(targetNode).find((socket) => socket.id === connection.targetHandle)
     if (sourceNode?.type === 'function' && connection.sourceHandle === 'function-attach') {
-      return Boolean((targetNode?.data as CanvasData | undefined)?.isSeed && connection.targetHandle === 'function-attachment')
+      return Boolean((targetNode?.data as CanvasData | undefined)?.isTree && connection.targetHandle === 'function-attachment')
     }
     const source = sourceSocket ? detailsFor(sourceNode, sourceSocket) : undefined
     const target = targetSocket ? detailsFor(targetNode, targetSocket) : undefined
@@ -1112,6 +1131,8 @@ function Playground() {
                   Came from
                   <input value={selectedData?.provenance ?? ''} placeholder="A conversation, a sketch, a source…" onChange={(event) => updateSelectedNode({ provenance: event.target.value })} />
                 </label>
+                {selectedData?.isSeed && selectedData.isNode && !selectedData.isTree && <button type="button" className="tree-head-choice" onClick={turnNodeIntoTreeHead}>✦ Become Tree head</button>}
+                {selectedData?.isTree && <p className="tree-head-note">Tree head · functions attached here become available to every connected node.</p>}
                 {selectedData?.isSeed && !selectedData.isNode ? <section className="seed-paths">
                   <p>A seed can grow into a function or an object.</p>
                   <button type="button" className="seed-path function-path" onClick={turnSeedIntoFunction}><span>ƒ</span><strong>Become function</strong><small>Give it arguments, returns, and code.</small></button>

@@ -107,6 +107,9 @@
 }
 .react-flow__node.osa-node:hover { border-color: #ffd099; transform: translateY(var(--node-lift)); box-shadow: 0 0 30px rgba(235, 132, 88, .45), 0 11px 30px rgba(0, 0, 0, .42); }
 .react-flow__node.osa-node.selected { border-color: #ffe0ad; box-shadow: 0 0 0 3px rgba(251, 169, 114, .3), 0 0 36px rgba(235, 112, 91, .5), 0 11px 30px rgba(0, 0, 0, .42); }
+.react-flow__node.tree-head { min-width: 168px; border-color: #80c98d; border-radius: 52% 48% 42% 58% / 52% 44% 56% 48%; background: radial-gradient(circle at 45% 22%, #8fe09b, #355839 53%, #243d2e 100%); box-shadow: 0 0 0 2px rgba(201, 255, 171, .26), 0 0 34px rgba(103, 224, 132, .48), 0 14px 30px rgba(0, 0, 0, .36); }
+.react-flow__node.tree-head .osa-object::before { content: '❦'; position: absolute; inset: -24px auto auto 50%; color: #d6ffba; font-size: 23px; text-shadow: 0 0 14px #89e78d; transform: translateX(-50%); }
+.react-flow__node.tree-head .osa-object strong { color: #f1ffe7; text-shadow: 0 1px 7px #173d28; }
 .react-flow__node.requirement-node { background: #4d3b38; border-color: #a1786b; }
 .react-flow__node.evidence-node { background: #3c493c; border-color: #799171; }
 .osa-object { position: relative; display: grid; min-height: 46px; align-content: center; gap: 7px; }
@@ -198,6 +201,9 @@
 .seed-path > span { grid-row: span 2; display: grid; width: 38px; height: 38px; place-items: center; border: 1px solid #ffbee2; border-radius: 50%; color: #ffd4ed; background: rgba(255, 149, 210, .14); font-size: 22px; }
 .seed-path strong { font-size: 16px; }
 .seed-path small { color: #f0c8dc; font-size: 13px; line-height: 1.3; }
+.tree-head-choice { width: 100%; min-height: 44px; margin-top: 14px; border: 1px solid #8fcd93; border-radius: 10px; color: #efffe7; background: linear-gradient(135deg, #396843, #294a38); font: 800 14px inherit; cursor: pointer; }
+.tree-head-choice:hover { border-color: #ceffab; box-shadow: 0 0 18px rgba(126, 239, 139, .35); }
+.tree-head-note { margin: 14px 0 0; padding: 10px; border: 1px solid #6eac7a; border-radius: 9px; color: #dfffd5; background: rgba(51, 99, 61, .43); font-size: 13px; line-height: 1.4; }
 .attribute-card { display: grid; gap: 7px; margin-top: 8px; padding: 9px; border: 1px solid #765d67; border-radius: 9px; background: rgba(43, 28, 26, .58); }
 .attribute-card.received-attribute { border-color: #63bfc8; background: rgba(51, 121, 126, .16); box-shadow: inset 3px 0 #75dae2; }
 .attribute-topline { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
