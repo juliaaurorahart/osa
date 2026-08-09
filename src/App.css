@@ -235,6 +235,8 @@
 .connector-card select { width: 100%; border: 1px solid #765d67; border-radius: 6px; padding: 7px; color: #fff4ee; background: #382725; font: 13px inherit; }
 .function-port { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 6px; margin-top: 7px; }
 .function-port select { min-width: 0; border: 1px solid #765d67; border-radius: 6px; padding: 7px; color: #fff4ee; background: #382725; font: 13px inherit; }
+.code-help { margin: 8px 0 0; color: #f0c9df; font-size: 13px; line-height: 1.45; }
+.code-help code { padding: 1px 4px; border-radius: 4px; color: #ffeafa; background: #4d2947; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .attached-function { display: grid; gap: 3px; margin-top: 7px; padding: 8px; border: 1px solid #775c82; border-radius: 8px; color: #f6e9ff; background: rgba(67, 43, 80, .52); }
 .attached-function span { color: #f1bad9; font-size: 12px; }
 .attached-function small { color: #d4c0e4; font-size: 11px; }

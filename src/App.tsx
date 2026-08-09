@@ -29,8 +29,8 @@ type AttributeMode = 'driving' | 'driven'
 type ThoughtKind = 'Idea' | 'Question' | 'Feeling' | 'Decision' | 'Reference' | 'Experiment' | 'Task'
 type Socket = { id: string; name: string; direction: SocketDirection; payload: DataType; attributeId?: string; value?: string; functionId?: string; drivenBy?: string; drivenValue?: string; drivenType?: DataType }
 type Attribute = { id: string; key: string; value: string; type: DataType; mode?: AttributeMode; passFrom?: string; passFunctionId?: string; createdChildId?: string; isSelf?: boolean }
-type FunctionOperation = 'identity' | 'uppercase' | 'increment' | 'double' | 'halve' | 'round' | 'append-note'
-type OsaFunction = { id: string; name: string; input: DataType; output: DataType; operation: FunctionOperation }
+type FunctionOperation = 'identity' | 'uppercase' | 'increment' | 'double' | 'halve' | 'round' | 'append-note' | 'custom'
+type OsaFunction = { id: string; name: string; input: DataType; output: DataType; operation: FunctionOperation; code?: string }
 type CanvasData = { label: string; note?: string; privateNote?: string; provenance?: string; kind?: ThoughtKind; isSeed?: boolean; isNode?: boolean; isTree?: boolean; sockets: Socket[]; attributes: Attribute[]; removeMode?: boolean; onRemove?: () => void }
 type OsaData = CanvasData
 type OsaNode = Node<OsaData, 'osa'>
@@ -95,6 +95,14 @@ function runFunction(value: string, fn: OsaFunction | undefined) {
   if (fn.operation === 'double') return String((Number(value) || 0) * 2)
   if (fn.operation === 'halve') return String((Number(value) || 0) / 2)
   if (fn.operation === 'round') return String(Math.round(Number(value) || 0))
+  if (fn.operation === 'custom') {
+    try {
+      const result = new Function('value', 'args', `'use strict';\n${fn.code || 'return value'}`)(value, { value })
+      return String(result ?? '')
+    } catch (error) {
+      return `Function error: ${error instanceof Error ? error.message : 'invalid code'}`
+    }
+  }
   return `${value} · handled by ${fn.name}`
 }
 
@@ -598,12 +606,12 @@ function Playground() {
     const functionId = `function-${crypto.randomUUID()}`
     const argument: Socket = { id: `argument-${crypto.randomUUID()}`, name: 'value', direction: 'slot', payload: 'Any' }
     const result: Socket = { id: `return-${crypto.randomUUID()}`, name: 'result', direction: 'signal', payload: 'Any' }
-    const fn: OsaFunction = { id: functionId, name: `${String(selectedNode.data.label)} function`, input: 'Any', output: 'Any', operation: 'identity' }
+    const fn: OsaFunction = { id: functionId, name: `${String(selectedNode.data.label)} function`, input: 'Any', output: 'Any', operation: 'custom', code: 'return value' }
     setFunctions((currentFunctions) => [...currentFunctions, fn])
     setNodes((currentNodes) => currentNodes.map((node) => node.id !== selectedNode.id ? node : {
       ...node,
       type: 'function',
-      data: { label: fn.name, functionId, sockets: [argument, result], attributes: [], code: '// Write what this function does here.' },
+      data: { label: fn.name, functionId, sockets: [argument, result], attributes: [], code: 'return value' },
     } as FunctionNode))
   }
 
@@ -1076,9 +1084,14 @@ function Playground() {
                   }} />
                 </label>
                 <label>
-                  Function code / notes
-                  <textarea rows={6} value={(selectedNode.data as FunctionData).code ?? ''} placeholder="Describe or write this function here." onChange={(event) => updateSelectedNode({ code: event.target.value })} />
+                  Function code
+                  <textarea rows={7} value={(selectedNode.data as FunctionData).code ?? ''} placeholder="return value" onChange={(event) => {
+                    const code = event.target.value
+                    updateSelectedNode({ code })
+                    updateFunction((selectedNode.data as FunctionData).functionId, { code, operation: 'custom' })
+                  }} />
                 </label>
+                <p className="code-help">This runs locally when the function is chosen for an onward signal. Use <code>value</code> for the incoming value and return the result. Example: <code>return Number(value) * 2</code></p>
                 <section className="editor-section">
                   <div className="editor-section-heading"><span>Arguments · slots</span><button type="button" onClick={() => addFunctionPort('slot')}>+ Arg</button></div>
                   {(selectedNode.data as FunctionData).sockets.filter((socket) => socket.direction === 'slot').map((socket) => <div className="function-port" key={socket.id}>
@@ -1239,6 +1252,7 @@ function Playground() {
                     <option value="halve">Halve number</option>
                     <option value="round">Round number</option>
                     <option value="append-note">Annotate received value</option>
+                    <option value="custom">Run function code</option>
                   </select>
                 </div>
               ))}
