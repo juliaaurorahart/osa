@@ -282,6 +282,24 @@ function Playground() {
     onEdgesChangeBase(changes.filter((change) => change.type !== 'remove' || !automaticEdgeIds.current.has(change.id)))
   }, [onEdgesChangeBase])
 
+  // An edge names the signal travelling along it; the receiving slot already
+  // displays that same name in its own object, so repeating it is visual noise.
+  useEffect(() => {
+    setEdges((currentEdges) => {
+      let changed = false
+      const nextEdges = currentEdges.map((edge) => {
+        const sourceNode = nodes.find((node) => node.id === edge.source)
+        const sourceSocket = socketsFor(sourceNode).find((socket) => socket.id === edge.sourceHandle)
+        if (!sourceSocket || sourceSocket.direction !== 'signal') return edge
+        const label = `${detailsFor(sourceNode, sourceSocket).name} →`
+        if (edge.label === label) return edge
+        changed = true
+        return { ...edge, label }
+      })
+      return changed ? nextEdges : currentEdges
+    })
+  }, [nodes, setEdges])
+
   useEffect(() => {
     const incoming = new Map<string, { type: DataType; value: string; name: string }>()
     edges.forEach((edge) => {
@@ -407,9 +425,7 @@ function Playground() {
           {
             ...connection,
             id: `edge-${crypto.randomUUID()}`,
-            label: source?.name === 'Parent' && target?.name === 'Child'
-              ? 'Parent → Child'
-              : `${source?.name ?? 'Signal'} → ${target?.name ?? 'Slot'}`,
+            label: `${source?.name ?? 'Signal'} →`,
             animated: true,
             markerEnd: { type: MarkerType.ArrowClosed },
           },
@@ -572,7 +588,7 @@ function Playground() {
       sourceHandle: signal.id,
       target: childId,
       targetHandle: slot.id,
-      label: `${attribute.key} → ${childAttribute.key}`,
+      label: `${attribute.key} →`,
       animated: true,
       markerEnd: { type: MarkerType.ArrowClosed },
     }
@@ -654,7 +670,7 @@ function Playground() {
     const signal: Socket = { id: `socket-${crypto.randomUUID()}`, name: attribute.key, direction: 'signal', payload: attribute.type, attributeId: attribute.id }
     const childAttribute: Attribute = { id: `attribute-${crypto.randomUUID()}`, key: attribute.key, value: '', type: attribute.type, mode: 'driven' }
     const slot: Socket = { id: `socket-${crypto.randomUUID()}`, name: childAttribute.key, direction: 'slot', payload: childAttribute.type, attributeId: childAttribute.id }
-    const edge: Edge = { id: `edge-${crypto.randomUUID()}`, source: selectedNode.id, sourceHandle: signal.id, target: childId, targetHandle: slot.id, label: `${attribute.key} → ${childAttribute.key}`, animated: true, markerEnd: { type: MarkerType.ArrowClosed } }
+    const edge: Edge = { id: `edge-${crypto.randomUUID()}`, source: selectedNode.id, sourceHandle: signal.id, target: childId, targetHandle: slot.id, label: `${attribute.key} →`, animated: true, markerEnd: { type: MarkerType.ArrowClosed } }
     automaticEdgeIds.current.add(edge.id)
     setNodes((currentNodes) => [
       ...currentNodes.map((node) => node.id === selectedNode.id ? { ...node, data: { ...node.data, attributes: [...selectedData.attributes, attribute], sockets: [...selectedData.sockets, signal] } } : node),
@@ -684,7 +700,7 @@ function Playground() {
       const childId = `object-${crypto.randomUUID()}`
       const childAttribute: Attribute = { id: `attribute-${crypto.randomUUID()}`, key: attribute.key, value: '', type: attribute.type, mode: 'driven' }
       const slot: Socket = { id: `socket-${crypto.randomUUID()}`, name: childAttribute.key, direction: 'slot', payload: childAttribute.type, attributeId: childAttribute.id }
-      const edge: Edge = { id: `edge-${crypto.randomUUID()}`, source: selectedNode.id, sourceHandle: signal.id, target: childId, targetHandle: slot.id, label: `${attribute.key} → ${childAttribute.key}`, animated: true, markerEnd: { type: MarkerType.ArrowClosed } }
+      const edge: Edge = { id: `edge-${crypto.randomUUID()}`, source: selectedNode.id, sourceHandle: signal.id, target: childId, targetHandle: slot.id, label: `${attribute.key} →`, animated: true, markerEnd: { type: MarkerType.ArrowClosed } }
       updateSelectedNode({ attributes: selectedData.attributes.map((item) => item.id === attributeId ? { ...item, createdChildId: childId } : item) })
       setNodes((currentNodes) => [...currentNodes, { id: childId, type: 'osa', position: openPositionNearParent(selectedNode), data: { label: `Node ${nextNodeNumber.current++}`, sockets: [slot], attributes: [childAttribute] }, className: 'osa-node idea-node' }])
       window.setTimeout(() => {
