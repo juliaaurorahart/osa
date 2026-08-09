@@ -549,7 +549,7 @@ function Playground() {
       : { id, type: 'shape', position, data: { label: `Node ${number}`, shape, isSeed: true, sockets: [], attributes: [] } } as ShapeNode
     setNodes((currentNodes) => {
       const hasGround = currentNodes.some((node) => node.id === 'gaia-ground')
-      return hasGround ? [...currentNodes, nextNode] : [...currentNodes, { id: 'gaia-ground', type: 'ground', position: { x: -420, y: 660 }, data: { label: 'Gaia · ground' }, selectable: false, draggable: false } as GroundNode, nextNode]
+      return hasGround ? [...currentNodes, nextNode] : [...currentNodes, { id: 'gaia-ground', type: 'ground', position: { x: -800, y: 560 }, data: { label: 'Gaia · ground' }, selectable: false, draggable: false } as GroundNode, nextNode]
     })
     if (shape === 'object') setEdges((currentEdges) => [...currentEdges, { id: `gaia-${id}`, source: id, sourceHandle: `ground-${id}`, target: 'gaia-ground', targetHandle: 'gaia-root', label: 'rooted', animated: true, markerEnd: { type: MarkerType.ArrowClosed } }])
   }
@@ -794,7 +794,7 @@ function Playground() {
     const object: OsaNode = { id, type: 'osa', position: { x: 180 + (number % 4) * 210, y: 150 + (number % 3) * 145 }, data: { label: title, note: item.content, provenance: 'The Field', kind: 'Idea', sockets: [], attributes: [] }, className: 'osa-node idea-node' }
     setNodes((current) => {
       const hasGround = current.some((node) => node.id === 'gaia-ground')
-      return hasGround ? [...current, object] : [...current, { id: 'gaia-ground', type: 'ground', position: { x: -420, y: 660 }, data: { label: 'Gaia · ground' }, selectable: false, draggable: false } as GroundNode, object]
+      return hasGround ? [...current, object] : [...current, { id: 'gaia-ground', type: 'ground', position: { x: -800, y: 560 }, data: { label: 'Gaia · ground' }, selectable: false, draggable: false } as GroundNode, object]
     })
     setEdges((current) => [...current, { id: `gaia-${id}`, source: id, sourceHandle: `ground-${id}`, target: 'gaia-ground', targetHandle: 'gaia-root', label: 'rooted', animated: true, markerEnd: { type: MarkerType.ArrowClosed } }])
     if (kind === 'note') requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(`[data-field-note="${id}"]`)?.focus())
@@ -904,8 +904,8 @@ function Playground() {
     const loadedFieldItems = saved.fieldItems ?? []
     const fieldIds = new Set(loadedFieldItems.map((item) => item.id))
     const hasGround = saved.nodes.some((node) => node.id === 'gaia-ground')
-    const loadedNodes = saved.nodes.filter((node) => node.id !== 'gaia-board')
-    if (loadedFieldItems.length && !hasGround) loadedNodes.push({ id: 'gaia-ground', type: 'ground', position: { x: 90, y: 660 }, data: { label: 'Gaia · ground' }, selectable: false, draggable: false } as GroundNode)
+    const loadedNodes = saved.nodes.filter((node) => node.id !== 'gaia-board').map((node) => node.id === 'gaia-ground' ? { ...node, position: { x: -800, y: 560 } } : node)
+    if (loadedFieldItems.length && !hasGround) loadedNodes.push({ id: 'gaia-ground', type: 'ground', position: { x: -800, y: 560 }, data: { label: 'Gaia · ground' }, selectable: false, draggable: false } as GroundNode)
     const groundedSources = new Set(saved.edges.filter((edge) => edge.target === 'gaia-board' || edge.target === 'gaia-ground').map((edge) => edge.source))
     const loadedEdges = saved.edges
       .filter((edge) => edge.target !== 'gaia-board' || fieldIds.has(edge.source))
@@ -1119,7 +1119,7 @@ function Playground() {
       if (current.some((node) => node.id === bucketId)) return current
       const bucket: OsaNode = { id: bucketId, type: 'osa', position: { x: 610, y: 260 }, data: { label: 'Sketch bucket', note: 'Uncharacterized ink from The Field.', provenance: 'The Field · ink', kind: 'Idea', sockets: [], attributes: [] }, className: 'osa-node idea-node' }
       const hasGround = current.some((node) => node.id === 'gaia-ground')
-      return hasGround ? [...current, bucket] : [...current, { id: 'gaia-ground', type: 'ground', position: { x: -420, y: 660 }, data: { label: 'Gaia · ground' }, selectable: false, draggable: false } as GroundNode, bucket]
+      return hasGround ? [...current, bucket] : [...current, { id: 'gaia-ground', type: 'ground', position: { x: -800, y: 560 }, data: { label: 'Gaia · ground' }, selectable: false, draggable: false } as GroundNode, bucket]
     })
     setEdges((current) => current.some((edge) => edge.source === bucketId && edge.target === 'gaia-ground') ? current : [...current, { id: `gaia-${bucketId}`, source: bucketId, sourceHandle: `ground-${bucketId}`, target: 'gaia-ground', targetHandle: 'gaia-root', label: 'rooted', animated: true, markerEnd: { type: MarkerType.ArrowClosed } }])
   }
@@ -1219,6 +1219,7 @@ function Playground() {
           onNodeDoubleClick={openNameEditor}
           onPaneClick={() => setSelectedNodeId(null)}
           fitView
+          fitViewOptions={{ nodes: renderedNodes.filter((node) => node.type !== 'ground') }}
           colorMode="dark"
           deleteKeyCode={['Backspace', 'Delete']}
           selectionOnDrag
