@@ -273,12 +273,26 @@
 .drive-status.active { color: #89e9b4; }
 
 @media (max-width: 700px) {
-  .toolbar { gap: 12px; padding: 10px 14px; }
-  .view-switch { order: 2; }
+  .app-shell { height: 100dvh; }
+  .toolbar { align-items: flex-start; gap: 9px; padding: 10px 14px; }
+  .toolbar > div:first-child { width: 100%; }
+  .view-switch { order: 1; width: 100%; }
+  .toolbar .view-switch button { flex: 1; padding: 8px 5px; font-size: 12px; }
   .project-frame { grid-template-columns: 1fr; gap: 13px; padding: 14px; }
   .project-pulse, .project-map, .project-reading { padding: 16px; }
-  .save-tools { order: 3; width: 100%; }
+  .save-tools { order: 2; width: 100%; flex-wrap: wrap; }
+  .save-tools select { flex: 1; min-width: 0; max-width: none; }
+  .mood-control { order: 3; width: 100%; justify-content: space-between; }
+  .mood-control input { flex: 1; max-width: 180px; }
   .toolbar { flex-wrap: wrap; }
   .hint { display: none; }
   .toolbar h1 { font-size: 16px; }
+  .field-workspace { grid-template-columns: 1fr; grid-template-rows: auto minmax(460px, 1fr); overflow: auto; }
+  .field-tools { grid-template-columns: 1fr auto auto auto; align-items: center; gap: 9px; padding: 15px; border-right: 0; border-bottom: 1px solid rgba(255,220,226,.22); }
+  .field-tools p, .field-tools h2, .field-tools small { grid-column: 1 / -1; }
+  .field-tools h2 { margin-bottom: 3px; font-size: 24px; }
+  .field-tools small { margin-top: 3px; }
+  .field-tools button { padding: 8px 11px; }
+  .field-canvas { min-width: 0; min-height: 460px; }
+  .field-item { width: min(240px, calc(100vw - 48px)); }
 }
