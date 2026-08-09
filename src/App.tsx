@@ -607,14 +607,9 @@ function Playground() {
     } as FunctionNode))
   }
 
-  const turnSeedIntoNode = () => {
+  const turnSeedIntoTreeHead = () => {
     if (!selectedData?.isSeed) return
-    updateSelectedNode({ isNode: true })
-  }
-
-  const turnNodeIntoTreeHead = () => {
-    if (!selectedData?.isSeed || !selectedData.isNode) return
-    updateSelectedNode({ isTree: true })
+    updateSelectedNode({ isNode: true, isTree: true })
     if (selectedNodeId) requestAnimationFrame(() => updateNodeInternals(selectedNodeId))
   }
 
@@ -1131,12 +1126,11 @@ function Playground() {
                   Came from
                   <input value={selectedData?.provenance ?? ''} placeholder="A conversation, a sketch, a source…" onChange={(event) => updateSelectedNode({ provenance: event.target.value })} />
                 </label>
-                {selectedData?.isSeed && selectedData.isNode && !selectedData.isTree && <button type="button" className="tree-head-choice" onClick={turnNodeIntoTreeHead}>✦ Become Tree head</button>}
                 {selectedData?.isTree && <p className="tree-head-note">Tree head · functions attached here become available to every connected node.</p>}
                 {selectedData?.isSeed && !selectedData.isNode ? <section className="seed-paths">
-                  <p>A seed can grow into a function or an object.</p>
+                  <p>A seed can grow into a function or a Tree head.</p>
                   <button type="button" className="seed-path function-path" onClick={turnSeedIntoFunction}><span>ƒ</span><strong>Become function</strong><small>Give it arguments, returns, and code.</small></button>
-                  <button type="button" className="seed-path node-path" onClick={turnSeedIntoNode}><span>●</span><strong>Become node</strong><small>Give it attributes, signals, and slots.</small></button>
+                  <button type="button" className="seed-path node-path" onClick={turnSeedIntoTreeHead}><span>❦</span><strong>Become Tree head</strong><small>Grow attributes, signals, slots, and attached functions.</small></button>
                 </section> : <>
                 <section className="editor-section">
                   <div className="editor-section-heading">
