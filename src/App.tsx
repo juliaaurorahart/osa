@@ -1065,10 +1065,11 @@ function Playground() {
     })
   }
 
-  // Inputs keep their normal editing behavior; grab the card edge or its kind label to move it.
-  const startFieldItemDrag = (event: React.PointerEvent<HTMLElement>, item: FieldItem) => {
-    if ((event.target as HTMLElement).closest('input, textarea, a, button, select')) return
+  // The handle gives touch and pen input one unambiguous place to begin a move.
+  const startFieldItemDrag = (event: React.PointerEvent<HTMLElement>, item: FieldItem, fromHandle = false) => {
+    if (!fromHandle && (event.target as HTMLElement).closest('input, textarea, a, button, select')) return
     event.stopPropagation()
+    event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
     fieldItemDrag.current = { id: item.id, pointerId: event.pointerId, x: event.clientX, y: event.clientY, startX: item.x, startY: item.y }
     if (item.kind === 'shape') setSelectedFieldItemId(item.id)
@@ -1153,6 +1154,7 @@ function Playground() {
           </svg>
           {fieldItems.length === 0 && fieldStrokes.length === 0 && <div className="field-empty"><span>✧</span><h2>Start anywhere.</h2><p>Choose a tool, then tap or draw directly on the open field.</p></div>}
           {fieldItems.map((item) => <article key={item.id} onPointerDown={(event) => startFieldItemDrag(event, item)} className={`field-item ${item.kind} ${item.kind === 'shape' ? `shape-${item.shape ?? 'square'}` : ''}${selectedFieldItemId === item.id ? ' selected' : ''}`} style={{ left: item.x, top: item.y, '--field-color': item.color, '--field-width': `${item.width ?? 240}px`, '--field-height': `${item.height ?? 160}px` } as CSSProperties}>
+            <button type="button" className="field-drag-handle" aria-label={`Move ${item.title}`} title="Drag to move" onPointerDown={(event) => startFieldItemDrag(event, item, true)}>⠿</button>
             <input aria-label="Field item title" value={item.title} onChange={(event) => updateFieldItem(item.id, { title: event.target.value })} />
             {item.kind === 'note' ? <textarea data-field-note={item.id} aria-label="Field note" value={item.content} placeholder="A thought, a question, a tiny beginning…" onChange={(event) => updateFieldItem(item.id, { content: event.target.value })} /> : item.kind === 'link' ? <><input data-field-link={item.id} aria-label="Link address" value={item.url ?? ''} placeholder="https://…" onChange={(event) => updateFieldItem(item.id, { url: event.target.value })} />{item.url && <a href={item.url} target="_blank" rel="noreferrer" onPointerDown={(event) => event.stopPropagation()}>Open link ↗</a>}</> : <div className="field-shape-mark" aria-label="square shape" />}
             <small>{item.kind}</small>
