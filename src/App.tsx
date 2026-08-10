@@ -22,50 +22,11 @@ import {
 import '@xyflow/react/dist/style.css'
 import './App.css'
 import { fetchPrivateBoards, storePrivateBoards, type CloudSaveState } from './cloudBoards'
-
-type Point = { x: number; y: number }
-type SocketDirection = 'signal' | 'slot'
-type DataType = 'Relationship' | 'Object' | 'Text' | 'Number' | 'Boolean' | 'File' | 'Any'
-type AttributeMode = 'driving' | 'driven'
-type ThoughtKind = 'Idea' | 'Question' | 'Feeling' | 'Decision' | 'Reference' | 'Experiment' | 'Task'
-type Socket = { id: string; name: string; direction: SocketDirection; payload: DataType; attributeId?: string; value?: string; functionId?: string; empty?: boolean; drivenBy?: string; drivenValue?: string; drivenType?: DataType }
-type Attribute = { id: string; key: string; value: string; type: DataType; mode?: AttributeMode; passFrom?: string; passFunctionId?: string; createdChildId?: string; isSelf?: boolean; isEmptySlot?: boolean }
-type FunctionOperation = 'identity' | 'uppercase' | 'increment' | 'double' | 'halve' | 'round' | 'append-note' | 'custom'
-type OsaFunction = { id: string; name: string; input: DataType; output: DataType; operation: FunctionOperation; code?: string }
-type CanvasData = { label: string; note?: string; privateNote?: string; provenance?: string; kind?: ThoughtKind; isSeed?: boolean; isNode?: boolean; isTree?: boolean; sockets: Socket[]; attributes: Attribute[]; removeMode?: boolean; onRemove?: () => void; showGaiaRoot?: boolean; onToggleGaiaRoot?: () => void }
-type OsaData = CanvasData
-type OsaNode = Node<OsaData, 'osa'>
-type DrawingData = { points: Point[]; width: number; height: number; removeMode?: boolean; onRemove?: () => void }
-type DrawingNode = Node<DrawingData, 'drawing'>
-type ShapeKind = 'rectangle' | 'circle' | 'diamond'
-type ShapeData = CanvasData & { shape: ShapeKind }
-type ShapeNode = Node<ShapeData, 'shape'>
-type FunctionData = CanvasData & { functionId: string; code?: string }
-type FunctionNode = Node<FunctionData, 'function'>
-type TextData = CanvasData & { content: string }
-type TextNode = Node<TextData, 'text'>
-type ProjectFrame = { intention: string; feeling: string; question: string }
-type FieldItemKind = 'note' | 'shape' | 'link'
-type FieldShapeKind = 'square' | 'circle' | 'diamond' | 'rounded'
-type FieldItem = { id: string; kind: FieldItemKind; title: string; content: string; url?: string; x: number; y: number; color: string; shape?: FieldShapeKind; width?: number; height?: number }
-type FieldStroke = { id: string; points: Point[]; color?: string; width?: number }
-type SavedBoard = { id: string; name: string; nodes: Node[]; edges: Edge[]; functions?: OsaFunction[]; project?: ProjectFrame; fieldItems?: FieldItem[]; fieldStrokes?: FieldStroke[]; updatedAt: string }
+import { connectorColor, dataTypes, defaultFunctions, pointsToPath, thoughtKinds, type Attribute, type CanvasData, type DataType, type DrawingNode, type FieldItem, type FieldItemKind, type FieldShapeKind, type FieldStroke, type FunctionData, type FunctionNode, type FunctionOperation, type OsaFunction, type OsaNode, type Point, type ProjectFrame, type SavedBoard, type ShapeData, type ShapeKind, type ShapeNode, type Socket, type SocketDirection, type TextData, type TextNode, type ThoughtKind } from './model/osa'
 
 const SAVE_KEY = 'osa-react-flow-saves-v1'
 const MOOD_KEY = 'osa-visual-mood-v1'
 const SPARKLE_KEY = 'osa-sparkles-v1'
-const dataTypes: DataType[] = ['Relationship', 'Object', 'Text', 'Number', 'Boolean', 'File', 'Any']
-const thoughtKinds: ThoughtKind[] = ['Idea', 'Question', 'Feeling', 'Decision', 'Reference', 'Experiment', 'Task']
-
-function defaultFunctions(): OsaFunction[] {
-  return [
-    { id: 'receive-parent', name: 'Receive parent relationship', input: 'Relationship', output: 'Relationship', operation: 'identity' },
-    { id: 'double-number', name: 'Double number', input: 'Number', output: 'Number', operation: 'double' },
-    { id: 'halve-number', name: 'Halve number', input: 'Number', output: 'Number', operation: 'halve' },
-    { id: 'round-number', name: 'Round number', input: 'Number', output: 'Number', operation: 'round' },
-    { id: 'uppercase-text', name: 'Make text uppercase', input: 'Text', output: 'Text', operation: 'uppercase' },
-  ]
-}
 
 function socketsFor(node: Node | undefined): Socket[] {
   const sockets = node?.data.sockets
@@ -114,22 +75,6 @@ function runFunction(value: string, fn: OsaFunction | undefined) {
 const initialNodes: Node[] = []
 
 const initialEdges: Edge[] = []
-
-function pointsToPath(points: Point[]) {
-  return points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
-}
-
-function connectorColor(type: DataType) {
-  return {
-    Relationship: '#ef9ec1',
-    Object: '#ffb6ed',
-    Text: '#79d7ff',
-    Number: '#ffe08a',
-    Boolean: '#83e6ad',
-    File: '#f4b37e',
-    Any: '#b7a6d5',
-  }[type]
-}
 
 function removeButtonStyle(id: string, rotation = '0deg') {
   const seed = [...id].reduce((total, character) => total + character.charCodeAt(0), 0)

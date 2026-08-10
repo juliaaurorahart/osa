@@ -7,6 +7,8 @@ osa-gui-react-flow/
 ├── src/
 │   ├── App.tsx          The living app: The Field, OSA, Project Frame, tools, boards, and interactions
 │   ├── App.css          The visual language: colour, plants-and-light atmosphere, nodes, Field tools, responsive layout
+│   ├── model/
+│   │   └── osa.ts       Shared vocabulary: OSA nodes, attributes, functions, Field items, and small visual rules
 │   ├── index.css        Global page-level defaults
 │   ├── main.tsx         Starts React and mounts App.tsx into the browser page
 │   └── cloudBoards.ts   Talks to the private-board service when private storage is enabled
@@ -22,6 +24,7 @@ osa-gui-react-flow/
 ## The parts you will see us change most
 
 - **`src/App.tsx`** is the behaviour. A button, a new kind of object, what happens when a signal arrives, how a note becomes an OSA object—those live here.
+- **`src/model/osa.ts`** is the shared language. It defines what a “node,” “attribute,” “signal,” “Field item,” or “function” means, so the rest of the app can agree on the same shapes.
 - **`src/App.css`** is the feeling. The Field’s open landscape, the node view’s Gaia background, button shapes, spacing, readability, and phone layout live here.
 - **`src/cloudBoards.ts`**, **`functions/api/`**, and **`migrations/`** are the private-storage path. They matter when a board needs to outlive one browser.
 
