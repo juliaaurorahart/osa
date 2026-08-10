@@ -211,6 +211,7 @@ function Playground() {
   const fieldPointers = useRef(new Map<number, { x: number; y: number }>())
   const fieldPinch = useRef<{ distance: number; zoom: number } | null>(null)
   const fieldPan = useRef<{ pointerId: number; x: number; y: number; scrollX: number; scrollY: number } | null>(null)
+  const fieldItemDrag = useRef<{ id: string; pointerId: number; x: number; y: number; startX: number; startY: number } | null>(null)
   const [projectFrame, setProjectFrame] = useState<ProjectFrame>({ intention: '', feeling: '', question: '' })
   const [visualMood, setVisualMood] = useState(() => Number(localStorage.getItem(MOOD_KEY) ?? .42))
   const [sparkles, setSparkles] = useState(() => localStorage.getItem(SPARKLE_KEY) === 'true')
@@ -1018,6 +1019,15 @@ function Playground() {
   const continueFieldSketch = (event: React.PointerEvent<HTMLDivElement>) => {
     if (fieldPointers.current.has(event.pointerId)) fieldPointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
     if (zoomWithPointers()) return
+    if (fieldItemDrag.current?.pointerId === event.pointerId) {
+      const drag = fieldItemDrag.current
+      setFieldItems((current) => current.map((item) => item.id !== drag.id ? item : {
+        ...item,
+        x: Math.max(18, drag.startX + (event.clientX - drag.x) / fieldZoom),
+        y: Math.max(18, drag.startY + (event.clientY - drag.y) / fieldZoom),
+      }))
+      return
+    }
     if (fieldPan.current?.pointerId === event.pointerId) {
       const canvas = fieldCanvas.current
       if (canvas) {
@@ -1037,6 +1047,7 @@ function Playground() {
   }
 
   const finishFieldSketch = (event?: React.PointerEvent<HTMLDivElement>) => {
+    if (event && fieldItemDrag.current?.pointerId === event.pointerId) fieldItemDrag.current = null
     if (event && fieldPan.current?.pointerId === event.pointerId) fieldPan.current = null
     if (event) fieldPointers.current.delete(event.pointerId)
     if (fieldPointers.current.size > 0) return
@@ -1052,6 +1063,15 @@ function Playground() {
       const bucket: OsaNode = { id: bucketId, type: 'osa', position: { x: 610, y: 260 }, data: { label: 'Sketch bucket', note: 'Uncharacterized ink from The Field.', provenance: 'The Field · ink', kind: 'Idea', sockets: [], attributes: [] }, className: 'osa-node idea-node' }
       return [...current, bucket]
     })
+  }
+
+  // Inputs keep their normal editing behavior; grab the card edge or its kind label to move it.
+  const startFieldItemDrag = (event: React.PointerEvent<HTMLElement>, item: FieldItem) => {
+    if ((event.target as HTMLElement).closest('input, textarea, a, button, select')) return
+    event.stopPropagation()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    fieldItemDrag.current = { id: item.id, pointerId: event.pointerId, x: event.clientX, y: event.clientY, startX: item.x, startY: item.y }
+    if (item.kind === 'shape') setSelectedFieldItemId(item.id)
   }
 
   const isValidConnection = (connection: Connection | Edge) => {
@@ -1132,7 +1152,7 @@ function Playground() {
             {activeFieldStroke && activeFieldStroke.length > 1 && <path className="field-active-stroke" d={pointsToPath(activeFieldStroke)} style={{ stroke: fieldInkColor, strokeWidth: fieldInkWidth }} />}
           </svg>
           {fieldItems.length === 0 && fieldStrokes.length === 0 && <div className="field-empty"><span>✧</span><h2>Start anywhere.</h2><p>Choose a tool, then tap or draw directly on the open field.</p></div>}
-          {fieldItems.map((item) => <article key={item.id} onPointerDown={() => { if (item.kind === 'shape') setSelectedFieldItemId(item.id) }} className={`field-item ${item.kind} ${item.kind === 'shape' ? `shape-${item.shape ?? 'square'}` : ''}${selectedFieldItemId === item.id ? ' selected' : ''}`} style={{ left: item.x, top: item.y, '--field-color': item.color, '--field-width': `${item.width ?? 240}px`, '--field-height': `${item.height ?? 160}px` } as CSSProperties}>
+          {fieldItems.map((item) => <article key={item.id} onPointerDown={(event) => startFieldItemDrag(event, item)} className={`field-item ${item.kind} ${item.kind === 'shape' ? `shape-${item.shape ?? 'square'}` : ''}${selectedFieldItemId === item.id ? ' selected' : ''}`} style={{ left: item.x, top: item.y, '--field-color': item.color, '--field-width': `${item.width ?? 240}px`, '--field-height': `${item.height ?? 160}px` } as CSSProperties}>
             <input aria-label="Field item title" value={item.title} onChange={(event) => updateFieldItem(item.id, { title: event.target.value })} />
             {item.kind === 'note' ? <textarea data-field-note={item.id} aria-label="Field note" value={item.content} placeholder="A thought, a question, a tiny beginning…" onChange={(event) => updateFieldItem(item.id, { content: event.target.value })} /> : item.kind === 'link' ? <><input data-field-link={item.id} aria-label="Link address" value={item.url ?? ''} placeholder="https://…" onChange={(event) => updateFieldItem(item.id, { url: event.target.value })} />{item.url && <a href={item.url} target="_blank" rel="noreferrer" onPointerDown={(event) => event.stopPropagation()}>Open link ↗</a>}</> : <div className="field-shape-mark" aria-label="square shape" />}
             <small>{item.kind}</small>
