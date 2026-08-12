@@ -1,4 +1,5 @@
 import type { Node } from '@xyflow/react'
+import type { GaiaProject } from '../gaia/types'
 
 export type Point = { x: number; y: number }
 export type SocketDirection = 'signal' | 'slot'
@@ -40,7 +41,7 @@ export type FieldShapeKind = 'square' | 'circle' | 'diamond' | 'rounded'
 export type FieldDocumentReference = { id: string; kind: 'field-item' | 'osa-node'; targetId: string; label: string }
 export type FieldItem = { id: string; kind: FieldItemKind; title: string; content: string; url?: string; x: number; y: number; color: string; shape?: FieldShapeKind; width?: number; height?: number; textLinks?: FieldTextLink[]; documentReferences?: FieldDocumentReference[] }
 export type FieldStroke = { id: string; points: Point[]; color?: string; width?: number }
-export type SavedBoard = { id: string; name: string; nodes: Node[]; edges: import('@xyflow/react').Edge[]; functions?: OsaFunction[]; project?: ProjectFrame; fieldItems?: FieldItem[]; fieldStrokes?: FieldStroke[]; updatedAt: string }
+export type SavedBoard = { id: string; name: string; nodes: Node[]; edges: import('@xyflow/react').Edge[]; functions?: OsaFunction[]; project?: ProjectFrame; fieldItems?: FieldItem[]; fieldStrokes?: FieldStroke[]; gaia?: GaiaProject; updatedAt: string }
 
 export const dataTypes: DataType[] = ['Relationship', 'Object', 'Text', 'Number', 'Boolean', 'File', 'Any']
 export const thoughtKinds: ThoughtKind[] = ['Idea', 'Question', 'Feeling', 'Decision', 'Reference', 'Experiment', 'Task']

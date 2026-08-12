@@ -331,21 +331,27 @@
 
 @media (max-width: 700px) {
   .app-shell { height: 100dvh; }
-  .toolbar { align-items: flex-start; gap: 9px; padding: 10px 14px; }
-  .toolbar > div:first-child { width: 100%; }
+  .toolbar { align-items: center; gap: 6px; padding: 7px 10px; }
+  .toolbar > div:first-child { width: auto; min-width: 0; }
+  .toolbar .eyebrow { display: none; }
   .view-switch { order: 1; width: 100%; }
-  .toolbar .view-switch button { flex: 1; padding: 8px 5px; font-size: 12px; }
+  .toolbar .view-switch button { flex: 1; min-height: 31px; padding: 6px 3px; font-size: 11px; }
   .project-frame { grid-template-columns: 1fr; gap: 13px; padding: 14px; }
   .project-pulse, .project-map, .project-reading { padding: 16px; }
   .project-details-row, .project-actions { grid-template-columns: 1fr; }
   .toolbar-menu { order: 2; }
+  .toolbar-menu summary { display: grid; width: 34px; min-height: 34px; place-items: center; padding: 0; font-size: 0; }
+  .toolbar-menu summary::after { font-size: 17px; line-height: 1; }
+  .board-menu summary::after { content: '▾'; }
+  .look-menu summary::after { content: '☼'; }
+  .add-menu summary::after { content: '+'; font-size: 22px; }
   .toolbar-menu-panel { position: fixed; top: auto; right: 14px; left: 14px; max-width: none; }
   .toolbar-menu .save-tools { grid-template-columns: 1fr auto auto; }
   .toolbar-menu .mood-control { min-width: 0; width: 100%; justify-content: space-between; }
   .toolbar-menu .mood-control input { flex: 1; max-width: 180px; }
   .toolbar { flex-wrap: wrap; }
   .hint { display: none; }
-  .toolbar h1 { font-size: 16px; }
+  .toolbar h1 { font-size: 14px; white-space: nowrap; }
   .field-workspace { grid-template-columns: 1fr; grid-template-rows: auto minmax(460px, 1fr); overflow: auto; }
   .app-shell:has(.split-field) { display: block; overflow: auto; }
   .app-shell:has(.split-field) > .toolbar { width: auto; }

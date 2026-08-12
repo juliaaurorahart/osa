@@ -24,6 +24,7 @@ import './App.css'
 import { fetchPrivateBoards, storePrivateBoards, type CloudSaveState } from './cloudBoards'
 import { connectorColor, dataTypes, defaultFunctions, pointsToPath, thoughtKinds, type Attribute, type CanvasData, type DataType, type DrawingNode, type FieldDocumentReference, type FieldItem, type FieldItemKind, type FieldShapeKind, type FieldStroke, type FieldTextLink, type FunctionData, type FunctionNode, type FunctionOperation, type ObjectProperty, type OsaFunction, type OsaNode, type Point, type ProjectFrame, type SavedBoard, type ShapeData, type ShapeKind, type ShapeNode, type Socket, type SocketDirection, type TextData, type TextNode, type ThoughtKind } from './model/osa'
 import { FieldTools } from './components/FieldTools'
+import { createGaiaSnapshot } from './gaia/snapshot'
 
 const SAVE_KEY = 'osa-react-flow-saves-v1'
 const emptyProjectFrame: ProjectFrame = { goal: '', dueDate: '', budget: '', status: 'exploring', currentAction: '', nextActions: '', completedActions: '', intention: '', feeling: '', question: '' }
@@ -888,7 +889,8 @@ function Playground() {
     if (!requestedName?.trim()) return
 
     const id = saveAs || !existing ? crypto.randomUUID() : existing.id
-    const saved: SavedBoard = { id, name: requestedName.trim(), nodes, edges, functions, project: projectFrame, fieldItems, fieldStrokes, updatedAt: new Date().toISOString() }
+    const now = new Date().toISOString()
+    const saved: SavedBoard = { id, name: requestedName.trim(), nodes, edges, functions, project: projectFrame, fieldItems, fieldStrokes, gaia: createGaiaSnapshot({ id, name: requestedName.trim(), nodes, edges, functions, project: projectFrame, fieldItems, fieldStrokes, previous: existing?.gaia, now }), updatedAt: now }
     persistSaves([...saves.filter((save) => save.id !== id), saved])
     setActiveSaveId(id)
     setBoardName(saved.name)
@@ -1175,8 +1177,8 @@ function Playground() {
           <h1>OSA Playground</h1>
         </div>
         <div className="view-switch" role="group" aria-label="Workspace view">
-          <button type="button" className={workspaceView === 'field' ? 'active' : ''} onClick={() => setWorkspaceView('field')}>The Field</button>
-          <button type="button" className={workspaceView === 'canvas' ? 'active' : ''} onClick={() => setWorkspaceView('canvas')}>OSA</button>
+          <button type="button" className={workspaceView === 'field' ? 'active' : ''} onClick={() => setWorkspaceView('field')}>Field</button>
+          <button type="button" className={workspaceView === 'canvas' ? 'active' : ''} onClick={() => setWorkspaceView('canvas')}>Cave</button>
           <button type="button" className={workspaceView === 'split' ? 'active' : ''} onClick={() => setWorkspaceView('split')}>Split</button>
           <button type="button" className={workspaceView === 'frame' ? 'active' : ''} onClick={() => setWorkspaceView('frame')}>Project Frame</button>
         </div>
