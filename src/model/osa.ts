@@ -6,10 +6,12 @@ export type DataType = 'Relationship' | 'Object' | 'Text' | 'Number' | 'Boolean'
 export type AttributeMode = 'driving' | 'driven'
 export type ThoughtKind = 'Idea' | 'Question' | 'Feeling' | 'Decision' | 'Reference' | 'Experiment' | 'Task'
 export type Socket = { id: string; name: string; direction: SocketDirection; payload: DataType; attributeId?: string; value?: string; functionId?: string; empty?: boolean; drivenBy?: string; drivenValue?: string; drivenType?: DataType }
-export type Attribute = { id: string; key: string; value: string; type: DataType; mode?: AttributeMode; passFrom?: string; passFunctionId?: string; createdChildId?: string; isSelf?: boolean; isEmptySlot?: boolean }
+export type ObjectProperty = { name: string; type: DataType; value: string }
+export type Attribute = { id: string; key: string; value: string; type: DataType; mode?: AttributeMode; passFrom?: string; passFunctionId?: string; createdChildId?: string; isSelf?: boolean; isEmptySlot?: boolean; objectId?: string; objectProperties?: ObjectProperty[] }
 export type FunctionOperation = 'identity' | 'uppercase' | 'increment' | 'double' | 'halve' | 'round' | 'append-note' | 'custom'
 export type OsaFunction = { id: string; name: string; input: DataType; output: DataType; operation: FunctionOperation; code?: string }
-export type CanvasData = { label: string; note?: string; privateNote?: string; provenance?: string; kind?: ThoughtKind; isSeed?: boolean; isNode?: boolean; isTree?: boolean; sockets: Socket[]; attributes: Attribute[]; removeMode?: boolean; onRemove?: () => void; showGaiaRoot?: boolean; onToggleGaiaRoot?: () => void }
+export type FieldTextLink = { id: string; text: string; start: number; end: number; nodeId: string }
+export type CanvasData = { label: string; note?: string; privateNote?: string; provenance?: string; kind?: ThoughtKind; isSeed?: boolean; isNode?: boolean; isTree?: boolean; sockets: Socket[]; attributes: Attribute[]; fieldLinks?: FieldTextLink[]; removeMode?: boolean; onRemove?: () => void; showGaiaRoot?: boolean; onToggleGaiaRoot?: () => void }
 export type OsaData = CanvasData
 export type OsaNode = Node<OsaData, 'osa'>
 export type DrawingData = { points: Point[]; width: number; height: number; removeMode?: boolean; onRemove?: () => void }
@@ -22,9 +24,10 @@ export type FunctionNode = Node<FunctionData, 'function'>
 export type TextData = CanvasData & { content: string }
 export type TextNode = Node<TextData, 'text'>
 export type ProjectFrame = { intention: string; feeling: string; question: string }
-export type FieldItemKind = 'note' | 'shape' | 'link'
+export type FieldItemKind = 'note' | 'shape' | 'link' | 'document'
 export type FieldShapeKind = 'square' | 'circle' | 'diamond' | 'rounded'
-export type FieldItem = { id: string; kind: FieldItemKind; title: string; content: string; url?: string; x: number; y: number; color: string; shape?: FieldShapeKind; width?: number; height?: number }
+export type FieldDocumentReference = { id: string; kind: 'field-item' | 'osa-node'; targetId: string; label: string }
+export type FieldItem = { id: string; kind: FieldItemKind; title: string; content: string; url?: string; x: number; y: number; color: string; shape?: FieldShapeKind; width?: number; height?: number; textLinks?: FieldTextLink[]; documentReferences?: FieldDocumentReference[] }
 export type FieldStroke = { id: string; points: Point[]; color?: string; width?: number }
 export type SavedBoard = { id: string; name: string; nodes: Node[]; edges: import('@xyflow/react').Edge[]; functions?: OsaFunction[]; project?: ProjectFrame; fieldItems?: FieldItem[]; fieldStrokes?: FieldStroke[]; updatedAt: string }
 
