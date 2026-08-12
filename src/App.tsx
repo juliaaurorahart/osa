@@ -22,7 +22,7 @@ import {
 import '@xyflow/react/dist/style.css'
 import './App.css'
 import { fetchPrivateBoards, storePrivateBoards, type CloudSaveState } from './cloudBoards'
-import { connectorColor, dataTypes, defaultFunctions, pointsToPath, thoughtKinds, type Attribute, type CanvasData, type DataType, type DrawingNode, type FieldItem, type FieldItemKind, type FieldShapeKind, type FieldStroke, type FunctionData, type FunctionNode, type FunctionOperation, type OsaFunction, type OsaNode, type Point, type ProjectFrame, type SavedBoard, type ShapeData, type ShapeKind, type ShapeNode, type Socket, type SocketDirection, type TextData, type TextNode, type ThoughtKind } from './model/osa'
+import { connectorColor, dataTypes, defaultFunctions, pointsToPath, thoughtKinds, type Attribute, type CanvasData, type DataType, type DrawingNode, type FieldDocumentReference, type FieldItem, type FieldItemKind, type FieldShapeKind, type FieldStroke, type FieldTextLink, type FunctionData, type FunctionNode, type FunctionOperation, type ObjectProperty, type OsaFunction, type OsaNode, type Point, type ProjectFrame, type SavedBoard, type ShapeData, type ShapeKind, type ShapeNode, type Socket, type SocketDirection, type TextData, type TextNode, type ThoughtKind } from './model/osa'
 import { FieldTools } from './components/FieldTools'
 
 const SAVE_KEY = 'osa-react-flow-saves-v1'
@@ -37,6 +37,12 @@ function socketsFor(node: Node | undefined): Socket[] {
 function attributesFor(node: Node | undefined): Attribute[] {
   const attributes = node?.data.attributes
   return Array.isArray(attributes) ? attributes as Attribute[] : []
+}
+
+function objectPropertiesFor(node: Node | undefined): ObjectProperty[] {
+  return attributesFor(node)
+    .filter((attribute) => (attribute.mode ?? 'driving') === 'driving' && !attribute.isEmptySlot)
+    .map((attribute) => ({ name: attribute.key, type: attribute.type, value: attribute.type === 'Relationship' ? 'Sow' : attribute.value }))
 }
 
 function detailsFor(node: Node | undefined, socket: Socket) {
@@ -135,13 +141,19 @@ function SocketHandles({ sockets }: { sockets: Socket[] }) {
   )
 }
 
+function GaiaRoot({ data }: { data: CanvasData }) {
+  return <>
+    <button type="button" className={`gaia-root-toggle nodrag nopan${data.showGaiaRoot ? ' revealed' : ''}`} aria-label={data.showGaiaRoot ? 'Hide Gaia connection' : 'Show Gaia connection'} title={data.showGaiaRoot ? 'Hide Gaia connection' : 'Show Gaia connection'} onClick={(event) => { event.stopPropagation(); data.onToggleGaiaRoot?.() }} />
+    {data.showGaiaRoot && <span className="gaia-root" aria-label="Connector rooted in Gaia" />}
+  </>
+}
+
 function OsaObjectNode({ id, data }: NodeProps<OsaNode>) {
   return (
     <div className="osa-object">
       <SocketHandles sockets={data.sockets} />
       {data.isTree && <Handle type="target" id="function-attachment" className="function-attachment-handle nodrag nopan" position={Position.Top} data-label="Attach a function to this tree" title="Attach a function to this tree" />}
-      <button type="button" className={`gaia-root-toggle nodrag nopan${data.showGaiaRoot ? ' revealed' : ''}`} aria-label={data.showGaiaRoot ? 'Hide Gaia connection' : 'Show Gaia connection'} title={data.showGaiaRoot ? 'Hide Gaia connection' : 'Show Gaia connection'} onClick={(event) => { event.stopPropagation(); data.onToggleGaiaRoot?.() }} />
-      {data.showGaiaRoot && <span className="gaia-root" aria-label="Rooted in Gaia" />}
+      <GaiaRoot data={data} />
       {data.removeMode && <button className="node-remove" style={removeButtonStyle(id)} type="button" aria-label={`Remove ${data.label}`} onClick={(event) => { event.stopPropagation(); data.onRemove?.() }}><span className="node-remove-mark">×</span></button>}
       <strong>{data.label}</strong>
     </div>
@@ -153,6 +165,7 @@ function CanvasShapeNode({ id, data }: NodeProps<ShapeNode>) {
     <div className={`canvas-shape ${data.shape}`}>
       <SocketHandles sockets={data.sockets} />
       {data.isTree && <Handle type="target" id="function-attachment" className="function-attachment-handle nodrag nopan" position={Position.Top} data-label="Attach a function to this tree" title="Attach a function to this tree" />}
+      <GaiaRoot data={data} />
       {data.removeMode && <button className="node-remove" style={removeButtonStyle(id, data.shape === 'diamond' ? '-45deg' : '0deg')} type="button" aria-label={`Remove ${data.label}`} onClick={(event) => { event.stopPropagation(); data.onRemove?.() }}><span className="node-remove-mark">×</span></button>}
       <span>{data.label}</span>
     </div>
@@ -164,6 +177,7 @@ function FunctionObjectNode({ id, data }: NodeProps<FunctionNode>) {
   const signals = data.sockets.filter((socket) => socket.direction === 'signal')
   return (
     <div className="function-object">
+      <GaiaRoot data={data} />
       {data.removeMode && <button className="node-remove" style={removeButtonStyle(id)} type="button" aria-label={`Remove ${data.label}`} onClick={(event) => { event.stopPropagation(); data.onRemove?.() }}><span className="node-remove-mark">×</span></button>}
       <strong>{data.label}</strong>
       <p>{slots.length} arg{slots.length === 1 ? '' : 's'} · {signals.length} return{signals.length === 1 ? '' : 's'}</p>
@@ -174,7 +188,7 @@ function FunctionObjectNode({ id, data }: NodeProps<FunctionNode>) {
 }
 
 function TextFragmentNode({ id, data }: NodeProps<TextNode>) {
-  return <div className="text-fragment"><span className="fragment-kind">{data.kind ?? 'Fragment'}</span>{data.removeMode && <button className="node-remove" style={removeButtonStyle(id)} type="button" aria-label="Remove text fragment" onClick={(event) => { event.stopPropagation(); data.onRemove?.() }}><span className="node-remove-mark">×</span></button>}<strong>{data.label}</strong><p>{data.content || 'A text fragment…'}</p></div>
+  return <div className="text-fragment"><GaiaRoot data={data} /><span className="fragment-kind">{data.kind ?? 'Fragment'}</span>{data.removeMode && <button className="node-remove" style={removeButtonStyle(id)} type="button" aria-label="Remove text fragment" onClick={(event) => { event.stopPropagation(); data.onRemove?.() }}><span className="node-remove-mark">×</span></button>}<strong>{data.label}</strong><p>{data.content || 'A text fragment…'}</p></div>
 }
 
 const nodeTypes = { drawing: FreehandNode, osa: OsaObjectNode, shape: CanvasShapeNode, function: FunctionObjectNode, text: TextFragmentNode }
@@ -199,8 +213,10 @@ function Playground() {
   const [workspaceView, setWorkspaceView] = useState<'field' | 'canvas' | 'frame'>(() => new URLSearchParams(window.location.search).get('view') === 'field' ? 'field' : 'canvas')
   const [fieldItems, setFieldItems] = useState<FieldItem[]>([])
   const [selectedFieldItemId, setSelectedFieldItemId] = useState<string | null>(null)
+  const [fieldTextSelection, setFieldTextSelection] = useState<{ itemId: string; text: string; start: number; end: number } | null>(null)
+  const [fieldTextTargetId, setFieldTextTargetId] = useState<string>('')
   const [fieldStrokes, setFieldStrokes] = useState<FieldStroke[]>([])
-  const [fieldTool, setFieldTool] = useState<'note' | 'shape' | 'link' | 'sketch' | 'erase' | null>(null)
+  const [fieldTool, setFieldTool] = useState<'note' | 'shape' | 'link' | 'document' | 'sketch' | 'erase' | null>(null)
   const [activeFieldStroke, setActiveFieldStroke] = useState<Point[] | null>(null)
   const [fieldZoom, setFieldZoom] = useState(1)
   const [fieldInkColor, setFieldInkColor] = useState('#ffd0f1')
@@ -261,14 +277,23 @@ function Playground() {
   }, [nodes, setEdges])
 
   useEffect(() => {
-    const incoming = new Map<string, { type: DataType; value: string; name: string }>()
+    const incoming = new Map<string, { type: DataType; value: string; name: string; objectId?: string; objectProperties?: ObjectProperty[] }>()
     edges.forEach((edge) => {
       if (!edge.sourceHandle || !edge.targetHandle) return
       const sourceNode = nodes.find((node) => node.id === edge.source)
       const sourceSocket = socketsFor(sourceNode).find((socket) => socket.id === edge.sourceHandle)
       if (!sourceSocket) return
       const source = detailsFor(sourceNode, sourceSocket)
-      incoming.set(`${edge.target}:${edge.targetHandle}`, { type: source.payload, value: source.payload === 'Relationship' ? 'Cub' : source.value, name: source.name })
+      const sourceAttribute = attributesFor(sourceNode).find((attribute) => attribute.id === sourceSocket.attributeId)
+      const objectNode = source.payload === 'Object'
+        ? nodes.find((node) => node.id === sourceAttribute?.objectId) ?? sourceNode
+        : undefined
+      incoming.set(`${edge.target}:${edge.targetHandle}`, {
+        type: source.payload,
+        value: source.payload === 'Relationship' ? 'Cub' : source.value,
+        name: source.name,
+        ...(objectNode ? { objectId: objectNode.id, objectProperties: objectPropertiesFor(objectNode) } : {}),
+      })
     })
 
     if (!incoming.size) return
@@ -288,11 +313,11 @@ function Playground() {
           const receivedType = source.type
           const receivedValue = source.type === 'Relationship' ? 'Cub' : source.value
           const receivedName = source.type === 'Relationship' ? attribute?.key ?? socket.name : source.name
-          const attributeNeedsUpdate = attribute && (attribute.key !== receivedName || attribute.type !== receivedType || attribute.value !== receivedValue || attribute.mode !== 'driven')
+          const attributeNeedsUpdate = attribute && (attribute.key !== receivedName || attribute.type !== receivedType || attribute.value !== receivedValue || attribute.mode !== 'driven' || attribute.objectId !== source.objectId || JSON.stringify(attribute.objectProperties) !== JSON.stringify(source.objectProperties))
           const socketNeedsUpdate = socket.direction !== 'slot' || socket.payload !== receivedType || socket.name !== receivedName
           if (!attributeNeedsUpdate && !socketNeedsUpdate) return
           if (attributeNeedsUpdate) {
-            nextAttributes = nextAttributes.map((item) => item.id !== socket.attributeId ? item : { ...item, key: receivedName, type: receivedType, value: receivedValue, mode: 'driven', isEmptySlot: false })
+            nextAttributes = nextAttributes.map((item) => item.id !== socket.attributeId ? item : { ...item, key: receivedName, type: receivedType, value: receivedValue, mode: 'driven', isEmptySlot: false, ...(source.objectId ? { objectId: source.objectId, objectProperties: source.objectProperties } : {}) })
             nextAttributes = nextAttributes.map((item) => {
               if (item.passFrom !== socket.attributeId) return item
               const onwardFunction = functions.find((fn) => fn.id === item.passFunctionId)
@@ -719,19 +744,60 @@ function Playground() {
   const addFieldItem = (kind: FieldItemKind, position: Point) => {
     const id = `field-${crypto.randomUUID()}`
     const number = fieldNumber.current++
-    const title = kind === 'note' ? `Note ${number}` : kind === 'link' ? `Link ${number}` : `Shape ${number}`
-    const item: FieldItem = { id, kind, title, content: kind === 'note' ? '' : kind === 'link' ? 'A reference waiting for its address.' : 'A field fragment waiting to become more.', x: position.x, y: position.y, color: ['#ffc0d9', '#cbb7ff', '#ffda91', '#a9e9d0'][number % 4], ...(kind === 'shape' ? { shape: 'square' as FieldShapeKind, width: 164, height: 164 } : {}) }
+    const title = kind === 'note' ? `Note ${number}` : kind === 'link' ? `Link ${number}` : kind === 'document' ? `Document ${number}` : `Shape ${number}`
+    const item: FieldItem = { id, kind, title, content: kind === 'document' ? '# A living document\n\nGather material from The Field here.' : kind === 'note' ? '' : kind === 'link' ? 'A reference waiting for its address.' : 'A field fragment waiting to become more.', x: position.x, y: position.y, color: ['#ffc0d9', '#cbb7ff', '#ffda91', '#a9e9d0'][number % 4], ...(kind === 'shape' ? { shape: 'square' as FieldShapeKind, width: 164, height: 164 } : kind === 'document' ? { width: 420, height: 360, documentReferences: [] } : {}) }
     setFieldItems((current) => [...current, item])
     if (kind === 'shape') setSelectedFieldItemId(id)
     const object: OsaNode = { id, type: 'osa', position: { x: 180 + (number % 4) * 210, y: 150 + (number % 3) * 145 }, data: { label: title, note: item.content, provenance: 'The Field', kind: 'Idea', sockets: [], attributes: [] }, className: 'osa-node idea-node' }
     setNodes((current) => [...current, object])
-    if (kind === 'note') requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(`[data-field-note="${id}"]`)?.focus())
+    if (kind === 'note' || kind === 'document') requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(`[data-field-note="${id}"]`)?.focus())
     if (kind === 'link') requestAnimationFrame(() => document.querySelector<HTMLInputElement>(`[data-field-link="${id}"]`)?.focus())
   }
 
   const updateFieldItem = (id: string, changes: Partial<FieldItem>) => {
     setFieldItems((current) => current.map((item) => item.id === id ? { ...item, ...changes } : item))
     setNodes((current) => current.map((node) => node.id !== id ? node : { ...node, data: { ...node.data, ...(changes.title ? { label: changes.title } : {}), ...(changes.content !== undefined ? { note: changes.content } : {}), ...(changes.url !== undefined ? { note: changes.url } : {}) } }))
+  }
+
+  const rememberFieldTextSelection = (itemId: string, element: HTMLTextAreaElement) => {
+    const start = element.selectionStart
+    const end = element.selectionEnd
+    const text = element.value.slice(start, end)
+    setFieldTextSelection(text ? { itemId, text, start, end } : null)
+    if (text && !fieldTextTargetId) setFieldTextTargetId(itemId)
+  }
+
+  const linkSelectedFieldText = (item: FieldItem) => {
+    if (!fieldTextSelection || fieldTextSelection.itemId !== item.id || !fieldTextTargetId) return
+    const target = nodes.find((node) => node.id === fieldTextTargetId)
+    if (!target) return
+    const link: FieldTextLink = {
+      id: `field-link-${crypto.randomUUID()}`,
+      text: fieldTextSelection.text,
+      start: fieldTextSelection.start,
+      end: fieldTextSelection.end,
+      nodeId: target.id,
+    }
+    updateFieldItem(item.id, { textLinks: [...(item.textLinks ?? []), link] })
+    setNodes((current) => current.map((node) => node.id !== target.id ? node : {
+      ...node,
+      data: {
+        ...node.data,
+        fieldLinks: [...((node.data as CanvasData).fieldLinks ?? []), link],
+        provenance: `${String(node.data.provenance ?? 'OSA')} · linked text from ${item.title}`,
+      },
+    }))
+    setFieldTextSelection(null)
+  }
+
+  const addDocumentReference = (document: FieldItem, reference: FieldDocumentReference) => {
+    const current = document.documentReferences ?? []
+    if (current.some((item) => item.kind === reference.kind && item.targetId === reference.targetId)) return
+    updateFieldItem(document.id, { documentReferences: [...current, reference] })
+  }
+
+  const removeDocumentReference = (document: FieldItem, referenceId: string) => {
+    updateFieldItem(document.id, { documentReferences: (document.documentReferences ?? []).filter((reference) => reference.id !== referenceId) })
   }
 
   const attachedFunctionsFor = (nodeId: string) => {
@@ -1156,7 +1222,34 @@ function Playground() {
           {fieldItems.map((item) => <article key={item.id} onPointerDown={(event) => startFieldItemDrag(event, item)} className={`field-item ${item.kind} ${item.kind === 'shape' ? `shape-${item.shape ?? 'square'}` : ''}${selectedFieldItemId === item.id ? ' selected' : ''}`} style={{ left: item.x, top: item.y, '--field-color': item.color, '--field-width': `${item.width ?? 240}px`, '--field-height': `${item.height ?? 160}px` } as CSSProperties}>
             <button type="button" className="field-drag-handle" aria-label={`Move ${item.title}`} title="Drag to move" onPointerDown={(event) => startFieldItemDrag(event, item, true)}>⠿</button>
             <input aria-label="Field item title" value={item.title} onChange={(event) => updateFieldItem(item.id, { title: event.target.value })} />
-            {item.kind === 'note' ? <textarea data-field-note={item.id} aria-label="Field note" value={item.content} placeholder="A thought, a question, a tiny beginning…" onChange={(event) => updateFieldItem(item.id, { content: event.target.value })} /> : item.kind === 'link' ? <><input data-field-link={item.id} aria-label="Link address" value={item.url ?? ''} placeholder="https://…" onChange={(event) => updateFieldItem(item.id, { url: event.target.value })} />{item.url && <a href={item.url} target="_blank" rel="noreferrer" onPointerDown={(event) => event.stopPropagation()}>Open link ↗</a>}</> : <div className="field-shape-mark" aria-label="square shape" />}
+            {item.kind === 'note' ? <>
+              <textarea data-field-note={item.id} aria-label="Field note" value={item.content} placeholder="A thought, a question, a tiny beginning…" onSelect={(event) => rememberFieldTextSelection(item.id, event.currentTarget)} onChange={(event) => updateFieldItem(item.id, { content: event.target.value })} />
+              {fieldTextSelection?.itemId === item.id && <div className="field-text-linker" onPointerDown={(event) => event.stopPropagation()}>
+                <small>“{fieldTextSelection.text}”</small>
+                <select value={fieldTextTargetId} aria-label="Node to link selected text to" onChange={(event) => setFieldTextTargetId(event.target.value)}>
+                  <option value="">Choose an OSA node…</option>
+                  {nodes.filter((node) => node.type !== 'drawing').map((node) => <option key={node.id} value={node.id}>{String(node.data.label ?? 'Untitled node')}</option>)}
+                </select>
+                <button type="button" onClick={() => linkSelectedFieldText(item)}>Link text</button>
+              </div>}
+              {(item.textLinks?.length ?? 0) > 0 && <div className="field-text-links">{item.textLinks!.map((link) => <span key={link.id}>↗ {link.text}</span>)}</div>}
+            </> : item.kind === 'document' ? <div className="field-document" onPointerDown={(event) => event.stopPropagation()}>
+              <textarea data-field-note={item.id} aria-label="Document content" value={item.content} onChange={(event) => updateFieldItem(item.id, { content: event.target.value })} />
+              <div className="document-gather">
+                <span>Gather into this document</span>
+                <select aria-label="Field item to add to document" defaultValue="" onChange={(event) => {
+                  const source = fieldItems.find((candidate) => candidate.id === event.target.value)
+                  if (source) addDocumentReference(item, { id: `document-ref-${crypto.randomUUID()}`, kind: 'field-item', targetId: source.id, label: source.title })
+                  event.currentTarget.value = ''
+                }}><option value="">Field item…</option>{fieldItems.filter((candidate) => candidate.id !== item.id).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.title}</option>)}</select>
+                <select aria-label="OSA node to add to document" defaultValue="" onChange={(event) => {
+                  const source = nodes.find((candidate) => candidate.id === event.target.value)
+                  if (source) addDocumentReference(item, { id: `document-ref-${crypto.randomUUID()}`, kind: 'osa-node', targetId: source.id, label: String(source.data.label ?? 'Untitled node') })
+                  event.currentTarget.value = ''
+                }}><option value="">OSA object…</option>{nodes.filter((node) => node.type !== 'drawing').map((node) => <option key={node.id} value={node.id}>{String(node.data.label ?? 'Untitled node')}</option>)}</select>
+              </div>
+              {(item.documentReferences?.length ?? 0) > 0 && <div className="document-references">{item.documentReferences!.map((reference) => <div key={reference.id}><span>{reference.kind === 'osa-node' ? '●' : '▧'} {reference.label}</span><button type="button" aria-label={`Remove ${reference.label} from document`} onClick={() => removeDocumentReference(item, reference.id)}>×</button></div>)}</div>}
+            </div> : item.kind === 'link' ? <><input data-field-link={item.id} aria-label="Link address" value={item.url ?? ''} placeholder="https://…" onChange={(event) => updateFieldItem(item.id, { url: event.target.value })} />{item.url && <a href={item.url} target="_blank" rel="noreferrer" onPointerDown={(event) => event.stopPropagation()}>Open link ↗</a>}</> : <div className="field-shape-mark" aria-label="square shape" />}
             <small>{item.kind}</small>
           </article>)}</div>
         </div>
@@ -1334,11 +1427,20 @@ function Playground() {
                         </div>
                         <div className="attribute-controls">
                           {isEmptySlot ? <span className="empty-slot-field">No type yet</span> : <select value={attribute.type ?? 'Text'} aria-label="Attribute data type" disabled={received} onChange={(event) => updateAttribute(attribute.id, { type: event.target.value as DataType })}>{dataTypes.map((type) => <option key={type}>{type}</option>)}</select>}
-                          {isEmptySlot ? <span className="empty-slot-field">Waiting</span> : attribute.type === 'Relationship' ? <select value="Sow/Cub" aria-label="Relationship value" disabled><option value="Sow/Cub">Sow/Cub</option></select> : (
+                          {isEmptySlot ? <span className="empty-slot-field">Waiting</span> : attribute.type === 'Relationship' ? <select value="Sow/Cub" aria-label="Relationship value" disabled><option value="Sow/Cub">Sow/Cub</option></select> : attribute.type === 'Object' && !received && !isSelfAttribute ? (
+                            <select value={attribute.objectId ?? ''} aria-label="Object whose properties this attribute sends" onChange={(event) => {
+                              const object = nodes.find((node) => node.id === event.target.value)
+                              updateAttribute(attribute.id, { objectId: object?.id, value: String(object?.data.label ?? ''), objectProperties: objectPropertiesFor(object) })
+                            }}>
+                              <option value="">Choose object…</option>
+                              {nodes.filter((node) => node.id !== selectedNode.id && node.type !== 'drawing').map((node) => <option key={node.id} value={node.id}>{String(node.data.label ?? 'Untitled object')}</option>)}
+                            </select>
+                          ) : (
                             <input value={isSelfAttribute ? `${String(selectedNode.data.label ?? 'Untitled object')} · ${selectedNode.id}` : attribute.value} aria-label="Attribute value" disabled={isSelfAttribute || received} placeholder={received ? 'Received value' : 'Value to send'} onChange={(event) => updateAttribute(attribute.id, { value: event.target.value })} />
                           )}
                           <label className="attribute-drive"><input type="checkbox" checked={!received} disabled={received} onChange={(event) => updateAttribute(attribute.id, { mode: event.target.checked ? 'driving' : 'driven' })} />{received ? '↓ Receives' : '↑ Sends'}</label>
                         </div>
+                        {attribute.type === 'Object' && (attribute.objectProperties?.length ?? 0) > 0 && <div className="object-properties"><span>{received ? 'Received object properties' : 'Object properties to send'}</span>{attribute.objectProperties!.map((property) => <small key={`${property.name}-${property.type}`}>{property.name} · {property.type}: {property.value || '—'}</small>)}</div>}
                         {received && <div className="attribute-passthroughs">
                           {onwardAttributes.map((onward) => <div className="attribute-pass-line" key={onward.id}>
                             <span>Pass</span>

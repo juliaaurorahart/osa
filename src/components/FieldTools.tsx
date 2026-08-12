@@ -1,7 +1,7 @@
 import type { Dispatch, SetStateAction } from 'react'
 import type { FieldItem, FieldShapeKind, FieldStroke } from '../model/osa'
 
-type FieldTool = 'note' | 'shape' | 'link' | 'sketch' | 'erase' | null
+type FieldTool = 'note' | 'shape' | 'link' | 'document' | 'sketch' | 'erase' | null
 
 type FieldToolsProps = {
   tool: FieldTool
@@ -24,8 +24,10 @@ export function FieldTools({ tool, setTool, inkColor, setInkColor, inkWidth, set
     ? 'Tap the field where the note belongs, then begin typing.'
     : tool === 'shape'
       ? 'Tap the field to place a shape.'
-      : tool === 'link'
+    : tool === 'link'
         ? 'Tap the field, then paste or type the link.'
+        : tool === 'document'
+          ? 'Tap the field to place a document, then gather notes, objects, and links into it.'
         : tool === 'sketch'
           ? `Draw directly on the field. ${strokes.length} ink stroke${strokes.length === 1 ? '' : 's'} in the sketch bucket.`
           : tool === 'erase'
@@ -39,6 +41,7 @@ export function FieldTools({ tool, setTool, inkColor, setInkColor, inkWidth, set
       <button type="button" className={tool === 'note' ? 'active' : ''} onClick={() => chooseTool('note')}>+ Note</button>
       <button type="button" className={tool === 'shape' ? 'active' : ''} onClick={() => chooseTool('shape')}>+ Shape</button>
       <button type="button" className={tool === 'link' ? 'active' : ''} onClick={() => chooseTool('link')}>↗ Link</button>
+      <button type="button" className={tool === 'document' ? 'active' : ''} onClick={() => chooseTool('document')}>▤ Document</button>
       <button type="button" className={tool === 'sketch' ? 'active' : ''} onClick={() => chooseTool('sketch')}>✎ Sketch</button>
       <button type="button" className={tool === 'erase' ? 'active' : ''} onClick={() => chooseTool('erase')}>⌫ Erase</button>
       <div className="field-ink-controls">
