@@ -1061,13 +1061,16 @@ function Playground() {
     if (event.button !== 0 || (event.target as HTMLElement).closest('.field-item')) return
     rememberFieldPointer(event)
     if (fieldPointers.current.size > 1) return
-    if (!fieldTool) {
+    // The open Field is stylus-first: a pen makes ink without a mode switch,
+    // while a finger or mouse can still navigate the infinite plane.
+    const drawingWithPen = event.pointerType === 'pen' && !fieldTool
+    if (!fieldTool && !drawingWithPen) {
       event.currentTarget.setPointerCapture(event.pointerId)
       fieldPan.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, scrollX: event.currentTarget.scrollLeft, scrollY: event.currentTarget.scrollTop }
       return
     }
     const point = fieldPoint(event)
-    if (fieldTool === 'note' || fieldTool === 'shape' || fieldTool === 'link') {
+    if (fieldTool === 'note' || fieldTool === 'shape' || fieldTool === 'link' || fieldTool === 'document') {
       addFieldItem(fieldTool, { x: Math.max(18, point.x - 18), y: Math.max(18, point.y - 18) })
       setFieldTool(null)
       return
@@ -1134,6 +1137,12 @@ function Playground() {
   // The handle gives touch and pen input one unambiguous place to begin a move.
   const startFieldItemDrag = (event: React.PointerEvent<HTMLElement>, item: FieldItem, fromHandle = false) => {
     if (!fromHandle && (event.target as HTMLElement).closest('input, textarea, a, button, select')) return
+    // On touch screens, only the visible grip moves an object. This keeps a
+    // finger tap from being mistaken for a drag while editing or drawing.
+    if (!fromHandle && event.pointerType === 'touch') {
+      setSelectedFieldItemId(item.id)
+      return
+    }
     event.stopPropagation()
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)

@@ -32,7 +32,7 @@ export function FieldTools({ tool, setTool, inkColor, setInkColor, inkWidth, set
           ? `Draw directly on the field. ${strokes.length} ink stroke${strokes.length === 1 ? '' : 's'} in the sketch bucket.`
           : tool === 'erase'
             ? 'Touch a stroke to erase it. Two fingers zoom.'
-            : 'Choose a tool, then use the open field. Two fingers zoom.'
+            : 'Use a pen to draw directly. Drag open ground with a finger or mouse to travel; use the small grip to move an object.'
 
   return (
     <aside className="field-tools">
