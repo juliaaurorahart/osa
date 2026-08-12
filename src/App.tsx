@@ -26,6 +26,7 @@ import { connectorColor, dataTypes, defaultFunctions, pointsToPath, thoughtKinds
 import { FieldTools } from './components/FieldTools'
 
 const SAVE_KEY = 'osa-react-flow-saves-v1'
+const emptyProjectFrame: ProjectFrame = { goal: '', dueDate: '', budget: '', status: 'exploring', currentAction: '', nextActions: '', completedActions: '', intention: '', feeling: '', question: '' }
 const MOOD_KEY = 'osa-visual-mood-v1'
 const SPARKLE_KEY = 'osa-sparkles-v1'
 
@@ -210,7 +211,7 @@ function Playground() {
   const [boardName, setBoardName] = useState('Untitled board')
   const [functions, setFunctions] = useState<OsaFunction[]>(defaultFunctions)
   const [functionLibraryOpen, setFunctionLibraryOpen] = useState(false)
-  const [workspaceView, setWorkspaceView] = useState<'field' | 'canvas' | 'frame'>(() => new URLSearchParams(window.location.search).get('view') === 'field' ? 'field' : 'canvas')
+  const [workspaceView, setWorkspaceView] = useState<'field' | 'canvas' | 'split' | 'frame'>(() => new URLSearchParams(window.location.search).get('view') === 'field' ? 'field' : 'canvas')
   const [fieldItems, setFieldItems] = useState<FieldItem[]>([])
   const [selectedFieldItemId, setSelectedFieldItemId] = useState<string | null>(null)
   const [fieldTextSelection, setFieldTextSelection] = useState<{ itemId: string; text: string; start: number; end: number } | null>(null)
@@ -228,7 +229,7 @@ function Playground() {
   const fieldPinch = useRef<{ distance: number; zoom: number } | null>(null)
   const fieldPan = useRef<{ pointerId: number; x: number; y: number; scrollX: number; scrollY: number } | null>(null)
   const fieldItemDrag = useRef<{ id: string; pointerId: number; x: number; y: number; startX: number; startY: number } | null>(null)
-  const [projectFrame, setProjectFrame] = useState<ProjectFrame>({ intention: '', feeling: '', question: '' })
+  const [projectFrame, setProjectFrame] = useState<ProjectFrame>(emptyProjectFrame)
   const [visualMood, setVisualMood] = useState(() => Number(localStorage.getItem(MOOD_KEY) ?? .42))
   const [sparkles, setSparkles] = useState(() => localStorage.getItem(SPARKLE_KEY) === 'true')
   const [drawingMode, setDrawingMode] = useState(false)
@@ -902,7 +903,7 @@ function Playground() {
     setNodes(loadedNodes)
     setEdges(loadedEdges)
     setFunctions(saved.functions ?? defaultFunctions())
-    setProjectFrame(saved.project ?? { intention: '', feeling: '', question: '' })
+    setProjectFrame({ ...emptyProjectFrame, ...(saved.project ?? {}) })
     setFieldItems(loadedFieldItems)
     setFieldStrokes(saved.fieldStrokes ?? [])
     setSelectedFieldItemId(null)
@@ -917,7 +918,7 @@ function Playground() {
     setFunctions(defaultFunctions())
     setActiveSaveId(null)
     setBoardName('Untitled board')
-    setProjectFrame({ intention: '', feeling: '', question: '' })
+    setProjectFrame(emptyProjectFrame)
     setFieldItems([])
     setFieldStrokes([])
     setSelectedFieldItemId(null)
@@ -1176,50 +1177,64 @@ function Playground() {
         <div className="view-switch" role="group" aria-label="Workspace view">
           <button type="button" className={workspaceView === 'field' ? 'active' : ''} onClick={() => setWorkspaceView('field')}>The Field</button>
           <button type="button" className={workspaceView === 'canvas' ? 'active' : ''} onClick={() => setWorkspaceView('canvas')}>OSA</button>
+          <button type="button" className={workspaceView === 'split' ? 'active' : ''} onClick={() => setWorkspaceView('split')}>Split</button>
           <button type="button" className={workspaceView === 'frame' ? 'active' : ''} onClick={() => setWorkspaceView('frame')}>Project Frame</button>
         </div>
-        <div className="save-tools" aria-label="Saved boards">
-          <select value={activeSaveId ?? ''} aria-label="Choose a saved board" onChange={(event) => event.target.value && loadBoard(event.target.value)}>
-            <option value="">{boardName}</option>
-            {saves.map((save) => <option key={save.id} value={save.id}>{save.name}</option>)}
-          </select>
-          <button type="button" className="tool-button" onClick={() => saveBoard()}>Save</button>
-          <button type="button" className="tool-button" onClick={() => saveBoard(true)}>Save as</button>
-          <button type="button" className="tool-button" onClick={newBoard}>New</button>
-          {cloudSaveState === 'private'
-            ? <span className="save-status private" title="Your boards are privately stored in your OSA account.">Private cloud save</span>
-            : <button type="button" className="private-save-button" title="Sign in to save boards privately across your devices." onClick={() => { window.location.assign('/api/login') }}>
-              {cloudSaveState === 'checking' ? 'Checking private save…' : '☁ Private save'}
-            </button>}
-        </div>
-        <label className="mood-control">
-          <span>Drab</span>
-          <input type="range" min="0" max="1" step="0.01" value={visualMood} onChange={(event) => setVisualMood(Number(event.target.value))} aria-label="Visual mood, drab to brighter" />
-          <span>Brighter</span>
-        </label>
-        {workspaceView !== 'field' && <>
-          <button type="button" className={sparkles ? 'tool-button sparkle-toggle active' : 'tool-button sparkle-toggle'} onClick={() => setSparkles((active) => !active)}>
-            ✦ {sparkles ? 'Sparkles on' : 'Sparkles'}
-          </button>
-          <button type="button" className="tool-button" onClick={() => setFunctionLibraryOpen(true)}>ƒ Functions</button>
-          <div className="seed-tools" aria-label="Plant a seed">
-            <span>Plant Seed</span>
-            <div className="seed-shapes">
-              <button type="button" className="seed-shape object" onClick={() => addNode('object')} aria-label="Plant an object seed" title="Object seed" />
-              <button type="button" className="seed-shape rectangle" onClick={() => addNode('rectangle')} aria-label="Plant a rectangle seed" title="Rectangle seed" />
-              <button type="button" className="seed-shape circle" onClick={() => addNode('circle')} aria-label="Plant a circle seed" title="Circle seed" />
-              <button type="button" className="seed-shape diamond" onClick={() => addNode('diamond')} aria-label="Plant a diamond seed" title="Diamond seed" />
-            </div>
+        <details className="toolbar-menu board-menu">
+          <summary>▾ Boards</summary>
+          <div className="toolbar-menu-panel save-tools" aria-label="Saved boards">
+            <select value={activeSaveId ?? ''} aria-label="Choose a saved board" onChange={(event) => event.target.value && loadBoard(event.target.value)}>
+              <option value="">{boardName}</option>
+              {saves.map((save) => <option key={save.id} value={save.id}>{save.name}</option>)}
+            </select>
+            <button type="button" className="tool-button" onClick={() => saveBoard()}>Save</button>
+            <button type="button" className="tool-button" onClick={() => saveBoard(true)}>Save as</button>
+            <button type="button" className="tool-button" onClick={newBoard}>New</button>
+            {cloudSaveState === 'private'
+              ? <span className="save-status private" title="Your boards are privately stored in your OSA account.">Private cloud save</span>
+              : <button type="button" className="private-save-button" title="Sign in to save boards privately across your devices." onClick={() => { window.location.assign('/api/login') }}>
+                {cloudSaveState === 'checking' ? 'Checking private save…' : '☁ Private save'}
+              </button>}
           </div>
-          <button type="button" className="tool-button" onClick={addTextFragment}>+ Text</button>
-          <button type="button" className={drawingMode ? 'tool-button active' : 'tool-button'} onClick={() => setDrawingMode((active) => !active)}>
-            ✎ {drawingMode ? 'Drawing on' : 'Draw'}
-          </button>
+        </details>
+        <details className="toolbar-menu look-menu">
+          <summary>☼ Look</summary>
+          <div className="toolbar-menu-panel">
+            <label className="mood-control">
+              <span>Drab</span>
+              <input type="range" min="0" max="1" step="0.01" value={visualMood} onChange={(event) => setVisualMood(Number(event.target.value))} aria-label="Visual mood, drab to brighter" />
+              <span>Brighter</span>
+            </label>
+            {workspaceView !== 'field' && <button type="button" className={sparkles ? 'tool-button sparkle-toggle active' : 'tool-button sparkle-toggle'} onClick={() => setSparkles((active) => !active)}>
+              ✦ {sparkles ? 'Sparkles on' : 'Sparkles'}
+            </button>}
+          </div>
+        </details>
+        {workspaceView !== 'field' && <>
+          <details className="toolbar-menu add-menu">
+            <summary>+ Add</summary>
+            <div className="toolbar-menu-panel add-panel">
+              <div className="seed-tools" aria-label="Plant a seed">
+                <span>Plant Seed</span>
+                <div className="seed-shapes">
+                  <button type="button" className="seed-shape object" onClick={() => addNode('object')} aria-label="Plant an object seed" title="Object seed" />
+                  <button type="button" className="seed-shape rectangle" onClick={() => addNode('rectangle')} aria-label="Plant a rectangle seed" title="Rectangle seed" />
+                  <button type="button" className="seed-shape circle" onClick={() => addNode('circle')} aria-label="Plant a circle seed" title="Circle seed" />
+                  <button type="button" className="seed-shape diamond" onClick={() => addNode('diamond')} aria-label="Plant a diamond seed" title="Diamond seed" />
+                </div>
+              </div>
+              <button type="button" className="tool-button" onClick={addTextFragment}>+ Text</button>
+              <button type="button" className={drawingMode ? 'tool-button active' : 'tool-button'} onClick={() => setDrawingMode((active) => !active)}>
+                ✎ {drawingMode ? 'Drawing on' : 'Draw'}
+              </button>
+              <button type="button" className="tool-button" onClick={() => setFunctionLibraryOpen(true)}>ƒ Functions</button>
+            </div>
+          </details>
           <p className="hint">{drawingMode ? 'Draw on empty canvas · Esc or Draw to return to node mode' : 'Drag nodes · pull handles to connect · double-click to rename · Delete to remove'}</p>
         </>}
       </header>
 
-      {workspaceView === 'field' ? <section className="field-workspace" aria-label="The Field notebook canvas">
+      {(workspaceView === 'field' || workspaceView === 'split') && <section className={`field-workspace${workspaceView === 'split' ? ' split-field' : ''}`} aria-label="The Field notebook canvas">
         <FieldTools tool={fieldTool} setTool={setFieldTool} inkColor={fieldInkColor} setInkColor={setFieldInkColor} inkWidth={fieldInkWidth} setInkWidth={setFieldInkWidth} strokes={fieldStrokes} setStrokes={setFieldStrokes} zoom={fieldZoom} setZoom={setFieldZoom} selectedShape={selectedFieldShape} updateItem={updateFieldItem} />
         <div ref={fieldCanvas} className={`field-canvas${fieldTool === 'sketch' ? ' sketching' : ''}`} onPointerDown={startFieldInteraction} onPointerMove={continueFieldSketch} onPointerUp={finishFieldSketch} onPointerCancel={finishFieldSketch}>
           <div className="field-plane" style={{ transform: `scale(${fieldZoom})` }}>
@@ -1262,7 +1277,8 @@ function Playground() {
             <small>{item.kind}</small>
           </article>)}</div>
         </div>
-      </section> : workspaceView === 'canvas' ? <section className="flow-area" aria-label="Node playground">
+      </section>}
+      {(workspaceView === 'canvas' || workspaceView === 'split') && <section className={`flow-area${workspaceView === 'split' ? ' split-cavern' : ''}`} aria-label="Node playground">
         <ReactFlow
           nodes={renderedNodes}
           edges={edges}
@@ -1536,24 +1552,30 @@ function Playground() {
             </section>
           </aside>
         )}
-      </section> : <section className="project-frame" aria-label="Project framework">
+      </section>}
+      {workspaceView === 'frame' && <section className="project-frame" aria-label="Project dashboard">
         <aside className="project-pulse">
-          <p className="frame-kicker">PROJECT PULSE</p><h2>Hold the feeling first.</h2>
-          <label>Intention<textarea rows={4} value={projectFrame.intention} placeholder="What are we making?" onChange={(event) => setProjectFrame((current) => ({ ...current, intention: event.target.value }))} /></label>
-          <label>Experience<textarea rows={4} value={projectFrame.feeling} placeholder="What should this feel like?" onChange={(event) => setProjectFrame((current) => ({ ...current, feeling: event.target.value }))} /></label>
-          <label>Open question<textarea rows={4} value={projectFrame.question} placeholder="What are we still wondering?" onChange={(event) => setProjectFrame((current) => ({ ...current, question: event.target.value }))} /></label>
+          <p className="frame-kicker">PROJECT</p><h2>Start with what matters.</h2>
+          <label>Name<input value={boardName === 'Untitled board' ? '' : boardName} placeholder="Project name" onChange={(event) => setBoardName(event.target.value || 'Untitled board')} /></label>
+          <label>Goal<textarea rows={3} value={projectFrame.goal} placeholder="What is this project trying to accomplish?" onChange={(event) => setProjectFrame((current) => ({ ...current, goal: event.target.value }))} /></label>
+          <div className="project-details-row"><label>Due date<input type="date" value={projectFrame.dueDate} onChange={(event) => setProjectFrame((current) => ({ ...current, dueDate: event.target.value }))} /></label><label>Budget<input value={projectFrame.budget} placeholder="$ / hours / TBD" onChange={(event) => setProjectFrame((current) => ({ ...current, budget: event.target.value }))} /></label></div>
+          <label>Status<select value={projectFrame.status} onChange={(event) => setProjectFrame((current) => ({ ...current, status: event.target.value as ProjectFrame['status'] }))}><option value="exploring">Exploring</option><option value="active">Active</option><option value="waiting">Waiting</option><option value="complete">Complete</option></select></label>
         </aside>
         <section className="project-map">
-          <div className="frame-heading"><div><p className="frame-kicker">SYSTEM MAP</p><h2>Things taking shape</h2></div><button type="button" onClick={() => setWorkspaceView('canvas')}>Open canvas</button></div>
+          <div className="frame-heading"><div><p className="frame-kicker">WORK MAP</p><h2>What is happening now</h2></div><button type="button" onClick={() => setWorkspaceView('field')}>Open Field</button></div>
+          <label className="current-action">Current action<textarea rows={3} value={projectFrame.currentAction} placeholder="The one thing you are actively moving forward…" onChange={(event) => setProjectFrame((current) => ({ ...current, currentAction: event.target.value }))} /></label>
+          <div className="project-actions"><label>Next actions<textarea rows={5} value={projectFrame.nextActions} placeholder={'One action per line\n• Draft the requirement\n• Test the ingestor'} onChange={(event) => setProjectFrame((current) => ({ ...current, nextActions: event.target.value }))} /></label><label>Done / history<textarea rows={5} value={projectFrame.completedActions} placeholder="Past actions and decisions stay here." onChange={(event) => setProjectFrame((current) => ({ ...current, completedActions: event.target.value }))} /></label></div>
+          <div className="frame-heading"><div><p className="frame-kicker">PROJECT MATERIAL</p><h2>Objects taking shape</h2></div><button type="button" onClick={() => setWorkspaceView('canvas')}>Open Cavern</button></div>
           <div className="project-object-grid">{nodes.filter((node) => node.type !== 'drawing').map((node) => <button type="button" className="project-object" key={node.id} onClick={() => { selectObject(node.id); setWorkspaceView('canvas') }}><span>{node.type === 'function' ? 'ƒ' : node.type === 'shape' ? '◇' : '●'}</span><strong>{String(node.data.label ?? 'Untitled')}</strong><small>{node.type === 'function' ? `${socketsFor(node).filter((socket) => socket.direction === 'slot').length} inputs · ${socketsFor(node).filter((socket) => socket.direction === 'signal').length} returns` : `${attributesFor(node).length} attributes · ${socketsFor(node).length} connectors`}</small></button>)}</div>
           {!nodes.some((node) => node.type !== 'drawing') && <p className="frame-empty">Plant a seed on the canvas, then return here to see its place in the project.</p>}
         </section>
         <aside className="project-reading">
-          <p className="frame-kicker">FRAMEWORK READING</p><h2>What OSA sees</h2>
+          <p className="frame-kicker">PROJECT READING</p><h2>Where it stands</h2>
+          <div className={`status-light ${projectFrame.status}`}><span />{projectFrame.status}</div>
           <div className="reading-stat"><strong>{nodes.filter((node) => node.type !== 'drawing').length}</strong><span>objects and ideas</span></div>
           <div className="reading-stat"><strong>{edges.length}</strong><span>relationships or flows</span></div>
           <div className="reading-stat"><strong>{nodes.filter((node) => node.type === 'function').length}</strong><span>function objects</span></div>
-          <p>Use the canvas for the messy version. Use this frame to notice what is becoming a system, what is still a question, and what wants its own function.</p>
+          <p>Use the Field to arrange the work as you think. Use Cavern to inspect relationships, provenance, and eventually the data moving between project objects.</p>
         </aside>
       </section>}
     </main>

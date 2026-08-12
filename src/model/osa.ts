@@ -23,7 +23,18 @@ export type FunctionData = CanvasData & { functionId: string; code?: string }
 export type FunctionNode = Node<FunctionData, 'function'>
 export type TextData = CanvasData & { content: string }
 export type TextNode = Node<TextData, 'text'>
-export type ProjectFrame = { intention: string; feeling: string; question: string }
+export type ProjectFrame = {
+  goal: string
+  dueDate: string
+  budget: string
+  status: 'exploring' | 'active' | 'waiting' | 'complete'
+  currentAction: string
+  nextActions: string
+  completedActions: string
+  intention: string
+  feeling: string
+  question: string
+}
 export type FieldItemKind = 'note' | 'shape' | 'link' | 'document'
 export type FieldShapeKind = 'square' | 'circle' | 'diamond' | 'rounded'
 export type FieldDocumentReference = { id: string; kind: 'field-item' | 'osa-node'; targetId: string; label: string }
