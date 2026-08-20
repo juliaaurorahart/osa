@@ -152,6 +152,7 @@
   background: #62127d;
   font: inherit;
   cursor: pointer;
+  text-decoration: none;
 }
 
 .board-button:hover {

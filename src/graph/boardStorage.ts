@@ -11,6 +11,13 @@ type BoardsResponse = {
   boards: SavedBoard[]
 }
 
+export class BoardAccessError extends Error {
+  constructor() {
+    super('Sign in to access saved boards.')
+    this.name = 'BoardAccessError'
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
@@ -31,8 +38,24 @@ async function responseError(response: Response): Promise<Error> {
   return new Error(message)
 }
 
+async function boardRequest(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  try {
+    const response = await fetch(input, { ...init, redirect: 'manual' })
+    // Cloudflare Access uses an interactive cross-origin redirect. A fetch
+    // cannot complete that login, but a normal link to /api/login can.
+    if (response.type === 'opaqueredirect' || response.status === 0) {
+      throw new BoardAccessError()
+    }
+    return response
+  } catch (error) {
+    if (error instanceof BoardAccessError) throw error
+    if (error instanceof TypeError) throw new BoardAccessError()
+    throw error
+  }
+}
+
 export async function fetchBoards(): Promise<SavedBoard[]> {
-  const response = await fetch('/api/boards', {
+  const response = await boardRequest('/api/boards', {
     headers: { accept: 'application/json' },
   })
   if (!response.ok) throw await responseError(response)
@@ -47,7 +70,7 @@ export async function fetchBoards(): Promise<SavedBoard[]> {
 
 /** The current API stores the complete board list as one atomic replacement. */
 export async function replaceBoards(boards: SavedBoard[]): Promise<void> {
-  const response = await fetch('/api/boards', {
+  const response = await boardRequest('/api/boards', {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ boards }),

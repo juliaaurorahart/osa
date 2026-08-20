@@ -41,6 +41,7 @@ import {
   restoreBoardSnapshot,
 } from './graph/boardSnapshot'
 import {
+  BoardAccessError,
   fetchBoards,
   replaceBoards,
   type SavedBoard,
@@ -114,6 +115,7 @@ function Flow() {
   const [boardName, setBoardName] = useState('Untitled board')
   const [selectedBoardId, setSelectedBoardId] = useState('')
   const [storageStatus, setStorageStatus] = useState('Loading saved boards…')
+  const [needsSignIn, setNeedsSignIn] = useState(false)
   const { screenToFlowPosition } = useReactFlow()
   const nextId = useRef(4)
   const nextEdgeId = useRef(3)
@@ -122,6 +124,7 @@ function Flow() {
     setStorageStatus('Loading saved boards…')
     try {
       const boards = await fetchBoards()
+      setNeedsSignIn(false)
       setSavedBoards(boards)
       setSelectedBoardId((currentId) => (
         boards.some((board) => board.id === currentId)
@@ -130,6 +133,7 @@ function Flow() {
       ))
       setStorageStatus(boards.length ? `${boards.length} saved board${boards.length === 1 ? '' : 's'}` : 'No saved boards yet')
     } catch (error) {
+      setNeedsSignIn(error instanceof BoardAccessError)
       setStorageStatus(error instanceof Error ? error.message : 'Unable to load saved boards.')
     }
   }, [])
@@ -414,11 +418,13 @@ function Flow() {
     setStorageStatus('Saving…')
     try {
       await replaceBoards(nextBoards)
+      setNeedsSignIn(false)
       setSavedBoards(nextBoards)
       setSelectedBoardId(savedBoard.id)
       setBoardName(name)
       setStorageStatus(`Saved “${name}”`)
     } catch (error) {
+      setNeedsSignIn(error instanceof BoardAccessError)
       setStorageStatus(error instanceof Error ? error.message : 'Unable to save this board.')
     }
   }, [boardId, boardName, edges, nodes, savedBoards])
@@ -567,6 +573,11 @@ function Flow() {
         <button className="board-button" onClick={loadSelectedBoard} disabled={!selectedBoardId}>
           Load board
         </button>
+        {needsSignIn && (
+          <a className="board-button board-sign-in" href="/api/login">
+            Sign in
+          </a>
+        )}
         <span className="board-storage-status" role="status">{storageStatus}</span>
         <button className="board-button" onClick={addNode}>
           Add Node
