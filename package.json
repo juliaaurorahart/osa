@@ -4,7 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "generate:source-tree": "node scripts/generate-source-hierarchy.mjs",
+    "predev": "npm run generate:source-tree",
     "dev": "vite",
+    "prebuild": "npm run generate:source-tree",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"

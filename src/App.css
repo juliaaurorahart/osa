@@ -1,1 +1,321 @@
 #root { width: 100%; height: 100%; }
+
+.text-node {
+  /* DEFAULT NODE APPEARANCE
+     Kinds inherit these values unless their .text-node--<kind> rule changes one. */
+  --node-width: 190px; /* Standard card width. */
+  --node-padding: 12px; /* Space between the node border and its contents. */
+  --node-border-width: 2px; /* Standard border thickness. */
+  --node-border-color: #ff04ff; /* Standard neutral border. */
+  --node-radius: 14px; /* Standard slightly rounded corners. */
+  --node-background: rgb(252, 169, 255); /* Standard node fill color. */
+  --node-text-color: #111; /* Standard text color. */
+  --node-shadow: none; /* Standard elevation; `none` means flat. */
+
+  width: var(--node-width);
+  padding: var(--node-padding);
+  border: var(--node-border-width) solid var(--node-border-color);
+  border-radius: var(--node-radius);
+  background: var(--node-background);
+  color: var(--node-text-color);
+  box-shadow: var(--node-shadow);
+  position: relative;
+}
+
+.text-node textarea {
+  display: block;
+  width: 80%;
+  min-height: 40px;
+  border: 0;
+  resize: vertical;
+  font: inherit;
+  background: rgba(232, 145, 52, 0.526);
+}
+
+.text-node textarea:focus { outline: 2px solid #1a73e8; }
+
+/* KIND APPEARANCES
+   The class is supplied by TextNode.tsx: text-node--idea, text-node--task, etc. */
+.text-node--idea {
+  --node-radius: 24px;
+  --node-background: #845ec2;
+  --node-shadow: 0 0 12px #bd8cff, 0 0 30px #6f42c1;
+}
+
+.text-node--task {
+  --node-border-color: #7ad6a5;
+  --node-radius: 8px;
+  --node-background: #2f855a;
+}
+
+.text-node--requirement {
+  --node-border-width: 3px;
+  --node-border-color: #f6c453;
+  --node-radius: 0;
+  --node-background: #9a6a18;
+}
+
+.node-attributes {
+  position: absolute;
+  top: 0;
+  left: calc(100% + 12px);
+  z-index: 10;
+  width: 190px;
+  padding: 10px;
+  border: 1px solid #777;
+  border-radius: 6px;
+  background: #222;
+  color: white;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 250ms ease;
+  transition-delay: 50ms;
+}
+
+.text-node:hover .node-attributes {
+  transition: opacity 250ms ease;
+  transition-delay: 250ms;
+  opacity: 1;
+}
+
+.node-attributes__properties-label {
+  display: block;
+  margin-top: 8px;
+}
+
+.node-attributes__empty {
+  color: #c5c5c5;
+  font-style: italic;
+}
+
+.node-attributes__property {
+  overflow-wrap: anywhere;
+}
+
+.node-art {
+  position: absolute;
+  inset: -24px;
+  z-index: 0;
+  width: calc(100% + 48px);
+  height: calc(100% + 48px);
+  fill: #f7a8ff;
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* Keep usable controls above the SVG without changing React Flow handle layout. */
+.text-node textarea,
+.text-node select,
+.text-node button {
+  position: relative;
+  z-index: 2;
+}
+
+.text-node .react-flow__handle {
+  z-index: 1;
+}
+
+.board-panel {
+  display: flex;
+  max-width: calc(100vw - 32px);
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #555;
+  border-radius: 10px;
+  background: #1c1c1c;
+}
+
+.board-name-input,
+.board-select {
+  min-width: 150px;
+  border: 1px solid #75558b;
+  border-radius: 6px;
+  padding: 7px 9px;
+  color: #fff;
+  background: #29222d;
+  font: inherit;
+}
+
+.board-storage-status {
+  max-width: 260px;
+  color: #d0b4de;
+  font-size: 0.8rem;
+}
+
+.board-button {
+  border: 1px solid #ce3fff;
+  border-radius: 6px;
+  padding: 7px 10px;
+  color: #ffffff;
+  background: #62127d;
+  font: inherit;
+  cursor: pointer;
+}
+
+.board-button:hover {
+  background: #8c24a8;
+}
+
+.board-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.board-file-button input {
+  display: none;
+}
+
+/* The selected-node inspector is separate from the graph data itself. */
+.properties-panel {
+  width: min(340px, calc(100vw - 32px));
+  padding: 14px;
+  border: 1px solid #75558b;
+  border-radius: 12px;
+  background: #1c1c1c;
+  color: #fff;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 35%);
+}
+
+.properties-panel__eyebrow,
+.properties-panel__kind,
+.properties-panel__empty {
+  margin: 0;
+  color: #d0b4de;
+  font-size: 0.8rem;
+}
+
+.properties-panel h2 {
+  margin: 4px 0;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.properties-panel__rows {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.property-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.property-row input {
+  min-width: 0;
+  border: 1px solid #75558b;
+  border-radius: 5px;
+  padding: 6px;
+  color: #fff;
+  background: #2b2031;
+  font: inherit;
+}
+
+.property-row__remove {
+  width: 30px;
+  border: 1px solid #d95d6c;
+  border-radius: 5px;
+  color: #fff;
+  background: #7d2938;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* A derived inventory view: it reads nodes/edges but owns no graph data. */
+.graph-table-panel {
+  width: min(720px, calc(100vw - 32px));
+  max-height: 230px;
+  overflow: hidden;
+  border: 1px solid #75558b;
+  border-radius: 10px;
+  background: #1c1c1c;
+  color: #fff;
+  box-shadow: 0 8px 25px rgb(0 0 0 / 35%);
+}
+
+.graph-table-panel__tabs {
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  border-bottom: 1px solid #4a3b52;
+}
+
+.graph-table-tab {
+  border: 0;
+  border-radius: 5px;
+  padding: 5px 8px;
+  color: #d7c8df;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.graph-table-tab--active {
+  color: #fff;
+  background: #62127d;
+}
+
+.graph-table-panel__scroll {
+  max-height: 180px;
+  overflow: auto;
+}
+
+.graph-table-panel table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.graph-table-panel th,
+.graph-table-panel td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #3b3041;
+  text-align: left;
+}
+
+.graph-table-panel th {
+  position: sticky;
+  top: 0;
+  background: #2b2031;
+}
+
+.graph-table-panel tbody tr {
+  cursor: pointer;
+}
+
+.graph-table-panel tbody tr:hover,
+.graph-table-panel tbody tr.is-selected {
+  background: #4e285e;
+}
+
+/* Browser-level portal: fixed placement lets the card follow an SVG edge. */
+.edge-hover-card {
+  position: fixed;
+  z-index: 1000;
+  width: 210px;
+  padding: 9px;
+  border: 1px solid #777;
+  border-radius: 6px;
+  color: #fff;
+  background: #222;
+  box-shadow: 0 8px 20px rgb(0 0 0 / 35%);
+  font-size: 0.82rem;
+  pointer-events: none;
+}
+
+.edge-hover-card__properties-label {
+  display: block;
+  margin-top: 7px;
+}
+
+.edge-hover-card__empty {
+  color: #c5c5c5;
+  font-style: italic;
+}
+
+.edge-hover-card__property {
+  overflow-wrap: anywhere;
+}
