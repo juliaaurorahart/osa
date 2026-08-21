@@ -6,6 +6,7 @@ import {
   type TextFlowNode,
 } from '../graph/textNode'
 import { NODE_KINDS, type NodeKind } from '../graph/nodeKinds'
+import { SketchPad } from './SketchPad'
 
 const MIN_NODE_WIDTH = 150
 const MAX_NODE_WIDTH = 550
@@ -84,7 +85,13 @@ export function TextNode({
         className="text-node__body"
         data-node-section="text"
       >
-        {data.textExpanded ? (
+        {data.textExpanded && data.kind === 'sketch' ? (
+          <SketchPad
+            strokes={data.sketchStrokes}
+            onInteractionStart={data.onTextInteractionStart}
+            onChange={(strokes) => data.onSketchChange?.(id, strokes)}
+          />
+        ) : data.textExpanded ? (
           <textarea
             ref={textAreaRef}
             className="nodrag nopan"

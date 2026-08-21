@@ -33,6 +33,7 @@ import { createCurrentSourceHierarchy } from './graph/currentSourceHierarchy'
 import {
   createTextNode,
   type NodeExpansion,
+  type SketchStroke,
   type TextFlowNode,
 } from './graph/textNode'
 import { type NodeKind } from './graph/nodeKinds'
@@ -52,7 +53,8 @@ import './App.css'
 
 /** React Flow uses this map to choose the component for `type: 'text'` nodes. */
 const nodeTypes = { text: TextNode }
-const HIDDEN_HINT_IDLE_DELAY = import.meta.env.DEV ? 5_000 : 60_000
+const FORCE_IDLE_HINTS = true
+const HIDDEN_HINT_IDLE_DELAY = 60_000
 
 /** Starting graph: nodes and edges that appear when the app first loads. */
 const initialNodes: TextFlowNode[] = [
@@ -127,7 +129,7 @@ function Flow() {
   const [tablePreviewPosition, setTablePreviewPosition] = useState<{ x: number; y: number } | null>(null)
   const [inspectorExpanded, setInspectorExpanded] = useState(false)
   const [inspectorPreviewPosition, setInspectorPreviewPosition] = useState<{ x: number; y: number } | null>(null)
-  const [showIdleHints, setShowIdleHints] = useState(false)
+  const [showIdleHints, setShowIdleHints] = useState(true)
   const [idleHintsDismissing, setIdleHintsDismissing] = useState(false)
   const [hintTrailStage, setHintTrailStage] = useState(1)
   // Hover position belongs to the temporary browser UI, never the saved graph.
@@ -145,8 +147,7 @@ function Flow() {
   const { screenToFlowPosition } = useReactFlow()
   const nextId = useRef(4)
   const nextEdgeId = useRef(3)
-  const suppressPaneCollapseUntil = useRef(0)
-  const idleHintsVisible = useRef(false)
+  const idleHintsVisible = useRef(true)
   const idleDismissTimer = useRef<number | null>(null)
 
   useEffect(() => {
@@ -155,6 +156,12 @@ function Flow() {
       setIdleHintsDismissing(false)
       setShowIdleHints(true)
     }
+
+    if (FORCE_IDLE_HINTS) {
+      revealIdleHints()
+      return
+    }
+
     let idleTimer = window.setTimeout(revealIdleHints, HIDDEN_HINT_IDLE_DELAY)
     const activityEvents = ['pointermove', 'pointerdown', 'keydown', 'wheel'] as const
     const resetIdleTimer = () => {
@@ -190,7 +197,7 @@ function Flow() {
     }, 7_500)
     return () => window.clearInterval(trailTimer)
   }, [showIdleHints])
-
+  const suppressPaneCollapseUntil = useRef(0)
   const refreshSavedBoards = useCallback(async () => {
     setStorageStatus('Loading saved boards…')
     try {
@@ -226,6 +233,12 @@ function Flow() {
   const onTextChange = useCallback((id: string, text: string) => {
     setNodes((currentNodes) => currentNodes.map((node) => (
       node.id === id ? { ...node, data: { ...node.data, text } } : node
+    )))
+  }, [setNodes])
+
+  const onSketchChange = useCallback((id: string, sketchStrokes: SketchStroke[]) => {
+    setNodes((currentNodes) => currentNodes.map((node) => (
+      node.id === id ? { ...node, data: { ...node.data, sketchStrokes } } : node
     )))
   }, [setNodes])
 
@@ -573,9 +586,10 @@ function Flow() {
       onNameChange,
       onTextChange,
       onTextInteractionStart,
+      onSketchChange,
       onKindChange,
     },
-  })), [expandedNode, nodes, onNameChange, onTextChange, onTextInteractionStart, onKindChange])
+  })), [expandedNode, nodes, onNameChange, onTextChange, onTextInteractionStart, onSketchChange, onKindChange])
 
   const edgesForFlow = useMemo(() => edges.map((edge) => ({
     ...edge,
@@ -639,9 +653,47 @@ function Flow() {
       }}
       fitView
       fitViewOptions={{ padding: 0.45, maxZoom: 0.78 }}
+      minZoom={0.05}
+      maxZoom={8}
       colorMode="light"
       proOptions={{ hideAttribution: true }}
       >
+      <svg className="hand-drawn-filter" aria-hidden="true">
+        <defs>
+          <filter id="hand-drawn-line" x="-10%" y="-10%" width="120%" height="120%">
+            <feTurbulence
+              type="fractalNoise"
+              baseFrequency="0.035"
+              numOctaves="2"
+              seed="7"
+              result="lineNoise"
+            />
+            <feDisplacementMap
+              in="SourceGraphic"
+              in2="lineNoise"
+              scale="1.35"
+              xChannelSelector="R"
+              yChannelSelector="G"
+            />
+          </filter>
+          <filter id="hand-drawn-dot" x="-35%" y="-35%" width="170%" height="170%">
+            <feTurbulence
+              type="fractalNoise"
+              baseFrequency="0.055"
+              numOctaves="2"
+              seed="11"
+              result="dotNoise"
+            />
+            <feDisplacementMap
+              in="SourceGraphic"
+              in2="dotNoise"
+              scale="2"
+              xChannelSelector="R"
+              yChannelSelector="G"
+            />
+          </filter>
+        </defs>
+      </svg>
       <Background />
       {(canvasToolsExpanded || canvasToolsPreviewPosition) && (
         <Controls

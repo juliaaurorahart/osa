@@ -9,6 +9,7 @@ export const CURRENT_SOURCE_PATHS = [
   "src/components/EdgePropertiesPanel.tsx",
   "src/components/GraphTablePanel.tsx",
   "src/components/PropertiesPanel.tsx",
+  "src/components/SketchPad.tsx",
   "src/components/TextNode.tsx",
   "src/graph/boardSnapshot.ts",
   "src/graph/boardStorage.ts",

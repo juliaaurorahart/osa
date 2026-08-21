@@ -4,6 +4,14 @@ import { DEFAULT_NODE_KIND, type NodeKind } from './nodeKinds'
 export type { NodeKind } from './nodeKinds'
 export type NodeExpansion = 'text' | 'details'
 
+export type SketchPoint = { x: number; y: number }
+export type SketchStroke = {
+  id: string
+  color: string
+  width: number
+  points: SketchPoint[]
+}
+
 /**
  * Durable data carried by a text node, plus temporary callbacks injected by
  * the running React app. Only `text` and `kind` belong in saved board data.
@@ -13,6 +21,8 @@ export type TextNodeData = {
   name: string
   /** The text a person writes inside this node. */
   text: string
+  /** Durable freehand marks used when this node is a sketch. */
+  sketchStrokes: SketchStroke[]
   /** The node's selected category from the kind registry. */
   kind: NodeKind
   /**
@@ -28,6 +38,7 @@ export type TextNodeData = {
   onNameChange?: (id: string, name: string) => void
   onTextChange?: (id: string, text: string) => void
   onTextInteractionStart?: () => void
+  onSketchChange?: (id: string, strokes: SketchStroke[]) => void
   onKindChange?: (id: string, kind: NodeKind) => void
 }
 
@@ -46,6 +57,7 @@ type CreateTextNodeOptions = {
   text: string
   kind?: NodeKind
   properties?: Record<string, string>
+  sketchStrokes?: SketchStroke[]
   // Optional per-node overrides. Usually leave these out and use the defaults.
   sourcePosition?: Position
   targetPosition?: Position
@@ -63,6 +75,7 @@ export function createTextNode({
   text,
   kind = DEFAULT_NODE_KIND,
   properties = {},
+  sketchStrokes = [],
   sourcePosition = DEFAULT_CONNECTOR_POSITIONS.source,
   targetPosition = DEFAULT_CONNECTOR_POSITIONS.target,
 }: CreateTextNodeOptions): TextFlowNode {
@@ -72,6 +85,6 @@ export function createTextNode({
     position,
     sourcePosition,
     targetPosition,
-    data: { name, text, kind, properties: { ...properties } },
+    data: { name, text, kind, sketchStrokes: [...sketchStrokes], properties: { ...properties } },
   }
 }

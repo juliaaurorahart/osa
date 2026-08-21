@@ -19,7 +19,7 @@ export type SavedTextFlowNode = Pick<
   TextFlowNode,
   'id' | 'type' | 'position' | 'sourcePosition' | 'targetPosition'
 > & {
-  data: Pick<TextNodeData, 'text' | 'kind' | 'properties'>
+  data: Pick<TextNodeData, 'text' | 'kind' | 'properties' | 'sketchStrokes'>
     & Pick<TextNodeData, 'name'>
 }
 
@@ -50,6 +50,10 @@ export function createBoardSnapshot(
         name: node.data.name,
         text: node.data.text,
         kind: node.data.kind,
+        sketchStrokes: node.data.sketchStrokes.map((stroke) => ({
+          ...stroke,
+          points: stroke.points.map((point) => ({ ...point })),
+        })),
         properties: { ...node.data.properties },
       },
     })),
@@ -96,6 +100,21 @@ export function isBoardSnapshot(value: unknown): value is BoardSnapshot {
     }
     if (!validKinds.has(node.data.kind)) return false
 
+    if (node.data.sketchStrokes !== undefined) {
+      if (!Array.isArray(node.data.sketchStrokes)) return false
+      const strokesAreValid = node.data.sketchStrokes.every((stroke) => (
+        isRecord(stroke)
+        && typeof stroke.id === 'string'
+        && typeof stroke.color === 'string'
+        && typeof stroke.width === 'number'
+        && Array.isArray(stroke.points)
+        && stroke.points.every((point) => (
+          isRecord(point) && typeof point.x === 'number' && typeof point.y === 'number'
+        ))
+      ))
+      if (!strokesAreValid) return false
+    }
+
     // Version-1 files created before properties existed remain compatible.
     if (node.data.properties === undefined) return true
     return isRecord(node.data.properties)
@@ -134,6 +153,12 @@ export function restoreBoardSnapshot(snapshot: BoardSnapshot): {
       data: {
         ...node.data,
         name: node.data.name ?? '',
+        sketchStrokes: node.data.sketchStrokes
+          ? node.data.sketchStrokes.map((stroke) => ({
+              ...stroke,
+              points: stroke.points.map((point) => ({ ...point })),
+            }))
+          : [],
         // A pre-properties snapshot restores as an empty property set.
         properties: node.data.properties ? { ...node.data.properties } : {},
       },
