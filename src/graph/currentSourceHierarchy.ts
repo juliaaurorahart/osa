@@ -64,12 +64,13 @@ export function createCurrentSourceHierarchy(): CodebaseHierarchy {
     const depth = path.split('/').length - 1
     const row = rowByDepth.get(depth) ?? 0
     rowByDepth.set(depth, row + 1)
-    return { x: depth * 300, y: row * 120 }
+    return { x: row * 240, y: depth * 160 }
   }
 
   const folderNodes = orderedFolders.map((path) => createTextNode({
     id: folderId(path),
     position: nextPosition(path),
+    name: displayName(path),
     text: displayName(path),
     kind: 'folder',
     properties: {
@@ -80,6 +81,7 @@ export function createCurrentSourceHierarchy(): CodebaseHierarchy {
   const fileNodes = filePaths.map((path) => createTextNode({
     id: fileId(path),
     position: nextPosition(path),
+    name: displayName(path),
     text: displayName(path),
     kind: 'source-file',
     properties: {

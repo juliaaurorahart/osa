@@ -2,12 +2,15 @@ import { Position, type Node } from '@xyflow/react'
 import { DEFAULT_NODE_KIND, type NodeKind } from './nodeKinds'
 
 export type { NodeKind } from './nodeKinds'
+export type NodeExpansion = 'text' | 'details'
 
 /**
  * Durable data carried by a text node, plus temporary callbacks injected by
  * the running React app. Only `text` and `kind` belong in saved board data.
  */
 export type TextNodeData = {
+  /** The short identity shown while the node is contracted. */
+  name: string
   /** The text a person writes inside this node. */
   text: string
   /** The node's selected category from the kind registry. */
@@ -20,8 +23,11 @@ export type TextNodeData = {
    */
   properties: Record<string, string>
   // Temporary UI behavior supplied by App.tsx when the node is rendered.
+  textExpanded?: boolean
+  detailsExpanded?: boolean
+  onNameChange?: (id: string, name: string) => void
   onTextChange?: (id: string, text: string) => void
-  onAddChild?: (parentId: string) => void
+  onTextInteractionStart?: () => void
   onKindChange?: (id: string, kind: NodeKind) => void
 }
 
@@ -36,6 +42,7 @@ export const DEFAULT_CONNECTOR_POSITIONS = {
 type CreateTextNodeOptions = {
   id: string
   position: { x: number; y: number }
+  name?: string
   text: string
   kind?: NodeKind
   properties?: Record<string, string>
@@ -52,6 +59,7 @@ type CreateTextNodeOptions = {
 export function createTextNode({
   id,
   position,
+  name = '',
   text,
   kind = DEFAULT_NODE_KIND,
   properties = {},
@@ -64,6 +72,6 @@ export function createTextNode({
     position,
     sourcePosition,
     targetPosition,
-    data: { text, kind, properties: { ...properties } },
+    data: { name, text, kind, properties: { ...properties } },
   }
 }

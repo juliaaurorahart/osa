@@ -18,6 +18,13 @@ export class BoardAccessError extends Error {
   }
 }
 
+export class BoardUnavailableError extends Error {
+  constructor() {
+    super('Board storage is unavailable in this environment.')
+    this.name = 'BoardUnavailableError'
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
@@ -31,6 +38,8 @@ function isSavedBoard(value: unknown): value is SavedBoard {
 }
 
 async function responseError(response: Response): Promise<Error> {
+  if (response.status === 404) return new BoardUnavailableError()
+
   const body: unknown = await response.json().catch(() => null)
   const message = isRecord(body) && typeof body.error === 'string'
     ? body.error

@@ -20,6 +20,7 @@ export type SavedTextFlowNode = Pick<
   'id' | 'type' | 'position' | 'sourcePosition' | 'targetPosition'
 > & {
   data: Pick<TextNodeData, 'text' | 'kind' | 'properties'>
+    & Pick<TextNodeData, 'name'>
 }
 
 /** The connection fields this playground deliberately saves. */
@@ -46,6 +47,7 @@ export function createBoardSnapshot(
       sourcePosition: node.sourcePosition,
       targetPosition: node.targetPosition,
       data: {
+        name: node.data.name,
         text: node.data.text,
         kind: node.data.kind,
         properties: { ...node.data.properties },
@@ -84,7 +86,12 @@ export function isBoardSnapshot(value: unknown): value is BoardSnapshot {
     if (!isRecord(node.position) || typeof node.position.x !== 'number' || typeof node.position.y !== 'number') {
       return false
     }
-    if (!isRecord(node.data) || typeof node.data.text !== 'string' || typeof node.data.kind !== 'string') {
+    if (
+      !isRecord(node.data)
+      || (node.data.name !== undefined && typeof node.data.name !== 'string')
+      || typeof node.data.text !== 'string'
+      || typeof node.data.kind !== 'string'
+    ) {
       return false
     }
     if (!validKinds.has(node.data.kind)) return false
@@ -126,6 +133,7 @@ export function restoreBoardSnapshot(snapshot: BoardSnapshot): {
       position: { ...node.position },
       data: {
         ...node.data,
+        name: node.data.name ?? '',
         // A pre-properties snapshot restores as an empty property set.
         properties: node.data.properties ? { ...node.data.properties } : {},
       },
