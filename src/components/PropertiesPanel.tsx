@@ -1,4 +1,5 @@
 import type { TextFlowNode } from '../graph/textNode'
+import { NODE_KINDS } from '../graph/nodeKinds'
 
 type PropertiesPanelProps = {
   node: TextFlowNode
@@ -22,12 +23,14 @@ export function PropertiesPanel({
   onPropertyAdd,
 }: PropertiesPanelProps) {
   const properties = Object.entries(node.data.properties)
+  const kindLabel = NODE_KINDS.find((kind) => kind.id === node.data.kind)?.label ?? node.data.kind
+  const nodeName = node.data.name.trim()
+  const nodeLabel = nodeName ? `${kindLabel} ${nodeName}` : `${kindLabel} #${node.id}`
 
   return (
     <section className="properties-panel">
       <p className="properties-panel__eyebrow">Selected node</p>
-      <h2>{node.data.text || 'Untitled node'}</h2>
-      <p className="properties-panel__kind">{node.data.kind}</p>
+      <h2>{nodeLabel}</h2>
 
       <div className="properties-panel__rows">
         {properties.length === 0 ? (

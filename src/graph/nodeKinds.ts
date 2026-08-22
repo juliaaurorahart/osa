@@ -10,6 +10,7 @@ export const NODE_KINDS = [
   { id: 'sketch', label: 'Sketch' },
   { id: 'idea', label: 'Idea' },
   { id: 'task', label: 'Task' },
+  { id: 'project', label: 'Project' },
   { id: 'requirement', label: 'Requirement' },
   { id: 'document', label: 'Document' },
   { id: 'link', label: 'Link' },

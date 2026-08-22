@@ -4,12 +4,73 @@ import { DEFAULT_NODE_KIND, type NodeKind } from './nodeKinds'
 export type { NodeKind } from './nodeKinds'
 export type NodeExpansion = 'text' | 'details'
 
-export type SketchPoint = { x: number; y: number }
+export type SketchPoint = { x: number; y: number; pressure?: number }
 export type SketchStroke = {
   id: string
   color: string
   width: number
+  opacity: number
+  coordinateSpace: 'pixels'
   points: SketchPoint[]
+}
+
+export type SketchLayer = {
+  id: string
+  name: string
+  visible: boolean
+  locked: boolean
+  strokes: SketchStroke[]
+}
+
+export type SketchDocument = {
+  version: 1
+  width: number
+  height: number
+  background: string
+  layers: SketchLayer[]
+}
+
+export function createSketchDocument(): SketchDocument {
+  return {
+    version: 1,
+    width: 1000,
+    height: 700,
+    background: '#ffffff',
+    layers: [{
+      id: 'layer-1',
+      name: 'Layer 1',
+      visible: true,
+      locked: false,
+      strokes: [],
+    }],
+  }
+}
+
+export function cloneSketchDocument(document: SketchDocument): SketchDocument {
+  return {
+    ...document,
+    layers: document.layers.map((layer) => ({
+      ...layer,
+      strokes: layer.strokes.map((stroke) => ({
+        ...stroke,
+        points: stroke.points.map((point) => ({ ...point })),
+      })),
+    })),
+  }
+}
+
+export type NodeLayout = {
+  width: number
+  textHeight: number
+  sketchHeight: number
+}
+
+/** Structured task facts used by task-oriented views. */
+export type TaskData = {
+  /** The calendar day on which this task is shown, not a deadline. */
+  day: string | null
+  /** An ISO timestamp records the fact and time of completion. */
+  completedAt: string | null
 }
 
 /**
@@ -21,10 +82,14 @@ export type TextNodeData = {
   name: string
   /** The text a person writes inside this node. */
   text: string
-  /** Durable freehand marks used when this node is a sketch. */
-  sketchStrokes: SketchStroke[]
+  /** Durable layered drawing document used when this node is a sketch. */
+  sketch: SketchDocument
+  /** Durable notebook dimensions restored with the board. */
+  layout: NodeLayout
   /** The node's selected category from the kind registry. */
   kind: NodeKind
+  /** Present only while this node is a task. */
+  task: TaskData | null
   /**
    * Durable, user-defined information about this object.
    *
@@ -38,7 +103,7 @@ export type TextNodeData = {
   onNameChange?: (id: string, name: string) => void
   onTextChange?: (id: string, text: string) => void
   onTextInteractionStart?: () => void
-  onSketchChange?: (id: string, strokes: SketchStroke[]) => void
+  onLayoutChange?: (id: string, layout: Partial<NodeLayout>) => void
   onKindChange?: (id: string, kind: NodeKind) => void
 }
 
@@ -57,7 +122,9 @@ type CreateTextNodeOptions = {
   text: string
   kind?: NodeKind
   properties?: Record<string, string>
-  sketchStrokes?: SketchStroke[]
+  sketch?: SketchDocument
+  layout?: Partial<NodeLayout>
+  task?: Partial<TaskData> | null
   // Optional per-node overrides. Usually leave these out and use the defaults.
   sourcePosition?: Position
   targetPosition?: Position
@@ -75,7 +142,9 @@ export function createTextNode({
   text,
   kind = DEFAULT_NODE_KIND,
   properties = {},
-  sketchStrokes = [],
+  sketch = createSketchDocument(),
+  layout = {},
+  task,
   sourcePosition = DEFAULT_CONNECTOR_POSITIONS.source,
   targetPosition = DEFAULT_CONNECTOR_POSITIONS.target,
 }: CreateTextNodeOptions): TextFlowNode {
@@ -85,6 +154,23 @@ export function createTextNode({
     position,
     sourcePosition,
     targetPosition,
-    data: { name, text, kind, sketchStrokes: [...sketchStrokes], properties: { ...properties } },
+    data: {
+      name,
+      text,
+      kind,
+      task: kind === 'task'
+        ? {
+            day: task?.day ?? null,
+            completedAt: task?.completedAt ?? null,
+          }
+        : null,
+      sketch: cloneSketchDocument(sketch),
+      layout: {
+        width: layout.width ?? 190,
+        textHeight: layout.textHeight ?? 120,
+        sketchHeight: layout.sketchHeight ?? 180,
+      },
+      properties: { ...properties },
+    },
   }
 }

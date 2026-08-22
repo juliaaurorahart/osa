@@ -38,6 +38,10 @@ export function EdgePropertiesPanel({
         />
       </label>
 
+      {edge.data.sourceAnchor?.kind === 'text' ? (
+        <p className="properties-panel__anchor">“{edge.data.sourceAnchor.quote}”</p>
+      ) : null}
+
       <div className="properties-panel__rows">
         {properties.length === 0 ? (
           <p className="properties-panel__empty">No properties yet.</p>

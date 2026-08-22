@@ -1,4 +1,4 @@
-import { isBoardSnapshot, type BoardSnapshot } from './boardSnapshot'
+import { parseBoardSnapshot, type BoardSnapshot } from './boardSnapshot'
 
 export type SavedBoard = {
   id: string
@@ -29,12 +29,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
-function isSavedBoard(value: unknown): value is SavedBoard {
-  return isRecord(value)
-    && typeof value.id === 'string'
-    && typeof value.name === 'string'
-    && typeof value.updatedAt === 'string'
-    && isBoardSnapshot(value.snapshot)
+function parseSavedBoard(value: unknown): SavedBoard | null {
+  if (
+    !isRecord(value)
+    || typeof value.id !== 'string'
+    || typeof value.name !== 'string'
+    || typeof value.updatedAt !== 'string'
+  ) return null
+  const snapshot = parseBoardSnapshot(value.snapshot)
+  if (!snapshot) return null
+  return {
+    id: value.id,
+    name: value.name,
+    updatedAt: value.updatedAt,
+    snapshot,
+  }
 }
 
 async function responseError(response: Response): Promise<Error> {
@@ -70,11 +79,14 @@ export async function fetchBoards(): Promise<SavedBoard[]> {
   if (!response.ok) throw await responseError(response)
 
   const body: unknown = await response.json()
-  if (!isRecord(body) || !Array.isArray(body.boards) || !body.boards.every(isSavedBoard)) {
+  if (!isRecord(body) || !Array.isArray(body.boards)) {
     throw new Error('The board service returned invalid data.')
   }
-
-  return (body as BoardsResponse).boards
+  const boards = body.boards.map(parseSavedBoard)
+  if (boards.some((board) => board === null)) {
+    throw new Error('The board service returned invalid data.')
+  }
+  return boards as BoardsResponse['boards']
 }
 
 /** The current API stores the complete board list as one atomic replacement. */

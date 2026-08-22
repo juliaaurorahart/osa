@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import Markdown from 'react-markdown'
 import { Handle, type NodeProps } from '@xyflow/react'
 import {
   DEFAULT_CONNECTOR_POSITIONS,
   type TextFlowNode,
 } from '../graph/textNode'
 import { NODE_KINDS, type NodeKind } from '../graph/nodeKinds'
-import { SketchPad } from './SketchPad'
+import { SketchPreview } from './SketchPad'
 
 const MIN_NODE_WIDTH = 150
 const MAX_NODE_WIDTH = 550
@@ -29,26 +30,28 @@ export function TextNode({
   const nodeLabel = name ? `${kindLabel} ${name}` : `${kindLabel} #${id}`
   const isExpanded = data.textExpanded || data.detailsExpanded
   const [attributePreviewPosition, setAttributePreviewPosition] = useState<{ x: number; y: number } | null>(null)
-  const [textAreaHeight, setTextAreaHeight] = useState(120)
-  const [nodeWidth, setNodeWidth] = useState(190)
+  const [isEditingMarkdown, setIsEditingMarkdown] = useState(true)
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null)
+  const { onLayoutChange, textExpanded } = data
 
   useEffect(() => {
     const textArea = textAreaRef.current
-    if (!textArea || !data.textExpanded) return
+    if (!textArea || !textExpanded) return
 
     const resizeObserver = new ResizeObserver(([entry]) => {
-      setTextAreaHeight(Math.round(entry.borderBoxSize[0]?.blockSize ?? entry.contentRect.height))
+      onLayoutChange?.(id, {
+        textHeight: Math.round(entry.borderBoxSize[0]?.blockSize ?? entry.contentRect.height),
+      })
     })
     resizeObserver.observe(textArea)
     return () => resizeObserver.disconnect()
-  }, [data.textExpanded])
+  }, [id, isEditingMarkdown, onLayoutChange, textExpanded])
 
   return (
     <>
     <div
       className={`text-node${isExpanded ? ' is-expanded' : ''}${data.textExpanded ? ' is-text-expanded' : ''}`}
-      style={{ width: nodeWidth }}
+      style={{ width: data.layout.width }}
     >
       {data.textExpanded ? (
         <>
@@ -56,22 +59,22 @@ export function TextNode({
             className="text-node__width-control is-narrower nodrag nopan"
             type="button"
             aria-label="Make text box narrower"
-            disabled={nodeWidth <= MIN_NODE_WIDTH}
+            disabled={data.layout.width <= MIN_NODE_WIDTH}
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation()
-              setNodeWidth((width) => Math.max(MIN_NODE_WIDTH, width - NODE_WIDTH_STEP))
+              data.onLayoutChange?.(id, { width: Math.max(MIN_NODE_WIDTH, data.layout.width - NODE_WIDTH_STEP) })
             }}
           />
           <button
             className="text-node__width-control is-wider nodrag nopan"
             type="button"
             aria-label="Make text box wider"
-            disabled={nodeWidth >= MAX_NODE_WIDTH}
+            disabled={data.layout.width >= MAX_NODE_WIDTH}
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation()
-              setNodeWidth((width) => Math.min(MAX_NODE_WIDTH, width + NODE_WIDTH_STEP))
+              data.onLayoutChange?.(id, { width: Math.min(MAX_NODE_WIDTH, data.layout.width + NODE_WIDTH_STEP) })
             }}
           />
         </>
@@ -84,14 +87,17 @@ export function TextNode({
       <div
         className="text-node__body"
         data-node-section="text"
+        onClickCapture={() => {
+          if (!data.textExpanded) setIsEditingMarkdown(true)
+        }}
       >
         {data.textExpanded && data.kind === 'sketch' ? (
-          <SketchPad
-            strokes={data.sketchStrokes}
-            onInteractionStart={data.onTextInteractionStart}
-            onChange={(strokes) => data.onSketchChange?.(id, strokes)}
+          <SketchPreview
+            document={data.sketch}
+            height={data.layout.sketchHeight}
           />
-        ) : data.textExpanded ? (
+        ) : data.textExpanded && isEditingMarkdown ? (
+          <div className="markdown-editor nodrag nopan" onClick={(event) => event.stopPropagation()}>
           <textarea
             ref={textAreaRef}
             className="nodrag nopan"
@@ -99,14 +105,39 @@ export function TextNode({
             aria-label="Node text"
             placeholder="Text"
             value={data.text}
-            style={{ height: textAreaHeight }}
+            style={{ height: data.layout.textHeight }}
             onPointerDown={(event) => {
               event.stopPropagation()
               data.onTextInteractionStart?.()
             }}
             onClick={(event) => event.stopPropagation()}
+            onBlur={() => setIsEditingMarkdown(false)}
             onChange={(event) => data.onTextChange?.(id, event.target.value)}
           />
+          <button
+            className="markdown-editor__preview"
+            type="button"
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={(event) => {
+              event.stopPropagation()
+              setIsEditingMarkdown(false)
+            }}
+          >
+            Preview
+          </button>
+          </div>
+        ) : data.textExpanded ? (
+          <div
+            className="markdown-preview nodrag nopan"
+            style={{ minHeight: data.layout.textHeight }}
+            aria-label="Rendered note; click to edit"
+            onClick={(event) => {
+              event.stopPropagation()
+              setIsEditingMarkdown(true)
+            }}
+          >
+            {data.text.trim() ? <Markdown skipHtml>{data.text}</Markdown> : <span className="markdown-preview__empty">Click to write.</span>}
+          </div>
         ) : (
           <span>{nodeLabel}</span>
         )}
