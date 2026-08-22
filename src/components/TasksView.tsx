@@ -13,8 +13,8 @@ type TasksViewProps = {
   day: string
   onModeChange: (mode: TaskViewMode) => void
   onDayChange: (day: string) => void
-  onCreateTask: (title: string, day: string | null) => void
-  onTaskTitleChange: (taskId: string, title: string) => void
+  onCreateTask: (text: string, day: string | null) => void
+  onTaskTextChange: (taskId: string, text: string) => void
   onTaskDayChange: (taskId: string, day: string | null) => void
   onTaskCompletionChange: (taskId: string, complete: boolean) => void
   onLinkProject: (taskId: string, projectId: string) => void
@@ -32,7 +32,7 @@ export function TasksView({
   onModeChange,
   onDayChange,
   onCreateTask,
-  onTaskTitleChange,
+  onTaskTextChange,
   onTaskDayChange,
   onTaskCompletionChange,
   onLinkProject,
@@ -50,9 +50,9 @@ export function TasksView({
 
   const submitTask = (event: FormEvent) => {
     event.preventDefault()
-    const title = draft.trim()
-    if (!title) return
-    onCreateTask(title, mode === 'day' ? day : null)
+    const text = draft.trim()
+    if (!text) return
+    onCreateTask(text, mode === 'day' ? day : null)
     setDraft('')
   }
 
@@ -124,6 +124,8 @@ export function TasksView({
               .filter((project): project is TextFlowNode => Boolean(project))
             const availableProjects = projects.filter((project) => !taskProjectIds.includes(project.id))
             const isComplete = Boolean(task.data.task?.completedAt)
+            const taskName = task.data.name.trim()
+            const showTaskName = taskName !== '' && taskName !== task.data.text.trim()
 
             return (
               <li className="task-row" key={task.id}>
@@ -135,13 +137,16 @@ export function TasksView({
                   onChange={(event) => onTaskCompletionChange(task.id, event.target.checked)}
                 />
                 <div className="task-row__content">
-                  <input
-                    className="task-row__title"
-                    aria-label="Task name"
-                    value={task.data.name}
-                    onChange={(event) => onTaskTitleChange(task.id, event.target.value)}
+                  <textarea
+                    className="task-row__text"
+                    aria-label="Task"
+                    rows={2}
+                    placeholder="Write the task"
+                    value={task.data.text}
+                    onChange={(event) => onTaskTextChange(task.id, event.target.value)}
                   />
                   <div className="task-row__facts">
+                    {showTaskName ? <span className="task-row__name">{taskName}</span> : null}
                     <label>
                       <span>On</span>
                       <input

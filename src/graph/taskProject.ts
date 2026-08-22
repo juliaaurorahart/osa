@@ -2,9 +2,10 @@ import { createGraphEdge, type GraphEdge } from './graphEdge'
 import type { TextFlowNode } from './textNode'
 
 export function nodeTitle(node: TextFlowNode) {
+  const firstLine = node.data.text.trim().split(/\r?\n/, 1)[0]
+  if (node.data.kind === 'task' && firstLine) return firstLine
   const name = node.data.name.trim()
   if (name) return name
-  const firstLine = node.data.text.trim().split(/\r?\n/, 1)[0]
   return firstLine || `${node.data.kind} #${node.id}`
 }
 

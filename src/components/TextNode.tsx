@@ -27,7 +27,8 @@ export function TextNode({
 }: NodeProps<TextFlowNode>) {
   const kindLabel = NODE_KINDS.find((kind) => kind.id === data.kind)?.label ?? data.kind
   const name = data.name.trim()
-  const nodeLabel = name ? `${kindLabel} ${name}` : `${kindLabel} #${id}`
+  const firstKindVowel = data.notebook ? kindLabel.search(/[aeiou]/i) : -1
+  const nodeSuffix = name ? ` ${name}` : ` #${id}`
   const isExpanded = data.textExpanded || data.detailsExpanded
   const [attributePreviewPosition, setAttributePreviewPosition] = useState<{ x: number; y: number } | null>(null)
   const [isEditingMarkdown, setIsEditingMarkdown] = useState(true)
@@ -91,7 +92,7 @@ export function TextNode({
           if (!data.textExpanded) setIsEditingMarkdown(true)
         }}
       >
-        {data.textExpanded && data.kind === 'sketch' ? (
+        {data.textExpanded && data.notebook?.format === 'sketch' ? (
           <SketchPreview
             document={data.sketch}
             height={data.layout.sketchHeight}
@@ -139,7 +140,18 @@ export function TextNode({
             {data.text.trim() ? <Markdown skipHtml>{data.text}</Markdown> : <span className="markdown-preview__empty">Click to write.</span>}
           </div>
         ) : (
-          <span>{nodeLabel}</span>
+          <span>
+            {firstKindVowel >= 0 ? (
+              <>
+                {kindLabel.slice(0, firstKindVowel)}
+                <span className={`text-node__kind-vowel is-${data.notebook?.format}`}>
+                  {kindLabel[firstKindVowel]}
+                </span>
+                {kindLabel.slice(firstKindVowel + 1)}
+              </>
+            ) : kindLabel}
+            {nodeSuffix}
+          </span>
         )}
       </div>
 

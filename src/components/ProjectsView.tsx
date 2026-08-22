@@ -10,10 +10,10 @@ type ProjectsViewProps = {
   selectedProjectId: string | null
   onSelectProject: (projectId: string) => void
   onCreateProject: (title: string) => void
-  onCreateTask: (projectId: string, title: string, day: string | null) => void
+  onCreateTask: (projectId: string, text: string, day: string | null) => void
   onProjectTitleChange: (projectId: string, title: string) => void
   onProjectTextChange: (projectId: string, text: string) => void
-  onTaskTitleChange: (taskId: string, title: string) => void
+  onTaskTextChange: (taskId: string, text: string) => void
   onTaskDayChange: (taskId: string, day: string | null) => void
   onTaskCompletionChange: (taskId: string, complete: boolean) => void
   onLinkTask: (projectId: string, taskId: string) => void
@@ -31,7 +31,7 @@ export function ProjectsView({
   onCreateTask,
   onProjectTitleChange,
   onProjectTextChange,
-  onTaskTitleChange,
+  onTaskTextChange,
   onTaskDayChange,
   onTaskCompletionChange,
   onLinkTask,
@@ -58,9 +58,9 @@ export function ProjectsView({
 
   const submitTask = (event: FormEvent) => {
     event.preventDefault()
-    const title = taskDraft.trim()
-    if (!selectedProject || !title) return
-    onCreateTask(selectedProject.id, title, taskDay || null)
+    const text = taskDraft.trim()
+    if (!selectedProject || !text) return
+    onCreateTask(selectedProject.id, text, taskDay || null)
     setTaskDraft('')
   }
 
@@ -177,12 +177,19 @@ export function ProjectsView({
                         checked={Boolean(task.data.task?.completedAt)}
                         onChange={(event) => onTaskCompletionChange(task.id, event.target.checked)}
                       />
-                      <input
-                        className="project-task-row__title"
-                        aria-label="Task name"
-                        value={task.data.name}
-                        onChange={(event) => onTaskTitleChange(task.id, event.target.value)}
-                      />
+                      <div className="project-task-row__content">
+                        <textarea
+                          className="project-task-row__text"
+                          aria-label="Task"
+                          rows={2}
+                          placeholder="Write the task"
+                          value={task.data.text}
+                          onChange={(event) => onTaskTextChange(task.id, event.target.value)}
+                        />
+                        {task.data.name.trim() && task.data.name.trim() !== task.data.text.trim() ? (
+                          <small>{task.data.name.trim()}</small>
+                        ) : null}
+                      </div>
                       <input
                         type="date"
                         aria-label={`${nodeTitle(task)} date`}

@@ -3,6 +3,12 @@ import { DEFAULT_NODE_KIND, type NodeKind } from './nodeKinds'
 
 export type { NodeKind } from './nodeKinds'
 export type NodeExpansion = 'text' | 'details'
+export type NotebookPageFormat = 'text' | 'sketch'
+
+export type NotebookPageData = {
+  /** How this page is presented in the notebook, independent of node type. */
+  format: NotebookPageFormat
+}
 
 export type SketchPoint = { x: number; y: number; pressure?: number }
 export type SketchStroke = {
@@ -75,7 +81,7 @@ export type TaskData = {
 
 /**
  * Durable data carried by a text node, plus temporary callbacks injected by
- * the running React app. Only `text` and `kind` belong in saved board data.
+ * the running React app. Snapshot creation omits the temporary UI fields.
  */
 export type TextNodeData = {
   /** The short identity shown while the node is contracted. */
@@ -88,7 +94,9 @@ export type TextNodeData = {
   layout: NodeLayout
   /** The node's selected category from the kind registry. */
   kind: NodeKind
-  /** Present only while this node is a task. */
+  /** Notebook membership and page presentation survive semantic type changes. */
+  notebook: NotebookPageData | null
+  /** Task facts, retained while inactive so changing type never erases them. */
   task: TaskData | null
   /**
    * Durable, user-defined information about this object.
@@ -125,6 +133,7 @@ type CreateTextNodeOptions = {
   sketch?: SketchDocument
   layout?: Partial<NodeLayout>
   task?: Partial<TaskData> | null
+  notebook?: NotebookPageData | null
   // Optional per-node overrides. Usually leave these out and use the defaults.
   sourcePosition?: Position
   targetPosition?: Position
@@ -145,9 +154,18 @@ export function createTextNode({
   sketch = createSketchDocument(),
   layout = {},
   task,
+  notebook,
   sourcePosition = DEFAULT_CONNECTOR_POSITIONS.source,
   targetPosition = DEFAULT_CONNECTOR_POSITIONS.target,
 }: CreateTextNodeOptions): TextFlowNode {
+  const notebookPage = notebook === undefined
+    ? kind === 'note'
+      ? { format: 'text' as const }
+      : kind === 'sketch'
+        ? { format: 'sketch' as const }
+        : null
+    : notebook
+
   return {
     id,
     type: 'text',
@@ -158,7 +176,8 @@ export function createTextNode({
       name,
       text,
       kind,
-      task: kind === 'task'
+      notebook: notebookPage ? { ...notebookPage } : null,
+      task: kind === 'task' || task != null
         ? {
             day: task?.day ?? null,
             completedAt: task?.completedAt ?? null,

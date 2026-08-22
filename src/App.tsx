@@ -99,6 +99,74 @@ type PointerPaletteState = {
   sourceNodeId: string | null
 }
 
+const HIDDEN_MARKER_CYCLE_MS = 7_500
+const HIDDEN_MARKER_COLORS = [
+  '#f5a9b8',
+  '#5bcefa',
+  '#d60270',
+  '#9b59d0',
+  '#fff430',
+  '#ff8c00',
+  '#008026',
+]
+
+function randomHiddenMarkerCluster() {
+  const positions = Array.from({ length: 7 }, (_, index) => index + 1)
+    .sort(() => Math.random() - 0.5)
+  const bubbleCount = 2 + Math.floor(Math.random() * 6)
+  const bubbles = positions.slice(0, bubbleCount)
+  const accentCount = Math.min(bubbleCount, Math.floor(Math.random() * 4))
+  const mainColor = HIDDEN_MARKER_COLORS[Math.floor(Math.random() * HIDDEN_MARKER_COLORS.length)]
+  const lineWidth = 2 + Math.floor(Math.random() * 5)
+  const accentPalette = HIDDEN_MARKER_COLORS.filter((color) => color !== mainColor)
+  const accentPositions = [...bubbles]
+    .sort(() => Math.random() - 0.5)
+    .slice(0, accentCount)
+  const accentColors = new Map(accentPositions.map((position) => [
+    position,
+    accentPalette[Math.floor(Math.random() * accentPalette.length)],
+  ]))
+
+  return { bubbles, mainColor, accentColors, lineWidth }
+}
+
+function HiddenMarkerCluster({ refreshDelayMs }: { refreshDelayMs: number }) {
+  const [cluster, setCluster] = useState(randomHiddenMarkerCluster)
+
+  useEffect(() => {
+    let cycleTimer: number | null = null
+    const firstRefresh = window.setTimeout(() => {
+      setCluster(randomHiddenMarkerCluster())
+      cycleTimer = window.setInterval(() => {
+        setCluster(randomHiddenMarkerCluster())
+      }, HIDDEN_MARKER_CYCLE_MS)
+    }, refreshDelayMs + HIDDEN_MARKER_CYCLE_MS - 120)
+
+    return () => {
+      window.clearTimeout(firstRefresh)
+      if (cycleTimer !== null) window.clearInterval(cycleTimer)
+    }
+  }, [refreshDelayMs])
+
+  return (
+    <span className="hidden-feature-marker__cluster" style={{ color: cluster.mainColor }}>
+      <span className="hidden-feature-marker__core" />
+      {cluster.bubbles.map((position) => (
+        <span
+          className={`hidden-feature-marker__bubble is-${position}`}
+          key={position}
+          style={{
+            borderWidth: `${cluster.lineWidth}px`,
+            ...(cluster.accentColors.has(position)
+              ? { color: cluster.accentColors.get(position) }
+              : {}),
+          }}
+        />
+      ))}
+    </span>
+  )
+}
+
 const LOCAL_DRAFT_KEY = 'osa:current-draft'
 
 function readLocalDraft(): SavedBoard | null {
@@ -402,19 +470,41 @@ function Flow() {
               data: {
                 ...node.data,
                 kind,
-                task: kind === 'task'
-                  ? (node.data.task ?? { day: null, completedAt: null })
-                  : null,
+                notebook: node.data.notebook ?? (
+                  kind === 'note'
+                    ? { format: 'text' }
+                    : kind === 'sketch'
+                      ? { format: 'sketch' }
+                      : null
+                ),
+                task: node.data.task ?? (
+                  kind === 'task' ? { day: null, completedAt: null } : null
+                ),
               },
             }
           : node,
       ),
     )
-    setEdges((currentEdges) => currentEdges.filter((edge) => (
-      edge.data.relationKind !== 'project-task'
-      || (edge.source !== id || kind === 'project')
-      && (edge.target !== id || kind === 'task')
-    )))
+    setEdges((currentEdges) => currentEdges.map((edge) => {
+      const projectTaskLinkIsActive = edge.data.relationKind !== 'project-task' || (
+        (edge.source !== id || kind === 'project')
+        && (edge.target !== id || kind === 'task')
+      )
+      if (projectTaskLinkIsActive) return edge
+      return {
+        ...edge,
+        data: {
+          ...edge.data,
+          relationKind: 'related',
+          relationship: edge.data.relationship === 'has task'
+            ? 'relates to'
+            : edge.data.relationship,
+        },
+      }
+    }))
+    setNodeKindFilter((currentFilter) => (
+      currentFilter === 'all' || currentFilter === kind ? currentFilter : 'all'
+    ))
   }, [setEdges, setNodes])
 
   const onTaskDayChange = useCallback((id: string, day: string | null) => {
@@ -568,7 +658,7 @@ function Flow() {
   const onNodeClick: NodeMouseHandler<TextFlowNode> = useCallback((event, node) => {
     if (performance.now() < suppressPointerPaletteClickUntil.current) return
     setSelectedItem({ type: 'node', id: node.id })
-    if (node.data.kind === 'note' || node.data.kind === 'sketch') {
+    if (node.data.notebook) {
       setSelectedNotebookPageId(node.id)
     }
 
@@ -610,7 +700,7 @@ function Flow() {
   const tasks = useMemo(() => selectTaskNodes(nodes), [nodes])
   const projects = useMemo(() => selectProjectNodes(nodes), [nodes])
   const notebookPages = useMemo(
-    () => nodes.filter((node) => node.data.kind === 'note' || node.data.kind === 'sketch'),
+    () => nodes.filter((node) => node.data.notebook !== null),
     [nodes],
   )
   const activeProjectId = selectedProjectId && projects.some((project) => project.id === selectedProjectId)
@@ -711,12 +801,12 @@ function Flow() {
     )))
   }, [setEdges])
 
-  const createTask = useCallback((title: string, day: string | null) => {
-    createObjectNode(title, 'task', day)
+  const createTask = useCallback((text: string, day: string | null) => {
+    createObjectNode('', 'task', day, text)
   }, [createObjectNode])
 
-  const createTaskForProject = useCallback((projectId: string, title: string, day: string | null) => {
-    const taskId = createObjectNode(title, 'task', day)
+  const createTaskForProject = useCallback((projectId: string, text: string, day: string | null) => {
+    const taskId = createObjectNode('', 'task', day, text)
     linkTaskToProject(taskId, projectId)
   }, [createObjectNode, linkTaskToProject])
 
@@ -755,7 +845,7 @@ function Flow() {
 
   const openNotebookPage = useCallback((nodeId: string) => {
     const node = nodes.find((candidate) => candidate.id === nodeId)
-    if (!node || (node.data.kind !== 'note' && node.data.kind !== 'sketch')) return
+    if (!node?.data.notebook) return
     setSelectedNotebookPageId(nodeId)
     setSelectedItem({ type: 'node', id: nodeId })
     setExpandedNode(null)
@@ -816,7 +906,7 @@ function Flow() {
     ]
     if (!pointerPalette.sourceNodeId) return createActions
     const sourceNode = nodes.find((node) => node.id === pointerPalette.sourceNodeId)
-    const opensInNotebook = sourceNode?.data.kind === 'note' || sourceNode?.data.kind === 'sketch'
+    const opensInNotebook = Boolean(sourceNode?.data.notebook)
     return [
       {
         id: opensInNotebook ? 'notebook' : 'open',
@@ -1137,6 +1227,10 @@ function Flow() {
       className={showIdleHints
         ? `show-hidden-hints hint-trail-${hintTrailStage}${idleHintsDismissing ? ' hidden-hints-dismissing' : ''}`
         : undefined}
+      inert={workspaceView !== 'nodes'}
+      aria-hidden={workspaceView !== 'nodes'}
+      nodesFocusable={workspaceView === 'nodes'}
+      edgesFocusable={workspaceView === 'nodes'}
       nodes={nodesForFlow}
       edges={edgesForFlow}
       nodeTypes={nodeTypes}
@@ -1211,7 +1305,7 @@ function Flow() {
         </defs>
       </svg>
       <Background />
-      {(canvasToolsExpanded || canvasToolsPreviewPosition) && (
+      {workspaceView === 'nodes' && (canvasToolsExpanded || canvasToolsPreviewPosition) && (
         <Controls
           className={`canvas-corner-tools${canvasToolsExpanded ? ' is-expanded' : ' is-preview'}`}
           style={canvasToolsExpanded ? undefined : {
@@ -1224,23 +1318,35 @@ function Flow() {
           aria-label={canvasToolsExpanded ? 'Release canvas tools' : 'Canvas tools preview'}
         />
       )}
-      <Panel
-        position="bottom-left"
-        className="canvas-tools-reveal-zone"
-        aria-label="Reveal canvas tools"
-        onMouseMove={(event) => {
-          if (!canvasToolsExpanded) {
-            setCanvasToolsPreviewPosition({ x: event.clientX, y: event.clientY })
-          }
-        }}
-        onMouseLeave={() => setCanvasToolsPreviewPosition(null)}
-        onClick={(event) => {
-          event.stopPropagation()
-          setCanvasToolsPreviewPosition(null)
-          setCanvasToolsExpanded((isExpanded) => !isExpanded)
-        }}
-      />
-      {(miniMapExpanded || miniMapPreviewPosition) && (
+      {workspaceView === 'nodes' && (
+        <Panel position="bottom-left" className="canvas-tools-reveal-zone">
+          <button
+            className="hidden-panel-trigger"
+            type="button"
+            aria-label={canvasToolsExpanded ? 'Hide canvas tools' : 'Reveal canvas tools'}
+            aria-expanded={canvasToolsExpanded}
+            onMouseMove={(event) => {
+              if (!canvasToolsExpanded) {
+                setCanvasToolsPreviewPosition({ x: event.clientX, y: event.clientY })
+              }
+            }}
+            onMouseLeave={() => setCanvasToolsPreviewPosition(null)}
+            onFocus={(event) => {
+              if (!canvasToolsExpanded) {
+                const rect = event.currentTarget.getBoundingClientRect()
+                setCanvasToolsPreviewPosition({ x: rect.right, y: rect.top })
+              }
+            }}
+            onBlur={() => setCanvasToolsPreviewPosition(null)}
+            onClick={(event) => {
+              event.stopPropagation()
+              setCanvasToolsPreviewPosition(null)
+              setCanvasToolsExpanded((isExpanded) => !isExpanded)
+            }}
+          />
+        </Panel>
+      )}
+      {workspaceView === 'nodes' && (miniMapExpanded || miniMapPreviewPosition) && (
         <MiniMap
           className={`canvas-corner-minimap${miniMapExpanded ? ' is-expanded' : ' is-preview'}`}
           style={miniMapExpanded ? {
@@ -1262,27 +1368,44 @@ function Flow() {
           }}
         />
       )}
-      <Panel
-        position="bottom-right"
-        className="minimap-reveal-zone"
-        aria-label="Reveal board minimap"
-        onMouseMove={(event) => {
-          if (!miniMapExpanded) {
-            setMiniMapPreviewPosition({ x: event.clientX, y: event.clientY })
-          }
-        }}
-        onMouseLeave={() => setMiniMapPreviewPosition(null)}
-        onClick={(event) => {
-          event.stopPropagation()
-          setMiniMapPreviewPosition(null)
-          setMiniMapExpanded((isExpanded) => !isExpanded)
-        }}
-      />
-      {(showBoardControls || boardControlsPreviewPosition) && (
+      {workspaceView === 'nodes' && (
+        <Panel position="bottom-right" className="minimap-reveal-zone">
+          <button
+            className="hidden-panel-trigger"
+            type="button"
+            aria-label={miniMapExpanded ? 'Hide board minimap' : 'Reveal board minimap'}
+            aria-expanded={miniMapExpanded}
+            onMouseMove={(event) => {
+              if (!miniMapExpanded) {
+                setMiniMapPreviewPosition({ x: event.clientX, y: event.clientY })
+              }
+            }}
+            onMouseLeave={() => setMiniMapPreviewPosition(null)}
+            onFocus={(event) => {
+              if (!miniMapExpanded) {
+                const rect = event.currentTarget.getBoundingClientRect()
+                setMiniMapPreviewPosition({ x: rect.left, y: rect.top })
+              }
+            }}
+            onBlur={() => setMiniMapPreviewPosition(null)}
+            onClick={(event) => {
+              event.stopPropagation()
+              setMiniMapPreviewPosition(null)
+              setMiniMapExpanded((isExpanded) => !isExpanded)
+            }}
+          />
+        </Panel>
+      )}
+      {workspaceView === 'nodes' && (showBoardControls || boardControlsPreviewPosition) && (
       <Panel
         position="top-left"
+        id="board-controls"
         className={`board-dock${showBoardControls ? ' is-pinned' : ' is-preview'}`}
-        style={showBoardControls ? undefined : {
+        style={showBoardControls ? {
+          top: '50%',
+          bottom: 'auto',
+          transform: 'translateY(-50%)',
+        } : {
           position: 'fixed',
           right: 'auto',
           bottom: 'auto',
@@ -1346,25 +1469,47 @@ function Flow() {
         </div>
       </Panel>
       )}
-      <Panel
-        position="top-left"
-        className="board-reveal-zone"
-        aria-label="Reveal board controls"
-        onMouseMove={(event) => {
-          if (!showBoardControls) setBoardControlsPreviewPosition({ x: event.clientX, y: event.clientY })
-        }}
-        onMouseLeave={() => setBoardControlsPreviewPosition(null)}
-        onClick={(event) => {
-          event.stopPropagation()
-          setBoardControlsPreviewPosition(null)
-          setShowBoardControls((isVisible) => !isVisible)
-        }}
-      />
-      {selectedNode && (inspectorExpanded || inspectorPreviewPosition) && (
+      {workspaceView === 'nodes' && (
+        <Panel
+          position="top-left"
+          className="board-reveal-zone"
+          style={{ top: '50%', bottom: 'auto', transform: 'translateY(-50%)' }}
+        >
+          <button
+            className="hidden-panel-trigger"
+            type="button"
+            aria-label={showBoardControls ? 'Hide board controls' : 'Reveal board controls'}
+            aria-expanded={showBoardControls}
+            aria-controls="board-controls"
+            onMouseMove={(event) => {
+              if (!showBoardControls) setBoardControlsPreviewPosition({ x: event.clientX, y: event.clientY })
+            }}
+            onMouseLeave={() => setBoardControlsPreviewPosition(null)}
+            onFocus={(event) => {
+              if (!showBoardControls) {
+                const rect = event.currentTarget.getBoundingClientRect()
+                setBoardControlsPreviewPosition({ x: rect.right, y: rect.top + rect.height / 2 })
+              }
+            }}
+            onBlur={() => setBoardControlsPreviewPosition(null)}
+            onClick={(event) => {
+              event.stopPropagation()
+              setBoardControlsPreviewPosition(null)
+              setShowBoardControls((isVisible) => !isVisible)
+            }}
+          />
+        </Panel>
+      )}
+      {workspaceView === 'nodes' && selectedNode && (inspectorExpanded || inspectorPreviewPosition) && (
         <Panel
           position="top-right"
+          id="selected-item-inspector"
           className={`inspector-dock${inspectorExpanded ? ' is-pinned' : ' is-preview'}`}
-          style={inspectorExpanded ? undefined : {
+          style={inspectorExpanded ? {
+            top: '50%',
+            bottom: 'auto',
+            transform: 'translateY(-50%)',
+          } : {
             position: 'fixed',
             right: 'auto',
             bottom: 'auto',
@@ -1372,6 +1517,15 @@ function Flow() {
             top: inspectorPreviewPosition!.y + 14,
           }}
         >
+          {inspectorExpanded ? (
+            <button
+              className="inspector-dock__toggle"
+              type="button"
+              onClick={() => setInspectorExpanded(false)}
+            >
+              Close inspector
+            </button>
+          ) : null}
           <PropertiesPanel
             node={selectedNode}
             onPropertyChange={onPropertyChange}
@@ -1381,11 +1535,16 @@ function Flow() {
           />
         </Panel>
       )}
-      {selectedEdge && (inspectorExpanded || inspectorPreviewPosition) && (
+      {workspaceView === 'nodes' && selectedEdge && (inspectorExpanded || inspectorPreviewPosition) && (
         <Panel
           position="top-right"
+          id="selected-item-inspector"
           className={`inspector-dock${inspectorExpanded ? ' is-pinned' : ' is-preview'}`}
-          style={inspectorExpanded ? undefined : {
+          style={inspectorExpanded ? {
+            top: '50%',
+            bottom: 'auto',
+            transform: 'translateY(-50%)',
+          } : {
             position: 'fixed',
             right: 'auto',
             bottom: 'auto',
@@ -1393,6 +1552,15 @@ function Flow() {
             top: inspectorPreviewPosition!.y + 14,
           }}
         >
+          {inspectorExpanded ? (
+            <button
+              className="inspector-dock__toggle"
+              type="button"
+              onClick={() => setInspectorExpanded(false)}
+            >
+              Close inspector
+            </button>
+          ) : null}
           <EdgePropertiesPanel
             edge={selectedEdge}
             onRelationshipChange={onEdgeRelationshipChange}
@@ -1403,25 +1571,41 @@ function Flow() {
           />
         </Panel>
       )}
-      {(selectedNode || selectedEdge) && (
+      {workspaceView === 'nodes' && (selectedNode || selectedEdge) && (
         <Panel
           position="top-right"
           className="inspector-reveal-zone"
-          aria-label="Reveal selected item inspector"
-          onMouseMove={(event) => {
-            if (!inspectorExpanded) setInspectorPreviewPosition({ x: event.clientX, y: event.clientY })
-          }}
-          onMouseLeave={() => setInspectorPreviewPosition(null)}
-          onClick={(event) => {
-            event.stopPropagation()
-            setInspectorPreviewPosition(null)
-            setInspectorExpanded((isExpanded) => !isExpanded)
-          }}
-        />
+          style={{ top: '50%', bottom: 'auto', transform: 'translateY(-50%)' }}
+        >
+          <button
+            className="hidden-panel-trigger"
+            type="button"
+            aria-label={inspectorExpanded ? 'Hide selected item inspector' : 'Reveal selected item inspector'}
+            aria-expanded={inspectorExpanded}
+            aria-controls="selected-item-inspector"
+            onMouseMove={(event) => {
+              if (!inspectorExpanded) setInspectorPreviewPosition({ x: event.clientX, y: event.clientY })
+            }}
+            onMouseLeave={() => setInspectorPreviewPosition(null)}
+            onFocus={(event) => {
+              if (!inspectorExpanded) {
+                const rect = event.currentTarget.getBoundingClientRect()
+                setInspectorPreviewPosition({ x: rect.left, y: rect.top + rect.height / 2 })
+              }
+            }}
+            onBlur={() => setInspectorPreviewPosition(null)}
+            onClick={(event) => {
+              event.stopPropagation()
+              setInspectorPreviewPosition(null)
+              setInspectorExpanded((isExpanded) => !isExpanded)
+            }}
+          />
+        </Panel>
       )}
-      {(showTable || tablePreviewPosition) && (
+      {workspaceView === 'nodes' && (showTable || tablePreviewPosition) && (
       <Panel
         position="bottom-center"
+        id="board-table"
         className={`table-dock${showTable ? ' is-pinned' : ' is-preview'}`}
         style={showTable ? undefined : {
           position: 'fixed',
@@ -1448,29 +1632,58 @@ function Flow() {
         </button>
       </Panel>
       )}
-      <Panel
-        position="bottom-center"
-        className="table-reveal-zone"
-        aria-label="Reveal board table"
-        onMouseMove={(event) => {
-          if (!showTable) setTablePreviewPosition({ x: event.clientX, y: event.clientY })
-        }}
-        onMouseLeave={() => setTablePreviewPosition(null)}
-        onClick={(event) => {
-          event.stopPropagation()
-          setTablePreviewPosition(null)
-          setShowTable((isVisible) => !isVisible)
-        }}
-      />
+      {workspaceView === 'nodes' && (
+        <Panel position="bottom-center" className="table-reveal-zone">
+          <button
+            className="hidden-panel-trigger"
+            type="button"
+            aria-label={showTable ? 'Hide board table' : 'Reveal board table'}
+            aria-expanded={showTable}
+            aria-controls="board-table"
+            onMouseMove={(event) => {
+              if (!showTable) setTablePreviewPosition({ x: event.clientX, y: event.clientY })
+            }}
+            onMouseLeave={() => setTablePreviewPosition(null)}
+            onFocus={(event) => {
+              if (!showTable) {
+                const rect = event.currentTarget.getBoundingClientRect()
+                setTablePreviewPosition({ x: rect.left + rect.width / 2, y: rect.top })
+              }
+            }}
+            onBlur={() => setTablePreviewPosition(null)}
+            onClick={(event) => {
+              event.stopPropagation()
+              setTablePreviewPosition(null)
+              setShowTable((isVisible) => !isVisible)
+            }}
+          />
+        </Panel>
+      )}
       {workspaceView === 'nodes' && showIdleHints && (
         <>
-          <Panel position="top-left" className="hidden-feature-marker marker-board" aria-hidden="true"><span /></Panel>
+          <Panel
+            position="top-left"
+            className="hidden-feature-marker marker-board"
+            style={{ top: '50%', bottom: 'auto', transform: 'translateY(-50%)' }}
+            aria-hidden="true"
+          ><HiddenMarkerCluster refreshDelayMs={0} /></Panel>
           {(selectedNode || selectedEdge) && (
-            <Panel position="top-right" className="hidden-feature-marker marker-inspector" aria-hidden="true"><span /></Panel>
+            <Panel
+              position="top-right"
+              className="hidden-feature-marker marker-inspector"
+              style={{ top: '50%', bottom: 'auto', transform: 'translateY(-50%)' }}
+              aria-hidden="true"
+            ><HiddenMarkerCluster refreshDelayMs={1_500} /></Panel>
           )}
-          <Panel position="bottom-left" className="hidden-feature-marker marker-tools" aria-hidden="true"><span /></Panel>
-          <Panel position="bottom-center" className="hidden-feature-marker marker-table" aria-hidden="true"><span /></Panel>
-          <Panel position="bottom-right" className="hidden-feature-marker marker-minimap" aria-hidden="true"><span /></Panel>
+          <Panel position="bottom-left" className="hidden-feature-marker marker-tools" aria-hidden="true">
+            <HiddenMarkerCluster refreshDelayMs={6_000} />
+          </Panel>
+          <Panel position="bottom-center" className="hidden-feature-marker marker-table" aria-hidden="true">
+            <HiddenMarkerCluster refreshDelayMs={4_500} />
+          </Panel>
+          <Panel position="bottom-right" className="hidden-feature-marker marker-minimap" aria-hidden="true">
+            <HiddenMarkerCluster refreshDelayMs={3_000} />
+          </Panel>
         </>
       )}
       </ReactFlow>
@@ -1512,6 +1725,15 @@ function Flow() {
         </button>
       )}
       <span className="local-draft-status" role="status">{draftStatus}</span>
+      {needsSignIn && workspaceView !== 'nodes' ? (
+        <a
+          className="osa-sign-in-reveal"
+          href="/api/login"
+          aria-label="Sign in to open saved boards"
+        >
+          <span>Sign in to saved boards</span>
+        </a>
+      ) : null}
       {workspaceView === 'nodes' ? (
         <div className="node-space-filter" aria-label="Filter Node Space">
           <span>Node Space</span>
@@ -1569,7 +1791,7 @@ function Flow() {
               onModeChange={setTaskViewMode}
               onDayChange={setTaskViewDay}
               onCreateTask={createTask}
-              onTaskTitleChange={onNameChange}
+              onTaskTextChange={onTextChange}
               onTaskDayChange={onTaskDayChange}
               onTaskCompletionChange={onTaskCompletionChange}
               onLinkProject={linkTaskToProject}
@@ -1588,7 +1810,7 @@ function Flow() {
               onCreateTask={createTaskForProject}
               onProjectTitleChange={onNameChange}
               onProjectTextChange={onTextChange}
-              onTaskTitleChange={onNameChange}
+              onTaskTextChange={onTextChange}
               onTaskDayChange={onTaskDayChange}
               onTaskCompletionChange={onTaskCompletionChange}
               onLinkTask={(projectId, taskId) => linkTaskToProject(taskId, projectId)}

@@ -118,7 +118,9 @@ export function NotebookView({
           <nav aria-label="Notebook pages">
             {pages.map((page) => (
               <button
-                className={page.id === selectedPage?.id ? 'is-active' : undefined}
+                className={`${page.data.notebook?.format === 'sketch' ? 'is-sketch-page' : 'is-text-page'}${
+                  page.id === selectedPage?.id ? ' is-active' : ''
+                }`}
                 type="button"
                 key={page.id}
                 onClick={() => onSelectPage(page.id)}
@@ -155,7 +157,7 @@ export function NotebookView({
               </div>
             </div>
 
-            {selectedPage.data.kind === 'sketch' ? (
+            {selectedPage.data.notebook?.format === 'sketch' ? (
               <div className="notebook-page__sketch">
                 <SketchPad
                   key={selectedPage.id}

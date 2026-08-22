@@ -47,6 +47,7 @@ function parseSavedBoard(value: unknown): SavedBoard | null {
 }
 
 async function responseError(response: Response): Promise<Error> {
+  if (response.status === 401 || response.status === 403) return new BoardAccessError()
   if (response.status === 404) return new BoardUnavailableError()
 
   const body: unknown = await response.json().catch(() => null)

@@ -9,6 +9,7 @@ import {
   DEFAULT_CONNECTOR_POSITIONS,
   cloneSketchDocument,
   createSketchDocument,
+  type NotebookPageData,
   type NodeLayout,
   type SketchDocument,
   type SketchLayer,
@@ -26,7 +27,7 @@ const DEFAULT_LAYOUT: NodeLayout = {
 
 /** The current, stable, JSON-safe shape of a saved board. */
 export type BoardSnapshot = {
-  version: 4
+  version: 5
   nodes: SavedTextFlowNode[]
   edges: SavedEdge[]
 }
@@ -38,7 +39,7 @@ export type SavedTextFlowNode = Pick<
 > & {
   data: Pick<
     TextNodeData,
-    'name' | 'text' | 'kind' | 'task' | 'properties' | 'sketch' | 'layout'
+    'name' | 'text' | 'kind' | 'notebook' | 'task' | 'properties' | 'sketch' | 'layout'
   >
 }
 
@@ -52,8 +53,10 @@ export function createBoardSnapshot(
   nodes: TextFlowNode[],
   edges: GraphEdge[],
 ): BoardSnapshot {
+  const nodesById = new Map(nodes.map((node) => [node.id, node]))
+
   return {
-    version: 4,
+    version: 5,
     nodes: nodes.map((node) => ({
       id: node.id,
       type: node.type,
@@ -64,23 +67,38 @@ export function createBoardSnapshot(
         name: node.data.name,
         text: node.data.text,
         kind: node.data.kind,
-        task: node.data.task ? { ...node.data.task } : null,
+        notebook: node.data.notebook === undefined
+          ? migrateLegacyNotebookPage(node.data.kind)
+          : node.data.notebook ? { ...node.data.notebook } : null,
+        task: node.data.task
+          ? { ...node.data.task }
+          : node.data.kind === 'task'
+            ? { day: null, completedAt: null }
+            : null,
         sketch: cloneSketchDocument(node.data.sketch),
         layout: { ...node.data.layout },
         properties: { ...node.data.properties },
       },
     })),
-    edges: edges.map((edge) => ({
-      id: edge.id,
-      source: edge.source,
-      target: edge.target,
-      data: {
-        relationKind: edge.data.relationKind,
-        sourceAnchor: edge.data.sourceAnchor ? { ...edge.data.sourceAnchor } : null,
-        relationship: edge.data.relationship,
-        properties: { ...edge.data.properties },
-      },
-    })),
+    edges: edges.map((edge) => {
+      const projectTaskLinkIsActive = edge.data.relationKind !== 'project-task' || (
+        nodesById.get(edge.source)?.data.kind === 'project'
+        && nodesById.get(edge.target)?.data.kind === 'task'
+      )
+      return {
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        data: {
+          relationKind: projectTaskLinkIsActive ? edge.data.relationKind : 'related',
+          sourceAnchor: edge.data.sourceAnchor ? { ...edge.data.sourceAnchor } : null,
+          relationship: !projectTaskLinkIsActive && edge.data.relationship === 'has task'
+            ? 'relates to'
+            : edge.data.relationship,
+          properties: { ...edge.data.properties },
+        },
+      }
+    }),
   }
 }
 
@@ -256,12 +274,28 @@ function parseTaskData(value: unknown): TaskData | null {
   return { day, completedAt }
 }
 
+function parseNotebookPage(value: unknown): NotebookPageData | null | undefined {
+  if (value === null) return null
+  if (!isRecord(value) || (value.format !== 'text' && value.format !== 'sketch')) {
+    return undefined
+  }
+  return { format: value.format }
+}
+
+function migrateLegacyNotebookPage(kind: TextNodeData['kind']): NotebookPageData | null {
+  if (kind === 'sketch') return { format: 'sketch' }
+  // Documents are included because older builds could make a notebook Note
+  // disappear by changing its semantic type to Document.
+  if (kind === 'note' || kind === 'document') return { format: 'text' }
+  return null
+}
+
 function parseConnectorPosition(value: unknown, fallback: Position): Position | null {
   if (value === undefined) return fallback
   return Object.values(Position).includes(value as Position) ? value as Position : null
 }
 
-function parseNode(value: unknown, version: 1 | 2 | 3 | 4): SavedTextFlowNode | null {
+function parseNode(value: unknown, version: 1 | 2 | 3 | 4 | 5): SavedTextFlowNode | null {
   if (!isRecord(value) || value.type !== 'text' || typeof value.id !== 'string') return null
   if (!isRecord(value.position) || typeof value.position.x !== 'number' || typeof value.position.y !== 'number') {
     return null
@@ -285,15 +319,29 @@ function parseNode(value: unknown, version: 1 | 2 | 3 | 4): SavedTextFlowNode | 
   const layout = data.layout === undefined && version === 1
     ? { ...DEFAULT_LAYOUT }
     : parseLayout(data.layout)
-  const sketch = version === 3 || version === 4
+  const sketch = version >= 3
     ? parseSketchDocument(data.sketch)
     : migrateLegacySketch(data.sketchStrokes)
   if (!properties || !sketch || !layout) return null
 
+  const kind = data.kind as TextNodeData['kind']
+  const notebook = version === 5
+    ? parseNotebookPage(data.notebook)
+    : migrateLegacyNotebookPage(kind)
+  if (notebook === undefined) return null
+
   let task: TaskData | null
   if (version === 1) {
     task = data.kind === 'task' ? { day: null, completedAt: null } : null
-  } else if (data.kind === 'task') {
+  } else if (version === 5) {
+    if (data.task === null) {
+      if (kind === 'task') return null
+      task = null
+    } else {
+      task = parseTaskData(data.task)
+      if (!task) return null
+    }
+  } else if (kind === 'task') {
     task = parseTaskData(data.task)
     if (!task) return null
   } else {
@@ -310,7 +358,8 @@ function parseNode(value: unknown, version: 1 | 2 | 3 | 4): SavedTextFlowNode | 
     data: {
       name: data.name ?? '',
       text: data.text,
-      kind: data.kind as TextNodeData['kind'],
+      kind,
+      notebook,
       task,
       properties: { ...properties },
       sketch,
@@ -356,7 +405,7 @@ function parseConnectionAnchor(value: unknown): ConnectionAnchor | null | undefi
   return undefined
 }
 
-function parseEdge(value: unknown, version: 1 | 2 | 3 | 4): SavedEdge | null {
+function parseEdge(value: unknown, version: 1 | 2 | 3 | 4 | 5): SavedEdge | null {
   if (
     !isRecord(value)
     || typeof value.id !== 'string'
@@ -388,7 +437,7 @@ function parseEdge(value: unknown, version: 1 | 2 | 3 | 4): SavedEdge | null {
     || !RELATION_KINDS.includes(relationKind as GraphEdge['data']['relationKind'])
   ) return null
 
-  const sourceAnchor = version === 4
+  const sourceAnchor = version >= 4
     ? parseConnectionAnchor(value.data.sourceAnchor)
     : null
   if (sourceAnchor === undefined) return null
@@ -407,7 +456,7 @@ function parseEdge(value: unknown, version: 1 | 2 | 3 | 4): SavedEdge | null {
 }
 
 /**
- * Validates untrusted JSON and migrates legacy version-1/2/3 boards in memory.
+ * Validates untrusted JSON and migrates legacy version-1/2/3/4 boards in memory.
  * The database can continue storing snapshots as opaque JSON.
  */
 export function parseBoardSnapshot(value: unknown): BoardSnapshot | null {
@@ -418,6 +467,7 @@ export function parseBoardSnapshot(value: unknown): BoardSnapshot | null {
       && value.version !== 2
       && value.version !== 3
       && value.version !== 4
+      && value.version !== 5
     )
   ) return null
   if (!Array.isArray(value.nodes) || !Array.isArray(value.edges)) return null
@@ -444,7 +494,7 @@ export function parseBoardSnapshot(value: unknown): BoardSnapshot | null {
   ))
   if (invalidProjectTaskLink) return null
 
-  return { version: 4, nodes: parsedNodes, edges: parsedEdges }
+  return { version: 5, nodes: parsedNodes, edges: parsedEdges }
 }
 
 /** Creates fresh live graph state from a normalized current snapshot. */
@@ -453,17 +503,29 @@ export function restoreBoardSnapshot(snapshot: BoardSnapshot): {
   edges: GraphEdge[]
 } {
   return {
-    nodes: snapshot.nodes.map((node) => ({
-      ...node,
-      position: { ...node.position },
-      data: {
-        ...node.data,
-        task: node.data.task ? { ...node.data.task } : null,
-        sketch: cloneSketchDocument(node.data.sketch),
-        layout: { ...node.data.layout },
-        properties: { ...node.data.properties },
-      },
-    })),
+    nodes: snapshot.nodes.map((node) => {
+      // Early task views stored quick-entry wording in `name`. Preserve that
+      // identity while copying the wording into the canonical task text.
+      const text = node.data.kind === 'task'
+        && node.data.text.trim() === ''
+        && node.data.name.trim() !== ''
+        && node.data.name.trim() !== `#${node.id}`
+        ? node.data.name
+        : node.data.text
+      return {
+        ...node,
+        position: { ...node.position },
+        data: {
+          ...node.data,
+          text,
+          notebook: node.data.notebook ? { ...node.data.notebook } : null,
+          task: node.data.task ? { ...node.data.task } : null,
+          sketch: cloneSketchDocument(node.data.sketch),
+          layout: { ...node.data.layout },
+          properties: { ...node.data.properties },
+        },
+      }
+    }),
     edges: snapshot.edges.map((edge) => ({
       ...edge,
       data: {
