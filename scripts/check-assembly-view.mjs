@@ -72,11 +72,28 @@ try {
       },
     },
   }
+  // A Visual is a usable reusable canvas before someone adds its image,
+  // photo, or drawing. The card must offer this blank canvas as a deliberate
+  // reference option rather than making image upload a hidden prerequisite.
+  const connectorBoxBlankVisual = {
+    ...connectorBoxDrilledVisual,
+    id: 'assembly-view-check-connector-box-blank-visual',
+    data: {
+      ...connectorBoxDrilledVisual.data,
+      name: 'Connector Box Drilled — Blank Canvas',
+      properties: {
+        ...connectorBoxDrilledVisual.data.properties,
+        [OSA_PROPERTY.assetImage]: '',
+        [OSA_PROPERTY.assetImageAlt]: '',
+      },
+    },
+  }
   const nodesWithCanvas = [
     ...plan.nodes.map((node) => (
       node.id === connectorBoxDrill.id ? connectorBoxDrillWithCanvas : node
     )),
     connectorBoxDrilledVisual,
+    connectorBoxBlankVisual,
   ]
   const operationsWithCanvas = nodesWithCanvas.filter((node) => node.data.kind === 'action')
   const planWithObjectVisual = {
@@ -104,15 +121,22 @@ try {
           [OSA_PROPERTY.operationVisualHeight]: '28',
         },
       }),
+      createGraphEdge({
+        id: 'assembly-view-check-blank-visual-owner',
+        source: connectorBoxDrilled.id,
+        target: connectorBoxBlankVisual.id,
+        relationship: 'owns visual',
+        properties: { [OSA_PROPERTY.relationRole]: 'object-visual' },
+      }),
     ],
   }
 
-  const renderAssembly = (boardEdges) => renderToStaticMarkup(createElement(AssemblyView, {
+  const renderAssembly = (boardEdges, uiState = focusedAssemblyUiState) => renderToStaticMarkup(createElement(AssemblyView, {
     assemblies,
     nodes: nodesWithCanvas,
     operations: operationsWithCanvas,
     edges: boardEdges,
-    uiState: focusedAssemblyUiState,
+    uiState,
     onUiStateChange: noop,
     selectedAssemblyId: plan.assemblyNodeId,
     onSelectAssembly: noop,
@@ -148,12 +172,14 @@ try {
   assert.doesNotMatch(markup, /<span>Out<\/span>/)
   assert.match(markup, /<h1 id="assembly-view-title">Assembly<\/h1>/)
   assert.doesNotMatch(markup, /assembly instructions/)
-  assert.match(markup, />visual references</)
+  assert.match(markup, />visual canvases</)
   assert.match(markup, /source slide/)
   assert.match(markup, /PowerPoint provenance/)
   assert.match(markup, /Connector Box Drilled visual/)
+  assert.match(markup, /Connector Box Drilled visual \(blank canvas\)/)
   assert.match(markup, /owned by Connector Box Drilled/)
-  assert.match(markup, /create visual for Connector Box Drilled/)
+  assert.match(markup, /\+ create visual canvas for Connector Box Drilled/)
+  assert.match(markup, /add an existing visual canvas…/)
   assert.match(markup, /remove Connector Box Drilled visual from this card only/)
   assert.doesNotMatch(markup, /Drill diagram/)
   assert.doesNotMatch(markup, /assembly-card__canvas-/)
@@ -166,6 +192,15 @@ try {
   assert.doesNotMatch(markup, /Add assembly|Bill of materials|Project expenses/)
   assert.match(markup, /assembly-object-unlink/)
   assert.match(markup, /already in this instruction/)
+
+  // Canvas creation remains visible on an unfocused card: people should not
+  // need to discover the card-focus interaction before they can continue
+  // building a visual in their assembly view.
+  const unfocusedMarkup = renderAssembly(planWithObjectVisual.edges, {
+    ...createAssemblyViewUiState(),
+    focusedCardId: 'assembly-index',
+  })
+  assert.match(unfocusedMarkup, /\+ create visual canvas for Connector Box Drilled/)
 
   // Legacy cards may have a normal Out relationship but no explicit primary
   // output. The first render shows a clear repair action instead of offering
@@ -196,7 +231,7 @@ try {
   )
   assert.doesNotMatch(
     legacySingleOutputMarkup,
-    /create visual for Connector Box Drilled/,
+    /\+ create visual canvas for Connector Box Drilled/,
     'Visual creation waits until the repair has made the primary-output relationship durable.',
   )
 
@@ -218,7 +253,7 @@ try {
     /choose this card’s represented part…/,
     'Ambiguous legacy Out relations show a compact represented-part picker.',
   )
-  console.log('Assembly board checks passed: 1 index, 6 cards, source provenance, and reusable visual references.')
+  console.log('Assembly board checks passed: 1 index, 6 cards, source provenance, and reusable visual canvases.')
 } finally {
   await server.close()
 }

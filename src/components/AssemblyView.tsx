@@ -65,6 +65,8 @@ type AssemblyViewProps = {
   onCreatePartForOperation?: (
     operationId: string,
     direction: OperationPartDirection,
+    /** Optional deliberate name for a legacy-card primary-output repair. */
+    requestedName?: string,
   ) => string
   onLinkTool?: (operationId: string, toolId: string) => void
   /** Unlinks one tool from this instruction without deleting the tool record. */
@@ -113,6 +115,15 @@ function nodeTitle(node: TextFlowNode) {
   return node.data.name.trim()
     || node.data.text.trim().split(/\r?\n/, 1)[0]
     || `#${node.id}`
+}
+
+/**
+ * A name match is only a compatibility hint for an older card that has no
+ * explicit output relation. The actual relationship is still created only
+ * after the person chooses the visible repair action.
+ */
+function normalizedNodeName(node: TextFlowNode) {
+  return node.data.name.trim().toLocaleLowerCase()
 }
 
 /** An object owns its reusable visual; an instruction only links to it. */
@@ -664,15 +675,26 @@ export function AssemblyView({
             OSA_RELATION.operationOutput,
             /^produces? (part|assembly)$/i,
           ).filter(isPartLike)
-          const inferredPrimaryOutput = !explicitPrimaryOutput && ordinaryOutputs.length === 1
-            ? ordinaryOutputs[0]
+          // Some early boards stored the card title (for example,
+          // "Connector Box Drilled") and its Part independently, but never
+          // connected them. An exact name match is a useful *suggestion* in
+          // that narrow legacy case. It is not automatically saved as a
+          // relationship: the action below asks the person to confirm it.
+          const operationName = normalizedNodeName(operation)
+          const titleMatchedPart = !explicitPrimaryOutput && operationName
+            ? nodes.find((node) => isPartLike(node) && normalizedNodeName(node) === operationName)
             : undefined
+          const inferredPrimaryOutput = !explicitPrimaryOutput
+            ? titleMatchedPart ?? (ordinaryOutputs.length === 1 ? ordinaryOutputs[0] : undefined)
+            : undefined
+          const inferredPrimaryOutputFromTitle = inferredPrimaryOutput?.id === titleMatchedPart?.id
           // Use this value for explanatory display only. Creation still waits
           // for an explicit, durable `operation-primary-output` relation.
           const effectivePrimaryOutput = explicitPrimaryOutput ?? inferredPrimaryOutput
           const effectivePrimaryOutputLabel = effectivePrimaryOutput
             ? nodeTitle(effectivePrimaryOutput)
             : ''
+          const namedOutputCandidate = operation.data.name.trim()
           // A View reference is its own deliberate relationship. It does not
           // infer a visual from In, Tools, or Out. New cards point at canonical
           // Visual nodes, whose content is owned by a part, assembly, or tool.
@@ -688,10 +710,10 @@ export function AssemblyView({
           const availableOwnedVisuals = nodes
             .filter(isCanonicalVisual)
             .filter((visual) => Boolean(ownerForVisual(visual.id, nodes, edges)))
-            // The compatibility callback can currently render image-backed
-            // visuals. A blank Visual is made through the explicit create
-            // action instead, which also gives it the correct owner.
-            .filter((visual) => Boolean(objectImageSource(visual)))
+            // A blank Visual is still a real reusable canvas. It must be
+            // available before a person has added an image, photo, or drawing
+            // to it—otherwise a canvas made in one project view could not be
+            // deliberately included from another.
             .filter((visual) => !includedVisualIds.has(visual.id))
           const availableParts = uniqueNodes(
             // An Assembly is a part-like object too. Keep the current parent
@@ -982,7 +1004,7 @@ export function AssemblyView({
 
                 <section className="assembly-card__view" aria-label={`${nodeTitle(operation)} view`}>
                   <header className="assembly-card__view-header">
-                    <h2>visual references</h2>
+                    <h2>visual canvases</h2>
                     <p>PowerPoint source and reusable visuals owned by project objects.</p>
                   </header>
                   <div style={{ display: 'grid', gap: 12, padding: 'clamp(10px, 1.5vw, 18px)' }}>
@@ -1008,13 +1030,13 @@ export function AssemblyView({
                     </section>
 
                     <section
-                      aria-label="Reusable visual references"
+                      aria-label="Reusable visual canvases"
                       style={{ display: 'grid', gap: 8, minWidth: 0, borderTop: '1px solid #deded9', paddingTop: 12 }}
                     >
                       <div style={{ display: 'grid', gap: 3 }}>
-                        <strong style={{ fontSize: '0.9rem' }}>reusable visuals</strong>
+                        <strong style={{ fontSize: '0.9rem' }}>reusable visual canvases</strong>
                         <span style={{ color: '#666', fontSize: '0.76rem', lineHeight: 1.35 }}>
-                          This card only references these Visuals. Their content belongs to the project object that owns them.
+                          Create one for this card’s represented part, or reference a canvas that already belongs to a project object.
                         </span>
                       </div>
 
@@ -1075,11 +1097,11 @@ export function AssemblyView({
                         )
                       }) : (
                         <p style={{ margin: 0, color: '#777', fontSize: '0.82rem', lineHeight: 1.45 }}>
-                          this instruction does not reference any reusable Visuals yet.
+                          this instruction does not reference any reusable visual canvases yet.
                         </p>
                       )}
 
-                      {focused && !readOnly ? (
+                      {!readOnly ? (
                         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, borderTop: '1px solid #e5e5e2', paddingTop: 10 }}>
                           {explicitPrimaryOutput ? (
                             onCreateOwnedVisualForOperation ? (
@@ -1090,8 +1112,9 @@ export function AssemblyView({
                                   event.stopPropagation()
                                   onCreateOwnedVisualForOperation(operation.id)
                                 }}
+                                title={`Create a reusable visual canvas owned by ${effectivePrimaryOutputLabel}`}
                               >
-                                create visual for {effectivePrimaryOutputLabel}
+                                + create visual canvas for {effectivePrimaryOutputLabel}
                               </button>
                             ) : (
                               <span style={{ color: '#666', fontSize: '0.76rem' }}>
@@ -1101,7 +1124,9 @@ export function AssemblyView({
                           ) : inferredPrimaryOutput ? (
                             <>
                               <span style={{ color: '#666', fontSize: '0.76rem', lineHeight: 1.35 }}>
-                                this card already produces {effectivePrimaryOutputLabel}.
+                                {inferredPrimaryOutputFromTitle
+                                  ? `this project already has a part named ${effectivePrimaryOutputLabel}.`
+                                  : `this card already produces ${effectivePrimaryOutputLabel}.`}
                               </span>
                               {onSetPrimaryOutput ? (
                                 <button
@@ -1109,9 +1134,10 @@ export function AssemblyView({
                                   type="button"
                                   onClick={(event) => {
                                     event.stopPropagation()
-                                    // Make the existing Out relationship the
-                                    // card's durable, singular representation
-                                    // before a Visual can be created from it.
+                                    // Turn the visible legacy suggestion into
+                                    // the card's durable, singular
+                                    // representation before a Visual can be
+                                    // created from it.
                                     onSetPrimaryOutput(operation.id, inferredPrimaryOutput.id)
                                   }}
                                 >
@@ -1124,27 +1150,45 @@ export function AssemblyView({
                               )}
                             </>
                           ) : (
-                            onSetPrimaryOutput ? (
-                              <select
-                                aria-label={`choose a represented part for ${nodeTitle(operation)}`}
-                                defaultValue=""
-                                onChange={(event) => {
-                                  const partId = event.currentTarget.value
-                                  event.currentTarget.value = ''
-                                  if (partId) onSetPrimaryOutput(operation.id, partId)
-                                }}
-                                style={{ minWidth: 0, flex: '1 1 210px', border: 0, borderBottom: '1px solid #bbb', background: 'transparent', color: 'inherit', font: 'inherit', fontSize: '0.8rem' }}
-                              >
-                                <option value="">choose this card’s represented part…</option>
-                                {availableParts.map((part) => (
-                                  <option value={part.id} key={part.id}>{nodeTitle(part)}</option>
-                                ))}
-                              </select>
-                            ) : (
-                              <span style={{ color: '#666', fontSize: '0.76rem' }}>
-                                choose this card’s represented part in Space first.
-                              </span>
-                            )
+                            <>
+                              {onSetPrimaryOutput ? (
+                                <select
+                                  aria-label={`choose a represented part for ${nodeTitle(operation)}`}
+                                  defaultValue=""
+                                  onChange={(event) => {
+                                    const partId = event.currentTarget.value
+                                    event.currentTarget.value = ''
+                                    if (partId) onSetPrimaryOutput(operation.id, partId)
+                                  }}
+                                  style={{ minWidth: 0, flex: '1 1 210px', border: 0, borderBottom: '1px solid #bbb', background: 'transparent', color: 'inherit', font: 'inherit', fontSize: '0.8rem' }}
+                                >
+                                  <option value="">choose this card’s represented part…</option>
+                                  {availableParts.map((part) => (
+                                    <option value={part.id} key={part.id}>{nodeTitle(part)}</option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <span style={{ color: '#666', fontSize: '0.76rem' }}>
+                                  choose this card’s represented part in Space first.
+                                </span>
+                              )}
+                              {onCreatePartForOperation && namedOutputCandidate ? (
+                                <button
+                                  className="text-action"
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    onCreatePartForOperation(
+                                      operation.id,
+                                      'output',
+                                      namedOutputCandidate,
+                                    )
+                                  }}
+                                >
+                                  create “{namedOutputCandidate}” as this card’s represented part
+                                </button>
+                              ) : null}
+                            </>
                           )}
 
                           {onLinkObjectVisual && availableOwnedVisuals.length ? (
@@ -1161,10 +1205,10 @@ export function AssemblyView({
                               }}
                               style={{ minWidth: 0, flex: '1 1 210px', border: 0, borderBottom: '1px solid #bbb', background: 'transparent', color: 'inherit', font: 'inherit', fontSize: '0.8rem' }}
                             >
-                              <option value="">reference an existing owned visual…</option>
+                              <option value="">add an existing visual canvas…</option>
                               {availableOwnedVisuals.map((visual) => (
                                 <option value={visual.id} key={visual.id}>
-                                  {visualReferenceLabel(visual, nodes, edges)}
+                                  {visualReferenceLabel(visual, nodes, edges)}{objectImageSource(visual) ? '' : ' (blank canvas)'}
                                 </option>
                               ))}
                             </select>

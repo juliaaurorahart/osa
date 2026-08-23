@@ -1336,6 +1336,9 @@ function Flow() {
       operation?.data.properties[OSA_PROPERTY.operationCanvasSections],
     )
     const normalizedSectionId = typeof sectionId === 'string' ? sectionId.trim() : ''
+    const objectIsCanonicalVisual = Boolean(object && (
+      osaRole(object) === 'visual' || object.data.kind === 'visual'
+    ))
     const objectHasVisual = Boolean(object?.data.properties[OSA_PROPERTY.assetImage]?.trim())
     const objectCanProvideVisual = Boolean(object && (
       osaRole(object) === 'visual'
@@ -1346,12 +1349,17 @@ function Flow() {
       || osaRole(object) === 'tool'
     ))
     // A card's canvas is an independent association: it can include a
-    // canonical Visual, part, assembly, or tool image even before that object
-    // is listed in In, Tools, or the represented-part relationship.
+    // canonical Visual (including a blank canvas), part, assembly, or tool
+    // image even before that object is listed in In, Tools, or the
+    // represented-part relationship.
     if (
       !operation
       || !objectCanProvideVisual
-      || !objectHasVisual
+      // A blank canonical Visual is intentionally attachable: its owner can
+      // add an image, photo, or drawing later, and every card reference will
+      // then show that same updated content. Legacy part/tool image records
+      // still need image data before they can act as a visual source.
+      || (!objectIsCanonicalVisual && !objectHasVisual)
       || !isOperationCanvasSectionId(normalizedSectionId, operationSections)
     ) return
 
@@ -1690,11 +1698,19 @@ function Flow() {
   const createPartForOperation = useCallback((
     operationId: string,
     direction: OperationPartDirection,
+    /**
+     * A caller may deliberately name an output after the instruction card
+     * while repairing a legacy card that has no addressable result yet.
+     * Ordinary add-part actions intentionally omit this and keep the neutral
+     * `Part to define` placeholder.
+     */
+    requestedName?: string,
   ) => {
     const operation = nodes.find((node) => node.id === operationId)
     const assemblyId = parentAssemblyIdForOperation(operationId, edges)
+    const outputName = direction === 'output' ? requestedName?.trim() : ''
     const partId = createObjectNode(
-      'Part to define',
+      outputName || 'Part to define',
       'part',
       null,
       direction === 'input'
