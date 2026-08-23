@@ -674,13 +674,9 @@ export function AssemblyView({
           const inferredPrimaryOutput = !explicitPrimaryOutput
             ? titleMatchedPart ?? (ordinaryOutputs.length === 1 ? ordinaryOutputs[0] : undefined)
             : undefined
-          const inferredPrimaryOutputFromTitle = inferredPrimaryOutput?.id === titleMatchedPart?.id
-          // Use this value for explanatory display only. Creation still waits
-          // for an explicit, durable `operation-primary-output` relation.
+          // This keeps the owner picker useful for a legacy card, but creating
+          // a new canvas still waits for an explicit primary-output relation.
           const effectivePrimaryOutput = explicitPrimaryOutput ?? inferredPrimaryOutput
-          const effectivePrimaryOutputLabel = effectivePrimaryOutput
-            ? nodeTitle(effectivePrimaryOutput)
-            : ''
           const namedOutputCandidate = operation.data.name.trim()
           // A View reference is its own deliberate relationship. It does not
           // infer a visual from In, Tools, or Out. New cards point at canonical
@@ -1090,39 +1086,24 @@ export function AssemblyView({
                               >
                                 + canvas
                               </button>
-                            ) : (
-                              <span style={{ color: '#666', fontSize: '0.76rem' }}>
-                                a host visual creator is not connected yet.
-                              </span>
-                            )
+                            ) : null
                           ) : inferredPrimaryOutput ? (
-                            <>
-                              <span style={{ color: '#666', fontSize: '0.76rem', lineHeight: 1.35 }}>
-                                {inferredPrimaryOutputFromTitle
-                                  ? `this project already has a part named ${effectivePrimaryOutputLabel}.`
-                                  : `this card already produces ${effectivePrimaryOutputLabel}.`}
-                              </span>
-                              {onSetPrimaryOutput ? (
-                                <button
-                                  className="text-action"
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    // Turn the visible legacy suggestion into
-                                    // the card's durable, singular
-                                    // representation before a Visual can be
-                                    // created from it.
-                                    onSetPrimaryOutput(operation.id, inferredPrimaryOutput.id)
-                                  }}
-                                >
-                                  use {nodeTitle(inferredPrimaryOutput)} as this card’s represented part
-                                </button>
-                              ) : (
-                                <span style={{ color: '#666', fontSize: '0.76rem' }}>
-                                  choose this card’s represented part in Space first.
-                                </span>
-                              )}
-                            </>
+                            onSetPrimaryOutput ? (
+                              <button
+                                className="text-action"
+                                type="button"
+                                title={`use ${nodeTitle(inferredPrimaryOutput)} as this card's output`}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  // Turn the visible legacy suggestion into
+                                  // the card's durable, singular output before
+                                  // a canvas can be created from it.
+                                  onSetPrimaryOutput(operation.id, inferredPrimaryOutput.id)
+                                }}
+                              >
+                                use {nodeTitle(inferredPrimaryOutput)}
+                              </button>
+                            ) : null
                           ) : (
                             <>
                               {onSetPrimaryOutput ? (
@@ -1136,16 +1117,12 @@ export function AssemblyView({
                                   }}
                                   style={{ minWidth: 0, flex: '1 1 210px', border: 0, borderBottom: '1px solid #bbb', background: 'transparent', color: 'inherit', font: 'inherit', fontSize: '0.8rem' }}
                                 >
-                                  <option value="">choose this card’s represented part…</option>
+                                  <option value="">part</option>
                                   {availableParts.map((part) => (
                                     <option value={part.id} key={part.id}>{nodeTitle(part)}</option>
                                   ))}
                                 </select>
-                              ) : (
-                                <span style={{ color: '#666', fontSize: '0.76rem' }}>
-                                  choose this card’s represented part in Space first.
-                                </span>
-                              )}
+                              ) : null}
                               {onCreatePartForOperation && namedOutputCandidate ? (
                                 <button
                                   className="text-action"
@@ -1159,7 +1136,7 @@ export function AssemblyView({
                                     )
                                   }}
                                 >
-                                  create “{namedOutputCandidate}” as this card’s represented part
+                                  + part
                                 </button>
                               ) : null}
                             </>

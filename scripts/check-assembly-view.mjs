@@ -254,12 +254,7 @@ try {
   )
   assert.match(
     legacySingleOutputMarkup,
-    /this card already produces Connector Box Drilled/,
-    'A single legacy Out relation is displayed as the effective represented part.',
-  )
-  assert.match(
-    legacySingleOutputMarkup,
-    /use Connector Box Drilled as this card’s represented part/,
+    />use Connector Box Drilled</,
     'The card offers an explicit repair that stamps the ordinary output as primary.',
   )
   assert.doesNotMatch(
@@ -287,12 +282,7 @@ try {
   const titleOnlyMarkup = renderAssembly(titleOnlyEdges, focusedAssemblyUiState, titleOnlyNodes)
   assert.match(
     titleOnlyMarkup,
-    /this project already has a part named Connector Box Drilled/,
-    'A legacy title-only card can recognize its existing project Part.',
-  )
-  assert.match(
-    titleOnlyMarkup,
-    /use Connector Box Drilled as this card’s represented part/,
+    />use Connector Box Drilled</,
     'The title-only match remains a deliberate durable-repair action.',
   )
 
@@ -311,10 +301,10 @@ try {
   const ambiguousOutputMarkup = renderAssembly(ambiguousOutputEdges)
   assert.match(
     ambiguousOutputMarkup,
-    /choose this card’s represented part…/,
+    /<option value="" selected="">part<\/option>/,
     'Ambiguous legacy Out relations show a compact represented-part picker.',
   )
-  console.log('Assembly board checks passed: 1 index, 6 cards, source provenance, and reusable visual canvases.')
+  console.log('Assembly board checks passed: 1 index, 6 cards, source provenance, and canvases.')
 } finally {
   await server.close()
 }
