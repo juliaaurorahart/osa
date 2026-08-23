@@ -290,6 +290,18 @@
   max-width: 100%;
 }
 
+/* A card only shows a live window onto a Visual. Clicking it opens the
+   in-place editor; the source image and every vector/pen layer are composed
+   from the same Visual data used by other cards. */
+.assembly-card__visual-preview {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 120px;
+  border: 1px solid #d8d8d8;
+  background: #fff;
+}
+
 /* The instruction document keeps its editable facts on the left and gives the
    View more room. A View is a projection: it can show the source slide and
    images owned by linked parts or tools without copying them. */

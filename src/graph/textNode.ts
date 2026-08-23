@@ -20,11 +20,36 @@ export type SketchStroke = {
   points: SketchPoint[]
 }
 
+/**
+ * A movable, editable object on a visual canvas.
+ *
+ * Strokes capture handwriting. Elements capture the deliberate PowerPoint-
+ * style pieces: boxes, circles, arrows, and typed labels. Both live in the
+ * same ordered layer so a reusable Visual can be edited once and shown in
+ * every Assembly card that references it.
+ */
+export type SketchElement = {
+  id: string
+  kind: 'rectangle' | 'ellipse' | 'arrow' | 'text'
+  x: number
+  y: number
+  width: number
+  height: number
+  stroke: string
+  fill: string
+  strokeWidth: number
+  opacity: number
+  text?: string
+  fontSize?: number
+}
+
 export type SketchLayer = {
   id: string
   name: string
   visible: boolean
   locked: boolean
+  /** Vector objects rendered before this layer's freehand strokes. */
+  elements: SketchElement[]
   strokes: SketchStroke[]
 }
 
@@ -47,6 +72,7 @@ export function createSketchDocument(): SketchDocument {
       name: 'Layer 1',
       visible: true,
       locked: false,
+      elements: [],
       strokes: [],
     }],
   }
@@ -57,6 +83,9 @@ export function cloneSketchDocument(document: SketchDocument): SketchDocument {
     ...document,
     layers: document.layers.map((layer) => ({
       ...layer,
+      // `elements` is absent only on a document made by an older OSA build.
+      // Treat it as an empty list until board parsing migrates it on save.
+      elements: (layer.elements ?? []).map((element) => ({ ...element })),
       strokes: layer.strokes.map((stroke) => ({
         ...stroke,
         points: stroke.points.map((point) => ({ ...point })),

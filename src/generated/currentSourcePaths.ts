@@ -19,6 +19,8 @@ export const CURRENT_SOURCE_PATHS = [
   "src/components/SpaceToolbar.tsx",
   "src/components/TasksView.tsx",
   "src/components/TextNode.tsx",
+  "src/components/VisualCanvas.css",
+  "src/components/VisualCanvas.tsx",
   "src/graph/boardSnapshot.ts",
   "src/graph/boardStorage.ts",
   "src/graph/currentSourceHierarchy.ts",

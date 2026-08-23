@@ -55,6 +55,8 @@ try {
     /^\/import-assets\/shako-light-wrap\/operation-01-slide\.png$/,
     'A canonical Visual owns its source image so an image-box reference can redraw from it.',
   )
+  const drill = plan.nodes.find((node) => node.data.name === 'Drill')
+  assert.ok(drill, 'expected the Drill tool used by Connector Box Drill')
   const connectorBoxDrillWithCanvas = {
     ...connectorBoxDrill,
     data: {
@@ -73,6 +75,33 @@ try {
     data: {
       ...connectorBoxDrillSourceVisual.data,
       name: 'Connector Box Drilled — Assembly Picture',
+      sketch: {
+        ...connectorBoxDrillSourceVisual.data.sketch,
+        layers: connectorBoxDrillSourceVisual.data.sketch.layers.map((layer, index) => (
+          index === 0
+            ? {
+                ...layer,
+                elements: [
+                  ...(layer.elements ?? []),
+                  {
+                    id: 'assembly-view-check-canvas-label',
+                    kind: 'text',
+                    x: 60,
+                    y: 48,
+                    width: 260,
+                    height: 40,
+                    stroke: '#222222',
+                    fill: 'transparent',
+                    strokeWidth: 3,
+                    opacity: 1,
+                    text: 'Reusable label',
+                    fontSize: 28,
+                  },
+                ],
+              }
+            : layer
+        )),
+      },
       properties: {
         ...connectorBoxDrillSourceVisual.data.properties,
         [OSA_PROPERTY.assetImage]: connectorBoxDrilled.data.properties[OSA_PROPERTY.assetImage],
@@ -96,12 +125,26 @@ try {
       },
     },
   }
+  const drillVisual = {
+    ...connectorBoxDrillSourceVisual,
+    id: 'assembly-view-check-drill-visual',
+    data: {
+      ...connectorBoxDrillSourceVisual.data,
+      name: 'Drill reference',
+      properties: {
+        ...connectorBoxDrillSourceVisual.data.properties,
+        [OSA_PROPERTY.assetImage]: '',
+        [OSA_PROPERTY.assetImageAlt]: '',
+      },
+    },
+  }
   const nodesWithCanvas = [
     ...plan.nodes.map((node) => (
       node.id === connectorBoxDrill.id ? connectorBoxDrillWithCanvas : node
     )),
     connectorBoxDrilledVisual,
     connectorBoxBlankVisual,
+    drillVisual,
   ]
   const operationsWithCanvas = nodesWithCanvas.filter((node) => node.data.kind === 'action')
   const planWithObjectVisual = {
@@ -142,6 +185,13 @@ try {
         target: connectorBoxBlankVisual.id,
         relationship: 'shows visual',
         properties: { [OSA_PROPERTY.relationRole]: 'operation-visual' },
+      }),
+      createGraphEdge({
+        id: 'assembly-view-check-drill-visual-owner',
+        source: drill.id,
+        target: drillVisual.id,
+        relationship: 'owns visual',
+        properties: { [OSA_PROPERTY.relationRole]: 'object-visual' },
       }),
     ],
   }
@@ -194,6 +244,7 @@ try {
     onChangeVisualOwner: noop,
     onNameChange: noop,
     onTextChange: noop,
+    onSketchChange: noop,
     onPropertyChange: noop,
     onOpenNode: noop,
   }))
@@ -201,7 +252,14 @@ try {
   const markup = renderAssembly(migratedCanvasOwners.edges)
 
   assert.equal((markup.match(/assembly-operation-card/g) ?? []).length, 6)
-  assert.equal((markup.match(/<img /g) ?? []).length, 4)
+  // Every card preview is a live SVG composition now: the stored source
+  // image is underneath the Visual's durable shapes/text/pen layers. It is
+  // intentionally not a detached <img> thumbnail anymore.
+  // The fifth preview is deliberately blank: it is still a real, editable
+  // Visual before a person gives it a background image.
+  assert.equal((markup.match(/assembly-card__visual-preview/g) ?? []).length, 5)
+  assert.equal((markup.match(/<image /g) ?? []).length, 4)
+  assert.match(markup, /data-sketch-element-id="assembly-view-check-canvas-label"/)
   assert.match(markup, /assembly-index-card/)
   for (const label of ['criteria', 'in', 'tools', 'steps']) {
     assert.match(markup, new RegExp(`>${label}<`))
@@ -214,6 +272,8 @@ try {
   assert.match(markup, /aria-label="Connector Box Drilled — Assembly Picture name"/)
   assert.match(markup, /aria-label="Connector Box Drilled — Assembly Picture owner"/)
   assert.match(markup, /\+ canvas/)
+  assert.match(markup, /\+ visual/)
+  assert.match(markup, /Drill reference — Drill/)
   assert.doesNotMatch(markup, /reusable visual canvases/)
   assert.doesNotMatch(markup, /Create one for this card’s represented part/)
   assert.doesNotMatch(markup, /Drill diagram/)
@@ -256,6 +316,16 @@ try {
     focusedCardId: 'assembly-index',
   })
   assert.match(unfocusedMarkup, /\+ canvas/)
+
+  // Opening a canvas stays within Assembly: it renders an in-place editor
+  // above the same card board rather than calling the Space/node view.
+  const editorMarkup = renderAssembly(planWithObjectVisual.edges, {
+    ...focusedAssemblyUiState,
+    editingVisualId: connectorBoxDrilledVisual.id,
+  })
+  assert.match(editorMarkup, /role="dialog"/)
+  assert.match(editorMarkup, /aria-label="Canvas name"/)
+  assert.match(editorMarkup, /Reusable label/)
 
   // A canvas belongs to the card's parent Assembly, not to its Out item. Even
   // an older card with no primary-output relation can create one immediately.

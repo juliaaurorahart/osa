@@ -1,0 +1,128 @@
+/* The canvas editor is intentionally a temporary overlay, not another OSA
+   workspace. Close it and the Assembly card beneath it is exactly where it
+   was before. */
+.visual-canvas-editor__scrim {
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  display: grid;
+  place-items: stretch;
+  padding: clamp(8px, 2vw, 24px);
+  background: rgb(20 24 25 / 58%);
+}
+
+.visual-canvas-editor {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(1460px, 100%);
+  height: 100%;
+  margin: auto;
+  overflow: hidden;
+  border: 1px solid #b9b9b2;
+  border-radius: 7px;
+  background: #fff;
+  box-shadow: 0 20px 70px rgb(0 0 0 / 36%);
+}
+
+.visual-canvas-editor__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+  padding: 8px 12px;
+  border-bottom: 1px solid #deded8;
+  background: #fbfbf8;
+}
+
+.visual-canvas-editor__header > input {
+  min-width: 0;
+  padding: 2px 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #171717;
+  font: 600 1rem/1.2 inherit;
+}
+
+.visual-canvas-editor__header > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.visual-canvas-editor__header button {
+  padding: 4px 7px;
+  border: 1px solid #bdbdb7;
+  border-radius: 4px;
+  background: #fff;
+  color: #30302e;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+.visual-canvas-editor__header button:hover,
+.visual-canvas-editor__header button:focus-visible {
+  border-color: #26799b;
+  background: #edf8fc;
+  outline: 0;
+}
+
+.visual-canvas-editor__file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.visual-canvas-editor__body {
+  min-height: 0;
+  overflow: auto;
+  padding: clamp(10px, 1.8vw, 22px);
+  background: #f2f2ef;
+}
+
+.visual-canvas-editor__body > .sketch-preview {
+  width: 100%;
+  height: auto;
+  background: #fff;
+}
+
+.visual-canvas-editor .sketch-editor__viewport {
+  height: min(68vh, 820px);
+  min-height: 360px;
+}
+
+.visual-canvas-editor .sketch-editor__surface {
+  background: #fff;
+}
+
+@media (max-width: 700px) {
+  .visual-canvas-editor__scrim {
+    padding: 0;
+  }
+
+  .visual-canvas-editor {
+    border: 0;
+    border-radius: 0;
+  }
+
+  .visual-canvas-editor__header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .visual-canvas-editor__header > div {
+    justify-content: flex-start;
+  }
+
+  .visual-canvas-editor .sketch-editor__viewport {
+    height: 55vh;
+    min-height: 300px;
+  }
+}

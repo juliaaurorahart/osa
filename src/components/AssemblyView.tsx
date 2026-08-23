@@ -13,10 +13,12 @@ import {
   isPartLike,
   operationOrder,
   osaRole,
+  OPERATION_CANVAS_SOURCE_SECTION_ID,
   type OperationVisualPlacement,
 } from '../graph/osaData'
 import type { SketchDocument, TextFlowNode } from '../graph/textNode'
 import type { AssemblyToolDraft, AssemblyViewUiState } from './assemblyViewState'
+import { VisualCanvasEditor, VisualCanvasPreview } from './VisualCanvas'
 import './AssemblyView.css'
 
 const INDEX_CARD_ID = 'assembly-index'
@@ -72,12 +74,7 @@ type AssemblyViewProps = {
   onLinkTool?: (operationId: string, toolId: string) => void
   /** Unlinks one tool from this instruction without deleting the tool record. */
   onUnlinkTool?: (operationId: string, toolId: string) => void
-  /**
-   * Compatibility callback for placing an existing visual in this card.
-   *
-   * `sectionId` belongs to the legacy placement record; Assembly no longer
-   * creates or owns canvas sections through it.
-   */
+  /** Places an existing reusable Visual in this card without copying it. */
   onLinkObjectVisual?: (operationId: string, objectId: string, sectionId: string) => void
   /** Removes only this card's View link; the object's reusable visual remains. */
   onUnlinkObjectVisual?: (operationId: string, objectId: string) => void
@@ -269,10 +266,13 @@ export function AssemblyView({
   onCreatePartForOperation,
   onLinkTool,
   onUnlinkTool,
+  onLinkObjectVisual,
   onCreateOwnedVisualForOperation,
   onChangeVisualOwner,
   onNameChange,
   onTextChange,
+  onSketchChange,
+  onPropertyChange,
   onOpenNode,
   readOnly = false,
   onShare,
@@ -307,6 +307,7 @@ export function AssemblyView({
   const {
     focusedCardId,
     lockedCardId,
+    editingVisualId,
     toolDraft,
     toolDraftFor,
   } = uiState
@@ -324,6 +325,9 @@ export function AssemblyView({
         ? nextCardId(current.lockedCardId)
         : nextCardId,
     }))
+  }
+  const setEditingVisualId = (visualId: string | null) => {
+    onUiStateChange((current) => ({ ...current, editingVisualId: visualId }))
   }
   const setToolDraft = (nextDraft: string) => {
     onUiStateChange((current) => ({ ...current, toolDraft: nextDraft }))
@@ -345,6 +349,9 @@ export function AssemblyView({
   const toggleCardLock = (cardId: string) => {
     setLockedCardId((currentCardId) => currentCardId === cardId ? null : cardId)
   }
+  const editingVisual = editingVisualId
+    ? nodes.find((node) => node.id === editingVisualId)
+    : undefined
 
   const createAssembly = () => {
     if (readOnly) return
@@ -688,6 +695,20 @@ export function AssemblyView({
             inputParts,
             tools,
           ).filter(canOwnOsaVisual)
+          const currentVisualIds = new Set(canvasVisuals.map((visual) => visual.id))
+          // A card can include an already-made canvas from any project object
+          // it already names in In or Tools (plus its parent Assembly). The
+          // visual remains owned by that object; this is only a live View link.
+          const availableVisuals = uniqueNodes(edges
+            .filter((edge) => (
+              canvasOwners.some((owner) => owner.id === edge.source)
+              && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
+              && !currentVisualIds.has(edge.target)
+            ))
+            .map((edge) => nodes.find((node) => node.id === edge.target))
+            .filter((visual): visual is TextFlowNode => Boolean(visual && (
+              visual.data.kind === 'visual' || osaRole(visual) === 'visual'
+            ))))
           const focusCard = () => {
             setFocusedCardId(operation.id)
           }
@@ -954,9 +975,6 @@ export function AssemblyView({
                       style={{ display: 'grid', gap: 8, minWidth: 0 }}
                     >
                       {canvasVisuals.length ? canvasVisuals.map((visual) => {
-                        const isSourceVisual = visual.id === sourceVisualNode?.id
-                        const imageSource = objectImageSource(visual)
-                          || (isSourceVisual ? visualSource : '')
                         const label = nodeTitle(visual)
                         const owner = ownerForVisual(visual.id, nodes, edges)
 
@@ -981,19 +999,17 @@ export function AssemblyView({
                               title="Open visual"
                               onClick={(event) => {
                                 event.stopPropagation()
-                                onOpenNode(visual.id)
+                                // A Visual is edited in-place over this card.
+                                // Do not jump to Space: the card is a live
+                                // viewport onto the same durable canvas.
+                                setEditingVisualId(visual.id)
                               }}
                               style={{ display: 'block', width: '100%', padding: 0, border: 0, background: 'transparent', cursor: 'pointer' }}
                             >
-                              {imageSource ? (
-                                <img
-                                  src={imageSource}
-                                  alt={objectImageAlt(visual)}
-                                  style={{ display: 'block', width: '100%', height: 'auto', maxHeight: 300, objectFit: 'contain' }}
-                                />
-                              ) : (
-                                <span style={{ display: 'block', minHeight: 96, border: '1px dashed #bbb' }} />
-                              )}
+                              <VisualCanvasPreview
+                                visual={visual}
+                                className="assembly-card__visual-preview"
+                              />
                             </button>
                             <select
                               aria-label={`${label} owner`}
@@ -1028,13 +1044,44 @@ export function AssemblyView({
 
                       {!readOnly ? (
                         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, paddingTop: 2 }}>
+                          {onLinkObjectVisual && availableVisuals.length ? (
+                            <select
+                              aria-label={`Add an existing visual to ${nodeTitle(operation)}`}
+                              defaultValue=""
+                              onClick={(event) => event.stopPropagation()}
+                              onChange={(event) => {
+                                event.stopPropagation()
+                                const visualId = event.currentTarget.value
+                                if (visualId) {
+                                  onLinkObjectVisual(
+                                    operation.id,
+                                    visualId,
+                                    OPERATION_CANVAS_SOURCE_SECTION_ID,
+                                  )
+                                }
+                                event.currentTarget.value = ''
+                              }}
+                              style={{ width: 'fit-content', maxWidth: '100%', padding: 0, border: 0, borderBottom: '1px solid #aaa', background: 'transparent', color: '#555', font: 'inherit', fontSize: '0.78rem', cursor: 'pointer' }}
+                            >
+                              <option value="">+ visual</option>
+                              {availableVisuals.map((visual) => {
+                                const owner = ownerForVisual(visual.id, nodes, edges)
+                                return (
+                                  <option value={visual.id} key={visual.id}>
+                                    {nodeTitle(visual)}{owner ? ` — ${nodeTitle(owner)}` : ''}
+                                  </option>
+                                )
+                              })}
+                            </select>
+                          ) : null}
                           {onCreateOwnedVisualForOperation ? (
                             <button
                               className="text-action"
                               type="button"
                               onClick={(event) => {
                                 event.stopPropagation()
-                                onCreateOwnedVisualForOperation(operation.id)
+                                const visualId = onCreateOwnedVisualForOperation(operation.id)
+                                if (visualId) setEditingVisualId(visualId)
                               }}
                               title="Create a blank canvas"
                             >
@@ -1052,6 +1099,16 @@ export function AssemblyView({
           )
         })}
       </div>
+      {editingVisual && onSketchChange ? (
+        <VisualCanvasEditor
+          visual={editingVisual}
+          readOnly={readOnly}
+          onClose={() => setEditingVisualId(null)}
+          onNameChange={onNameChange}
+          onSketchChange={onSketchChange}
+          onPropertyChange={onPropertyChange}
+        />
+      ) : null}
     </section>
   )
 }

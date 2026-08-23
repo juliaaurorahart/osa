@@ -11,6 +11,8 @@ export type AssemblyToolDraft = {
 export type AssemblyViewUiState = {
   focusedCardId: string
   lockedCardId: string | null
+  /** The Visual being edited over this Assembly card; never saved as project data. */
+  editingVisualId: string | null
   drawingCardId: string | null
   toolDraft: string
   toolDraftFor: AssemblyToolDraft | null
@@ -21,6 +23,7 @@ export function createAssemblyViewUiState(): AssemblyViewUiState {
   return {
     focusedCardId: 'assembly-index',
     lockedCardId: null,
+    editingVisualId: null,
     drawingCardId: null,
     toolDraft: '',
     toolDraftFor: null,

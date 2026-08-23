@@ -2734,7 +2734,8 @@
 }
 
 .sketch-editor button,
-.sketch-editor input {
+.sketch-editor input,
+.sketch-editor textarea {
   font: inherit;
 }
 
@@ -2825,8 +2826,16 @@
 }
 
 .sketch-editor__viewport.is-pen,
-.sketch-editor__viewport.is-eraser {
+.sketch-editor__viewport.is-eraser,
+.sketch-editor__viewport.is-rectangle,
+.sketch-editor__viewport.is-ellipse,
+.sketch-editor__viewport.is-arrow,
+.sketch-editor__viewport.is-text {
   cursor: crosshair;
+}
+
+.sketch-editor__viewport.is-select {
+  cursor: default;
 }
 
 .sketch-editor__viewport.is-pan {
@@ -2919,6 +2928,26 @@
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.sketch-element {
+  cursor: move;
+}
+
+.sketch-element__resize-handle {
+  cursor: nwse-resize;
+}
+
+.sketch-editor__selected-object textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 5em;
+  resize: vertical;
+  padding: 4px;
+  border: 1px solid #bbb;
+  border-radius: 3px;
+  background: #fff;
+  color: #171717;
 }
 
 .sketch-preview {

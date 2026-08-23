@@ -154,6 +154,130 @@ try {
     'Operation canvas sections survive the same board save/load round trip.',
   )
 
+  // A reusable Visual keeps its source image and its editable canvas in the
+  // same ordinary graph object. The image is a background ingredient; the
+  // rectangle, ellipse, arrow, text, and handwriting layers are the durable
+  // canvas content that every Assembly-card reference should redraw.
+  const visualCanvas = createTextNode({
+    id: 'visual-canvas-1',
+    position: { x: 200, y: 200 },
+    name: 'Connector Box Drill visual',
+    text: '',
+    kind: 'visual',
+    properties: {
+      [OSA_PROPERTY.assetImage]: 'data:image/svg+xml;base64,PHN2Zy8+',
+      [OSA_PROPERTY.assetImageAlt]: 'Connector Box Drill source slide',
+    },
+    sketch: {
+      version: 1,
+      width: 1600,
+      height: 900,
+      background: '#fffdf8',
+      layers: [{
+        id: 'visual-layer-1',
+        name: 'Diagram',
+        visible: true,
+        locked: false,
+        elements: [
+          {
+            id: 'visual-rectangle-1',
+            kind: 'rectangle',
+            x: 120,
+            y: 100,
+            width: 260,
+            height: 180,
+            stroke: '#003b5c',
+            fill: '#dceef6',
+            strokeWidth: 6,
+            opacity: 1,
+          },
+          {
+            id: 'visual-ellipse-1',
+            kind: 'ellipse',
+            x: 190,
+            y: 145,
+            width: 72,
+            height: 72,
+            stroke: '#153e75',
+            fill: '#16a3d8',
+            strokeWidth: 5,
+            opacity: 0.9,
+          },
+          {
+            id: 'visual-arrow-1',
+            kind: 'arrow',
+            x: 460,
+            y: 350,
+            width: 220,
+            height: 0,
+            stroke: '#c12ca7',
+            fill: 'none',
+            strokeWidth: 8,
+            opacity: 1,
+          },
+          {
+            id: 'visual-text-1',
+            kind: 'text',
+            x: 510,
+            y: 290,
+            width: 340,
+            height: 52,
+            stroke: '#151515',
+            fill: 'transparent',
+            strokeWidth: 1,
+            opacity: 1,
+            text: 'drill 5/16 in hole',
+            fontSize: 32,
+          },
+        ],
+        strokes: [{
+          id: 'visual-stroke-1',
+          color: '#ff6200',
+          width: 7,
+          opacity: 0.8,
+          coordinateSpace: 'pixels',
+          points: [{ x: 800, y: 320, pressure: 0.45 }, { x: 900, y: 410, pressure: 0.7 }],
+        }],
+      }],
+    },
+  })
+  const visualCanvasSnapshot = createBoardSnapshot([visualCanvas], [])
+  const restoredVisualCanvasSnapshot = parseBoardSnapshot(
+    JSON.parse(JSON.stringify(visualCanvasSnapshot)),
+  )
+  const restoredVisualCanvas = restoredVisualCanvasSnapshot?.nodes[0]
+  assert.deepEqual(
+    restoredVisualCanvas?.data.sketch,
+    visualCanvas.data.sketch,
+    'A Visual canvas preserves its editable shapes, labels, arrows, and pen strokes after save/load.',
+  )
+  assert.deepEqual(
+    restoredVisualCanvas?.data.properties,
+    visualCanvas.data.properties,
+    'A Visual source image remains associated with the same canvas object after save/load.',
+  )
+
+  // Boards saved before visual elements existed are still valid: their
+  // handwritten layers simply acquire an empty elements list on load.
+  const preElementsSnapshot = structuredClone(visualCanvasSnapshot)
+  delete preElementsSnapshot.nodes[0].data.sketch.layers[0].elements
+  const migratedPreElementsSnapshot = parseBoardSnapshot(preElementsSnapshot)
+  assert.deepEqual(
+    migratedPreElementsSnapshot?.nodes[0].data.sketch.layers[0].elements,
+    [],
+    'A pre-elements canvas migrates to an empty element list rather than losing its drawing document.',
+  )
+
+  // Reject malformed visual elements at the storage boundary so a corrupt
+  // board cannot silently render differently in another view.
+  const malformedVisualSnapshot = structuredClone(visualCanvasSnapshot)
+  malformedVisualSnapshot.nodes[0].data.sketch.layers[0].elements[0].opacity = 1.1
+  assert.equal(
+    parseBoardSnapshot(malformedVisualSnapshot),
+    null,
+    'Canvas elements with invalid opacity are rejected.',
+  )
+
   console.log('Board snapshot checks passed.')
 } finally {
   await server.close()

@@ -12,6 +12,7 @@ import {
   type NotebookPageData,
   type NodeLayout,
   type SketchDocument,
+  type SketchElement,
   type SketchLayer,
   type SketchStroke,
   type TaskData,
@@ -201,6 +202,66 @@ function parseSketchStrokes(
   return strokes
 }
 
+/** Parses the portable rectangle, ellipse, arrow, and text objects on a canvas layer. */
+function parseSketchElements(value: unknown): SketchElement[] | null {
+  if (value === undefined) return []
+  if (!Array.isArray(value)) return null
+
+  const elements: SketchElement[] = []
+  for (const element of value) {
+    if (
+      !isRecord(element)
+      || typeof element.id !== 'string'
+      || !['rectangle', 'ellipse', 'arrow', 'text'].includes(String(element.kind))
+      || typeof element.x !== 'number'
+      || typeof element.y !== 'number'
+      || typeof element.width !== 'number'
+      || typeof element.height !== 'number'
+      || typeof element.stroke !== 'string'
+      || typeof element.fill !== 'string'
+      || typeof element.strokeWidth !== 'number'
+      || typeof element.opacity !== 'number'
+      || !Number.isFinite(element.x)
+      || !Number.isFinite(element.y)
+      || !Number.isFinite(element.width)
+      || !Number.isFinite(element.height)
+      || !Number.isFinite(element.strokeWidth)
+      || !Number.isFinite(element.opacity)
+      // Rectangles, ellipses, and text use a top-left corner plus a positive
+      // size. An arrow deliberately keeps its signed width/height: that is
+      // its direction from x/y to x + width/y + height, so it can point in
+      // any direction without inventing a second coordinate model.
+      || (element.kind !== 'arrow' && (element.width < 0 || element.height < 0))
+      || element.strokeWidth <= 0
+      || element.opacity < 0
+      || element.opacity > 1
+      || (element.kind === 'text' && typeof element.text !== 'string')
+      || (element.text !== undefined && typeof element.text !== 'string')
+      || (element.fontSize !== undefined && (
+        typeof element.fontSize !== 'number'
+        || !Number.isFinite(element.fontSize)
+        || element.fontSize <= 0
+      ))
+    ) return null
+
+    elements.push({
+      id: element.id,
+      kind: element.kind as SketchElement['kind'],
+      x: element.x,
+      y: element.y,
+      width: element.width,
+      height: element.height,
+      stroke: element.stroke,
+      fill: element.fill,
+      strokeWidth: element.strokeWidth,
+      opacity: element.opacity,
+      ...(typeof element.text === 'string' ? { text: element.text } : {}),
+      ...(typeof element.fontSize === 'number' ? { fontSize: element.fontSize } : {}),
+    })
+  }
+  return elements
+}
+
 function parseSketchDocument(value: unknown): SketchDocument | null {
   if (
     !isRecord(value)
@@ -227,22 +288,26 @@ function parseSketchDocument(value: unknown): SketchDocument | null {
       || typeof layer.visible !== 'boolean'
       || typeof layer.locked !== 'boolean'
     ) return null
+    const elements = parseSketchElements(layer.elements)
     const strokes = parseSketchStrokes(layer.strokes, {
       legacy: false,
       width: value.width,
       height: value.height,
     })
-    if (!strokes) return null
+    if (!elements || !strokes) return null
     layers.push({
       id: layer.id,
       name: layer.name,
       visible: layer.visible,
       locked: layer.locked,
+      elements,
       strokes,
     })
   }
 
   if (new Set(layers.map((layer) => layer.id)).size !== layers.length) return null
+  const elementIds = layers.flatMap((layer) => layer.elements.map((element) => element.id))
+  if (new Set(elementIds).size !== elementIds.length) return null
   const strokeIds = layers.flatMap((layer) => layer.strokes.map((stroke) => stroke.id))
   if (new Set(strokeIds).size !== strokeIds.length) return null
 
