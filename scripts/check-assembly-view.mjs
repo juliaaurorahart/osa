@@ -131,10 +131,14 @@ try {
     ],
   }
 
-  const renderAssembly = (boardEdges, uiState = focusedAssemblyUiState) => renderToStaticMarkup(createElement(AssemblyView, {
-    assemblies,
-    nodes: nodesWithCanvas,
-    operations: operationsWithCanvas,
+  const renderAssembly = (
+    boardEdges,
+    uiState = focusedAssemblyUiState,
+    boardNodes = nodesWithCanvas,
+  ) => renderToStaticMarkup(createElement(AssemblyView, {
+    assemblies: boardNodes.filter((node) => osaRole(node) === 'assembly'),
+    nodes: boardNodes,
+    operations: boardNodes.filter((node) => node.data.kind === 'action'),
     edges: boardEdges,
     uiState,
     onUiStateChange: noop,
@@ -148,6 +152,7 @@ try {
     onLinkPart: noop,
     onUnlinkPartInput: noop,
     onSetPrimaryOutput: noop,
+    onCreatePartForOperation: () => '',
     onUnlinkTool: noop,
     onLinkObjectVisual: noop,
     onUnlinkObjectVisual: noop,
@@ -233,6 +238,34 @@ try {
     legacySingleOutputMarkup,
     /\+ create visual canvas for Connector Box Drilled/,
     'Visual creation waits until the repair has made the primary-output relationship durable.',
+  )
+
+  // An even older board may have neither Out nor primary-output relationships,
+  // while its card title and its Part were saved independently. The exact
+  // title match remains a visible, user-confirmed repair—not a silent graph
+  // mutation—and avoids making people rebuild a known project object.
+  const titleOnlyNodes = nodesWithCanvas.map((node) => (
+    node.id === connectorBoxDrill.id
+      ? { ...node, data: { ...node.data, name: 'Connector Box Drilled' } }
+      : node
+  ))
+  const titleOnlyEdges = planWithObjectVisual.edges.filter((edge) => !(
+    edge.source === connectorBoxDrill.id
+    && (
+      edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationOutput
+      || edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationPrimaryOutput
+    )
+  ))
+  const titleOnlyMarkup = renderAssembly(titleOnlyEdges, focusedAssemblyUiState, titleOnlyNodes)
+  assert.match(
+    titleOnlyMarkup,
+    /this project already has a part named Connector Box Drilled/,
+    'A legacy title-only card can recognize its existing project Part.',
+  )
+  assert.match(
+    titleOnlyMarkup,
+    /use Connector Box Drilled as this card’s represented part/,
+    'The title-only match remains a deliberate durable-repair action.',
   )
 
   // With no clear candidate, the builder can choose from existing part-like
