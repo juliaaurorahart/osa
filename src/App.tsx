@@ -148,20 +148,35 @@ function refreshBundledShakoSlideReferences(
   const refreshedNodes = currentNodes.map((node) => {
     if (!node.id.startsWith('osa:shako-light-wrap:')) return node
     const importedNode = importedNodes.get(node.id)
+    const importedName = importedNode?.data.name ?? ''
     const currentVisual = node.data.properties[OSA_PROPERTY.instructionVisual]
     const bundledSlide = importedNode?.data.properties[OSA_PROPERTY.instructionVisual]
+    const importedText = importedNode?.data.text.trim() ?? ''
+    const currentText = node.data.text.trim()
+    // The original deck has empty Steps blocks. A previous starter version
+    // accidentally copied the card title into that empty field. Clear only
+    // that exact bundled duplication—not text someone has actually authored.
+    const duplicateBundledStepTitle = importedNode?.data.kind === 'action'
+      && !importedText
+      && Boolean(currentText)
+      && (currentText === node.data.name.trim() || currentText === importedNode.data.name.trim())
+    // The source slide is its own Visual. Keep its generated title short so
+    // the card does not repeat the instruction title beside the image.
+    const oldGeneratedSourceVisualName = / — Source Slide$/.test(node.data.name)
+      && importedName === 'source slide'
 
     // Do not turn an older saved image URL into a visual-node ID unless that
     // node already lives in this draft. A full import/merge can add the
     // source Visual and relation later; until then, preserving the working
     // legacy URL is safer than creating a broken image reference.
     const draftHasBundledVisual = currentNodes.some((candidate) => candidate.id === bundledSlide)
-    if (
-      !currentVisual
-      || !bundledSlide
-      || !draftHasBundledVisual
-      || !LEGACY_SHAKO_VISUAL.test(currentVisual)
-    ) {
+    const shouldRefreshSlideReference = (
+      Boolean(currentVisual)
+      && Boolean(bundledSlide)
+      && draftHasBundledVisual
+      && LEGACY_SHAKO_VISUAL.test(currentVisual)
+    )
+    if (!shouldRefreshSlideReference && !duplicateBundledStepTitle && !oldGeneratedSourceVisualName) {
       return node
     }
 
@@ -170,13 +185,15 @@ function refreshBundledShakoSlideReferences(
       ...node,
       data: {
         ...node.data,
-        properties: {
+        ...(duplicateBundledStepTitle ? { text: '' } : {}),
+        ...(oldGeneratedSourceVisualName ? { name: importedName } : {}),
+        properties: shouldRefreshSlideReference ? {
           ...node.data.properties,
-          [OSA_PROPERTY.instructionVisual]: bundledSlide,
-          [OSA_PROPERTY.instructionVisualAlt]: importedNode.data.properties[
+          [OSA_PROPERTY.instructionVisual]: bundledSlide ?? '',
+          [OSA_PROPERTY.instructionVisualAlt]: importedNode?.data.properties[
             OSA_PROPERTY.instructionVisualAlt
           ] ?? '',
-        },
+        } : node.data.properties,
       },
     }
   })
@@ -1212,12 +1229,11 @@ function Flow() {
     const owner = nodes.find((node) => node.id === ownerId)
     if (!owner || !canOwnOsaVisual(owner)) return ''
 
-    const ownerName = owner.data.name.trim() || `${owner.data.kind} #${owner.id}`
     const visualId = createObjectNode(
-      `${ownerName} visual`,
+      'canvas',
       'visual',
       null,
-      `A reusable visual canvas owned by ${ownerName}.`,
+      '',
       undefined,
       { [OSA_PROPERTY.role]: 'visual' },
       owner.data.spaceIds,
@@ -1248,6 +1264,51 @@ function Flow() {
       && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
     )))
   }, [setEdges])
+
+  /**
+   * Moves one canonical Visual to a different eligible project-object owner.
+   *
+   * A Visual's content stays on its own node, and Assembly-card placements
+   * stay on their separate `operation-visual` edges. Changing this one
+   * ownership relationship therefore cannot delete the Visual or disturb any
+   * card that currently shows it.
+   */
+  const changeVisualOwner = useCallback((visualId: string, ownerId: string) => {
+    const visual = nodes.find((node) => node.id === visualId)
+    const owner = nodes.find((node) => node.id === ownerId)
+    const isCanonicalVisual = visual !== undefined && (
+      visual.data.kind === 'visual' || osaRole(visual) === 'visual'
+    )
+    if (!visual || !isCanonicalVisual || !owner || !canOwnOsaVisual(owner)) return
+
+    setEdges((currentEdges) => {
+      const ownershipEdges = currentEdges.filter((edge) => (
+        edge.target === visualId
+        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
+      ))
+
+      // Selecting the current, sole owner should not churn a durable edge ID.
+      if (ownershipEdges.length === 1 && ownershipEdges[0].source === ownerId) {
+        return currentEdges
+      }
+
+      const edgeId = `edge-${nextEdgeId.current}`
+      nextEdgeId.current += 1
+      return [
+        ...currentEdges.filter((edge) => !(
+          edge.target === visualId
+          && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
+        )),
+        createGraphEdge({
+          id: edgeId,
+          source: ownerId,
+          target: visualId,
+          relationship: 'owns visual',
+          properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.objectVisual },
+        }),
+      ]
+    })
+  }, [nodes, setEdges])
 
   /** Opens a canonical Visual in the ordinary node inspector for editing. */
   const openOwnedVisualCanvas = useCallback((visualId: string) => {
@@ -2769,6 +2830,7 @@ function Flow() {
               onUnlinkObjectVisual={unlinkObjectVisualFromOperation}
               onObjectVisualPlacementChange={updateObjectVisualPlacement}
               onCreateOwnedVisualForOperation={createOwnedVisualForOperation}
+              onChangeVisualOwner={changeVisualOwner}
               onNameChange={onNameChange}
               onTextChange={onTextChange}
               onSketchChange={onSketchChange}

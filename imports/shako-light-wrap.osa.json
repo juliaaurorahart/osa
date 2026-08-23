@@ -91,7 +91,7 @@
     {
       "id": "visual-operation-01-source-slide",
       "kind": "visual",
-      "name": "Connector Box Drill — Source Slide",
+      "name": "source slide",
       "text": "Source slide visual imported from the assembly-instruction presentation.",
       "spaceIds": [
         "space"
@@ -210,7 +210,7 @@
     {
       "id": "visual-operation-03-source-slide",
       "kind": "visual",
-      "name": "Boost Attach V-out Wires — Source Slide",
+      "name": "source slide",
       "text": "Source slide visual imported from the assembly-instruction presentation.",
       "spaceIds": [
         "space"
@@ -277,7 +277,7 @@
     {
       "id": "visual-operation-04-source-slide",
       "kind": "visual",
-      "name": "Power Section Assembly — Source Slide",
+      "name": "source slide",
       "text": "Source slide visual imported from the assembly-instruction presentation.",
       "spaceIds": [
         "space"

@@ -27,6 +27,11 @@ try {
     operation.data.name === 'Connector Box Drill'
   ))
   assert.ok(connectorBoxDrill, 'expected the Connector Box Drill operation')
+  assert.equal(
+    connectorBoxDrill.data.text,
+    '',
+    'The imported slide has no authored Steps text; its title must not be copied into the text area.',
+  )
   const focusedAssemblyUiState = {
     ...createAssemblyViewUiState(),
     focusedCardId: connectorBoxDrill.id,
@@ -39,7 +44,7 @@ try {
     'The reusable Connector Box Drilled visual belongs to the object, not the card.',
   )
   const connectorBoxDrillSourceVisual = plan.nodes.find((node) => (
-    osaRole(node) === 'visual' && node.data.name === 'Connector Box Drill — Source Slide'
+    osaRole(node) === 'visual' && node.data.name === 'source slide'
   ))
   assert.ok(connectorBoxDrillSourceVisual, 'expected the canonical Connector Box Drill source visual')
   assert.match(
@@ -159,6 +164,7 @@ try {
     onObjectVisualPlacementChange: noop,
     onCreateCanvasSection: () => 'section-3',
     onCreateOwnedVisualForOperation: () => '',
+    onChangeVisualOwner: noop,
     onNameChange: noop,
     onTextChange: noop,
     onPropertyChange: noop,
@@ -177,15 +183,12 @@ try {
   assert.doesNotMatch(markup, /<span>Out<\/span>/)
   assert.match(markup, /<h1 id="assembly-view-title">Assembly<\/h1>/)
   assert.doesNotMatch(markup, /assembly instructions/)
-  assert.match(markup, />visual canvases</)
-  assert.match(markup, /source slide/)
-  assert.match(markup, /PowerPoint provenance/)
-  assert.match(markup, /Connector Box Drilled visual/)
-  assert.match(markup, /Connector Box Drilled visual \(blank canvas\)/)
-  assert.match(markup, /owned by Connector Box Drilled/)
-  assert.match(markup, /\+ create visual canvas for Connector Box Drilled/)
-  assert.match(markup, /add an existing visual canvas…/)
-  assert.match(markup, /remove Connector Box Drilled visual from this card only/)
+  assert.match(markup, />canvas</)
+  assert.match(markup, /aria-label="Connector Box Drilled — Assembly Picture name"/)
+  assert.match(markup, /aria-label="Connector Box Drilled — Assembly Picture owner"/)
+  assert.match(markup, /\+ canvas/)
+  assert.doesNotMatch(markup, /reusable visual canvases/)
+  assert.doesNotMatch(markup, /Create one for this card’s represented part/)
   assert.doesNotMatch(markup, /Drill diagram/)
   assert.doesNotMatch(markup, /assembly-card__canvas-/)
   assert.doesNotMatch(markup, /add section/)
@@ -198,6 +201,20 @@ try {
   assert.match(markup, /assembly-object-unlink/)
   assert.match(markup, /already in this instruction/)
 
+  const connectorVisualOwnerStart = markup.indexOf(
+    'aria-label="Connector Box Drilled — Assembly Picture owner"',
+  )
+  const connectorVisualOwnerEnd = markup.indexOf('</select>', connectorVisualOwnerStart)
+  const connectorVisualOwnerMarkup = markup.slice(
+    connectorVisualOwnerStart,
+    connectorVisualOwnerEnd,
+  )
+  assert.match(connectorVisualOwnerMarkup, /Connector Box Drilled/)
+  assert.match(connectorVisualOwnerMarkup, /Electronics Box/)
+  assert.match(connectorVisualOwnerMarkup, /Drill/)
+  assert.match(connectorVisualOwnerMarkup, /Bits: 5\/16”/)
+  assert.doesNotMatch(connectorVisualOwnerMarkup, /DC-DC Converter/)
+
   // Canvas creation remains visible on an unfocused card: people should not
   // need to discover the card-focus interaction before they can continue
   // building a visual in their assembly view.
@@ -205,7 +222,7 @@ try {
     ...createAssemblyViewUiState(),
     focusedCardId: 'assembly-index',
   })
-  assert.match(unfocusedMarkup, /\+ create visual canvas for Connector Box Drilled/)
+  assert.match(unfocusedMarkup, /\+ canvas/)
 
   // Legacy cards may have a normal Out relationship but no explicit primary
   // output. The first render shows a clear repair action instead of offering
@@ -224,6 +241,17 @@ try {
     }),
   ]
   const legacySingleOutputMarkup = renderAssembly(legacySingleOutputEdges)
+  const legacyConnectorStart = legacySingleOutputMarkup.indexOf(
+    'aria-label="instruction card 1: Connector Box Drill"',
+  )
+  const legacyConnectorEnd = legacySingleOutputMarkup.indexOf(
+    'aria-label="instruction card 2:',
+    legacyConnectorStart,
+  )
+  const legacyConnectorMarkup = legacySingleOutputMarkup.slice(
+    legacyConnectorStart,
+    legacyConnectorEnd === -1 ? undefined : legacyConnectorEnd,
+  )
   assert.match(
     legacySingleOutputMarkup,
     /this card already produces Connector Box Drilled/,
@@ -235,8 +263,8 @@ try {
     'The card offers an explicit repair that stamps the ordinary output as primary.',
   )
   assert.doesNotMatch(
-    legacySingleOutputMarkup,
-    /\+ create visual canvas for Connector Box Drilled/,
+    legacyConnectorMarkup,
+    /\+ canvas/,
     'Visual creation waits until the repair has made the primary-output relationship durable.',
   )
 

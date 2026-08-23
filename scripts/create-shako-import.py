@@ -396,7 +396,7 @@ def create_package(presentation: Path, workbook: Path) -> dict[str, Any]:
                 nodes.append(node(
                     source_visual_id,
                     "visual",
-                    f"{operation_name} — Source Slide",
+                    "source slide",
                     "Source slide visual imported from the assembly-instruction presentation.",
                     {
                         "osa:role": "visual",

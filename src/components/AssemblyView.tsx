@@ -9,6 +9,7 @@ import type { GraphEdge } from '../graph/graphEdge'
 import {
   OSA_PROPERTY,
   OSA_RELATION,
+  canOwnOsaVisual,
   isPartLike,
   operationOrder,
   osaRole,
@@ -94,6 +95,8 @@ type AssemblyViewProps = {
    * from ordinary In, Tools, or Out editing.
    */
   onCreateOwnedVisualForOperation?: (operationId: string) => string | undefined
+  /** Reassigns a Visual to a Part, Assembly, or Tool without changing its card references. */
+  onChangeVisualOwner?: (visualId: string, ownerId: string) => void
   onNameChange: (nodeId: string, name: string) => void
   onTextChange: (nodeId: string, text: string) => void
   onPropertyChange: (nodeId: string, propertyName: string, value: string) => void
@@ -240,11 +243,6 @@ const NEW_PART_OPTION = '__new-part__'
 
 export type OperationPartDirection = 'input' | 'output'
 
-/** Canonical reusable Visual nodes can be owned by parts, assemblies, or tools. */
-function isCanonicalVisual(node: TextFlowNode) {
-  return osaRole(node) === 'visual' || node.data.kind === 'visual'
-}
-
 /** Finds the project object that owns a reusable Visual, when one is recorded. */
 function ownerForVisual(
   visualId: string,
@@ -256,16 +254,6 @@ function ownerForVisual(
     && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
   ))
   return ownership ? nodes.find((node) => node.id === ownership.source) : undefined
-}
-
-/** Keeps legacy object images understandable while new boards use Visual nodes. */
-function visualReferenceLabel(
-  visual: TextFlowNode,
-  nodes: TextFlowNode[],
-  edges: GraphEdge[],
-) {
-  const owner = ownerForVisual(visual.id, nodes, edges)
-  return owner ? `${nodeTitle(owner)} visual` : nodeTitle(visual)
 }
 
 /** A printable card board projected from the ordinary objects in one Space. */
@@ -291,9 +279,8 @@ export function AssemblyView({
   onCreatePartForOperation,
   onLinkTool,
   onUnlinkTool,
-  onLinkObjectVisual,
-  onUnlinkObjectVisual,
   onCreateOwnedVisualForOperation,
+  onChangeVisualOwner,
   onNameChange,
   onTextChange,
   onOpenNode,
@@ -706,15 +693,6 @@ export function AssemblyView({
             OSA_RELATION.operationVisual,
             /^shows (object )?visual$/i,
           )
-          const includedVisualIds = new Set(includedObjectVisuals.map((visual) => visual.id))
-          const availableOwnedVisuals = nodes
-            .filter(isCanonicalVisual)
-            .filter((visual) => Boolean(ownerForVisual(visual.id, nodes, edges)))
-            // A blank Visual is still a real reusable canvas. It must be
-            // available before a person has added an image, photo, or drawing
-            // to it—otherwise a canvas made in one project view could not be
-            // deliberately included from another.
-            .filter((visual) => !includedVisualIds.has(visual.id))
           const availableParts = uniqueNodes(
             // An Assembly is a part-like object too. Keep the current parent
             // in the picker so someone can explicitly use it as an input or
@@ -746,6 +724,19 @@ export function AssemblyView({
           const visualAlt = operation.data.properties[OSA_PROPERTY.instructionVisualAlt]?.trim()
             || (sourceVisualNode ? objectImageAlt(sourceVisualNode) : '')
             || 'Instruction visual'
+          // A source slide is a normal Visual too. Put it first, then show
+          // any deliberately added Visuals below it without duplicating a
+          // source Visual that also happens to be placed on the card.
+          const canvasVisuals = sourceVisualNode
+            ? uniqueNodes([sourceVisualNode], includedObjectVisuals)
+            : includedObjectVisuals
+          // Keep ownership choice local to this instruction: the thing this
+          // card makes, the parts it takes in, and the tools it uses.
+          const canvasOwners = uniqueNodes(
+            effectivePrimaryOutput ? [effectivePrimaryOutput] : [],
+            inputParts,
+            tools,
+          ).filter(canOwnOsaVisual)
           const focusCard = () => {
             setFocusedCardId(operation.id)
           }
@@ -1004,105 +995,88 @@ export function AssemblyView({
 
                 <section className="assembly-card__view" aria-label={`${nodeTitle(operation)} view`}>
                   <header className="assembly-card__view-header">
-                    <h2>visual canvases</h2>
-                    <p>PowerPoint source and reusable visuals owned by project objects.</p>
+                    <h2>canvas</h2>
                   </header>
                   <div style={{ display: 'grid', gap: 12, padding: 'clamp(10px, 1.5vw, 18px)' }}>
                     <section
-                      aria-label="PowerPoint source slide"
+                      aria-label="Canvases"
                       style={{ display: 'grid', gap: 8, minWidth: 0 }}
                     >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, color: '#555', fontSize: '0.78rem' }}>
-                        <strong>source slide</strong>
-                        <span>PowerPoint provenance</span>
-                      </div>
-                      {visualSource ? (
-                        <img
-                          src={visualSource}
-                          alt={visualAlt}
-                          style={{ display: 'block', width: '100%', height: 'auto', border: '1px solid #d8d8d8', background: '#fff', objectFit: 'contain' }}
-                        />
-                      ) : (
-                        <p style={{ margin: 0, color: '#777', fontSize: '0.82rem', lineHeight: 1.45 }}>
-                          no PowerPoint/source image is attached to this instruction yet.
-                        </p>
-                      )}
-                    </section>
-
-                    <section
-                      aria-label="Reusable visual canvases"
-                      style={{ display: 'grid', gap: 8, minWidth: 0, borderTop: '1px solid #deded9', paddingTop: 12 }}
-                    >
-                      <div style={{ display: 'grid', gap: 3 }}>
-                        <strong style={{ fontSize: '0.9rem' }}>reusable visual canvases</strong>
-                        <span style={{ color: '#666', fontSize: '0.76rem', lineHeight: 1.35 }}>
-                          Create one for this card’s represented part, or reference a canvas that already belongs to a project object.
-                        </span>
-                      </div>
-
-                      {includedObjectVisuals.length ? includedObjectVisuals.map((visual) => {
-                        const owner = ownerForVisual(visual.id, nodes, edges)
+                      {canvasVisuals.length ? canvasVisuals.map((visual) => {
+                        const isSourceVisual = visual.id === sourceVisualNode?.id
                         const imageSource = objectImageSource(visual)
-                        const label = visualReferenceLabel(visual, nodes, edges)
+                          || (isSourceVisual ? visualSource : '')
+                        const label = nodeTitle(visual)
+                        const owner = ownerForVisual(visual.id, nodes, edges)
 
                         return (
                           <article
                             key={visual.id}
-                            style={{ display: 'grid', gap: 8, minWidth: 0, padding: 9, border: '1px solid #d8d8d8', background: '#fff' }}
+                            style={{ display: 'grid', gap: 8, minWidth: 0, paddingBottom: 12, borderBottom: '1px solid #deded9' }}
                           >
-                            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', justifyContent: 'space-between', gap: '3px 8px' }}>
-                              <strong style={{ fontSize: '0.88rem' }}>{label}</strong>
-                              <span style={{ color: '#666', fontSize: '0.72rem' }}>
-                                {owner ? `owned by ${nodeTitle(owner)}` : 'legacy object image'}
-                              </span>
-                            </div>
-                            {imageSource ? (
-                              <img
-                                src={imageSource}
-                                alt={objectImageAlt(visual)}
-                                style={{ display: 'block', width: '100%', height: 'auto', maxHeight: 300, objectFit: 'contain' }}
-                              />
-                            ) : (
-                              <p style={{ margin: 0, padding: 12, border: '1px dashed #bbb', color: '#666', fontSize: '0.8rem', lineHeight: 1.4 }}>
-                                This Visual is ready for a drawing, image, or diagram. Its future content remains owned by {owner ? nodeTitle(owner) : 'this project object'}.
-                              </p>
-                            )}
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                              <button
-                                className="text-action"
-                                type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  onOpenNode(visual.id)
-                                }}
-                              >
-                                open visual
-                              </button>
-                              {focused && !readOnly && onUnlinkObjectVisual ? (
-                                <button
-                                  className="text-action"
-                                  type="button"
-                                  title="remove this card's reference only; keep the reusable Visual"
-                                  aria-label={`remove ${label} from this card only`}
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    onUnlinkObjectVisual(operation.id, visual.id)
-                                  }}
-                                >
-                                  remove from card
-                                </button>
-                              ) : null}
-                            </div>
+                            <input
+                              aria-label={`${label} name`}
+                              value={visual.data.name}
+                              readOnly={readOnly}
+                              onClick={(event) => event.stopPropagation()}
+                              onChange={(event) => {
+                                if (!readOnly) onNameChange(visual.id, event.target.value)
+                              }}
+                              style={{ ...transparentInput, fontSize: '0.88rem', fontWeight: 600 }}
+                            />
+                            <button
+                              type="button"
+                              aria-label={`open ${label}`}
+                              title="Open visual"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                onOpenNode(visual.id)
+                              }}
+                              style={{ display: 'block', width: '100%', padding: 0, border: 0, background: 'transparent', cursor: 'pointer' }}
+                            >
+                              {imageSource ? (
+                                <img
+                                  src={imageSource}
+                                  alt={objectImageAlt(visual)}
+                                  style={{ display: 'block', width: '100%', height: 'auto', maxHeight: 300, objectFit: 'contain' }}
+                                />
+                              ) : (
+                                <span style={{ display: 'block', minHeight: 96, border: '1px dashed #bbb' }} />
+                              )}
+                            </button>
+                            <select
+                              aria-label={`${label} owner`}
+                              value={owner?.id ?? ''}
+                              disabled={readOnly || !onChangeVisualOwner}
+                              onClick={(event) => event.stopPropagation()}
+                              onChange={(event) => {
+                                event.stopPropagation()
+                                const ownerId = event.currentTarget.value
+                                if (!readOnly && ownerId) onChangeVisualOwner?.(visual.id, ownerId)
+                              }}
+                              style={{ width: 'fit-content', maxWidth: '100%', padding: 0, border: 0, background: 'transparent', color: '#666', font: 'inherit', fontSize: '0.76rem', cursor: readOnly ? 'default' : 'pointer' }}
+                            >
+                              <option value="" disabled>owner</option>
+                              {canvasOwners.map((candidate) => (
+                                <option value={candidate.id} key={candidate.id}>
+                                  {nodeTitle(candidate)}
+                                </option>
+                              ))}
+                            </select>
                           </article>
                         )
                       }) : (
-                        <p style={{ margin: 0, color: '#777', fontSize: '0.82rem', lineHeight: 1.45 }}>
-                          this instruction does not reference any reusable visual canvases yet.
-                        </p>
+                        visualSource ? (
+                          <img
+                            src={visualSource}
+                            alt={visualAlt}
+                            style={{ display: 'block', width: '100%', height: 'auto', border: '1px solid #d8d8d8', background: '#fff', objectFit: 'contain' }}
+                          />
+                        ) : <div style={{ minHeight: 8 }} />
                       )}
 
                       {!readOnly ? (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, borderTop: '1px solid #e5e5e2', paddingTop: 10 }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, paddingTop: 2 }}>
                           {explicitPrimaryOutput ? (
                             onCreateOwnedVisualForOperation ? (
                               <button
@@ -1112,9 +1086,9 @@ export function AssemblyView({
                                   event.stopPropagation()
                                   onCreateOwnedVisualForOperation(operation.id)
                                 }}
-                                title={`Create a reusable visual canvas owned by ${effectivePrimaryOutputLabel}`}
+                                title="Create a blank canvas"
                               >
-                                + create visual canvas for {effectivePrimaryOutputLabel}
+                                + canvas
                               </button>
                             ) : (
                               <span style={{ color: '#666', fontSize: '0.76rem' }}>
@@ -1191,28 +1165,6 @@ export function AssemblyView({
                             </>
                           )}
 
-                          {onLinkObjectVisual && availableOwnedVisuals.length ? (
-                            <select
-                              aria-label={`add an existing owned visual to ${nodeTitle(operation)}`}
-                              defaultValue=""
-                              onChange={(event) => {
-                                const visualId = event.currentTarget.value
-                                event.currentTarget.value = ''
-                                // The compatibility host currently requires a
-                                // placement scope. This does not create an
-                                // operation-owned canvas or a new section.
-                                if (visualId) onLinkObjectVisual(operation.id, visualId, 'source')
-                              }}
-                              style={{ minWidth: 0, flex: '1 1 210px', border: 0, borderBottom: '1px solid #bbb', background: 'transparent', color: 'inherit', font: 'inherit', fontSize: '0.8rem' }}
-                            >
-                              <option value="">add an existing visual canvas…</option>
-                              {availableOwnedVisuals.map((visual) => (
-                                <option value={visual.id} key={visual.id}>
-                                  {visualReferenceLabel(visual, nodes, edges)}{objectImageSource(visual) ? '' : ' (blank canvas)'}
-                                </option>
-                              ))}
-                            </select>
-                          ) : null}
                         </div>
                       ) : null}
                     </section>
