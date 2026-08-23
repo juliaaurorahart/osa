@@ -7,8 +7,18 @@ export type SavedBoard = {
   snapshot: BoardSnapshot
 }
 
+/** A public, read-only board response addressed by an opaque share token. */
+export type SharedAssembly = {
+  board: SavedBoard
+  assemblyId: string
+}
+
 type BoardsResponse = {
   boards: SavedBoard[]
+}
+
+type CreateShareResponse = {
+  token: string
 }
 
 export class BoardAccessError extends Error {
@@ -22,6 +32,13 @@ export class BoardUnavailableError extends Error {
   constructor() {
     super('Board storage is unavailable in this environment.')
     this.name = 'BoardUnavailableError'
+  }
+}
+
+export class SharedAssemblyUnavailableError extends Error {
+  constructor() {
+    super('This shared assembly is unavailable.')
+    this.name = 'SharedAssemblyUnavailableError'
   }
 }
 
@@ -90,12 +107,59 @@ export async function fetchBoards(): Promise<SavedBoard[]> {
   return boards as BoardsResponse['boards']
 }
 
-/** The current API stores the complete board list as one atomic replacement. */
-export async function replaceBoards(boards: SavedBoard[]): Promise<void> {
+/** Saves one board without allowing a stale tab to replace somebody's list. */
+export async function saveBoard(board: SavedBoard): Promise<void> {
   const response = await boardRequest('/api/boards', {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ boards }),
+    body: JSON.stringify({ board }),
   })
   if (!response.ok) throw await responseError(response)
+}
+
+/** Creates an opaque, read-only link to one assembly on a saved private board. */
+export async function createAssemblyShare(boardId: string, assemblyId: string): Promise<string> {
+  const response = await boardRequest('/api/shares', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ boardId, assemblyId }),
+  })
+  if (!response.ok) throw await responseError(response)
+
+  const body: unknown = await response.json()
+  if (!isRecord(body) || typeof body.token !== 'string' || !body.token) {
+    throw new Error('The board service returned an invalid share link.')
+  }
+  return (body as CreateShareResponse).token
+}
+
+/** Loads the saved board and assembly selected by a public, read-only share link. */
+export async function fetchSharedAssembly(token: string): Promise<SharedAssembly> {
+  let response: Response
+  try {
+    response = await fetch(`/shared/${encodeURIComponent(token)}`, {
+      headers: { accept: 'application/json' },
+      cache: 'no-store',
+      redirect: 'manual',
+    })
+  } catch (error) {
+    if (error instanceof TypeError) throw new SharedAssemblyUnavailableError()
+    throw error
+  }
+
+  if (!response.ok) {
+    if (response.status === 404 || response.status === 400 || response.status === 0 || response.type === 'opaqueredirect') {
+      throw new SharedAssemblyUnavailableError()
+    }
+    throw await responseError(response)
+  }
+
+  const body: unknown = await response.json().catch(() => null)
+  if (!isRecord(body) || typeof body.assemblyId !== 'string') {
+    throw new SharedAssemblyUnavailableError()
+  }
+  const board = parseSavedBoard(body.board)
+  if (!board) throw new SharedAssemblyUnavailableError()
+
+  return { board, assemblyId: body.assemblyId }
 }

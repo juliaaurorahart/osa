@@ -19,7 +19,7 @@ type NotebookViewProps = {
   onCreateFromSelection: (
     sourceId: string,
     anchor: TextConnectionAnchor,
-    kind: 'note' | 'task' | 'project',
+    kind: 'note' | 'action' | 'project',
   ) => void
   onLinkSelection: (sourceId: string, anchor: TextConnectionAnchor, targetId: string) => void
   onOpenNode: (nodeId: string) => void
@@ -152,7 +152,7 @@ export function NotebookView({
                   Focus page
                 </button>
                 <button className="text-action" type="button" onClick={() => onOpenNode(selectedPage.id)}>
-                  Node Space
+                  Space
                 </button>
               </div>
             </div>
@@ -199,7 +199,7 @@ export function NotebookView({
                   <div className="notebook-selection-actions" aria-label="Selected passage actions">
                     <blockquote>{activeSelection.quote}</blockquote>
                     <span>Make</span>
-                    {(['note', 'task', 'project'] as const).map((kind) => (
+                    {(['note', 'action', 'project'] as const).map((kind) => (
                       <button
                         type="button"
                         key={kind}

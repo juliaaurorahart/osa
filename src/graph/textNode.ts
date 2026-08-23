@@ -94,6 +94,8 @@ export type TextNodeData = {
   layout: NodeLayout
   /** The node's selected category from the kind registry. */
   kind: NodeKind
+  /** IDs of Space nodes that contain this object; Spaces themselves stay top-level. */
+  spaceIds: string[]
   /** Notebook membership and page presentation survive semantic type changes. */
   notebook: NotebookPageData | null
   /** Task facts, retained while inactive so changing type never erases them. */
@@ -129,6 +131,7 @@ type CreateTextNodeOptions = {
   name?: string
   text: string
   kind?: NodeKind
+  spaceIds?: string[]
   properties?: Record<string, string>
   sketch?: SketchDocument
   layout?: Partial<NodeLayout>
@@ -150,6 +153,7 @@ export function createTextNode({
   name = '',
   text,
   kind = DEFAULT_NODE_KIND,
+  spaceIds = [],
   properties = {},
   sketch = createSketchDocument(),
   layout = {},
@@ -176,8 +180,9 @@ export function createTextNode({
       name,
       text,
       kind,
+      spaceIds: [...spaceIds],
       notebook: notebookPage ? { ...notebookPage } : null,
-      task: kind === 'task' || task != null
+      task: kind === 'action' || task != null
         ? {
             day: task?.day ?? null,
             completedAt: task?.completedAt ?? null,

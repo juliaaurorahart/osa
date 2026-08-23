@@ -1,0 +1,2078 @@
+{
+  "format": "osa-import",
+  "version": 1,
+  "id": "shako-light-wrap",
+  "name": "Shako Light Wrap",
+  "sources": [
+    {
+      "id": "source-pptx",
+      "kind": "pptx",
+      "fileName": "Assembly Instructions.pptx",
+      "sha256": "de6c940ca6cf39862b73a98a0956de0f8765b27488658bec8b0af623c2018478"
+    },
+    {
+      "id": "source-xlsx",
+      "kind": "xlsx",
+      "fileName": "shako-light-wrap.xlsx",
+      "sha256": "c3b6321737d48516279907b56684c9e744fe2f71417ea29573fc4540631cbedd"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "space",
+      "kind": "space",
+      "name": "Shako Light Wrap",
+      "text": "",
+      "spaceIds": [],
+      "properties": {}
+    },
+    {
+      "id": "assembly",
+      "kind": "part",
+      "name": "Shako Hat Assembly Instructions",
+      "text": "Assembly instructions imported for authoring in OSA.",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "assembly",
+        "source:file": "Assembly Instructions.pptx",
+        "source:location": "Slides 1–4"
+      }
+    },
+    {
+      "id": "source-pptx",
+      "kind": "source-file",
+      "name": "Assembly Instructions.pptx",
+      "text": "Original assembly-instruction presentation.",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "source",
+        "source:file": "Assembly Instructions.pptx",
+        "source:sha256": "de6c940ca6cf39862b73a98a0956de0f8765b27488658bec8b0af623c2018478"
+      }
+    },
+    {
+      "id": "source-xlsx",
+      "kind": "source-file",
+      "name": "shako-light-wrap.xlsx",
+      "text": "Original BOM and project-expense workbook.",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "source",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:sha256": "c3b6321737d48516279907b56684c9e744fe2f71417ea29573fc4540631cbedd"
+      }
+    },
+    {
+      "id": "operation-01",
+      "kind": "action",
+      "name": "Connector Box Drill",
+      "text": "",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "operation",
+        "osa:order": "1",
+        "operation:entrance": "Connector Box as Delivered",
+        "operation:exit": "Connector Box Top – 1 Hole and Bottom – 2 Holes",
+        "source:file": "Assembly Instructions.pptx",
+        "source:location": "Slide 2",
+        "source:title": "Electronic Box Drill",
+        "instruction:visual": "visual-operation-01-source-slide",
+        "instruction:visualAlt": "Full source slide for the Connector Box Drill, including its criteria, tools, exit condition, and color-coded drilling diagram."
+      }
+    },
+    {
+      "id": "visual-operation-01-source-slide",
+      "kind": "visual",
+      "name": "Connector Box Drill — Source Slide",
+      "text": "Source slide visual imported from the assembly-instruction presentation.",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "visual",
+        "asset:image": "/import-assets/shako-light-wrap/operation-01-slide.png",
+        "asset:imageAlt": "Full source slide for the Connector Box Drill, including its criteria, tools, exit condition, and color-coded drilling diagram.",
+        "instruction:visual": "/import-assets/shako-light-wrap/operation-01-slide.png",
+        "instruction:visualAlt": "Full source slide for the Connector Box Drill, including its criteria, tools, exit condition, and color-coded drilling diagram.",
+        "source:file": "Assembly Instructions.pptx",
+        "source:location": "Slide 2",
+        "source:title": "Electronic Box Drill"
+      }
+    },
+    {
+      "id": "tool-drill",
+      "kind": "tool",
+      "name": "Drill",
+      "text": "",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "tool",
+        "source:file": "Assembly Instructions.pptx",
+        "source:location": "Slide 2, Tools"
+      }
+    },
+    {
+      "id": "tool-bits-5-16-1-8-7-64",
+      "kind": "tool",
+      "name": "Bits: 5/16”, 1/8”, 7/64”",
+      "text": "",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "tool",
+        "source:file": "Assembly Instructions.pptx",
+        "source:location": "Slide 2, Tools"
+      }
+    },
+    {
+      "id": "operation-02",
+      "kind": "action",
+      "name": "Shako Wrap Punch Holes",
+      "text": "",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "operation",
+        "osa:order": "2",
+        "operation:entrance": "",
+        "operation:exit": "",
+        "source:file": "Assembly Instructions.pptx",
+        "source:location": "Slide 1",
+        "source:title": ""
+      }
+    },
+    {
+      "id": "operation-02-01",
+      "kind": "action",
+      "name": "Front Center – 1 Hole",
+      "text": "",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "operation",
+        "osa:order": "2.1",
+        "operation:entrance": "",
+        "operation:exit": "",
+        "source:file": "Assembly Instructions.pptx",
+        "source:location": "Slide 1, outline"
+      }
+    },
+    {
+      "id": "operation-02-02",
+      "kind": "action",
+      "name": "Left Side (from user’s perspective)",
+      "text": "",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "operation",
+        "osa:order": "2.2",
+        "operation:entrance": "",
+        "operation:exit": "",
+        "source:file": "Assembly Instructions.pptx",
+        "source:location": "Slide 1, outline"
+      }
+    },
+    {
+      "id": "operation-03",
+      "kind": "action",
+      "name": "Boost Attach V-out Wires",
+      "text": "",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "operation",
+        "osa:order": "3",
+        "operation:entrance": "Boost as Delivered\nPre-stripped red x1 and black x2 wires",
+        "operation:exit": "Boost w/attached V-out Wires",
+        "source:file": "Assembly Instructions.pptx",
+        "source:location": "Slide 3",
+        "source:title": "Boost Attach V-out Wires",
+        "instruction:visual": "visual-operation-03-source-slide",
+        "instruction:visualAlt": "Full source slide for Boost Attach V-out Wires, including its criteria, tools, exit condition, and wiring diagram."
+      }
+    },
+    {
+      "id": "visual-operation-03-source-slide",
+      "kind": "visual",
+      "name": "Boost Attach V-out Wires — Source Slide",
+      "text": "Source slide visual imported from the assembly-instruction presentation.",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "visual",
+        "asset:image": "/import-assets/shako-light-wrap/operation-03-slide.png",
+        "asset:imageAlt": "Full source slide for Boost Attach V-out Wires, including its criteria, tools, exit condition, and wiring diagram.",
+        "instruction:visual": "/import-assets/shako-light-wrap/operation-03-slide.png",
+        "instruction:visualAlt": "Full source slide for Boost Attach V-out Wires, including its criteria, tools, exit condition, and wiring diagram.",
+        "source:file": "Assembly Instructions.pptx",
+        "source:location": "Slide 3",
+        "source:title": "Boost Attach V-out Wires"
+      }
+    },
+    {
+      "id": "tool-soldering-station",
+      "kind": "tool",
+      "name": "Soldering Station",
+      "text": "",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "tool",
+        "source:file": "Assembly Instructions.pptx",
+        "source:location": "Slide 3, Tools"
+      }
+    },
+    {
+      "id": "tool-helping-hands",
+      "kind": "tool",
+      "name": "Helping Hands",
+      "text": "",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "tool",
+        "source:file": "Assembly Instructions.pptx",
+        "source:location": "Slide 3, Tools"
+      }
+    },
+    {
+      "id": "operation-04",
+      "kind": "action",
+      "name": "Power Section Assembly",
+      "text": "",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "operation",
+        "osa:order": "4",
+        "operation:entrance": "Boost Attached V-out Wires\nBattery Holder Top w/ Heatshrink leads\nElectronics Box Top Drilled\n3M Cable Relief Mounts x2\nZip ties x2",
+        "operation:exit": "Boost w/attached V-out Wires",
+        "source:file": "Assembly Instructions.pptx",
+        "source:location": "Slide 4",
+        "source:title": "Power Section",
+        "instruction:visual": "visual-operation-04-source-slide",
+        "instruction:visualAlt": "Full source slide for Power Section, including its criteria, tools, exit condition, and wiring diagram."
+      }
+    },
+    {
+      "id": "visual-operation-04-source-slide",
+      "kind": "visual",
+      "name": "Power Section Assembly — Source Slide",
+      "text": "Source slide visual imported from the assembly-instruction presentation.",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "visual",
+        "asset:image": "/import-assets/shako-light-wrap/operation-04-slide.png",
+        "asset:imageAlt": "Full source slide for Power Section, including its criteria, tools, exit condition, and wiring diagram.",
+        "instruction:visual": "/import-assets/shako-light-wrap/operation-04-slide.png",
+        "instruction:visualAlt": "Full source slide for Power Section, including its criteria, tools, exit condition, and wiring diagram.",
+        "source:file": "Assembly Instructions.pptx",
+        "source:location": "Slide 4",
+        "source:title": "Power Section"
+      }
+    },
+    {
+      "id": "tool-zip-tie-gun",
+      "kind": "tool",
+      "name": "Zip Tie Gun",
+      "text": "",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "tool",
+        "source:file": "Assembly Instructions.pptx",
+        "source:location": "Slide 4, Tools"
+      }
+    },
+    {
+      "id": "bom-3",
+      "kind": "part",
+      "name": "Battery Holder",
+      "text": "Waterproof 3xAA Battery Holder with On/Off Switch \n-Weight: 36 grams\n- 2\" (2.5\" with machine screw ears) x 3\" x.8\" (50mm (63mm with machine screw ears) x 77mm x 20mm)\n- 6\" (150mm) long power cable",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "bom-item",
+        "item:quantity": "1",
+        "item:packagePrice": "3.95",
+        "item:packageQuantity": "1",
+        "item:purchasedQuantity": "150",
+        "item:reportedCost": "3.95",
+        "item:status": "",
+        "money:currency": "USD",
+        "source:text": "https://www.adafruit.com/product/771?gad_source=1&gad_campaignid=23986111167&gbraid=0AAAAADx9JvR-QzPY_Ii8b7Gk3xCZLIJEN&gclid=Cj0KCQjw-frTBhCvARIsADv4XY7F3Cl11CP-rZRhoR805toEHSsfyGasi_MuQjggB3v4qHKuN_Yr4yQaAjEEEALw_wcB",
+        "source:url": "https://www.adafruit.com/product/771?gad_source=1&gad_campaignid=23986111167&gbraid=0AAAAADx9JvR-QzPY_Ii8b7Gk3xCZLIJEN&gclid=Cj0KCQjw-frTBhCvARIsADv4XY7F3Cl11CP-rZRhoR805toEHSsfyGasi_MuQjggB3v4qHKuN_Yr4yQaAjEEEALw_wcB",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "BOM!A3:I3"
+      }
+    },
+    {
+      "id": "bom-4",
+      "kind": "part",
+      "name": "Electronics Box",
+      "text": "Project Box, 6 Pcs Electrical Junction Box, IP65 Waterproof Electrical Project Case, ABS Plastic Dustproof Outdoor Electrical Boxes, Electronic Junction Box Power Enclosure, 2.5x2.3x1.4 inch",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "bom-item",
+        "item:quantity": "1",
+        "item:packagePrice": "10.66",
+        "item:packageQuantity": "12",
+        "item:purchasedQuantity": "23",
+        "item:reportedCost": "0.88833333333333331",
+        "item:status": "",
+        "money:currency": "USD",
+        "source:text": "https://www.amazon.com/dp/B0FXLR5HG4?ref=fed_asin_title&th=1",
+        "source:url": "https://www.amazon.com/dp/B0FXLR5HG4?ref=fed_asin_title&th=1",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "BOM!A4:I4"
+      }
+    },
+    {
+      "id": "bom-5",
+      "kind": "part",
+      "name": "DC-DC Converter",
+      "text": "MT3608 DC-DC Boost Converter Module 2A, 2V-24V to 5V-28V Step-Up Voltage Regulator with Adjustable Potentiometer, Under-Voltage Lockout, Current Limiting & Thermal Protection",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "bom-item",
+        "item:quantity": "1",
+        "item:packagePrice": "8.49",
+        "item:packageQuantity": "12",
+        "item:purchasedQuantity": "20",
+        "item:reportedCost": "0.70750000000000002",
+        "item:status": "",
+        "money:currency": "USD",
+        "source:text": "Amazon.com: 12PCS MT3608 DC-DC Boost Converter Module 2A, 2V-24V to 5V-28V Step-Up Voltage Regulator with Adjustable Potentiometer, Under-Voltage Lockout, Current Limiting & Thermal Protection : Electronics",
+        "source:url": "https://www.amazon.com/dp/B0GXJSZ2B4?ref=fed_asin_title",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "BOM!A5:I5"
+      }
+    },
+    {
+      "id": "bom-6",
+      "kind": "part",
+      "name": "LED",
+      "text": "4Pcs 23mm COB DC 12V Eagle Eye LED Car Fog DRL Daytime Running Light Car ATV Camper Trunk Motorcycle Marker Lights Lamp Tail Reverse Fog Light Signal Lamp (White)",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "bom-item",
+        "item:quantity": "1",
+        "item:packagePrice": "9.99",
+        "item:packageQuantity": "4",
+        "item:purchasedQuantity": "23",
+        "item:reportedCost": "2.4975000000000001",
+        "item:status": "",
+        "money:currency": "USD",
+        "source:text": "https://www.amazon.com/dp/B0D964YVTL?ref=fed_asin_title&th=1",
+        "source:url": "https://www.amazon.com/dp/B0D964YVTL?ref=fed_asin_title&th=1",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "BOM!A6:I6"
+      }
+    },
+    {
+      "id": "bom-7",
+      "kind": "part",
+      "name": "Switch",
+      "text": "Nilight 12mm 12V Latching Push Button Switch Pre-Wired LED 5 Pack Kit\nIP67 waterproof SPDT latching design with LED indicator, 12mm mounting, and 8\" pigtail wires for easy setup",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "bom-item",
+        "item:quantity": "1",
+        "item:packagePrice": "12.59",
+        "item:packageQuantity": "5",
+        "item:purchasedQuantity": "30",
+        "item:reportedCost": "2.5179999999999998",
+        "item:status": "",
+        "money:currency": "USD",
+        "source:text": "https://www.amazon.com/dp/B0BMVR7TZK?ref=fed_asin_title&th=1",
+        "source:url": "https://www.amazon.com/dp/B0BMVR7TZK?ref=fed_asin_title&th=1",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "BOM!A7:I7"
+      }
+    },
+    {
+      "id": "bom-8",
+      "kind": "part",
+      "name": "Mounts Zip Ties",
+      "text": "XHF 200 PCS 1/2\" White Self Adhesive Cable Zip Tie Mounts Wire Cable Clips Holders Management Anchors Organizer Holders Squares(HS-100)",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "bom-item",
+        "item:quantity": "5",
+        "item:packagePrice": "9.59",
+        "item:packageQuantity": "200",
+        "item:purchasedQuantity": "2",
+        "item:reportedCost": "0.23975000000000002",
+        "item:status": "",
+        "money:currency": "USD",
+        "source:text": "https://www.amazon.com/dp/B08341K5K1?ref=fed_asin_title&th=1",
+        "source:url": "https://www.amazon.com/dp/B08341K5K1?ref=fed_asin_title&th=1",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "BOM!A8:I8"
+      }
+    },
+    {
+      "id": "bom-9",
+      "kind": "part",
+      "name": "Mounts Tape",
+      "text": "3M Double Sided Tape,1in X 9.85ft Heavy Duty Removable Mounting Tape\nWhite Sticky Foam Tape for Wall, Picture Hanging Strips, Poster Hanger, Waterproof Adhesive Strips for LED Light",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "bom-item",
+        "item:quantity": "1",
+        "item:packagePrice": "15.69",
+        "item:packageQuantity": "120",
+        "item:purchasedQuantity": "5",
+        "item:reportedCost": "0.13075000000000001",
+        "item:status": "",
+        "money:currency": "USD",
+        "source:text": "Amazon.com: 3M Double Sided Tape,1in X 9.85ft Heavy Duty Removable Mounting Tape | White Sticky Foam Tape for Wall, Picture Hanging Strips, Poster Hanger, Waterproof Adhesive Strips for LED Light : Office Products",
+        "source:url": "https://www.amazon.com/dp/B0H1GT9BPY?ref=fed_asin_title&th=1",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "BOM!A9:I9"
+      }
+    },
+    {
+      "id": "bom-10",
+      "kind": "part",
+      "name": "Zip Ties",
+      "text": "HAVE",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "bom-item",
+        "item:quantity": "0",
+        "item:packagePrice": "0.00",
+        "item:packageQuantity": "1",
+        "item:purchasedQuantity": "",
+        "item:reportedCost": "0",
+        "item:status": "HAVE",
+        "money:currency": "USD",
+        "source:text": "-",
+        "source:url": "",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "BOM!A10:I10"
+      }
+    },
+    {
+      "id": "bom-11",
+      "kind": "part",
+      "name": "Wires",
+      "text": "HAVE",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "bom-item",
+        "item:quantity": "0",
+        "item:packagePrice": "0.00",
+        "item:packageQuantity": "1",
+        "item:purchasedQuantity": "",
+        "item:reportedCost": "0",
+        "item:status": "HAVE",
+        "money:currency": "USD",
+        "source:text": "-",
+        "source:url": "",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "BOM!A11:I11"
+      }
+    },
+    {
+      "id": "bom-12",
+      "kind": "part",
+      "name": "Screws",
+      "text": "???",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "bom-item",
+        "item:quantity": "0",
+        "item:packagePrice": "0.00",
+        "item:packageQuantity": "1",
+        "item:purchasedQuantity": "",
+        "item:reportedCost": "0",
+        "item:status": "???",
+        "money:currency": "USD",
+        "source:text": "-",
+        "source:url": "",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "BOM!A12:I12"
+      }
+    },
+    {
+      "id": "bom-13",
+      "kind": "part",
+      "name": "Heat Shrink",
+      "text": "7-Size Heat Shrink Tubing Roll Kit: 4:1 Adhesive Lined, 54 Ft Marine Grade Waterproof, Insulated Sealed, Oil-Proof & Wear-Resistant, for Home Use & Industrial Applications (Black)",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "bom-item",
+        "item:quantity": "1",
+        "item:packagePrice": "14.99",
+        "item:packageQuantity": "120",
+        "item:purchasedQuantity": "",
+        "item:reportedCost": "0.12491666666666666",
+        "item:status": "",
+        "money:currency": "USD",
+        "source:text": "-",
+        "source:url": "",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "BOM!A13:I13"
+      }
+    },
+    {
+      "id": "bom-14",
+      "kind": "part",
+      "name": "Plastic Base",
+      "text": "???",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "bom-item",
+        "item:quantity": "0",
+        "item:packagePrice": "0.00",
+        "item:packageQuantity": "1",
+        "item:purchasedQuantity": "",
+        "item:reportedCost": "0",
+        "item:status": "???",
+        "money:currency": "USD",
+        "source:text": "-",
+        "source:url": "",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "BOM!A14:I14"
+      }
+    },
+    {
+      "id": "bom-15",
+      "kind": "part",
+      "name": "Batteries",
+      "text": "Amazon Basics 100-Pack AA Alkaline Batteries, 1.5 Volt, 10-Year Shelf Life, Reliable",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "bom-item",
+        "item:quantity": "",
+        "item:packagePrice": "25.99",
+        "item:packageQuantity": "100",
+        "item:purchasedQuantity": "3",
+        "item:reportedCost": "0.25989999999999996",
+        "item:status": "",
+        "money:currency": "USD",
+        "source:text": "https://www.amazon.com/dp/B01B8R6PF2?ref=fed_asin_title",
+        "source:url": "https://www.amazon.com/dp/B01B8R6PF2?ref=fed_asin_title",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "BOM!A15:I15"
+      }
+    },
+    {
+      "id": "bom-16",
+      "kind": "part",
+      "name": "Solder",
+      "text": "HAVE",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "bom-item",
+        "item:quantity": "1",
+        "item:packagePrice": "0.00",
+        "item:packageQuantity": "1",
+        "item:purchasedQuantity": "1",
+        "item:reportedCost": "0",
+        "item:status": "HAVE",
+        "money:currency": "USD",
+        "source:text": "-",
+        "source:url": "",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "BOM!A16:I16"
+      }
+    },
+    {
+      "id": "bom-17",
+      "kind": "part",
+      "name": "Labor",
+      "text": "???",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "bom-item",
+        "item:quantity": "1",
+        "item:packagePrice": "0.00",
+        "item:packageQuantity": "1",
+        "item:purchasedQuantity": "1",
+        "item:reportedCost": "0",
+        "item:status": "???",
+        "money:currency": "USD",
+        "source:text": "-",
+        "source:url": "",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "BOM!A17:I17"
+      }
+    },
+    {
+      "id": "part-connector-box-drilled",
+      "kind": "part",
+      "name": "Connector Box Drilled",
+      "text": "Placeholder work-state for the Electronics Box after the Connector Box Drill operation. This is not a separately purchased item.",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "bom-item",
+        "item:status": "placeholder",
+        "source:text": "Connector Box Top – 1 Hole and Bottom – 2 Holes",
+        "source:file": "Assembly Instructions.pptx",
+        "source:location": "Slide 2, Exit",
+        "source:inference": "Created as the addressable output state of the source slide's Connector Box Drill operation. The source calls the incoming purchased component Electronics Box / Connector Box.",
+        "asset:image": "/import-assets/shako-light-wrap/operation-01.png",
+        "asset:imageAlt": "Drilling diagram for the Connector Box Drilled work-state, showing the top, bottom, and side hole locations."
+      }
+    },
+    {
+      "id": "part-boost-with-v-out-wires",
+      "kind": "part",
+      "name": "Boost with V-out Wires",
+      "text": "Placeholder work-state for the DC-DC Converter after the V-out wires have been attached. This is not a separately purchased item.",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "bom-item",
+        "item:status": "placeholder",
+        "source:text": "Boost w/attached V-out Wires",
+        "source:file": "Assembly Instructions.pptx",
+        "source:location": "Slide 3, Exit",
+        "source:inference": "Created as the addressable output state of Slide 3. The slide calls the incoming BOM component a Boost and the exit a Boost with attached V-out Wires.",
+        "asset:image": "/import-assets/shako-light-wrap/operation-03.png",
+        "asset:imageAlt": "Diagram of the Boost with V-out Wires work-state, showing the attached red and black output wires."
+      }
+    },
+    {
+      "id": "assembly-battery-holder-top-with-heatshrink-leads",
+      "kind": "part",
+      "name": "Battery Holder Top with Heatshrink Leads",
+      "text": "Source-named prepared subassembly: the Battery Holder Top with Heatshrink leads. Its detailed preparation steps are not yet in the source instruction deck.",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "assembly",
+        "source:text": "Battery Holder Top w/ Heatshrink leads",
+        "source:file": "Assembly Instructions.pptx",
+        "source:location": "Slide 4, Entrance",
+        "source:inference": "Created as the source-named input subassembly. Its component links are inferred from the words Battery Holder and Heatshrink and their matching BOM items."
+      }
+    },
+    {
+      "id": "assembly-power-section",
+      "kind": "part",
+      "name": "Power Section Assembly",
+      "text": "Placeholder nested assembly represented by the Power Section instruction card and diagram.",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "assembly",
+        "source:text": "Power Section / Power Section Assembly",
+        "source:file": "Assembly Instructions.pptx",
+        "source:location": "Slide 1, outline; Slide 4, title and visual",
+        "source:inference": "Created as the card's addressable primary output because the outline names Power Section Assembly and Slide 4 depicts the assembled Power Section.",
+        "source:conflict": "Slide 4 Exit says Boost w/attached V-out Wires. That original text remains in the operation:exit property for author review.",
+        "asset:image": "/import-assets/shako-light-wrap/operation-04.png",
+        "asset:imageAlt": "Diagram of the completed Power Section Assembly, including the battery holder, boost board, cable relief mounts, and wiring."
+      }
+    },
+    {
+      "id": "expense-3",
+      "kind": "expense",
+      "name": "Soldering Iron TS101",
+      "text": "Original TS101 Smart Soldering Iron Kit B2 Tip 24V Power Supply",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "expense",
+        "expense:quantity": "1",
+        "expense:unitCost": "79.99",
+        "expense:group": "",
+        "money:currency": "USD",
+        "source:text": "Amazon.com: NovelLife Original TS101 Smart Soldering Iron Kit B2 Tip 24V Power Supply : Tools & Home Improvement",
+        "source:url": "https://www.amazon.com/dp/B0BLNHB11B?ref=fed_asin_title&th=1",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "Supplies!A3:G3"
+      }
+    },
+    {
+      "id": "expense-4",
+      "kind": "expense",
+      "name": "Hakko FX971-010",
+      "text": "Hakko Soldering Station,Digital,120V,850 F FX971-010 - 1 Each",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "expense",
+        "expense:quantity": "2",
+        "expense:unitCost": "329.97",
+        "expense:group": "",
+        "money:currency": "USD",
+        "source:text": "https://www.amazon.com/dp/B0D1CRX5D8?ref=fed_asin_title",
+        "source:url": "https://www.amazon.com/dp/B0D1CRX5D8?ref=fed_asin_title",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "Supplies!A4:G4"
+      }
+    },
+    {
+      "id": "expense-5",
+      "kind": "expense",
+      "name": "LED DUNSIHUI 9W",
+      "text": "DUNSIHUI 10 pair 9W Eagle Eye LED Light Lamp, 6500k Xenon White 12V 23MM LED Eagle Eye Lamp for Car Van SUV Coupe Sedan DRL Fog Light Daytime Running DRL Tail Backup Light Motorcycle Light",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "expense",
+        "expense:quantity": "1",
+        "expense:unitCost": "24.99",
+        "expense:group": "",
+        "money:currency": "USD",
+        "source:text": "https://www.amazon.com/dp/B0C2VHXB9C?ref=fed_asin_title",
+        "source:url": "https://www.amazon.com/dp/B0C2VHXB9C?ref=fed_asin_title",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "Supplies!A5:G5"
+      }
+    },
+    {
+      "id": "expense-6",
+      "kind": "expense",
+      "name": "Thermal Tape",
+      "text": "ELEGOO High Temp Tape, 4 Pack Polyimide High Temperature Resistant Tape\nMulti-Sized Value Bundle 1/8’’, 1/4’’, 1/2’’, 1’’ with Silicone Adhesive for Masking, Soldering, Protect PCB",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "expense",
+        "expense:quantity": "1",
+        "expense:unitCost": "8.49",
+        "expense:group": "",
+        "money:currency": "USD",
+        "source:text": "https://www.amazon.com/dp/B072Z92QZ2?ref=fed_asin_title",
+        "source:url": "https://www.amazon.com/dp/B072Z92QZ2?ref=fed_asin_title",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "Supplies!A6:G6"
+      }
+    },
+    {
+      "id": "expense-7",
+      "kind": "expense",
+      "name": "64 gb Micro sd",
+      "text": "SanDisk 64GB Extreme PRO microSDXC Card + SD Adapter + RescuePro Deluxe, up to 200 MB/s, with A2 App Performance, for Smartphones, Action Cameras or Drones UHS-I Class 10 U3 V30",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "expense",
+        "expense:quantity": "1",
+        "expense:unitCost": "34.00",
+        "expense:group": "",
+        "money:currency": "USD",
+        "source:text": "https://www.amazon.com/dp/B09X7BYSFG?ref=fed_asin_title&th=1",
+        "source:url": "https://www.amazon.com/dp/B09X7BYSFG?ref=fed_asin_title&th=1",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "Supplies!A7:G7"
+      }
+    },
+    {
+      "id": "expense-8",
+      "kind": "expense",
+      "name": "Thermocouples K-Type",
+      "text": "5 Pack K Type Mini-Connector Thermocouple Temperature Probe Sensor\nMeasure Range -50°C~482°C (-58°F~899°F) & 5 M Long, High Accuracy\nBrand: AUGREX",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "expense",
+        "expense:quantity": "1",
+        "expense:unitCost": "29.99",
+        "expense:group": "",
+        "money:currency": "USD",
+        "source:text": "https://www.amazon.com/dp/B0DRHT9QN1?ref=fed_asin_title",
+        "source:url": "https://www.amazon.com/dp/B0DRHT9QN1?ref=fed_asin_title",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "Supplies!A8:G8"
+      }
+    },
+    {
+      "id": "expense-9",
+      "kind": "expense",
+      "name": "Wago Connectors",
+      "text": "221-2401 | WAGO Lever-Nuts® Inline Splicing Connector | for Solid and Stranded Conductors | 2-Conductor with Operating levers | 20-12 A.W.G. | Transparent housing | White Cover | [Box of 60 Pieces]\nVisit the WAGO Store",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "expense",
+        "expense:quantity": "1",
+        "expense:unitCost": "30.85",
+        "expense:group": "",
+        "money:currency": "USD",
+        "source:text": "https://www.amazon.com/dp/B0BKR2SR7H?ref=fed_asin_title&th=1",
+        "source:url": "https://www.amazon.com/dp/B0BKR2SR7H?ref=fed_asin_title&th=1",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "Supplies!A9:G9"
+      }
+    },
+    {
+      "id": "expense-10",
+      "kind": "expense",
+      "name": "LED DriSentri 9W",
+      "text": "Eagle Eye LED Lights, 10Pcs 23mm Eagle Eye High Power 4014 12SMD 12V Car Fog DRL Bulb Reverse Backup Parking Signal, White\nBrand: DriSentri",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "expense",
+        "expense:quantity": "1",
+        "expense:unitCost": "11.99",
+        "expense:group": "",
+        "money:currency": "USD",
+        "source:text": "https://www.amazon.com/dp/B0DXPKTRKM?ref=fed_asin_title&th=1",
+        "source:url": "https://www.amazon.com/dp/B0DXPKTRKM?ref=fed_asin_title&th=1",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "Supplies!A10:G10"
+      }
+    },
+    {
+      "id": "expense-11",
+      "kind": "expense",
+      "name": "Switch Apiele",
+      "text": "APIELE 16mm Latching Push Button Switch 12V DC On Off Black Shell with LED Angel Eye Head for 0.63\" Mounting Hole with Wire Socket Plug Self-Locking (Yellow/Black Shell)\nVisit the APIELE Store",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "expense",
+        "expense:quantity": "3",
+        "expense:unitCost": "8.70",
+        "expense:group": "",
+        "money:currency": "USD",
+        "source:text": "https://www.amazon.com/dp/B08L4BYRZG?ref=fed_asin_title&th=1",
+        "source:url": "https://www.amazon.com/dp/B08L4BYRZG?ref=fed_asin_title&th=1",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "Supplies!A11:G11"
+      }
+    },
+    {
+      "id": "expense-12",
+      "kind": "expense",
+      "name": "LiPo 1200 mAh Battery",
+      "text": "KBT 12V 1200mAh Rechargeable Li-ion Battery, Bare Leads Wire Replacement Battery Pack with Charger Compatible for 12V Devices RC Car, Boat, Robot, DIY, LED Light Kit\nVisit the KBT KEEP BETTER",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "expense",
+        "expense:quantity": "3",
+        "expense:unitCost": "15.99",
+        "expense:group": "",
+        "money:currency": "USD",
+        "source:text": "https://www.amazon.com/dp/B0C243MXMQ?ref=fed_asin_title&th=1",
+        "source:url": "https://www.amazon.com/dp/B0C243MXMQ?ref=fed_asin_title&th=1",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "Supplies!A12:G12"
+      }
+    },
+    {
+      "id": "expense-13",
+      "kind": "expense",
+      "name": "LED CARLITS 3W",
+      "text": "Eagle Eye Led - 10Pack Ultra Thin Daytime Running DRL Tail Lights for Car & Motorcycle, White, DiY, 12V\nVisit the CARLITS Store",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "expense",
+        "expense:quantity": "1",
+        "expense:unitCost": "13.50",
+        "expense:group": "",
+        "money:currency": "USD",
+        "source:text": "https://www.amazon.com/dp/B06ZYKWQZC?ref=fed_asin_title&th=1",
+        "source:url": "https://www.amazon.com/dp/B06ZYKWQZC?ref=fed_asin_title&th=1",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "Supplies!A13:G13"
+      }
+    },
+    {
+      "id": "expense-14",
+      "kind": "expense",
+      "name": "LED LeadTops",
+      "text": "10Pcs 18mm 12V Eagle Eye LED Car Fog DRL Daytime Running Light Backup Reverse Tail Rock Lights Small bulb (White, Black Case)\nVisit the LEADTOPS Stor",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "expense",
+        "expense:quantity": "1",
+        "expense:unitCost": "12.58",
+        "expense:group": "",
+        "money:currency": "USD",
+        "source:text": "https://www.amazon.com/dp/B01N4M9CB6?ref=fed_asin_title&th=1",
+        "source:url": "https://www.amazon.com/dp/B01N4M9CB6?ref=fed_asin_title&th=1",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "Supplies!A14:G14"
+      }
+    },
+    {
+      "id": "expense-15",
+      "kind": "expense",
+      "name": "Breakout Board",
+      "text": "Description\nFor really big projects, give yourself some room to work in, with a massive 2250-point breadboard - equivalent in size to three full-sized breadboards side by side.\n\nThe breadboards are mounted onto a metal plate and comes with 4 colored posts you can use with a bench-top supply. Four bumpers are included, to keep the board from slipping around your desk.\n\nAs of Dec 19, 2023 - This breadboard has been updated to Premium, making plugging and unplugging boards and headers a buttery-smooth operation thanks to upgraded spring clips. \n\nPlease note, the binding posts for these breadboards are a little smaller than the D-cuts in the metal place, so while they can be screwed into place they 'rotate'",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "expense",
+        "expense:quantity": "2",
+        "expense:unitCost": "19.95",
+        "expense:group": "",
+        "money:currency": "USD",
+        "source:text": "https://www.adafruit.com/product/443",
+        "source:url": "https://www.adafruit.com/product/443",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "Supplies!A15:G15"
+      }
+    },
+    {
+      "id": "expense-16",
+      "kind": "expense",
+      "name": "Raspberry Pi + Components",
+      "text": "And Components:\n\n\nAngled shot of green Raspberry Pi 5 microcontroller.Raspberry Pi 5 - 4 GB RAM PID: 5812$130.001$130.00\nClose-up of FPC ribbon cable connecting a Raspberry Pi to a 7\" touchscreen.Raspberry Pi 5 FPC Display Cable - 22-pin 0.5mm to 15-pin 1mm - 200mm long PID: 5821$2.701$2.70\nAngled shot of black, square-shaped power supply block with a coiled black cable.Official Raspberry Pi 27W PD Power Supply 5.1V 5A with USB C PID: 5814$14.041$14.04\nAngled shot of a cooling fan installed on a green microcontroller.Official Raspberry Pi 5 Active Cooler PID: 5815$13.501$13.50\nTop view of Pack of 2 Black Plated Brass M2.5 Standoffs for Pi HATs.Brass M2.5 Standoffs for Pi HATs - Black Plated - Pack of 2 PID: 2336$0.754$3.00\nTop view of Brass M2.5 Standoffs for Pi HATs Brass M2.5 Standoffs 16mm tall - Black Plated - Pack of 2 PID: 2337$1.254$5.00\nAngled top shot of the 2x20 extra tall socket header.GPIO Stacking Header for Pi A+/B+/Pi 2/Pi 3/Pi 4/Pi 5 - Extra-long 2x20 Pins PID: 2223$2.952$5.90\nMicroUSB power supply with bundled cable and U.S. plugs.5V 2.5A Switching Power Supply with 20AWG MicroUSB Cable PID: 1995$8.251$8.25\nAngled shot of short black microcontroller.Adafruit KB2040 - RP2040 Kee Boar Driver PID: 5302$8.951 (1 FREE)$0.00\n Adafruit PCB Coasters in GoldPCB Coaster with Gold Adafruit Logo PID: 5719$2.501 (1 FREE)$0.00",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "expense",
+        "expense:quantity": "1",
+        "expense:unitCost": "194.59",
+        "expense:group": "",
+        "money:currency": "USD",
+        "source:text": "https://www.adafruit.com/product/5812",
+        "source:url": "https://www.adafruit.com/product/5812",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "Supplies!A16:G16"
+      }
+    },
+    {
+      "id": "expense-17",
+      "kind": "expense",
+      "name": "Hakko Parts",
+      "text": "Hakko Parts and Accessories:\n\nSKU\tDescription\tQuantity\tPrice Per\tTotal Price\n413732\tIPSG **TV MOUNT FMO SST 37-70\t1\t$30.71\t$30.71\n552463\tHAKKO T39-D12 CHISEL TIP\t2\t$21.99\t$43.98\n087791\tIPSG HELPING HAND W/ MAGNIFIER\t1\t$4.99\t$4.99\n648691\tMG CHEM HALOGEN FREE ROSIN FLUX\t1\t$10.99\t$10.99",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "expense",
+        "expense:quantity": "1",
+        "expense:unitCost": "96.00",
+        "expense:group": "",
+        "money:currency": "USD",
+        "source:text": "www.Microcenter.com",
+        "source:url": "http://www.microcenter.com/",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "Supplies!A17:G17"
+      }
+    },
+    {
+      "id": "expense-18",
+      "kind": "expense",
+      "name": "Zip tie gun",
+      "text": "Low-Impact Cable Tie Gun for Plastic & Nylon Zip Tie, Replace Panduit GTS-E, Ergonomic Zip Tie Gun with Adjustable Tension, 16-Position Knob, Flush Cut, Low Handle Force, Fits 8-50 lb Cable Ties",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "expense",
+        "expense:quantity": "2",
+        "expense:unitCost": "104.49",
+        "expense:group": "",
+        "money:currency": "USD",
+        "source:text": "",
+        "source:url": "",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "Supplies!A18:G18"
+      }
+    },
+    {
+      "id": "expense-19",
+      "kind": "expense",
+      "name": "Superbound",
+      "text": "",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "expense",
+        "expense:quantity": "1",
+        "expense:unitCost": "144.99",
+        "expense:group": "J",
+        "money:currency": "USD",
+        "source:text": "",
+        "source:url": "",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "Supplies!A19:G19"
+      }
+    },
+    {
+      "id": "expense-20",
+      "kind": "expense",
+      "name": "Digikey",
+      "text": "",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "expense",
+        "expense:quantity": "1",
+        "expense:unitCost": "142.00",
+        "expense:group": "J",
+        "money:currency": "USD",
+        "source:text": "",
+        "source:url": "",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "Supplies!A20:G20"
+      }
+    },
+    {
+      "id": "expense-21",
+      "kind": "expense",
+      "name": "Digikey",
+      "text": "",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "expense",
+        "expense:quantity": "1",
+        "expense:unitCost": "388.27",
+        "expense:group": "J",
+        "money:currency": "USD",
+        "source:text": "",
+        "source:url": "",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "Supplies!A21:G21"
+      }
+    },
+    {
+      "id": "expense-22",
+      "kind": "expense",
+      "name": "Grainger",
+      "text": "",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "expense",
+        "expense:quantity": "1",
+        "expense:unitCost": "360.00",
+        "expense:group": "J",
+        "money:currency": "USD",
+        "source:text": "",
+        "source:url": "",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "Supplies!A22:G22"
+      }
+    },
+    {
+      "id": "expense-23",
+      "kind": "expense",
+      "name": "Digikey",
+      "text": "",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "expense",
+        "expense:quantity": "1",
+        "expense:unitCost": "50.55",
+        "expense:group": "J",
+        "money:currency": "USD",
+        "source:text": "",
+        "source:url": "",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "Supplies!A23:G23"
+      }
+    },
+    {
+      "id": "expense-24",
+      "kind": "expense",
+      "name": "Microcenter",
+      "text": "DMM - Oscilloscope - Electronics Components",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "expense",
+        "expense:quantity": "1",
+        "expense:unitCost": "1086.39",
+        "expense:group": "J",
+        "money:currency": "USD",
+        "source:text": "",
+        "source:url": "",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "Supplies!A24:G24"
+      }
+    },
+    {
+      "id": "expense-25",
+      "kind": "expense",
+      "name": "Helping Hands",
+      "text": "",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "expense",
+        "expense:quantity": "",
+        "expense:unitCost": "",
+        "expense:group": "",
+        "money:currency": "USD",
+        "source:text": "",
+        "source:url": "",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "Supplies!A25:G25"
+      }
+    },
+    {
+      "id": "expense-26",
+      "kind": "expense",
+      "name": "Bowls",
+      "text": "",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "expense",
+        "expense:quantity": "",
+        "expense:unitCost": "",
+        "expense:group": "",
+        "money:currency": "USD",
+        "source:text": "",
+        "source:url": "",
+        "source:file": "shako-light-wrap.xlsx",
+        "source:location": "Supplies!A26:G26"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "assembly-source-pptx",
+      "source": "assembly",
+      "target": "source-pptx",
+      "relationKind": "related",
+      "relationship": "comes from",
+      "properties": {
+        "osa:relation": "assembly-source"
+      }
+    },
+    {
+      "id": "assembly-source-xlsx",
+      "source": "assembly",
+      "target": "source-xlsx",
+      "relationKind": "related",
+      "relationship": "comes from",
+      "properties": {
+        "osa:relation": "assembly-source"
+      }
+    },
+    {
+      "id": "assembly-operation-01",
+      "source": "assembly",
+      "target": "operation-01",
+      "relationKind": "project-task",
+      "relationship": "contains operation",
+      "properties": {
+        "osa:relation": "assembly-operation"
+      }
+    },
+    {
+      "id": "operation-01-source-visual",
+      "source": "operation-01",
+      "target": "visual-operation-01-source-slide",
+      "relationKind": "related",
+      "relationship": "uses source visual",
+      "properties": {
+        "osa:relation": "operation-source-visual"
+      }
+    },
+    {
+      "id": "operation-01-tool-drill",
+      "source": "operation-01",
+      "target": "tool-drill",
+      "relationKind": "related",
+      "relationship": "uses tool",
+      "properties": {
+        "osa:relation": "operation-tool"
+      }
+    },
+    {
+      "id": "operation-01-tool-bits-5-16-1-8-7-64",
+      "source": "operation-01",
+      "target": "tool-bits-5-16-1-8-7-64",
+      "relationKind": "related",
+      "relationship": "uses tool",
+      "properties": {
+        "osa:relation": "operation-tool"
+      }
+    },
+    {
+      "id": "assembly-operation-02",
+      "source": "assembly",
+      "target": "operation-02",
+      "relationKind": "project-task",
+      "relationship": "contains operation",
+      "properties": {
+        "osa:relation": "assembly-operation"
+      }
+    },
+    {
+      "id": "assembly-operation-02-01",
+      "source": "assembly",
+      "target": "operation-02-01",
+      "relationKind": "project-task",
+      "relationship": "contains operation",
+      "properties": {
+        "osa:relation": "assembly-operation"
+      }
+    },
+    {
+      "id": "assembly-operation-02-02",
+      "source": "assembly",
+      "target": "operation-02-02",
+      "relationKind": "project-task",
+      "relationship": "contains operation",
+      "properties": {
+        "osa:relation": "assembly-operation"
+      }
+    },
+    {
+      "id": "assembly-operation-03",
+      "source": "assembly",
+      "target": "operation-03",
+      "relationKind": "project-task",
+      "relationship": "contains operation",
+      "properties": {
+        "osa:relation": "assembly-operation"
+      }
+    },
+    {
+      "id": "operation-03-source-visual",
+      "source": "operation-03",
+      "target": "visual-operation-03-source-slide",
+      "relationKind": "related",
+      "relationship": "uses source visual",
+      "properties": {
+        "osa:relation": "operation-source-visual"
+      }
+    },
+    {
+      "id": "operation-03-tool-soldering-station",
+      "source": "operation-03",
+      "target": "tool-soldering-station",
+      "relationKind": "related",
+      "relationship": "uses tool",
+      "properties": {
+        "osa:relation": "operation-tool"
+      }
+    },
+    {
+      "id": "operation-03-tool-helping-hands",
+      "source": "operation-03",
+      "target": "tool-helping-hands",
+      "relationKind": "related",
+      "relationship": "uses tool",
+      "properties": {
+        "osa:relation": "operation-tool"
+      }
+    },
+    {
+      "id": "assembly-operation-04",
+      "source": "assembly",
+      "target": "operation-04",
+      "relationKind": "project-task",
+      "relationship": "contains operation",
+      "properties": {
+        "osa:relation": "assembly-operation"
+      }
+    },
+    {
+      "id": "operation-04-source-visual",
+      "source": "operation-04",
+      "target": "visual-operation-04-source-slide",
+      "relationKind": "related",
+      "relationship": "uses source visual",
+      "properties": {
+        "osa:relation": "operation-source-visual"
+      }
+    },
+    {
+      "id": "operation-04-tool-soldering-station",
+      "source": "operation-04",
+      "target": "tool-soldering-station",
+      "relationKind": "related",
+      "relationship": "uses tool",
+      "properties": {
+        "osa:relation": "operation-tool"
+      }
+    },
+    {
+      "id": "operation-04-tool-helping-hands",
+      "source": "operation-04",
+      "target": "tool-helping-hands",
+      "relationKind": "related",
+      "relationship": "uses tool",
+      "properties": {
+        "osa:relation": "operation-tool"
+      }
+    },
+    {
+      "id": "operation-04-tool-zip-tie-gun",
+      "source": "operation-04",
+      "target": "tool-zip-tie-gun",
+      "relationKind": "related",
+      "relationship": "uses tool",
+      "properties": {
+        "osa:relation": "operation-tool"
+      }
+    },
+    {
+      "id": "assembly-bom-3",
+      "source": "assembly",
+      "target": "bom-3",
+      "relationKind": "related",
+      "relationship": "uses part",
+      "properties": {
+        "osa:relation": "assembly-item"
+      }
+    },
+    {
+      "id": "assembly-bom-4",
+      "source": "assembly",
+      "target": "bom-4",
+      "relationKind": "related",
+      "relationship": "uses part",
+      "properties": {
+        "osa:relation": "assembly-item"
+      }
+    },
+    {
+      "id": "assembly-bom-5",
+      "source": "assembly",
+      "target": "bom-5",
+      "relationKind": "related",
+      "relationship": "uses part",
+      "properties": {
+        "osa:relation": "assembly-item"
+      }
+    },
+    {
+      "id": "assembly-bom-6",
+      "source": "assembly",
+      "target": "bom-6",
+      "relationKind": "related",
+      "relationship": "uses part",
+      "properties": {
+        "osa:relation": "assembly-item"
+      }
+    },
+    {
+      "id": "assembly-bom-7",
+      "source": "assembly",
+      "target": "bom-7",
+      "relationKind": "related",
+      "relationship": "uses part",
+      "properties": {
+        "osa:relation": "assembly-item"
+      }
+    },
+    {
+      "id": "assembly-bom-8",
+      "source": "assembly",
+      "target": "bom-8",
+      "relationKind": "related",
+      "relationship": "uses part",
+      "properties": {
+        "osa:relation": "assembly-item"
+      }
+    },
+    {
+      "id": "assembly-bom-9",
+      "source": "assembly",
+      "target": "bom-9",
+      "relationKind": "related",
+      "relationship": "uses part",
+      "properties": {
+        "osa:relation": "assembly-item"
+      }
+    },
+    {
+      "id": "assembly-bom-10",
+      "source": "assembly",
+      "target": "bom-10",
+      "relationKind": "related",
+      "relationship": "uses part",
+      "properties": {
+        "osa:relation": "assembly-item"
+      }
+    },
+    {
+      "id": "assembly-bom-11",
+      "source": "assembly",
+      "target": "bom-11",
+      "relationKind": "related",
+      "relationship": "uses part",
+      "properties": {
+        "osa:relation": "assembly-item"
+      }
+    },
+    {
+      "id": "assembly-bom-12",
+      "source": "assembly",
+      "target": "bom-12",
+      "relationKind": "related",
+      "relationship": "uses part",
+      "properties": {
+        "osa:relation": "assembly-item"
+      }
+    },
+    {
+      "id": "assembly-bom-13",
+      "source": "assembly",
+      "target": "bom-13",
+      "relationKind": "related",
+      "relationship": "uses part",
+      "properties": {
+        "osa:relation": "assembly-item"
+      }
+    },
+    {
+      "id": "assembly-bom-14",
+      "source": "assembly",
+      "target": "bom-14",
+      "relationKind": "related",
+      "relationship": "uses part",
+      "properties": {
+        "osa:relation": "assembly-item"
+      }
+    },
+    {
+      "id": "assembly-bom-15",
+      "source": "assembly",
+      "target": "bom-15",
+      "relationKind": "related",
+      "relationship": "uses part",
+      "properties": {
+        "osa:relation": "assembly-item"
+      }
+    },
+    {
+      "id": "assembly-bom-16",
+      "source": "assembly",
+      "target": "bom-16",
+      "relationKind": "related",
+      "relationship": "uses part",
+      "properties": {
+        "osa:relation": "assembly-item"
+      }
+    },
+    {
+      "id": "assembly-bom-17",
+      "source": "assembly",
+      "target": "bom-17",
+      "relationKind": "related",
+      "relationship": "uses part",
+      "properties": {
+        "osa:relation": "assembly-item"
+      }
+    },
+    {
+      "id": "assembly-part-connector-box-drilled",
+      "source": "assembly",
+      "target": "part-connector-box-drilled",
+      "relationKind": "related",
+      "relationship": "tracks part",
+      "properties": {
+        "osa:relation": "assembly-item",
+        "source:inference": "Added to the assembly's parts list as a derived work-state, not a separately purchased BOM item."
+      }
+    },
+    {
+      "id": "operation-01-bom-4-input",
+      "source": "operation-01",
+      "target": "bom-4",
+      "relationKind": "related",
+      "relationship": "uses as input",
+      "properties": {
+        "osa:relation": "operation-input",
+        "source:inference": "Inferred from Slide 2 Entrance: Connector Box as Delivered, to the BOM's Electronics Box."
+      }
+    },
+    {
+      "id": "operation-01-part-connector-box-drilled-output",
+      "source": "operation-01",
+      "target": "part-connector-box-drilled",
+      "relationKind": "related",
+      "relationship": "produces as output",
+      "properties": {
+        "osa:relation": "operation-output",
+        "source:inference": "Inferred from Slide 2 Exit: Connector Box Top – 1 Hole and Bottom – 2 Holes."
+      }
+    },
+    {
+      "id": "operation-01-part-connector-box-drilled-primary-output",
+      "source": "operation-01",
+      "target": "part-connector-box-drilled",
+      "relationKind": "related",
+      "relationship": "is the primary output",
+      "properties": {
+        "osa:relation": "operation-primary-output",
+        "source:inference": "Inferred from source Slide 2: the source slide is specifically about drilling the Connector Box, so this derived work-state is the operation card's primary represented output."
+      }
+    },
+    {
+      "id": "assembly-part-boost-with-v-out-wires",
+      "source": "assembly",
+      "target": "part-boost-with-v-out-wires",
+      "relationKind": "related",
+      "relationship": "tracks part",
+      "properties": {
+        "osa:relation": "assembly-item",
+        "source:inference": "Added to the assembly's parts list as the derived work-state named by Slide 3's Exit, not as a purchased BOM item."
+      }
+    },
+    {
+      "id": "operation-03-bom-5-input",
+      "source": "operation-03",
+      "target": "bom-5",
+      "relationKind": "related",
+      "relationship": "uses as input",
+      "properties": {
+        "osa:relation": "operation-input",
+        "source:inference": "Inferred from Slide 3 Entrance: Boost as Delivered, to the BOM's DC-DC Converter."
+      }
+    },
+    {
+      "id": "operation-03-bom-11-input",
+      "source": "operation-03",
+      "target": "bom-11",
+      "relationKind": "related",
+      "relationship": "uses as input",
+      "properties": {
+        "osa:relation": "operation-input",
+        "source:inference": "Inferred from Slide 3 Entrance: Pre-stripped red x1 and black x2 wires, to the BOM's Wires."
+      }
+    },
+    {
+      "id": "operation-03-part-boost-with-v-out-wires-output",
+      "source": "operation-03",
+      "target": "part-boost-with-v-out-wires",
+      "relationKind": "related",
+      "relationship": "produces as output",
+      "properties": {
+        "osa:relation": "operation-output",
+        "source:inference": "Inferred from Slide 3 Exit: Boost w/attached V-out Wires."
+      }
+    },
+    {
+      "id": "operation-03-part-boost-with-v-out-wires-primary-output",
+      "source": "operation-03",
+      "target": "part-boost-with-v-out-wires",
+      "relationKind": "related",
+      "relationship": "is the primary output",
+      "properties": {
+        "osa:relation": "operation-primary-output",
+        "source:inference": "Inferred from the Slide 3 title and Exit: this card is about the Boost after its V-out wires are attached."
+      }
+    },
+    {
+      "id": "assembly-assembly-battery-holder-top-with-heatshrink-leads",
+      "source": "assembly",
+      "target": "assembly-battery-holder-top-with-heatshrink-leads",
+      "relationKind": "related",
+      "relationship": "tracks subassembly",
+      "properties": {
+        "osa:relation": "assembly-item",
+        "source:inference": "Added as the source-named prepared input from Slide 4's Entrance list."
+      }
+    },
+    {
+      "id": "assembly-battery-holder-top-with-heatshrink-leads-bom-3",
+      "source": "assembly-battery-holder-top-with-heatshrink-leads",
+      "target": "bom-3",
+      "relationKind": "related",
+      "relationship": "contains component",
+      "properties": {
+        "osa:relation": "assembly-item",
+        "source:inference": "Inferred from Slide 4 Entrance: Battery Holder Top w/ Heatshrink leads, to the BOM's Battery Holder."
+      }
+    },
+    {
+      "id": "assembly-battery-holder-top-with-heatshrink-leads-bom-13",
+      "source": "assembly-battery-holder-top-with-heatshrink-leads",
+      "target": "bom-13",
+      "relationKind": "related",
+      "relationship": "contains component",
+      "properties": {
+        "osa:relation": "assembly-item",
+        "source:inference": "Inferred from Slide 4 Entrance: Battery Holder Top w/ Heatshrink leads, to the BOM's Heat Shrink."
+      }
+    },
+    {
+      "id": "assembly-assembly-power-section",
+      "source": "assembly",
+      "target": "assembly-power-section",
+      "relationKind": "related",
+      "relationship": "tracks subassembly",
+      "properties": {
+        "osa:relation": "assembly-item",
+        "source:inference": "Added as the nested Power Section Assembly named in the source outline and visual."
+      }
+    },
+    {
+      "id": "operation-04-part-boost-with-v-out-wires-input",
+      "source": "operation-04",
+      "target": "part-boost-with-v-out-wires",
+      "relationKind": "related",
+      "relationship": "uses as input",
+      "properties": {
+        "osa:relation": "operation-input",
+        "source:inference": "Inferred from Slide 4 Entrance: Boost Attached V-out Wires, to the derived Boost with V-out Wires work-state from Slide 3."
+      }
+    },
+    {
+      "id": "operation-04-assembly-battery-holder-top-with-heatshrink-leads-input",
+      "source": "operation-04",
+      "target": "assembly-battery-holder-top-with-heatshrink-leads",
+      "relationKind": "related",
+      "relationship": "uses as input",
+      "properties": {
+        "osa:relation": "operation-input",
+        "source:inference": "Inferred from Slide 4 Entrance: Battery Holder Top w/ Heatshrink leads."
+      }
+    },
+    {
+      "id": "operation-04-part-connector-box-drilled-input",
+      "source": "operation-04",
+      "target": "part-connector-box-drilled",
+      "relationKind": "related",
+      "relationship": "uses as input",
+      "properties": {
+        "osa:relation": "operation-input",
+        "source:inference": "Inferred from Slide 4 Entrance: Electronics Box Top Drilled, to the Connector Box Drilled work-state from Slide 2."
+      }
+    },
+    {
+      "id": "operation-04-bom-8-input",
+      "source": "operation-04",
+      "target": "bom-8",
+      "relationKind": "related",
+      "relationship": "uses as input",
+      "properties": {
+        "osa:relation": "operation-input",
+        "source:inference": "Inferred from Slide 4 Entrance: 3M Cable Relief Mounts x2, to the BOM's Mounts Zip Ties. Brand and quantity remain in the preserved source text for author review."
+      }
+    },
+    {
+      "id": "operation-04-bom-10-input",
+      "source": "operation-04",
+      "target": "bom-10",
+      "relationKind": "related",
+      "relationship": "uses as input",
+      "properties": {
+        "osa:relation": "operation-input",
+        "source:inference": "Inferred from Slide 4 Entrance: Zip ties x2, to the BOM's Zip Ties."
+      }
+    },
+    {
+      "id": "operation-04-assembly-power-section-output",
+      "source": "operation-04",
+      "target": "assembly-power-section",
+      "relationKind": "related",
+      "relationship": "produces as output",
+      "properties": {
+        "osa:relation": "operation-output",
+        "source:inference": "Inferred from the source outline, Slide 4 title, and visual. Slide 4's conflicting Exit wording is preserved separately for author review."
+      }
+    },
+    {
+      "id": "operation-04-assembly-power-section-primary-output",
+      "source": "operation-04",
+      "target": "assembly-power-section",
+      "relationKind": "related",
+      "relationship": "is the primary output",
+      "properties": {
+        "osa:relation": "operation-primary-output",
+        "source:inference": "Inferred from the card's Power Section Assembly outline name and the Slide 4 Power Section visual."
+      }
+    },
+    {
+      "id": "assembly-power-section-part-boost-with-v-out-wires",
+      "source": "assembly-power-section",
+      "target": "part-boost-with-v-out-wires",
+      "relationKind": "related",
+      "relationship": "contains component",
+      "properties": {
+        "osa:relation": "assembly-item",
+        "source:inference": "Inferred from Slide 4's Entrance list."
+      }
+    },
+    {
+      "id": "assembly-power-section-assembly-battery-holder-top-with-heatshrink-leads",
+      "source": "assembly-power-section",
+      "target": "assembly-battery-holder-top-with-heatshrink-leads",
+      "relationKind": "related",
+      "relationship": "contains subassembly",
+      "properties": {
+        "osa:relation": "assembly-item",
+        "source:inference": "Inferred from Slide 4's Entrance list."
+      }
+    },
+    {
+      "id": "assembly-power-section-part-connector-box-drilled",
+      "source": "assembly-power-section",
+      "target": "part-connector-box-drilled",
+      "relationKind": "related",
+      "relationship": "contains component",
+      "properties": {
+        "osa:relation": "assembly-item",
+        "source:inference": "Inferred from Slide 4's Entrance list."
+      }
+    },
+    {
+      "id": "assembly-power-section-bom-8",
+      "source": "assembly-power-section",
+      "target": "bom-8",
+      "relationKind": "related",
+      "relationship": "contains component",
+      "properties": {
+        "osa:relation": "assembly-item",
+        "source:inference": "Inferred from Slide 4's Entrance list."
+      }
+    },
+    {
+      "id": "assembly-power-section-bom-10",
+      "source": "assembly-power-section",
+      "target": "bom-10",
+      "relationKind": "related",
+      "relationship": "contains component",
+      "properties": {
+        "osa:relation": "assembly-item",
+        "source:inference": "Inferred from Slide 4's Entrance list."
+      }
+    },
+    {
+      "id": "assembly-expense-3",
+      "source": "assembly",
+      "target": "expense-3",
+      "relationKind": "related",
+      "relationship": "records expense",
+      "properties": {
+        "osa:relation": "assembly-expense"
+      }
+    },
+    {
+      "id": "assembly-expense-4",
+      "source": "assembly",
+      "target": "expense-4",
+      "relationKind": "related",
+      "relationship": "records expense",
+      "properties": {
+        "osa:relation": "assembly-expense"
+      }
+    },
+    {
+      "id": "assembly-expense-5",
+      "source": "assembly",
+      "target": "expense-5",
+      "relationKind": "related",
+      "relationship": "records expense",
+      "properties": {
+        "osa:relation": "assembly-expense"
+      }
+    },
+    {
+      "id": "assembly-expense-6",
+      "source": "assembly",
+      "target": "expense-6",
+      "relationKind": "related",
+      "relationship": "records expense",
+      "properties": {
+        "osa:relation": "assembly-expense"
+      }
+    },
+    {
+      "id": "assembly-expense-7",
+      "source": "assembly",
+      "target": "expense-7",
+      "relationKind": "related",
+      "relationship": "records expense",
+      "properties": {
+        "osa:relation": "assembly-expense"
+      }
+    },
+    {
+      "id": "assembly-expense-8",
+      "source": "assembly",
+      "target": "expense-8",
+      "relationKind": "related",
+      "relationship": "records expense",
+      "properties": {
+        "osa:relation": "assembly-expense"
+      }
+    },
+    {
+      "id": "assembly-expense-9",
+      "source": "assembly",
+      "target": "expense-9",
+      "relationKind": "related",
+      "relationship": "records expense",
+      "properties": {
+        "osa:relation": "assembly-expense"
+      }
+    },
+    {
+      "id": "assembly-expense-10",
+      "source": "assembly",
+      "target": "expense-10",
+      "relationKind": "related",
+      "relationship": "records expense",
+      "properties": {
+        "osa:relation": "assembly-expense"
+      }
+    },
+    {
+      "id": "assembly-expense-11",
+      "source": "assembly",
+      "target": "expense-11",
+      "relationKind": "related",
+      "relationship": "records expense",
+      "properties": {
+        "osa:relation": "assembly-expense"
+      }
+    },
+    {
+      "id": "assembly-expense-12",
+      "source": "assembly",
+      "target": "expense-12",
+      "relationKind": "related",
+      "relationship": "records expense",
+      "properties": {
+        "osa:relation": "assembly-expense"
+      }
+    },
+    {
+      "id": "assembly-expense-13",
+      "source": "assembly",
+      "target": "expense-13",
+      "relationKind": "related",
+      "relationship": "records expense",
+      "properties": {
+        "osa:relation": "assembly-expense"
+      }
+    },
+    {
+      "id": "assembly-expense-14",
+      "source": "assembly",
+      "target": "expense-14",
+      "relationKind": "related",
+      "relationship": "records expense",
+      "properties": {
+        "osa:relation": "assembly-expense"
+      }
+    },
+    {
+      "id": "assembly-expense-15",
+      "source": "assembly",
+      "target": "expense-15",
+      "relationKind": "related",
+      "relationship": "records expense",
+      "properties": {
+        "osa:relation": "assembly-expense"
+      }
+    },
+    {
+      "id": "assembly-expense-16",
+      "source": "assembly",
+      "target": "expense-16",
+      "relationKind": "related",
+      "relationship": "records expense",
+      "properties": {
+        "osa:relation": "assembly-expense"
+      }
+    },
+    {
+      "id": "assembly-expense-17",
+      "source": "assembly",
+      "target": "expense-17",
+      "relationKind": "related",
+      "relationship": "records expense",
+      "properties": {
+        "osa:relation": "assembly-expense"
+      }
+    },
+    {
+      "id": "assembly-expense-18",
+      "source": "assembly",
+      "target": "expense-18",
+      "relationKind": "related",
+      "relationship": "records expense",
+      "properties": {
+        "osa:relation": "assembly-expense"
+      }
+    },
+    {
+      "id": "assembly-expense-19",
+      "source": "assembly",
+      "target": "expense-19",
+      "relationKind": "related",
+      "relationship": "records expense",
+      "properties": {
+        "osa:relation": "assembly-expense"
+      }
+    },
+    {
+      "id": "assembly-expense-20",
+      "source": "assembly",
+      "target": "expense-20",
+      "relationKind": "related",
+      "relationship": "records expense",
+      "properties": {
+        "osa:relation": "assembly-expense"
+      }
+    },
+    {
+      "id": "assembly-expense-21",
+      "source": "assembly",
+      "target": "expense-21",
+      "relationKind": "related",
+      "relationship": "records expense",
+      "properties": {
+        "osa:relation": "assembly-expense"
+      }
+    },
+    {
+      "id": "assembly-expense-22",
+      "source": "assembly",
+      "target": "expense-22",
+      "relationKind": "related",
+      "relationship": "records expense",
+      "properties": {
+        "osa:relation": "assembly-expense"
+      }
+    },
+    {
+      "id": "assembly-expense-23",
+      "source": "assembly",
+      "target": "expense-23",
+      "relationKind": "related",
+      "relationship": "records expense",
+      "properties": {
+        "osa:relation": "assembly-expense"
+      }
+    },
+    {
+      "id": "assembly-expense-24",
+      "source": "assembly",
+      "target": "expense-24",
+      "relationKind": "related",
+      "relationship": "records expense",
+      "properties": {
+        "osa:relation": "assembly-expense"
+      }
+    },
+    {
+      "id": "assembly-expense-25",
+      "source": "assembly",
+      "target": "expense-25",
+      "relationKind": "related",
+      "relationship": "records expense",
+      "properties": {
+        "osa:relation": "assembly-expense"
+      }
+    },
+    {
+      "id": "assembly-expense-26",
+      "source": "assembly",
+      "target": "expense-26",
+      "relationKind": "related",
+      "relationship": "records expense",
+      "properties": {
+        "osa:relation": "assembly-expense"
+      }
+    },
+    {
+      "id": "tool-helping-hands-expense-25",
+      "source": "tool-helping-hands",
+      "target": "expense-25",
+      "relationKind": "related",
+      "relationship": "has purchase record",
+      "properties": {
+        "osa:relation": "tool-expense",
+        "source:inference": "Inferred by matching the PowerPoint tool name to the Supplies expense name; the source files do not explicitly encode this relationship."
+      }
+    },
+    {
+      "id": "tool-zip-tie-gun-expense-18",
+      "source": "tool-zip-tie-gun",
+      "target": "expense-18",
+      "relationKind": "related",
+      "relationship": "has purchase record",
+      "properties": {
+        "osa:relation": "tool-expense",
+        "source:inference": "Inferred by matching the PowerPoint tool name to the Supplies expense name; the source files do not explicitly encode this relationship."
+      }
+    }
+  ]
+}

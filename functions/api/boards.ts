@@ -27,17 +27,28 @@ export const onRequestGet: PagesFunction<Env, string, AccessData> = async ({ env
 export const onRequestPut: PagesFunction<Env, string, AccessData> = async ({ request, env, data }) => {
   const owner = ownerEmail(data)
   if (!owner) return json({ error: 'Private sign-in required.' }, 403)
-  const body = await request.json().catch(() => null) as { boards?: unknown } | null
-  if (!body || !Array.isArray(body.boards)) return json({ error: 'Expected a boards list.' }, 400)
-  if (body.boards.length > 250) return json({ error: 'Too many boards in one save.' }, 413)
-  const boards = body.boards as Board[]
+  const body = await request.json().catch(() => null) as {
+    board?: unknown
+    /** Accepted during deployment so an older open tab cannot fail abruptly. */
+    boards?: unknown
+  } | null
+  const boards = body?.board
+    ? [body.board as Board]
+    : Array.isArray(body?.boards)
+      ? body.boards as Board[]
+      : null
+  if (!boards) return json({ error: 'Expected a board.' }, 400)
+  if (boards.length > 250) return json({ error: 'Too many boards in one save.' }, 413)
   if (boards.some((board) => !board?.id || !board.name || !board.updatedAt)) return json({ error: 'One or more boards are missing required details.' }, 400)
-  const statements = [
-    env.OSA_DB.prepare('DELETE FROM boards WHERE owner_email = ?').bind(owner),
-    ...boards.map((board) => env.OSA_DB
-      .prepare('INSERT INTO boards (id, owner_email, name, content, updated_at) VALUES (?, ?, ?, ?, ?)')
-      .bind(board.id, owner, board.name, JSON.stringify(board), board.updatedAt)),
-  ]
+  const statements = boards.map((board) => env.OSA_DB.prepare(`
+    INSERT INTO boards (id, owner_email, name, content, updated_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      name = excluded.name,
+      content = excluded.content,
+      updated_at = excluded.updated_at
+    WHERE boards.owner_email = excluded.owner_email
+  `).bind(board.id, owner, board.name, JSON.stringify(board), board.updatedAt))
   await env.OSA_DB.batch(statements)
   return json({ ok: true })
 }

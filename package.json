@@ -9,6 +9,7 @@
     "dev": "vite",
     "prebuild": "npm run generate:source-tree",
     "build": "tsc -b && vite build",
+    "test": "node scripts/check-board-snapshot.mjs && node scripts/check-osa-import.mjs && node scripts/check-assembly-view.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },

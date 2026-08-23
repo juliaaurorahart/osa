@@ -1,6 +1,12 @@
 # OSA
 
-OSA is a notebook and connected-node space for writing, sketching, tasks, and projects.
+OSA is a durable connected-object Space for writing, sketching, actions, projects, and assembly work.
+
+Nodes, connections, text, and properties are the shared data model. Notebook,
+Actions, Projects, Assembly, and Space are views over that same data—not
+separate stores. A focused view may understand particular property names, but
+the underlying information remains normal editable OSA data and can appear in
+every relevant view.
 
 ## Where a board is saved
 
@@ -8,7 +14,25 @@ OSA is a notebook and connected-node space for writing, sketching, tasks, and pr
 - **Save board** sends the complete board snapshot to `/api/boards`. On the deployed site, that API stores the snapshot in the Cloudflare D1 database bound to the Pages project as `OSA_DB`.
 - **Save JSON** downloads an independent copy of the current board that can be kept or imported later.
 
-Cloudflare Access supplies the signed-in email address. Saved boards are read and replaced only for that email address.
+Cloudflare Access supplies the signed-in email address. Each board is read and saved only for that email address.
+
+## Import the Shako source data
+
+`imports/shako-light-wrap.osa.json` is a one-time bridge from the existing
+assembly-instruction PowerPoint and BOM/expense workbook. Use **Import OSA
+Data** and choose that JSON file. The validated package adds ordinary nodes and
+edges to the current board, opens its Space, and shows its Assembly board. Use
+**Save board** when the imported information looks right.
+
+The Assembly view recognizes ordinary Projects connected to ordinary Actions,
+so an import does not need special assembly node classes. Each Action becomes
+an editable visual instruction card and keeps using its linked Parts, Tools,
+text, properties, and sketches. Re-importing the same package does not
+overwrite later edits or create duplicate objects.
+
+The source-specific converter is `scripts/create-shako-import.py`. It reads the
+two Office files without modifying them and uses only Python's standard
+library.
 
 ## Inspect or export the D1 data
 

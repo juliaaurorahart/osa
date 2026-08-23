@@ -1,0 +1,719 @@
+.assembly-view {
+  max-width: 1240px;
+}
+
+.assembly-view .work-view__header {
+  padding-inline: clamp(4px, 1vw, 14px);
+}
+
+/* A quiet page label, intentionally lighter than the editable assembly name. */
+.assembly-view .assembly-view__context-label {
+  color: #9a9a9a;
+}
+
+.assembly-view__header {
+  align-items: center;
+}
+
+.assembly-view__header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px 18px;
+}
+
+.assembly-view__assembly-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #555;
+  font-size: 0.78rem;
+}
+
+.assembly-view__assembly-picker select {
+  max-width: min(260px, 42vw);
+  padding: 4px 8px;
+  border: 1px solid #b9b9b9;
+  border-radius: 4px;
+  background: #fff;
+  color: #171717;
+  font: inherit;
+}
+
+.assembly-view__shared-label {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border: 1px solid #9dcdb8;
+  border-radius: 999px;
+  background: #effaf3;
+  color: #276340;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.assembly-view__share-status {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  margin: -10px 0 18px;
+  padding: 9px 12px;
+  border: 1px solid #c5d9ce;
+  border-radius: 6px;
+  background: #f6fcf8;
+  color: #24563a;
+  font-size: 0.86rem;
+}
+
+.assembly-view__share-status input {
+  width: 100%;
+  min-width: 0;
+  padding: 5px 7px;
+  border: 1px solid #a7c5b3;
+  border-radius: 4px;
+  background: #fff;
+  color: #171717;
+  font: inherit;
+}
+
+/* Locking is a temporary reading/working mode. It changes neither the
+   instruction data nor which card is focused; it only hides the other cards
+   until the builder deliberately unlocks this one. */
+.assembly-view__lock-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 18px;
+  padding: 8px 12px;
+  border: 1px solid #8eb9a0;
+  border-radius: 6px;
+  background: #f3faf5;
+  color: #24563a;
+  font-size: 0.85rem;
+}
+
+.assembly-card__focus-controls {
+  display: flex;
+  justify-content: flex-end;
+  min-height: 27px;
+  margin: -3px 0 8px;
+}
+
+.assembly-card__lock-button {
+  min-height: 27px;
+  padding: 4px 8px;
+  border: 1px solid #8eb9a0;
+  border-radius: 999px;
+  background: #fff;
+  color: #24563a;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+.assembly-card__lock-button:hover,
+.assembly-card__lock-button:focus-visible,
+.assembly-card__lock-button[aria-pressed='true'] {
+  border-color: #4d8b66;
+  background: #e6f5eb;
+  outline: 0;
+}
+
+.assembly-view__empty-state {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+  padding: 28px;
+  border: 1px solid #d2d2d2;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.assembly-view__empty-state p {
+  margin: 0;
+}
+
+.assembly-view__empty-actions,
+.assembly-index-card__create-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+}
+
+.assembly-index-card__objects {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.25fr) minmax(0, 1fr);
+  gap: 8px;
+  margin-top: 20px;
+  padding-top: 12px;
+  border-top: 1px solid #e0e0e0;
+  color: #555;
+  font-size: clamp(0.72rem, 1.25vw, 0.95rem);
+}
+
+.assembly-index-card__objects > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+
+.assembly-index-card__create-actions {
+  margin-top: 14px;
+}
+
+.assembly-linked-object-list {
+  overflow-wrap: anywhere;
+}
+
+/* A relation is deliberately more prominent than an empty prose field: it
+   invites the builder to link or create the real project object. */
+.assembly-card__empty-link-list {
+  color: #888;
+  font-style: italic;
+}
+
+.assembly-operation-card .assembly-linked-object-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 0.2em;
+}
+
+/* A card owns links, not the linked objects themselves. Keep that distinction
+   visible: open the object by clicking its name, or remove only this card's
+   relationship with the compact adjacent control. */
+.assembly-object-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.2em;
+  max-width: 100%;
+}
+
+.assembly-object-unlink {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.16em;
+  padding: 0 0.22em;
+  border: 1px solid #c9c9c9;
+  border-radius: 999px;
+  background: #fff;
+  color: #5d5d5d;
+  font: inherit;
+  font-size: 0.78em;
+  line-height: 1.35;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.assembly-object-unlink:hover,
+.assembly-object-unlink:focus-visible {
+  border-color: #a84b4b;
+  background: #fff3f3;
+  color: #8d2525;
+  outline: 0;
+}
+
+.assembly-operation-card select {
+  width: 100%;
+  min-width: 0;
+  color: inherit;
+  font: inherit;
+}
+
+.assembly-object-link {
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.assembly-object-link:hover,
+.assembly-object-link:focus-visible {
+  border-bottom-color: currentColor;
+  outline: 0;
+}
+
+.assembly-card input[readonly],
+.assembly-card textarea[readonly] {
+  cursor: default;
+}
+
+.assembly-card-board {
+  min-height: 55vh;
+  padding: clamp(20px, 4vw, 52px);
+  border-radius: 14px;
+  background:
+    linear-gradient(rgb(255 255 255 / 54%), rgb(255 255 255 / 54%)),
+    #ececea;
+}
+
+.assembly-card-board.is-locked {
+  min-height: 75vh;
+}
+
+.assembly-card {
+  isolation: isolate;
+  transition: box-shadow 150ms ease, transform 150ms ease;
+}
+
+.assembly-card:not(.is-focused):hover,
+.assembly-card:not(.is-focused):focus-visible {
+  box-shadow: 0 12px 28px rgb(0 0 0 / 11%) !important;
+  outline: 2px solid rgb(91 206 250 / 42%);
+  outline-offset: 3px;
+  transform: translateY(-2px);
+}
+
+.assembly-card.is-focused {
+  max-width: 1080px;
+  justify-self: center;
+}
+
+.assembly-card input::placeholder,
+.assembly-card textarea::placeholder {
+  color: #8a8a8a;
+  opacity: 1;
+}
+
+.assembly-card textarea {
+  scrollbar-width: thin;
+}
+
+.assembly-card img,
+.assembly-card .sketch-preview {
+  max-width: 100%;
+}
+
+/* The instruction document keeps its editable facts on the left and gives the
+   View more room. A View is a projection: it can show the source slide and
+   images owned by linked parts or tools without copying them. */
+.assembly-card__columns {
+  display: grid;
+  grid-template-columns: minmax(0, 0.78fr) minmax(0, 1.22fr);
+  align-items: start;
+  gap: clamp(18px, 4vw, 48px);
+  min-height: 0;
+}
+
+.assembly-card__details {
+  display: grid;
+  align-content: start;
+  gap: clamp(7px, 1.2vw, 13px);
+  min-width: 0;
+}
+
+.assembly-card__title {
+  margin-bottom: clamp(12px, 2vw, 24px);
+}
+
+.assembly-card__view {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid #d8d8d8;
+  border-radius: 3px;
+  overflow: hidden;
+  background: #fafafa;
+}
+
+.assembly-card__view-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #e4e4e4;
+  background: #fff;
+}
+
+.assembly-card__view-header h2,
+.assembly-card__view-header p {
+  margin: 0;
+}
+
+.assembly-card__view-header h2 {
+  font-size: clamp(0.82rem, 1.5vw, 1.1rem);
+  font-weight: 600;
+}
+
+.assembly-card__view-header p {
+  color: #777;
+  font-size: clamp(0.64rem, 1.05vw, 0.8rem);
+  line-height: 1.35;
+  text-align: right;
+}
+
+/*
+ * The right column is a vertical collection of intentionally bounded canvas
+ * sections, not one ever-growing overlay. The operation's existing source
+ * slide gets its own square first section. Later square sections are created
+ * explicitly, then populated only with the reusable project visuals a person
+ * selects for that section.
+ */
+.assembly-card__canvas-stack {
+  display: grid;
+  min-width: 0;
+  padding: clamp(5px, 1vw, 12px);
+  background: #f8f8f6;
+}
+
+.assembly-card__canvas-stack-item {
+  display: grid;
+  min-width: 0;
+}
+
+.assembly-card__canvas-divider {
+  height: 1px;
+  margin: clamp(18px, 3vw, 34px) clamp(2px, 1vw, 10px);
+  background: #d9d9d5;
+}
+
+.assembly-card__canvas-section {
+  min-width: 0;
+}
+
+/* Every current canvas section is square. This gives a predictable, visible
+   work area while leaving a future variable-height section model possible. */
+.assembly-card__canvas-section-surface {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  border: 1px solid #c9c9c4;
+  background:
+    radial-gradient(circle at 1px 1px, rgb(90 90 90 / 14%) 1px, transparent 0) 0 0 / 14px 14px,
+    #f4f4f2;
+}
+
+.assembly-card__canvas-section.is-source .assembly-card__canvas-section-surface {
+  background: #fff;
+}
+
+.assembly-card__canvas-section-heading {
+  position: absolute;
+  z-index: 4;
+  top: 0;
+  right: 0;
+  left: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0;
+  padding: 6px 8px;
+  border-bottom: 1px solid rgb(204 204 198 / 82%);
+  background: rgb(255 255 255 / 84%);
+  color: #4f4f4c;
+  font-size: clamp(0.62rem, 1vw, 0.78rem);
+  line-height: 1.2;
+  pointer-events: none;
+}
+
+.assembly-card__canvas-section-heading h3 {
+  margin: 0;
+  color: #3e3e3b;
+  font: inherit;
+  font-weight: 650;
+}
+
+.assembly-card__canvas-section-heading span {
+  color: #747470;
+  text-align: right;
+}
+
+/* The imported slide remains an intact source item. `contain` deliberately
+   leaves room around a non-square slide instead of cropping its content. */
+.assembly-card__canvas-source {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  background: #fff;
+  pointer-events: none;
+}
+
+.assembly-card__canvas-source img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.assembly-card__canvas-object figcaption {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 7px;
+  box-sizing: border-box;
+  min-height: 1.7em;
+  margin: 0;
+  padding: 3px 5px;
+  background: rgb(255 255 255 / 90%);
+  color: #454545;
+  font-size: clamp(0.6rem, 1vw, 0.78rem);
+  line-height: 1.25;
+  pointer-events: none;
+}
+
+.assembly-card__canvas-object {
+  position: absolute;
+  z-index: 2;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  border: 2px solid #8b8b86;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 17%);
+  transform: translate(-50%, -50%);
+}
+
+.assembly-card__canvas-object img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+/* This small lower-right grip makes it explicit that this is a *placed image
+   box*, not the original project visual. Resizing only changes the reference
+   edge's presentation geometry. */
+.assembly-card__canvas-object-resize {
+  position: absolute;
+  z-index: 4;
+  right: -9px;
+  bottom: -9px;
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #4d7790;
+  border-radius: 2px;
+  background: #eaf6fb;
+  color: #22556f;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.assembly-card__canvas-object-resize span {
+  display: block;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+}
+
+.assembly-card__canvas-object-resize:hover,
+.assembly-card__canvas-object-resize:focus-visible {
+  border-color: #1d617f;
+  background: #d9f0f9;
+  outline: 2px solid rgb(44 120 155 / 36%);
+  outline-offset: 2px;
+}
+
+.assembly-card__canvas-object figcaption .assembly-object-unlink {
+  position: relative;
+  z-index: 1;
+  pointer-events: auto;
+}
+
+.assembly-card__canvas-object.is-draggable {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.assembly-card__canvas-object.is-draggable:focus-visible {
+  outline: 2px solid #2c789b;
+  outline-offset: 3px;
+}
+
+.assembly-card__canvas-object.is-dragging {
+  z-index: 4;
+  cursor: grabbing;
+  box-shadow: 0 9px 22px rgb(0 0 0 / 26%);
+  transform: translate(-50%, -50%) scale(1.035);
+}
+
+.assembly-card__canvas-object.is-resizing {
+  z-index: 4;
+  cursor: nwse-resize;
+  box-shadow: 0 9px 22px rgb(0 0 0 / 26%);
+}
+
+.assembly-card__canvas-empty {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  max-width: none;
+  margin: 0;
+  padding: clamp(34px, 9vw, 92px) 28px 28px;
+  color: #777;
+  font-size: clamp(0.7rem, 1.15vw, 0.9rem);
+  line-height: 1.45;
+  text-align: center;
+  pointer-events: none;
+}
+
+.assembly-card__canvas-section-controls,
+.assembly-card__canvas-add-section {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #e4e4e4;
+  border-top: 0;
+  background: #fff;
+}
+
+.assembly-card__canvas-section-controls select {
+  flex: 1 1 185px;
+  min-width: 0;
+  padding: 3px 0;
+  border: 0;
+  border-bottom: 1px solid #ccc;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.76rem;
+}
+
+.assembly-card__canvas-add-section {
+  margin: 0 clamp(5px, 1vw, 12px) clamp(5px, 1vw, 12px);
+  border-top: 1px solid #e4e4e4;
+}
+
+.assembly-card__canvas-add-section span {
+  color: #70706c;
+  font-size: clamp(0.64rem, 1vw, 0.78rem);
+  line-height: 1.35;
+}
+
+@media (max-width: 700px) {
+  .assembly-view__header {
+    align-items: flex-start;
+  }
+
+  .assembly-view__header-actions {
+    justify-content: flex-start;
+  }
+
+  .assembly-view__share-status {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .assembly-index-card__objects {
+    grid-template-columns: 1fr;
+  }
+
+  .assembly-card-board {
+    padding: 14px;
+    border-radius: 8px;
+  }
+
+  .assembly-card {
+    min-height: 62vw;
+    aspect-ratio: auto !important;
+  }
+
+  .assembly-card__columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .assembly-card__view-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .assembly-card__view-header p {
+    text-align: left;
+  }
+
+  .assembly-card__canvas-object-resize {
+    width: 20px;
+    height: 20px;
+  }
+}
+
+@media print {
+  @page {
+    size: landscape;
+    margin: 0.35in;
+  }
+
+  .workspace-switcher,
+  .workspace-switcher-reveal,
+  .local-draft-status,
+  .osa-sign-in-reveal,
+  .assembly-view > .work-view__header,
+  .assembly-view__share-status,
+  .assembly-card .text-action,
+  .assembly-card .assembly-object-unlink,
+  .assembly-card input[type='file'],
+  .assembly-card select,
+  .assembly-card .sketch-editor {
+    display: none !important;
+  }
+
+  .osa-workspace,
+  .work-view-shell {
+    position: static !important;
+    width: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+
+  .assembly-view {
+    max-width: none;
+  }
+
+  .assembly-card-board {
+    display: block !important;
+    min-height: 0;
+    padding: 0;
+    background: #fff;
+  }
+
+  .assembly-card {
+    width: 10in !important;
+    height: 5.625in !important;
+    max-width: none !important;
+    margin: 0 auto !important;
+    overflow: hidden !important;
+    break-after: page;
+    border: 0 !important;
+    box-shadow: none !important;
+    outline: 0 !important;
+    transform: none !important;
+  }
+
+  .assembly-card:last-child {
+    break-after: auto;
+  }
+}

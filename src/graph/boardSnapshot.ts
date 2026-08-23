@@ -27,7 +27,7 @@ const DEFAULT_LAYOUT: NodeLayout = {
 
 /** The current, stable, JSON-safe shape of a saved board. */
 export type BoardSnapshot = {
-  version: 5
+  version: 6
   nodes: SavedTextFlowNode[]
   edges: SavedEdge[]
 }
@@ -39,7 +39,7 @@ export type SavedTextFlowNode = Pick<
 > & {
   data: Pick<
     TextNodeData,
-    'name' | 'text' | 'kind' | 'notebook' | 'task' | 'properties' | 'sketch' | 'layout'
+    'name' | 'text' | 'kind' | 'spaceIds' | 'notebook' | 'task' | 'properties' | 'sketch' | 'layout'
   >
 }
 
@@ -54,9 +54,12 @@ export function createBoardSnapshot(
   edges: GraphEdge[],
 ): BoardSnapshot {
   const nodesById = new Map(nodes.map((node) => [node.id, node]))
+  const spaceNodeIds = new Set(
+    nodes.filter((node) => node.data.kind === 'space').map((node) => node.id),
+  )
 
   return {
-    version: 5,
+    version: 6,
     nodes: nodes.map((node) => ({
       id: node.id,
       type: node.type,
@@ -67,12 +70,15 @@ export function createBoardSnapshot(
         name: node.data.name,
         text: node.data.text,
         kind: node.data.kind,
+        spaceIds: node.data.kind === 'space'
+          ? []
+          : [...new Set(node.data.spaceIds)].filter((spaceId) => spaceNodeIds.has(spaceId)),
         notebook: node.data.notebook === undefined
           ? migrateLegacyNotebookPage(node.data.kind)
           : node.data.notebook ? { ...node.data.notebook } : null,
         task: node.data.task
           ? { ...node.data.task }
-          : node.data.kind === 'task'
+          : node.data.kind === 'action'
             ? { day: null, completedAt: null }
             : null,
         sketch: cloneSketchDocument(node.data.sketch),
@@ -83,7 +89,7 @@ export function createBoardSnapshot(
     edges: edges.map((edge) => {
       const projectTaskLinkIsActive = edge.data.relationKind !== 'project-task' || (
         nodesById.get(edge.source)?.data.kind === 'project'
-        && nodesById.get(edge.target)?.data.kind === 'task'
+        && nodesById.get(edge.target)?.data.kind === 'action'
       )
       return {
         id: edge.id,
@@ -92,9 +98,12 @@ export function createBoardSnapshot(
         data: {
           relationKind: projectTaskLinkIsActive ? edge.data.relationKind : 'related',
           sourceAnchor: edge.data.sourceAnchor ? { ...edge.data.sourceAnchor } : null,
-          relationship: !projectTaskLinkIsActive && edge.data.relationship === 'has task'
+          relationship: !projectTaskLinkIsActive
+            && (edge.data.relationship === 'has task' || edge.data.relationship === 'has action')
             ? 'relates to'
-            : edge.data.relationship,
+            : edge.data.relationship === 'has task'
+              ? 'has action'
+              : edge.data.relationship,
           properties: { ...edge.data.properties },
         },
       }
@@ -295,7 +304,7 @@ function parseConnectorPosition(value: unknown, fallback: Position): Position | 
   return Object.values(Position).includes(value as Position) ? value as Position : null
 }
 
-function parseNode(value: unknown, version: 1 | 2 | 3 | 4 | 5): SavedTextFlowNode | null {
+function parseNode(value: unknown, version: 1 | 2 | 3 | 4 | 5 | 6): SavedTextFlowNode | null {
   if (!isRecord(value) || value.type !== 'text' || typeof value.id !== 'string') return null
   if (!isRecord(value.position) || typeof value.position.x !== 'number' || typeof value.position.y !== 'number') {
     return null
@@ -306,7 +315,7 @@ function parseNode(value: unknown, version: 1 | 2 | 3 | 4 | 5): SavedTextFlowNod
     (data.name !== undefined && typeof data.name !== 'string')
     || typeof data.text !== 'string'
     || typeof data.kind !== 'string'
-    || !NODE_KINDS.some((kind) => kind.id === data.kind)
+    || !NODE_KINDS.some((kind) => kind.id === (data.kind === 'task' ? 'action' : data.kind))
   ) return null
 
   const sourcePosition = parseConnectorPosition(value.sourcePosition, DEFAULT_CONNECTOR_POSITIONS.source)
@@ -324,24 +333,31 @@ function parseNode(value: unknown, version: 1 | 2 | 3 | 4 | 5): SavedTextFlowNod
     : migrateLegacySketch(data.sketchStrokes)
   if (!properties || !sketch || !layout) return null
 
-  const kind = data.kind as TextNodeData['kind']
-  const notebook = version === 5
+  const spaceIds = data.spaceIds === undefined && version < 6
+    ? []
+    : Array.isArray(data.spaceIds) && data.spaceIds.every((spaceId) => typeof spaceId === 'string')
+      ? [...data.spaceIds]
+      : null
+  if (!spaceIds) return null
+
+  const kind = (data.kind === 'task' ? 'action' : data.kind) as TextNodeData['kind']
+  const notebook = version >= 5
     ? parseNotebookPage(data.notebook)
     : migrateLegacyNotebookPage(kind)
   if (notebook === undefined) return null
 
   let task: TaskData | null
   if (version === 1) {
-    task = data.kind === 'task' ? { day: null, completedAt: null } : null
-  } else if (version === 5) {
+    task = kind === 'action' ? { day: null, completedAt: null } : null
+  } else if (version >= 5) {
     if (data.task === null) {
-      if (kind === 'task') return null
+      if (kind === 'action') return null
       task = null
     } else {
       task = parseTaskData(data.task)
       if (!task) return null
     }
-  } else if (kind === 'task') {
+  } else if (kind === 'action') {
     task = parseTaskData(data.task)
     if (!task) return null
   } else {
@@ -359,6 +375,7 @@ function parseNode(value: unknown, version: 1 | 2 | 3 | 4 | 5): SavedTextFlowNod
       name: data.name ?? '',
       text: data.text,
       kind,
+      spaceIds,
       notebook,
       task,
       properties: { ...properties },
@@ -405,7 +422,7 @@ function parseConnectionAnchor(value: unknown): ConnectionAnchor | null | undefi
   return undefined
 }
 
-function parseEdge(value: unknown, version: 1 | 2 | 3 | 4 | 5): SavedEdge | null {
+function parseEdge(value: unknown, version: 1 | 2 | 3 | 4 | 5 | 6): SavedEdge | null {
   if (
     !isRecord(value)
     || typeof value.id !== 'string'
@@ -449,14 +466,16 @@ function parseEdge(value: unknown, version: 1 | 2 | 3 | 4 | 5): SavedEdge | null
     data: {
       relationKind: relationKind as GraphEdge['data']['relationKind'],
       sourceAnchor,
-      relationship: value.data.relationship,
+      relationship: value.data.relationship === 'has task'
+        ? 'has action'
+        : value.data.relationship,
       properties: { ...properties },
     },
   }
 }
 
 /**
- * Validates untrusted JSON and migrates legacy version-1/2/3/4 boards in memory.
+ * Validates untrusted JSON and migrates older boards in memory.
  * The database can continue storing snapshots as opaque JSON.
  */
 export function parseBoardSnapshot(value: unknown): BoardSnapshot | null {
@@ -468,6 +487,7 @@ export function parseBoardSnapshot(value: unknown): BoardSnapshot | null {
       && value.version !== 3
       && value.version !== 4
       && value.version !== 5
+      && value.version !== 6
     )
   ) return null
   if (!Array.isArray(value.nodes) || !Array.isArray(value.edges)) return null
@@ -484,17 +504,30 @@ export function parseBoardSnapshot(value: unknown): BoardSnapshot | null {
   if (nodeIds.size !== parsedNodes.length || edgeIds.size !== parsedEdges.length) return null
   if (parsedEdges.some((edge) => !nodeIds.has(edge.source) || !nodeIds.has(edge.target))) return null
 
-  const nodesById = new Map(parsedNodes.map((node) => [node.id, node]))
+  const spaceNodeIds = new Set(
+    parsedNodes.filter((node) => node.data.kind === 'space').map((node) => node.id),
+  )
+  const normalizedNodes = parsedNodes.map((node) => ({
+    ...node,
+    data: {
+      ...node.data,
+      spaceIds: node.data.kind === 'space'
+        ? []
+        : [...new Set(node.data.spaceIds)].filter((spaceId) => spaceNodeIds.has(spaceId)),
+    },
+  }))
+
+  const nodesById = new Map(normalizedNodes.map((node) => [node.id, node]))
   const invalidProjectTaskLink = parsedEdges.some((edge) => (
     edge.data.relationKind === 'project-task'
     && (
       nodesById.get(edge.source)?.data.kind !== 'project'
-      || nodesById.get(edge.target)?.data.kind !== 'task'
+      || nodesById.get(edge.target)?.data.kind !== 'action'
     )
   ))
   if (invalidProjectTaskLink) return null
 
-  return { version: 5, nodes: parsedNodes, edges: parsedEdges }
+  return { version: 6, nodes: normalizedNodes, edges: parsedEdges }
 }
 
 /** Creates fresh live graph state from a normalized current snapshot. */
@@ -506,7 +539,7 @@ export function restoreBoardSnapshot(snapshot: BoardSnapshot): {
     nodes: snapshot.nodes.map((node) => {
       // Early task views stored quick-entry wording in `name`. Preserve that
       // identity while copying the wording into the canonical task text.
-      const text = node.data.kind === 'task'
+      const text = node.data.kind === 'action'
         && node.data.text.trim() === ''
         && node.data.name.trim() !== ''
         && node.data.name.trim() !== `#${node.id}`
@@ -518,6 +551,7 @@ export function restoreBoardSnapshot(snapshot: BoardSnapshot): {
         data: {
           ...node.data,
           text,
+          spaceIds: [...node.data.spaceIds],
           notebook: node.data.notebook ? { ...node.data.notebook } : null,
           task: node.data.task ? { ...node.data.task } : null,
           sketch: cloneSketchDocument(node.data.sketch),

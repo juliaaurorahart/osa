@@ -1,4 +1,5 @@
 import type { GraphEdge } from '../graph/graphEdge'
+import { isManagedOsaProperty } from '../graph/osaData'
 
 type EdgePropertiesPanelProps = {
   edge: GraphEdge
@@ -23,7 +24,9 @@ export function EdgePropertiesPanel({
   onPropertyRemove,
   onPropertyAdd,
 }: EdgePropertiesPanelProps) {
-  const properties = Object.entries(edge.data.properties)
+  const propertyEntries = Object.entries(edge.data.properties)
+  const properties = propertyEntries.filter(([name]) => !isManagedOsaProperty(name))
+  const managedProperties = propertyEntries.filter(([name]) => isManagedOsaProperty(name))
 
   return (
     <section className="properties-panel">
@@ -72,6 +75,23 @@ export function EdgePropertiesPanel({
       <button className="board-button" type="button" onClick={() => onPropertyAdd(edge.id)}>
         + Add property
       </button>
+
+      {managedProperties.length ? (
+        <details className="properties-panel__managed-data">
+          <summary>
+            View hints
+            <span>{managedProperties.length}</span>
+          </summary>
+          <dl>
+            {managedProperties.map(([name, value]) => (
+              <div className="managed-property-row" key={name}>
+                <dt>{name}</dt>
+                <dd>{value || '—'}</dd>
+              </div>
+            ))}
+          </dl>
+        </details>
+      ) : null}
     </section>
   )
 }

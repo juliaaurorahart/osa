@@ -1,20 +1,25 @@
 import { createGraphEdge, type GraphEdge } from './graphEdge'
+import { osaRole } from './osaData'
 import type { TextFlowNode } from './textNode'
 
 export function nodeTitle(node: TextFlowNode) {
   const firstLine = node.data.text.trim().split(/\r?\n/, 1)[0]
-  if (node.data.kind === 'task' && firstLine) return firstLine
+  if (node.data.kind === 'action' && firstLine) return firstLine
   const name = node.data.name.trim()
   if (name) return name
   return firstLine || `${node.data.kind} #${node.id}`
 }
 
 export function taskNodes(nodes: TextFlowNode[]) {
-  return nodes.filter((node) => node.data.kind === 'task')
+  return nodes.filter((node) => node.data.kind === 'action')
 }
 
 export function projectNodes(nodes: TextFlowNode[]) {
-  return nodes.filter((node) => node.data.kind === 'project')
+  // An Assembly is also a valid action context: it can own project-task
+  // edges, so it belongs beside ordinary Project objects in Actions.
+  return nodes.filter((node) => (
+    node.data.kind === 'project' || osaRole(node) === 'assembly'
+  ))
 }
 
 export function isProjectTaskEdge(edge: GraphEdge) {
@@ -41,12 +46,18 @@ export function hasProjectTaskLink(projectId: string, taskId: string, edges: Gra
   ))
 }
 
-export function createProjectTaskEdge(id: string, projectId: string, taskId: string) {
+export function createProjectTaskEdge(
+  id: string,
+  projectId: string,
+  taskId: string,
+  properties: Record<string, string> = {},
+) {
   return createGraphEdge({
     id,
     source: projectId,
     target: taskId,
     relationKind: 'project-task',
-    relationship: 'has task',
+    relationship: 'has action',
+    properties,
   })
 }

@@ -5,14 +5,12 @@ import type { TextFlowNode } from '../graph/textNode'
 
 export type TaskViewMode = 'day' | 'all' | 'no-day'
 
-type TasksViewProps = {
+type SharedTasksViewProps = {
   tasks: TextFlowNode[]
   projects: TextFlowNode[]
   edges: GraphEdge[]
-  mode: TaskViewMode
+  /** Day is required for both the full view and the compact Today view. */
   day: string
-  onModeChange: (mode: TaskViewMode) => void
-  onDayChange: (day: string) => void
   onCreateTask: (text: string, day: string | null) => void
   onTaskTextChange: (taskId: string, text: string) => void
   onTaskDayChange: (taskId: string, day: string | null) => void
@@ -23,23 +21,38 @@ type TasksViewProps = {
   onViewProject: (projectId: string) => void
 }
 
-export function TasksView({
-  tasks,
-  projects,
-  edges,
-  mode,
-  day,
-  onModeChange,
-  onDayChange,
-  onCreateTask,
-  onTaskTextChange,
-  onTaskDayChange,
-  onTaskCompletionChange,
-  onLinkProject,
-  onUnlinkProject,
-  onOpenNode,
-  onViewProject,
-}: TasksViewProps) {
+/** The standalone Actions tool keeps its filter controls. */
+type FullTasksViewProps = SharedTasksViewProps & {
+  compact?: false
+  mode: TaskViewMode
+  onModeChange: (mode: TaskViewMode) => void
+  onDayChange: (day: string) => void
+}
+
+/** The ProjectsView owns the heading and sidebar when showing Today's actions. */
+type CompactTasksViewProps = SharedTasksViewProps & {
+  compact: true
+}
+
+type TasksViewProps = FullTasksViewProps | CompactTasksViewProps
+
+export function TasksView(props: TasksViewProps) {
+  const {
+    tasks,
+    projects,
+    edges,
+    day,
+    onCreateTask,
+    onTaskTextChange,
+    onTaskDayChange,
+    onTaskCompletionChange,
+    onLinkProject,
+    onUnlinkProject,
+    onOpenNode,
+    onViewProject,
+  } = props
+  const isCompact = props.compact === true
+  const mode: TaskViewMode = props.compact === true ? 'day' : props.mode
   const [draft, setDraft] = useState('')
   const visibleTasks = tasks.filter((task) => {
     const taskDay = task.data.task?.day ?? null
@@ -57,64 +70,74 @@ export function TasksView({
   }
 
   return (
-    <section className="work-view" aria-labelledby="tasks-view-title">
-      <header className="work-view__header">
-        <div>
-          <p className="work-view__eyebrow">Tool</p>
-          <h1 id="tasks-view-title">Tasks</h1>
-        </div>
-        <span>{visibleTasks.length} shown · {tasks.length} total</span>
-      </header>
+    <section
+      className={isCompact ? 'tasks-view tasks-view--compact' : 'work-view tasks-view'}
+      aria-label={isCompact ? `Actions for ${day}` : undefined}
+      aria-labelledby={isCompact ? undefined : 'tasks-view-title'}
+    >
+      {!isCompact ? (
+        <>
+          <header className="work-view__header">
+            <div>
+              <p className="work-view__eyebrow">Tool</p>
+              <h1 id="tasks-view-title">Actions</h1>
+            </div>
+            <span>{visibleTasks.length} shown · {tasks.length} total</span>
+          </header>
 
-      <div className="task-filter" aria-label="Choose which tasks to show">
-        <button
-          className={mode === 'day' ? 'is-active' : undefined}
-          type="button"
-          onClick={() => onModeChange('day')}
-        >
-          Day
-        </button>
-        <input
-          aria-label="Day shown"
-          type="date"
-          value={day}
-          onChange={(event) => {
-            if (event.target.value) {
-              onDayChange(event.target.value)
-              onModeChange('day')
-            } else {
-              onModeChange('no-day')
-            }
-          }}
-        />
-        <button
-          className={mode === 'no-day' ? 'is-active' : undefined}
-          type="button"
-          onClick={() => onModeChange('no-day')}
-        >
-          No date
-        </button>
-        <button
-          className={mode === 'all' ? 'is-active' : undefined}
-          type="button"
-          onClick={() => onModeChange('all')}
-        >
-          All
-        </button>
-      </div>
+          <div className="task-filter" aria-label="Choose which actions to show">
+            <button
+              className={mode === 'day' ? 'is-active' : undefined}
+              type="button"
+              onClick={() => props.onModeChange('day')}
+            >
+              Day
+            </button>
+            <input
+              aria-label="Day shown"
+              type="date"
+              value={day}
+              onChange={(event) => {
+                if (event.target.value) {
+                  props.onDayChange(event.target.value)
+                  props.onModeChange('day')
+                } else {
+                  props.onModeChange('no-day')
+                }
+              }}
+            />
+            <button
+              className={mode === 'no-day' ? 'is-active' : undefined}
+              type="button"
+              onClick={() => props.onModeChange('no-day')}
+            >
+              No date
+            </button>
+            <button
+              className={mode === 'all' ? 'is-active' : undefined}
+              type="button"
+              onClick={() => props.onModeChange('all')}
+            >
+              All
+            </button>
+          </div>
+        </>
+      ) : null}
 
       <form className="work-view__create" onSubmit={submitTask}>
         <input
-          aria-label="New task"
-          placeholder={mode === 'day' ? `Add to ${day}` : 'Add task'}
+          aria-label="New action"
+          placeholder={mode === 'day' ? `Add to ${day}` : 'Add action'}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
         />
-        <button type="submit">Add task</button>
+        <button type="submit">Add action</button>
       </form>
 
       {visibleTasks.length === 0 ? (
-        <p className="work-view__empty">No tasks are placed here.</p>
+        <p className="work-view__empty">
+          {isCompact ? 'No actions are scheduled for today.' : 'No actions are placed here.'}
+        </p>
       ) : (
         <ul className="object-list task-list">
           {visibleTasks.map((task) => {
@@ -139,9 +162,9 @@ export function TasksView({
                 <div className="task-row__content">
                   <textarea
                     className="task-row__text"
-                    aria-label="Task"
+                    aria-label="Action"
                     rows={2}
-                    placeholder="Write the task"
+                    placeholder="Write the action"
                     value={task.data.text}
                     onChange={(event) => onTaskTextChange(task.id, event.target.value)}
                   />
@@ -157,10 +180,10 @@ export function TasksView({
                       />
                     </label>
                     <button className="text-action" type="button" onClick={() => onOpenNode(task.id)}>
-                      Node Space
+                      Space
                     </button>
                   </div>
-                  <div className="context-links" aria-label="Task projects">
+                  <div className="context-links" aria-label="Action projects">
                     {linkedProjects.map((project) => (
                       <span className="context-link" key={project.id}>
                         <button type="button" onClick={() => onViewProject(project.id)}>

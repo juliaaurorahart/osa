@@ -29,10 +29,18 @@ import { PropertiesPanel } from './components/PropertiesPanel'
 import { EdgePropertiesPanel } from './components/EdgePropertiesPanel'
 import { EdgeHoverCard } from './components/EdgeHoverCard'
 import { GraphTablePanel } from './components/GraphTablePanel'
+import {
+  AssemblyView,
+  type OperationPartDirection,
+} from './components/AssemblyView'
+import {
+  createAssemblyViewUiState,
+  type AssemblyViewUiState,
+} from './components/assemblyViewState'
 import { NotebookView } from './components/NotebookView'
 import { ProjectsView } from './components/ProjectsView'
-import { TasksView, type TaskViewMode } from './components/TasksView'
 import { PointerToolPalette, type PointerToolAction } from './components/PointerToolPalette'
+import { SpaceToolbar } from './components/SpaceToolbar'
 import {
   createGraphEdge,
   type GraphEdge,
@@ -47,7 +55,43 @@ import {
   type SketchDocument,
   type TextFlowNode,
 } from './graph/textNode'
-import { NODE_KINDS, type NodeKind } from './graph/nodeKinds'
+import type { NodeKind } from './graph/nodeKinds'
+import {
+  defaultOperationVisualPosition,
+  defaultOperationVisualSize,
+  canOwnOsaVisual,
+  isOperationCanvasSectionId,
+  isManagedOsaProperty,
+  isPartLike,
+  nextOperationCanvasSection,
+  normalizeOperationVisualPosition,
+  normalizeOperationVisualSize,
+  operationVisualSectionId,
+  OSA_PROPERTY,
+  OSA_RELATION,
+  osaRole,
+  parseOperationCanvasSections,
+  serializeOperationCanvasSections,
+  OPERATION_CANVAS_SOURCE_SECTION_ID,
+  type OperationVisualPlacement,
+} from './graph/osaData'
+import {
+  mergeOsaImportPlan,
+  parseOsaImportPackage,
+  planOsaImport,
+  type OsaImportPlan,
+} from './graph/osaImport'
+import {
+  NO_SPACE_FILTER,
+  addNodeToSpace,
+  edgesWithinNodes,
+  filterGraphNodes,
+  nodesInSpace,
+  spaceIdsForNewNode,
+  spaceNodes,
+  type NodeConnectionFilter,
+  type NodeKindFilter,
+} from './graph/space'
 import {
   createBoardSnapshot,
   parseBoardSnapshot,
@@ -63,15 +107,18 @@ import {
 import {
   BoardAccessError,
   BoardUnavailableError,
+  createAssemblyShare,
   fetchBoards,
-  replaceBoards,
+  fetchSharedAssembly,
+  saveBoard,
+  SharedAssemblyUnavailableError,
   type SavedBoard,
 } from './graph/boardStorage'
+import shakoLightWrapRaw from '../imports/shako-light-wrap.osa.json?raw'
 import './App.css'
 
 /** React Flow uses this map to choose the component for `type: 'text'` nodes. */
 const nodeTypes = { text: TextNode }
-const HIDDEN_HINT_IDLE_DELAY = import.meta.env.DEV ? 5_000 : 60_000
 
 /** Starting graph: nodes and edges that appear when the app first loads. */
 const initialNodes: TextFlowNode[] = [
@@ -86,12 +133,62 @@ const initialNodes: TextFlowNode[] = [
 
 const initialEdges: GraphEdge[] = []
 
+const LEGACY_SHAKO_VISUAL = /^\/import-assets\/shako-light-wrap\/operation-\d+\.png$/
+
+/**
+ * Updates only OSA's old bundled Shako image references when Julia reopens the
+ * starter. A person-selected upload or drawing is never replaced.
+ */
+function refreshBundledShakoSlideReferences(
+  currentNodes: TextFlowNode[],
+  plan: OsaImportPlan,
+) {
+  const importedNodes = new Map(plan.nodes.map((node) => [node.id, node]))
+  let changed = false
+  const refreshedNodes = currentNodes.map((node) => {
+    if (!node.id.startsWith('osa:shako-light-wrap:')) return node
+    const importedNode = importedNodes.get(node.id)
+    const currentVisual = node.data.properties[OSA_PROPERTY.instructionVisual]
+    const bundledSlide = importedNode?.data.properties[OSA_PROPERTY.instructionVisual]
+
+    // Do not turn an older saved image URL into a visual-node ID unless that
+    // node already lives in this draft. A full import/merge can add the
+    // source Visual and relation later; until then, preserving the working
+    // legacy URL is safer than creating a broken image reference.
+    const draftHasBundledVisual = currentNodes.some((candidate) => candidate.id === bundledSlide)
+    if (
+      !currentVisual
+      || !bundledSlide
+      || !draftHasBundledVisual
+      || !LEGACY_SHAKO_VISUAL.test(currentVisual)
+    ) {
+      return node
+    }
+
+    changed = true
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        properties: {
+          ...node.data.properties,
+          [OSA_PROPERTY.instructionVisual]: bundledSlide,
+          [OSA_PROPERTY.instructionVisualAlt]: importedNode.data.properties[
+            OSA_PROPERTY.instructionVisualAlt
+          ] ?? '',
+        },
+      },
+    }
+  })
+
+  return changed ? refreshedNodes : currentNodes
+}
+
 type SelectedItem =
   | { type: 'node'; id: string }
   | { type: 'edge'; id: string }
 
-type WorkspaceView = 'notebook' | 'nodes' | 'tasks' | 'projects'
-type NodeKindFilter = NodeKind | 'all'
+type WorkspaceView = 'notebook' | 'nodes' | 'projects' | 'assembly'
 type PointerPaletteState = {
   x: number
   y: number
@@ -99,75 +196,83 @@ type PointerPaletteState = {
   sourceNodeId: string | null
 }
 
-const HIDDEN_MARKER_CYCLE_MS = 7_500
-const HIDDEN_MARKER_COLORS = [
-  '#f5a9b8',
-  '#5bcefa',
-  '#d60270',
-  '#9b59d0',
-  '#fff430',
-  '#ff8c00',
-  '#008026',
-]
-
-function randomHiddenMarkerCluster() {
-  const positions = Array.from({ length: 7 }, (_, index) => index + 1)
-    .sort(() => Math.random() - 0.5)
-  const bubbleCount = 2 + Math.floor(Math.random() * 6)
-  const bubbles = positions.slice(0, bubbleCount)
-  const accentCount = Math.min(bubbleCount, Math.floor(Math.random() * 4))
-  const mainColor = HIDDEN_MARKER_COLORS[Math.floor(Math.random() * HIDDEN_MARKER_COLORS.length)]
-  const lineWidth = 2 + Math.floor(Math.random() * 5)
-  const accentPalette = HIDDEN_MARKER_COLORS.filter((color) => color !== mainColor)
-  const accentPositions = [...bubbles]
-    .sort(() => Math.random() - 0.5)
-    .slice(0, accentCount)
-  const accentColors = new Map(accentPositions.map((position) => [
-    position,
-    accentPalette[Math.floor(Math.random() * accentPalette.length)],
-  ]))
-
-  return { bubbles, mainColor, accentColors, lineWidth }
+/** Finds the Assembly that contains a particular instruction operation. */
+function parentAssemblyIdForOperation(operationId: string, edges: GraphEdge[]) {
+  return edges.find((edge) => (
+    edge.target === operationId
+    && (
+      edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.assemblyOperation
+      || edge.data.relationKind === 'project-task'
+    )
+  ))?.source ?? null
 }
 
-function HiddenMarkerCluster({ refreshDelayMs }: { refreshDelayMs: number }) {
-  const [cluster, setCluster] = useState(randomHiddenMarkerCluster)
+/** True when adding child Assembly below parent Assembly would make a cycle. */
+function wouldCreateAssemblyMembershipCycle(
+  parentAssemblyId: string,
+  childAssemblyId: string,
+  edges: GraphEdge[],
+) {
+  if (parentAssemblyId === childAssemblyId) return true
 
-  useEffect(() => {
-    let cycleTimer: number | null = null
-    const firstRefresh = window.setTimeout(() => {
-      setCluster(randomHiddenMarkerCluster())
-      cycleTimer = window.setInterval(() => {
-        setCluster(randomHiddenMarkerCluster())
-      }, HIDDEN_MARKER_CYCLE_MS)
-    }, refreshDelayMs + HIDDEN_MARKER_CYCLE_MS - 120)
-
-    return () => {
-      window.clearTimeout(firstRefresh)
-      if (cycleTimer !== null) window.clearInterval(cycleTimer)
-    }
-  }, [refreshDelayMs])
-
-  return (
-    <span className="hidden-feature-marker__cluster" style={{ color: cluster.mainColor }}>
-      <span className="hidden-feature-marker__core" />
-      {cluster.bubbles.map((position) => (
-        <span
-          className={`hidden-feature-marker__bubble is-${position}`}
-          key={position}
-          style={{
-            borderWidth: `${cluster.lineWidth}px`,
-            ...(cluster.accentColors.has(position)
-              ? { color: cluster.accentColors.get(position) }
-              : {}),
-          }}
-        />
-      ))}
-    </span>
-  )
+  const checked = new Set<string>()
+  const toCheck = [childAssemblyId]
+  while (toCheck.length) {
+    const currentId = toCheck.pop()!
+    if (currentId === parentAssemblyId) return true
+    if (checked.has(currentId)) continue
+    checked.add(currentId)
+    edges
+      .filter((edge) => (
+        edge.source === currentId
+        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.assemblyItem
+      ))
+      .forEach((edge) => toCheck.push(edge.target))
+  }
+  return false
 }
 
 const LOCAL_DRAFT_KEY = 'osa:current-draft'
+const WORKSPACE_VIEW_KEY = 'osa:workspace-view'
+const SELECTED_ASSEMBLY_KEY = 'osa:selected-assembly'
+
+/** A share token is intentionally opaque; it is never a board or user ID. */
+function readSharedAssemblyToken() {
+  const token = new URLSearchParams(window.location.search).get('share')
+  return token?.trim() || null
+}
+
+function readWorkspaceView(): WorkspaceView {
+  // The graph workspace is called Space. Older Field/Cave/Notebook links still
+  // open the same durable graph instead of reviving an undefined product view.
+  const viewFromUrl = new URLSearchParams(window.location.search).get('view')
+  const urlViews: Record<string, WorkspaceView> = {
+    field: 'nodes',
+    notebook: 'nodes',
+    cave: 'nodes',
+    nodes: 'nodes',
+    space: 'nodes',
+    // Actions and projects share one Actions workspace. These older links
+    // stay useful, but no longer open a second competing tool.
+    tasks: 'projects',
+    actions: 'projects',
+    projects: 'projects',
+    assembly: 'assembly',
+  }
+  if (viewFromUrl && viewFromUrl in urlViews) return urlViews[viewFromUrl]
+
+  const savedView = window.localStorage.getItem(WORKSPACE_VIEW_KEY)
+  if (savedView === 'tasks') return 'projects'
+  return savedView === 'nodes'
+    || savedView === 'projects'
+    || savedView === 'assembly'
+    ? savedView
+    : 'nodes'
+}
+
+function readSelectedAssemblyId() {
+  return window.localStorage.getItem(SELECTED_ASSEMBLY_KEY)
+}
 
 function readLocalDraft(): SavedBoard | null {
   try {
@@ -229,13 +334,21 @@ function getNextNodePosition(nodes: TextFlowNode[]) {
 /** Owns the live React Flow node/edge state and responds to user actions. */
 function Flow() {
   const [startupDraft] = useState(readLocalDraft)
-  const startupGraph = useMemo(
-    () => startupDraft ? restoreBoardSnapshot(startupDraft.snapshot) : null,
-    [startupDraft],
+  const [sharedAssemblyToken] = useState(readSharedAssemblyToken)
+  const bundledShakoImportPlan = useMemo(
+    () => planOsaImport(parseOsaImportPackage(JSON.parse(shakoLightWrapRaw) as unknown)),
+    [],
   )
+  const startupGraph = useMemo(() => startupDraft
+    ? restoreBoardSnapshot(startupDraft.snapshot)
+    : { nodes: initialNodes, edges: initialEdges }, [startupDraft])
   // LIVE GRAPH STATE: React Flow displays these two arrays.
-  const [nodes, setNodes, onNodesChange] = useNodesState<TextFlowNode>(startupGraph?.nodes ?? initialNodes)
-  const [edges, setEdges, onEdgesChange] = useEdgesState<GraphEdge>(startupGraph?.edges ?? initialEdges)
+  const [nodes, setNodes, onNodesChange] = useNodesState<TextFlowNode>(startupGraph.nodes)
+  const [edges, setEdges, onEdgesChange] = useEdgesState<GraphEdge>(startupGraph.edges)
+  const latestNodes = useRef(nodes)
+  const latestEdges = useRef(edges)
+  latestNodes.current = nodes
+  latestEdges.current = edges
   const latestNodeText = useRef(new Map(nodes.map((node) => [node.id, node.data.text])))
   latestNodeText.current = new Map(nodes.map((node) => [node.id, node.data.text]))
   // UI state: this is not saved as part of the board itself.
@@ -245,28 +358,32 @@ function Flow() {
     text: boolean
     details: boolean
   } | null>(null)
-  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>('notebook')
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>(() => (
+    readSharedAssemblyToken() ? 'assembly' : readWorkspaceView()
+  ))
   const [workspaceMenuVisible, setWorkspaceMenuVisible] = useState(true)
+  // Assembly's focus, lock, drawing, and draft controls are presentation
+  // state. Keep them mounted here so switching to Actions or Space and back
+  // returns the builder to the exact card state they deliberately left.
+  // This is not included in BoardSnapshot or local-board saves.
+  const [assemblyViewState, setAssemblyViewState] = useState<AssemblyViewUiState>(
+    createAssemblyViewUiState,
+  )
   const [pointerPalette, setPointerPalette] = useState<PointerPaletteState | null>(null)
-  const [taskViewMode, setTaskViewMode] = useState<TaskViewMode>('day')
-  const [taskViewDay, setTaskViewDay] = useState(localDay)
+  // The combined Actions workspace always begins with the local Today list.
+  const [taskViewDay] = useState(localDay)
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
+  const [selectedAssemblyId, setSelectedAssemblyId] = useState<string | null>(readSelectedAssemblyId)
   const [selectedNotebookPageId, setSelectedNotebookPageId] = useState<string | null>(null)
   const [nodeKindFilter, setNodeKindFilter] = useState<NodeKindFilter>('all')
-  const [nodeProjectFilter, setNodeProjectFilter] = useState('')
+  const [nodeSpaceFilter, setNodeSpaceFilter] = useState('')
+  const [nodeConnectionFilter, setNodeConnectionFilter] = useState<NodeConnectionFilter>('all')
   const [showBoardControls, setShowBoardControls] = useState(false)
-  const [boardControlsPreviewPosition, setBoardControlsPreviewPosition] = useState<{ x: number; y: number } | null>(null)
-  const [canvasToolsExpanded, setCanvasToolsExpanded] = useState(false)
-  const [canvasToolsPreviewPosition, setCanvasToolsPreviewPosition] = useState<{ x: number; y: number } | null>(null)
   const [miniMapExpanded, setMiniMapExpanded] = useState(false)
-  const [miniMapPreviewPosition, setMiniMapPreviewPosition] = useState<{ x: number; y: number } | null>(null)
   const [showTable, setShowTable] = useState(false)
-  const [tablePreviewPosition, setTablePreviewPosition] = useState<{ x: number; y: number } | null>(null)
-  const [inspectorExpanded, setInspectorExpanded] = useState(false)
-  const [inspectorPreviewPosition, setInspectorPreviewPosition] = useState<{ x: number; y: number } | null>(null)
-  const [showIdleHints, setShowIdleHints] = useState(true)
-  const [idleHintsDismissing, setIdleHintsDismissing] = useState(false)
-  const [hintTrailStage, setHintTrailStage] = useState(1)
+  // A selected object always gets an inspector. The person can close it, but
+  // selecting another object deliberately opens it again.
+  const [inspectorExpanded, setInspectorExpanded] = useState(true)
   // Hover position belongs to the temporary browser UI, never the saved graph.
   const [hoveredEdge, setHoveredEdge] = useState<{
     edge: GraphEdge
@@ -278,8 +395,13 @@ function Flow() {
   const [boardName, setBoardName] = useState(startupDraft?.name ?? 'Untitled board')
   const [selectedBoardId, setSelectedBoardId] = useState('')
   const [storageStatus, setStorageStatus] = useState('Loading saved boards…')
-  const [draftStatus, setDraftStatus] = useState(startupDraft ? 'Local draft restored' : '')
+  const [draftStatus, setDraftStatus] = useState(
+    startupDraft ? 'Local draft restored' : '',
+  )
   const [needsSignIn, setNeedsSignIn] = useState(false)
+  const [shareStatus, setShareStatus] = useState('')
+  const [shareUrl, setShareUrl] = useState('')
+  const isSharedAssembly = sharedAssemblyToken !== null
   const { screenToFlowPosition, setCenter, fitView } = useReactFlow()
   const nextId = useRef(Math.max(
     1,
@@ -293,8 +415,6 @@ function Flow() {
       .map((edge) => Number(edge.id.replace('edge-', '')))
       .filter((id) => Number.isFinite(id)),
   ) + 1)
-  const idleHintsVisible = useRef(true)
-  const idleDismissTimer = useRef<number | null>(null)
   const pointerPalettePress = useRef<{
     pointerId: number
     x: number
@@ -306,49 +426,21 @@ function Flow() {
   const suppressPointerContextMenuUntil = useRef(0)
 
   useEffect(() => {
-    const revealIdleHints = () => {
-      idleHintsVisible.current = true
-      setIdleHintsDismissing(false)
-      setShowIdleHints(true)
-    }
+    window.localStorage.setItem(WORKSPACE_VIEW_KEY, workspaceView)
+  }, [workspaceView])
 
-    let idleTimer = window.setTimeout(revealIdleHints, HIDDEN_HINT_IDLE_DELAY)
-    const activityEvents = ['pointermove', 'pointerdown', 'keydown', 'wheel'] as const
-    const resetIdleTimer = () => {
-      if (idleHintsVisible.current && idleDismissTimer.current === null) {
-        setIdleHintsDismissing(true)
-        idleDismissTimer.current = window.setTimeout(() => {
-          idleHintsVisible.current = false
-          idleDismissTimer.current = null
-          setShowIdleHints(false)
-          setIdleHintsDismissing(false)
-        }, 420)
-      }
-      window.clearTimeout(idleTimer)
-      idleTimer = window.setTimeout(revealIdleHints, HIDDEN_HINT_IDLE_DELAY)
-    }
-
-    activityEvents.forEach((eventName) => window.addEventListener(eventName, resetIdleTimer))
-    return () => {
-      window.clearTimeout(idleTimer)
-      if (idleDismissTimer.current !== null) window.clearTimeout(idleDismissTimer.current)
-      activityEvents.forEach((eventName) => window.removeEventListener(eventName, resetIdleTimer))
-    }
-  }, [])
+  // New source-slide renders should replace only OSA's own older compact
+  // Shako diagrams. This lets an existing local draft pick up the reference
+  // visuals on refresh while preserving any person-selected visual.
+  useEffect(() => {
+    setNodes((currentNodes) => refreshBundledShakoSlideReferences(
+      currentNodes,
+      bundledShakoImportPlan,
+    ))
+  }, [bundledShakoImportPlan, nodes, setNodes])
 
   useEffect(() => {
-    if (!showIdleHints) {
-      setHintTrailStage(1)
-      return
-    }
-
-    const trailTimer = window.setInterval(() => {
-      setHintTrailStage((stage) => Math.min(stage + 1, 3))
-    }, 7_500)
-    return () => window.clearInterval(trailTimer)
-  }, [showIdleHints])
-
-  useEffect(() => {
+    if (isSharedAssembly) return
     setDraftStatus('Saving local draft…')
     const saveTimer = window.setTimeout(() => {
       try {
@@ -368,7 +460,7 @@ function Flow() {
       }
     }, 900)
     return () => window.clearTimeout(saveTimer)
-  }, [boardId, boardName, edges, nodes])
+  }, [boardId, boardName, edges, isSharedAssembly, nodes])
 
   const suppressPaneCollapseUntil = useRef(0)
   const refreshSavedBoards = useCallback(async () => {
@@ -392,8 +484,12 @@ function Flow() {
   }, [])
 
   useEffect(() => {
+    if (isSharedAssembly) {
+      setStorageStatus('Shared assembly')
+      return
+    }
     void refreshSavedBoards()
-  }, [refreshSavedBoards])
+  }, [isSharedAssembly, refreshSavedBoards])
 
   /** Creates uniquely named edges without hiding the ID counter in a callback. */
   const makeEdge = useCallback((source: string, target: string) => {
@@ -450,6 +546,24 @@ function Flow() {
     )))
   }, [setNodes])
 
+  const onSpaceIdsChange = useCallback((id: string, spaceIds: string[]) => {
+    setNodes((currentNodes) => {
+      const targetNode = currentNodes.find((node) => node.id === id)
+      if (!targetNode || targetNode.data.kind === 'space') return currentNodes
+      const validSpaceIds = new Set(
+        currentNodes
+          .filter((node) => node.data.kind === 'space')
+          .map((node) => node.id),
+      )
+      const normalizedSpaceIds = [...new Set(spaceIds)].filter((spaceId) => validSpaceIds.has(spaceId))
+      return currentNodes.map((node) => (
+        node.id === id
+          ? { ...node, data: { ...node.data, spaceIds: normalizedSpaceIds } }
+          : node
+      ))
+    })
+  }, [setNodes])
+
   const onTextInteractionStart = useCallback(() => {
     const finishInteraction = () => {
       suppressPaneCollapseUntil.current = performance.now() + 300
@@ -462,33 +576,43 @@ function Flow() {
   }, [])
 
   const onKindChange = useCallback((id: string, kind: NodeKind) => {
-    setNodes((currentNodes) =>
-      currentNodes.map((node) =>
-        node.id === id
-          ? {
-              ...node,
-              data: {
-                ...node.data,
-                kind,
-                notebook: node.data.notebook ?? (
-                  kind === 'note'
-                    ? { format: 'text' }
-                    : kind === 'sketch'
-                      ? { format: 'sketch' }
-                      : null
-                ),
-                task: node.data.task ?? (
-                  kind === 'task' ? { day: null, completedAt: null } : null
-                ),
-              },
-            }
-          : node,
-      ),
-    )
+    setNodes((currentNodes) => {
+      const wasSpace = currentNodes.some((node) => node.id === id && node.data.kind === 'space')
+      return currentNodes.map((node) => {
+        if (node.id === id) {
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              kind,
+              spaceIds: kind === 'space' ? [] : node.data.spaceIds,
+              notebook: node.data.notebook ?? (
+                kind === 'note'
+                  ? { format: 'text' }
+                  : kind === 'sketch'
+                    ? { format: 'sketch' }
+                    : null
+              ),
+              task: node.data.task ?? (
+                kind === 'action' ? { day: null, completedAt: null } : null
+              ),
+            },
+          }
+        }
+        if (!wasSpace || !node.data.spaceIds.includes(id)) return node
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            spaceIds: node.data.spaceIds.filter((spaceId) => spaceId !== id),
+          },
+        }
+      })
+    })
     setEdges((currentEdges) => currentEdges.map((edge) => {
       const projectTaskLinkIsActive = edge.data.relationKind !== 'project-task' || (
         (edge.source !== id || kind === 'project')
-        && (edge.target !== id || kind === 'task')
+        && (edge.target !== id || kind === 'action')
       )
       if (projectTaskLinkIsActive) return edge
       return {
@@ -496,7 +620,7 @@ function Flow() {
         data: {
           ...edge.data,
           relationKind: 'related',
-          relationship: edge.data.relationship === 'has task'
+          relationship: edge.data.relationship === 'has task' || edge.data.relationship === 'has action'
             ? 'relates to'
             : edge.data.relationship,
         },
@@ -505,7 +629,25 @@ function Flow() {
     setNodeKindFilter((currentFilter) => (
       currentFilter === 'all' || currentFilter === kind ? currentFilter : 'all'
     ))
+    setNodeSpaceFilter((currentSpaceId) => (
+      kind === 'space' || currentSpaceId === id ? '' : currentSpaceId
+    ))
   }, [setEdges, setNodes])
+
+  const onNodesDelete = useCallback((deletedNodes: TextFlowNode[]) => {
+    const deletedSpaceIds = new Set(
+      deletedNodes.filter((node) => node.data.kind === 'space').map((node) => node.id),
+    )
+    if (deletedSpaceIds.size === 0) return
+
+    setNodes((currentNodes) => currentNodes.map((node) => {
+      const spaceIds = node.data.spaceIds.filter((spaceId) => !deletedSpaceIds.has(spaceId))
+      return spaceIds.length === node.data.spaceIds.length
+        ? node
+        : { ...node, data: { ...node.data, spaceIds } }
+    }))
+    setNodeSpaceFilter((currentSpaceId) => deletedSpaceIds.has(currentSpaceId) ? '' : currentSpaceId)
+  }, [setNodes])
 
   const onTaskDayChange = useCallback((id: string, day: string | null) => {
     setNodes((currentNodes) => currentNodes.map((node) => (
@@ -550,7 +692,12 @@ function Flow() {
   /** Renames a property key after its name input loses focus. */
   const onPropertyRename = useCallback((id: string, oldName: string, newName: string) => {
     const cleanedName = newName.trim()
-    if (!cleanedName || cleanedName === oldName) return
+    if (
+      !cleanedName
+      || cleanedName === oldName
+      || isManagedOsaProperty(oldName)
+      || isManagedOsaProperty(cleanedName)
+    ) return
 
     setNodes((currentNodes) => currentNodes.map((node) => {
       if (node.id !== id) return node
@@ -568,6 +715,7 @@ function Flow() {
 
   /** Removes a single durable property without deleting its node. */
   const onPropertyRemove = useCallback((id: string, propertyName: string) => {
+    if (isManagedOsaProperty(propertyName)) return
     setNodes((currentNodes) => currentNodes.map((node) => {
       if (node.id !== id) return node
 
@@ -617,7 +765,12 @@ function Flow() {
 
   const onEdgePropertyRename = useCallback((id: string, oldName: string, newName: string) => {
     const cleanedName = newName.trim()
-    if (!cleanedName || cleanedName === oldName) return
+    if (
+      !cleanedName
+      || cleanedName === oldName
+      || isManagedOsaProperty(oldName)
+      || isManagedOsaProperty(cleanedName)
+    ) return
 
     setEdges((currentEdges) => currentEdges.map((edge) => {
       if (edge.id !== id) return edge
@@ -630,6 +783,7 @@ function Flow() {
   }, [setEdges])
 
   const onEdgePropertyRemove = useCallback((id: string, propertyName: string) => {
+    if (isManagedOsaProperty(propertyName)) return
     setEdges((currentEdges) => currentEdges.map((edge) => {
       if (edge.id !== id) return edge
       const remainingProperties = { ...edge.data.properties }
@@ -658,6 +812,7 @@ function Flow() {
   const onNodeClick: NodeMouseHandler<TextFlowNode> = useCallback((event, node) => {
     if (performance.now() < suppressPointerPaletteClickUntil.current) return
     setSelectedItem({ type: 'node', id: node.id })
+    setInspectorExpanded(true)
     if (node.data.notebook) {
       setSelectedNotebookPageId(node.id)
     }
@@ -676,6 +831,7 @@ function Flow() {
 
   const onEdgeClick: EdgeMouseHandler<GraphEdge> = useCallback((_event, edge) => {
     setSelectedItem({ type: 'edge', id: edge.id })
+    setInspectorExpanded(true)
   }, [])
 
   const onEdgeMouseEnter: EdgeMouseHandler<GraphEdge> = useCallback((event, edge) => {
@@ -697,8 +853,48 @@ function Flow() {
     ? edges.find((edge) => edge.id === selectedItem.id)
     : undefined
 
+  const allSpaces = useMemo(() => spaceNodes(nodes), [nodes])
+  const selectedSpaceId = nodeSpaceFilter === NO_SPACE_FILTER
+    || allSpaces.some((space) => space.id === nodeSpaceFilter)
+    ? nodeSpaceFilter
+    : ''
+  const canvasContextNodes = useMemo(
+    () => nodesInSpace(nodes, selectedSpaceId),
+    [nodes, selectedSpaceId],
+  )
+  const canvasContextEdges = useMemo(
+    () => edgesWithinNodes(canvasContextNodes, edges),
+    [canvasContextNodes, edges],
+  )
+  const visibleNodes = useMemo(
+    () => filterGraphNodes(canvasContextNodes, canvasContextEdges, nodeKindFilter, nodeConnectionFilter),
+    [canvasContextEdges, canvasContextNodes, nodeConnectionFilter, nodeKindFilter],
+  )
+  const visibleEdges = useMemo(
+    () => edgesWithinNodes(visibleNodes, edges),
+    [edges, visibleNodes],
+  )
+  // These are shared objects, not private records owned by one view. Assembly
+  // adopts the selected Space as its working context, so Space -> Assembly is
+  // a direct navigation path rather than a second filtering chore.
   const tasks = useMemo(() => selectTaskNodes(nodes), [nodes])
-  const projects = useMemo(() => selectProjectNodes(nodes), [nodes])
+  const projects = useMemo(() => selectProjectNodes(nodes).sort((left, right) => {
+    // Assembly instructions are a project-level context too. Put those
+    // composed, buildable objects first; keep each category's saved order.
+    return Number(osaRole(right) === 'assembly') - Number(osaRole(left) === 'assembly')
+  }), [nodes])
+  const assemblies = useMemo(() => {
+    // An Assembly is a part-like object with internal structure, not a second
+    // project-shaped record. The role keeps old saved Project-kind assemblies
+    // visible while new ones are created as ordinary Part-kind objects.
+    const allAssemblies = nodes.filter((node) => osaRole(node) === 'assembly')
+    if (selectedSpaceId === '') return allAssemblies
+    if (selectedSpaceId === NO_SPACE_FILTER) {
+      return allAssemblies.filter((assembly) => assembly.data.spaceIds.length === 0)
+    }
+    return allAssemblies.filter((assembly) => assembly.data.spaceIds.includes(selectedSpaceId))
+  }, [nodes, selectedSpaceId])
+  const operations = tasks
   const notebookPages = useMemo(
     () => nodes.filter((node) => node.data.notebook !== null),
     [nodes],
@@ -706,26 +902,59 @@ function Flow() {
   const activeProjectId = selectedProjectId && projects.some((project) => project.id === selectedProjectId)
     ? selectedProjectId
     : (projects[0]?.id ?? null)
+  const activeAssemblyId = selectedAssemblyId
+    && assemblies.some((assembly) => assembly.id === selectedAssemblyId)
+    ? selectedAssemblyId
+    : (assemblies[0]?.id ?? null)
+
+  useEffect(() => {
+    if (activeAssemblyId) {
+      window.localStorage.setItem(SELECTED_ASSEMBLY_KEY, activeAssemblyId)
+    } else {
+      window.localStorage.removeItem(SELECTED_ASSEMBLY_KEY)
+    }
+  }, [activeAssemblyId])
+
   const activeNotebookPageId = selectedNotebookPageId
     && notebookPages.some((page) => page.id === selectedNotebookPageId)
     ? selectedNotebookPageId
     : (notebookPages[0]?.id ?? null)
-  const activeNodeProjectFilter = projects.some((project) => project.id === nodeProjectFilter)
-    ? nodeProjectFilter
-    : ''
-  const projectContextIds = useMemo(() => {
-    if (!activeNodeProjectFilter) return null
-    const ids = new Set([activeNodeProjectFilter])
-    edges.forEach((edge) => {
-      if (edge.source === activeNodeProjectFilter) ids.add(edge.target)
-      if (edge.target === activeNodeProjectFilter) ids.add(edge.source)
+
+  /**
+   * The inspector projects visual-canvas ownership from ordinary edges. A
+   * Visual remains a normal graph object: this list never duplicates its
+   * image/canvas data into the owning Part or Tool.
+   */
+  const selectedOwnedVisuals = useMemo(() => {
+    if (!selectedNode) return []
+    const visualIds = new Set(edges
+      .filter((edge) => (
+        edge.source === selectedNode.id
+        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
+      ))
+      .map((edge) => edge.target))
+    return nodes.filter((node) => visualIds.has(node.id))
+  }, [edges, nodes, selectedNode])
+
+  // A visible connection to a Space should never disagree with membership.
+  // This also repairs direct node-to-Space edges saved before that gesture
+  // learned to update `spaceIds` itself. Removing the edge later does not
+  // silently remove membership; connections and organization stay independent.
+  useEffect(() => {
+    setNodes((currentNodes) => {
+      let reconciledNodes = currentNodes
+      for (const edge of edges) {
+        const sourceNode = reconciledNodes.find((node) => node.id === edge.source)
+        const targetNode = reconciledNodes.find((node) => node.id === edge.target)
+        if (sourceNode?.data.kind === 'space' && targetNode && targetNode.data.kind !== 'space') {
+          reconciledNodes = addNodeToSpace(reconciledNodes, targetNode.id, sourceNode.id)
+        } else if (targetNode?.data.kind === 'space' && sourceNode && sourceNode.data.kind !== 'space') {
+          reconciledNodes = addNodeToSpace(reconciledNodes, sourceNode.id, targetNode.id)
+        }
+      }
+      return reconciledNodes
     })
-    return ids
-  }, [activeNodeProjectFilter, edges])
-  const visibleNodes = useMemo(() => nodes.filter((node) => (
-    (nodeKindFilter === 'all' || node.data.kind === nodeKindFilter)
-    && (projectContextIds === null || projectContextIds.has(node.id))
-  )), [nodeKindFilter, nodes, projectContextIds])
+  }, [edges, setNodes])
 
   /** Creates one canonical object which every view reads from the graph. */
   const createObjectNode = useCallback((
@@ -734,22 +963,27 @@ function Flow() {
     day: string | null = null,
     text = '',
     position?: { x: number; y: number },
+    properties: Record<string, string> = {},
+    explicitSpaceIds?: string[],
   ) => {
     const id = String(nextId.current)
     nextId.current += 1
-    setNodes((currentNodes) => [
-      ...currentNodes,
-      createTextNode({
+    setNodes((currentNodes) => {
+      const selectedCanvasSpaceId = workspaceView === 'nodes' ? nodeSpaceFilter : ''
+      return [...currentNodes, createTextNode({
         id,
         position: position ?? getNextNodePosition(currentNodes),
         name: title || `#${id}`,
         text,
         kind,
-        task: kind === 'task' ? { day, completedAt: null } : null,
-      }),
-    ])
+        spaceIds: explicitSpaceIds
+          ?? spaceIdsForNewNode(currentNodes, selectedCanvasSpaceId, kind),
+        task: kind === 'action' ? { day, completedAt: null } : null,
+        properties,
+      })]
+    })
     return id
-  }, [setNodes])
+  }, [nodeSpaceFilter, setNodes, workspaceView])
 
   const connectFromTextSelection = useCallback((
     sourceId: string,
@@ -773,7 +1007,7 @@ function Flow() {
   const createFromTextSelection = useCallback((
     sourceId: string,
     sourceAnchor: TextConnectionAnchor,
-    kind: 'note' | 'task' | 'project',
+    kind: 'note' | 'action' | 'project',
   ) => {
     const targetId = createObjectNode(
       '',
@@ -802,18 +1036,719 @@ function Flow() {
   }, [setEdges])
 
   const createTask = useCallback((text: string, day: string | null) => {
-    createObjectNode('', 'task', day, text)
+    createObjectNode('', 'action', day, text)
   }, [createObjectNode])
 
   const createTaskForProject = useCallback((projectId: string, text: string, day: string | null) => {
-    const taskId = createObjectNode('', 'task', day, text)
+    const taskId = createObjectNode('', 'action', day, text)
     linkTaskToProject(taskId, projectId)
   }, [createObjectNode, linkTaskToProject])
 
-  const createProject = useCallback((title: string) => {
-    const projectId = createObjectNode(title, 'project')
-    setSelectedProjectId(projectId)
+  /** Creates a part-like Assembly object and opens it through Assembly view. */
+  const createAssembly = useCallback((title: string) => {
+    const assemblyId = createObjectNode(title, 'part', null, '', undefined, {
+      [OSA_PROPERTY.role]: 'assembly',
+    })
+    setSelectedAssemblyId(assemblyId)
+    return assemblyId
   }, [createObjectNode])
+
+  const createAssemblyOperation = useCallback((assemblyId: string, title: string) => {
+    const assembly = nodes.find((node) => node.id === assemblyId)
+    const linkedActionIds = new Set(edges
+      .filter((edge) => edge.source === assemblyId && edge.data.relationKind === 'project-task')
+      .map((edge) => edge.target))
+    const greatestOrder = operations
+      .filter((operation) => linkedActionIds.has(operation.id))
+      .reduce((greatest, operation) => {
+        const order = Number(operation.data.properties[OSA_PROPERTY.order])
+        return Number.isFinite(order) ? Math.max(greatest, order) : greatest
+      }, 0)
+    const order = Math.floor(greatestOrder) + 1
+    const operationId = createObjectNode(
+      title,
+      'action',
+      null,
+      '',
+      undefined,
+      {
+        [OSA_PROPERTY.role]: 'operation',
+        [OSA_PROPERTY.order]: String(order),
+        [OSA_PROPERTY.operationEntrance]: '',
+        [OSA_PROPERTY.operationExit]: '',
+      },
+      assembly?.data.spaceIds,
+    )
+    // Every instruction begins with a real output object, even before we know
+    // its final name. This is the part/subassembly represented by the card.
+    const primaryOutputId = createObjectNode(
+      'Part to define',
+      'part',
+      null,
+      'Placeholder part represented by this instruction.',
+      undefined,
+      {
+        [OSA_PROPERTY.role]: 'bom-item',
+        [OSA_PROPERTY.itemStatus]: 'placeholder',
+        [OSA_PROPERTY.currency]: 'USD',
+      },
+      assembly?.data.spaceIds,
+    )
+    const operationEdgeId = `edge-${nextEdgeId.current}`
+    nextEdgeId.current += 1
+    const assemblyItemEdgeId = `edge-${nextEdgeId.current}`
+    nextEdgeId.current += 1
+    const primaryOutputEdgeId = `edge-${nextEdgeId.current}`
+    nextEdgeId.current += 1
+    setEdges((currentEdges) => [
+      ...currentEdges,
+      createProjectTaskEdge(operationEdgeId, assemblyId, operationId),
+      createGraphEdge({
+        id: assemblyItemEdgeId,
+        source: assemblyId,
+        target: primaryOutputId,
+        relationship: 'tracks part',
+        properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.assemblyItem },
+      }),
+      createGraphEdge({
+        id: primaryOutputEdgeId,
+        source: operationId,
+        target: primaryOutputId,
+        relationship: 'represents part',
+        properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.operationPrimaryOutput },
+      }),
+    ])
+    return operationId
+  }, [createObjectNode, edges, nodes, operations, setEdges])
+
+  const createAssemblyPart = useCallback((assemblyId: string) => {
+    const assembly = nodes.find((node) => node.id === assemblyId)
+    const partId = createObjectNode(
+      '',
+      'part',
+      null,
+      '',
+      undefined,
+      {
+        [OSA_PROPERTY.role]: 'bom-item',
+        [OSA_PROPERTY.currency]: 'USD',
+      },
+      assembly?.data.spaceIds,
+    )
+    const id = `edge-${nextEdgeId.current}`
+    nextEdgeId.current += 1
+    setEdges((currentEdges) => [...currentEdges, createGraphEdge({
+      id,
+      source: assemblyId,
+      target: partId,
+      relationship: 'uses part',
+      properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.assemblyItem },
+    })])
+    return partId
+  }, [createObjectNode, nodes, setEdges])
+
+  const createAssemblyExpense = useCallback((assemblyId: string) => {
+    const assembly = nodes.find((node) => node.id === assemblyId)
+    const expenseId = createObjectNode(
+      '',
+      'expense',
+      null,
+      '',
+      undefined,
+      {
+        [OSA_PROPERTY.role]: 'expense',
+        [OSA_PROPERTY.currency]: 'USD',
+      },
+      assembly?.data.spaceIds,
+    )
+    const id = `edge-${nextEdgeId.current}`
+    nextEdgeId.current += 1
+    setEdges((currentEdges) => [...currentEdges, createGraphEdge({
+      id,
+      source: assemblyId,
+      target: expenseId,
+      relationship: 'records expense',
+      properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.assemblyExpense },
+    })])
+    return expenseId
+  }, [createObjectNode, nodes, setEdges])
+
+  const createOperationTool = useCallback((
+    operationId: string,
+    name: string,
+    options?: { placeholder?: boolean },
+  ) => {
+    const operation = nodes.find((node) => node.id === operationId)
+    const toolId = createObjectNode(
+      name,
+      'tool',
+      null,
+      '',
+      undefined,
+      {
+        [OSA_PROPERTY.role]: 'tool',
+        ...(options?.placeholder ? { [OSA_PROPERTY.itemStatus]: 'placeholder' } : {}),
+      },
+      operation?.data.spaceIds,
+    )
+    const id = `edge-${nextEdgeId.current}`
+    nextEdgeId.current += 1
+    setEdges((currentEdges) => [...currentEdges, createGraphEdge({
+      id,
+      source: operationId,
+      target: toolId,
+      relationship: 'uses tool',
+      properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.operationTool },
+    })])
+    return toolId
+  }, [createObjectNode, nodes, setEdges])
+
+  /**
+   * Creates one blank, reusable Visual canvas owned by a real Part, Assembly,
+   * or Tool. Its content is intentionally separate from any Assembly card:
+   * cards later reference this Visual without becoming its owner.
+   */
+  const createOwnedVisualCanvas = useCallback((ownerId: string) => {
+    const owner = nodes.find((node) => node.id === ownerId)
+    if (!owner || !canOwnOsaVisual(owner)) return ''
+
+    const ownerName = owner.data.name.trim() || `${owner.data.kind} #${owner.id}`
+    const visualId = createObjectNode(
+      `${ownerName} visual`,
+      'visual',
+      null,
+      `A reusable visual canvas owned by ${ownerName}.`,
+      undefined,
+      { [OSA_PROPERTY.role]: 'visual' },
+      owner.data.spaceIds,
+    )
+    const edgeId = `edge-${nextEdgeId.current}`
+    nextEdgeId.current += 1
+    setEdges((currentEdges) => [...currentEdges, createGraphEdge({
+      id: edgeId,
+      source: ownerId,
+      target: visualId,
+      relationship: 'owns visual',
+      properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.objectVisual },
+    })])
+    setSelectedItem({ type: 'node', id: visualId })
+    setInspectorExpanded(true)
+    return visualId
+  }, [createObjectNode, nodes, setEdges])
+
+  /**
+   * Detaches a Visual from its owning object without deleting either the
+   * Visual, its image/canvas content, or any card placement that references
+   * it. This makes "remove canvas" safe and reversible by relinking later.
+   */
+  const removeOwnedVisualCanvas = useCallback((ownerId: string, visualId: string) => {
+    setEdges((currentEdges) => currentEdges.filter((edge) => !(
+      edge.source === ownerId
+      && edge.target === visualId
+      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
+    )))
+  }, [setEdges])
+
+  /** Opens a canonical Visual in the ordinary node inspector for editing. */
+  const openOwnedVisualCanvas = useCallback((visualId: string) => {
+    setSelectedItem({ type: 'node', id: visualId })
+    setInspectorExpanded(true)
+  }, [])
+
+  /**
+   * Creates the assembly-picture Visual for the Part/Assembly represented by
+   * one instruction card. This is an explicit authoring action—not a side
+   * effect of adding an In, Tool, or Out relationship. The created Visual is
+   * both owned by the represented object and deliberately referenced by this
+   * one card, ready for an image, photo, or later drawing.
+   */
+  const createOwnedVisualForOperation = useCallback((operationId: string) => {
+    const primaryOutputEdge = edges.find((edge) => (
+      edge.source === operationId
+      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationPrimaryOutput
+    ))
+    const ownerId = primaryOutputEdge?.target
+    if (!ownerId) return ''
+
+    const visualId = createOwnedVisualCanvas(ownerId)
+    if (!visualId) return ''
+
+    const edgeId = `edge-${nextEdgeId.current}`
+    nextEdgeId.current += 1
+    setEdges((currentEdges) => [...currentEdges, createGraphEdge({
+      id: edgeId,
+      source: operationId,
+      target: visualId,
+      relationship: 'shows visual',
+      properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.operationVisual },
+    })])
+    return visualId
+  }, [createOwnedVisualCanvas, edges, setEdges])
+
+  /** Connects an existing tool from the shared inventory to one instruction. */
+  const linkToolToOperation = useCallback((operationId: string, toolId: string) => {
+    setEdges((currentEdges) => {
+      const alreadyLinked = currentEdges.some((edge) => (
+        edge.source === operationId && edge.target === toolId
+      ))
+      if (alreadyLinked) return currentEdges
+      const id = `edge-${nextEdgeId.current}`
+      nextEdgeId.current += 1
+      return [...currentEdges, createGraphEdge({
+        id,
+        source: operationId,
+        target: toolId,
+        relationship: 'uses tool',
+        properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.operationTool },
+      })]
+    })
+  }, [setEdges])
+
+  /**
+   * Removes only this instruction's tool relationship. The canonical tool
+   * node stays in the inventory and can be linked to this or another card
+   * again later.
+   */
+  const unlinkToolFromOperation = useCallback((operationId: string, toolId: string) => {
+    setEdges((currentEdges) => {
+      const nextEdges = currentEdges.filter((edge) => !(
+        edge.source === operationId
+        && edge.target === toolId
+        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationTool
+      ))
+      return nextEdges.length === currentEdges.length ? currentEdges : nextEdges
+    })
+  }, [setEdges])
+
+  /**
+   * Includes a reusable visual object in one instruction card's View. The
+   * card stores only this placed-reference relation; the canonical visual
+   * remains on the target object, where any other view can reuse it too.
+   */
+  const linkObjectVisualToOperation = useCallback((
+    operationId: string,
+    objectId: string,
+    sectionId = OPERATION_CANVAS_SOURCE_SECTION_ID,
+  ) => {
+    const operation = nodes.find((node) => node.id === operationId)
+    const object = nodes.find((node) => node.id === objectId)
+    const operationSections = parseOperationCanvasSections(
+      operation?.data.properties[OSA_PROPERTY.operationCanvasSections],
+    )
+    const normalizedSectionId = typeof sectionId === 'string' ? sectionId.trim() : ''
+    const objectHasVisual = Boolean(object?.data.properties[OSA_PROPERTY.assetImage]?.trim())
+    const objectCanProvideVisual = Boolean(object && (
+      osaRole(object) === 'visual'
+      || object.data.kind === 'visual'
+      ||
+      isPartLike(object)
+      || object.data.kind === 'tool'
+      || osaRole(object) === 'tool'
+    ))
+    // A card's canvas is an independent association: it can include a
+    // canonical Visual, part, assembly, or tool image even before that object
+    // is listed in In, Tools, or the represented-part relationship.
+    if (
+      !operation
+      || !objectCanProvideVisual
+      || !objectHasVisual
+      || !isOperationCanvasSectionId(normalizedSectionId, operationSections)
+    ) return
+
+    setEdges((currentEdges) => {
+      const alreadyLinked = currentEdges.some((edge) => (
+        edge.source === operationId
+        && edge.target === objectId
+        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationVisual
+      ))
+      if (alreadyLinked) return currentEdges
+
+      const id = `edge-${nextEdgeId.current}`
+      nextEdgeId.current += 1
+      const placement = defaultOperationVisualPosition(currentEdges.filter((edge) => (
+        edge.source === operationId
+        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationVisual
+        && operationVisualSectionId(
+          edge.data.properties[OSA_PROPERTY.operationVisualSection],
+          operationSections,
+        ) === normalizedSectionId
+      )).length)
+      const size = defaultOperationVisualSize()
+      return [...currentEdges, createGraphEdge({
+        id,
+        source: operationId,
+        target: objectId,
+        relationship: 'shows object visual',
+        properties: {
+          [OSA_PROPERTY.relationRole]: OSA_RELATION.operationVisual,
+          [OSA_PROPERTY.operationVisualSection]: normalizedSectionId,
+          [OSA_PROPERTY.operationVisualX]: String(placement.x),
+          [OSA_PROPERTY.operationVisualY]: String(placement.y),
+          [OSA_PROPERTY.operationVisualWidth]: String(size.width),
+          [OSA_PROPERTY.operationVisualHeight]: String(size.height),
+        },
+      })]
+    })
+  }, [nodes, setEdges])
+
+  /** Adds one durable empty canvas section below an operation's source slide. */
+  const createOperationCanvasSection = useCallback((operationId: string) => {
+    const operation = nodes.find((node) => node.id === operationId)
+    if (!operation) return ''
+    const currentSections = parseOperationCanvasSections(
+      operation.data.properties[OSA_PROPERTY.operationCanvasSections],
+    )
+    const section = nextOperationCanvasSection(currentSections)
+
+    setNodes((currentNodes) => currentNodes.map((node) => {
+      if (node.id !== operationId) return node
+      const latestSections = parseOperationCanvasSections(
+        node.data.properties[OSA_PROPERTY.operationCanvasSections],
+      )
+      // A duplicate would only be possible if a second UI action raced this
+      // update. Keep the first durable section instead of duplicating it.
+      if (latestSections.some((current) => current.id === section.id)) return node
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          properties: {
+            ...node.data.properties,
+            [OSA_PROPERTY.operationCanvasSections]: serializeOperationCanvasSections([
+              ...latestSections,
+              section,
+            ]),
+          },
+        },
+      }
+    }))
+    return section.id
+  }, [nodes, setNodes])
+
+  /** Removes a card's View relation without touching the object's visual data. */
+  const unlinkObjectVisualFromOperation = useCallback((operationId: string, objectId: string) => {
+    setEdges((currentEdges) => {
+      const nextEdges = currentEdges.filter((edge) => !(
+        edge.source === operationId
+        && edge.target === objectId
+        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationVisual
+      ))
+      return nextEdges.length === currentEdges.length ? currentEdges : nextEdges
+    })
+  }, [setEdges])
+
+  /**
+   * Moves or resizes one explicitly included object visual within an
+   * instruction card's canvas. The image-box geometry lives on the
+   * operation-visual edge because the same canonical Visual can appear at a
+   * different location and size in another card.
+   */
+  const updateObjectVisualPlacement = useCallback((
+    operationId: string,
+    objectId: string,
+    position: OperationVisualPlacement,
+  ) => {
+    const operation = nodes.find((node) => node.id === operationId)
+    const operationSections = parseOperationCanvasSections(
+      operation?.data.properties[OSA_PROPERTY.operationCanvasSections],
+    )
+    const requestedSectionId = typeof position.sectionId === 'string'
+      ? position.sectionId.trim()
+      : ''
+    if (!operation || !isOperationCanvasSectionId(requestedSectionId, operationSections)) return
+
+    setEdges((currentEdges) => {
+      let changed = false
+      const nextEdges = currentEdges.map((edge) => {
+        if (
+          edge.source !== operationId
+          || edge.target !== objectId
+          || edge.data.properties[OSA_PROPERTY.relationRole] !== OSA_RELATION.operationVisual
+        ) return edge
+
+        // Malformed pointer data falls back to the edge's current safe point,
+        // then to the standard first-visual position. This keeps NaN and
+        // Infinity out of the string-only durable graph properties.
+        const currentPosition = normalizeOperationVisualPosition({
+          x: Number(edge.data.properties[OSA_PROPERTY.operationVisualX]),
+          y: Number(edge.data.properties[OSA_PROPERTY.operationVisualY]),
+        }, defaultOperationVisualPosition(0))
+        const nextPosition = normalizeOperationVisualPosition(position, currentPosition)
+        const currentSize = normalizeOperationVisualSize({
+          width: Number(edge.data.properties[OSA_PROPERTY.operationVisualWidth]),
+          height: Number(edge.data.properties[OSA_PROPERTY.operationVisualHeight]),
+        }, defaultOperationVisualSize())
+        const nextSize = normalizeOperationVisualSize(position, currentSize)
+        const nextProperties = {
+          ...edge.data.properties,
+          [OSA_PROPERTY.operationVisualSection]: requestedSectionId,
+          [OSA_PROPERTY.operationVisualX]: String(nextPosition.x),
+          [OSA_PROPERTY.operationVisualY]: String(nextPosition.y),
+          [OSA_PROPERTY.operationVisualWidth]: String(nextSize.width),
+          [OSA_PROPERTY.operationVisualHeight]: String(nextSize.height),
+        }
+        if (
+          nextProperties[OSA_PROPERTY.operationVisualSection]
+            === edge.data.properties[OSA_PROPERTY.operationVisualSection]
+          &&
+          nextProperties[OSA_PROPERTY.operationVisualX]
+            === edge.data.properties[OSA_PROPERTY.operationVisualX]
+          && nextProperties[OSA_PROPERTY.operationVisualY]
+            === edge.data.properties[OSA_PROPERTY.operationVisualY]
+          && nextProperties[OSA_PROPERTY.operationVisualWidth]
+            === edge.data.properties[OSA_PROPERTY.operationVisualWidth]
+          && nextProperties[OSA_PROPERTY.operationVisualHeight]
+            === edge.data.properties[OSA_PROPERTY.operationVisualHeight]
+        ) return edge
+
+        changed = true
+        return {
+          ...edge,
+          data: {
+            ...edge.data,
+            properties: nextProperties,
+          },
+        }
+      })
+      return changed ? nextEdges : currentEdges
+    })
+  }, [nodes, setEdges])
+
+  /**
+   * Removes a material relationship from one instruction without deleting the
+   * shared Part or Assembly object. Older boards used `operation-item` for
+   * inputs, so an In removal clears that legacy relation for this exact
+   * operation/part pair too. An Out removal clears both normal and primary
+   * output roles, preventing a card's represented part from lingering in Out.
+   */
+  const unlinkOperationMaterial = useCallback((
+    operationId: string,
+    objectId: string,
+    direction: OperationPartDirection,
+  ) => {
+    setEdges((currentEdges) => {
+      const nextEdges = currentEdges.filter((edge) => {
+        if (edge.source !== operationId || edge.target !== objectId) return true
+
+        const relationRole = edge.data.properties[OSA_PROPERTY.relationRole]
+        if (direction === 'input') {
+          return relationRole !== OSA_RELATION.operationInput
+            && relationRole !== OSA_RELATION.operationItem
+        }
+
+        return relationRole !== OSA_RELATION.operationOutput
+          && relationRole !== OSA_RELATION.operationPrimaryOutput
+      })
+      return nextEdges.length === currentEdges.length ? currentEdges : nextEdges
+    })
+  }, [setEdges])
+
+  /**
+   * Links one canonical Part or Assembly to the material flow of an operation.
+   *
+   * A single physical item may appear on both sides of an operation when it is
+   * modified in place; input and output are therefore distinct edge meanings.
+   */
+  const linkOperationMaterial = useCallback((
+    operationId: string,
+    objectId: string,
+    direction: OperationPartDirection,
+  ) => {
+    const material = nodes.find((node) => node.id === objectId)
+    const assemblyId = parentAssemblyIdForOperation(operationId, edges)
+    const isPart = material !== undefined && isPartLike(material)
+    const isAssembly = material !== undefined && osaRole(material) === 'assembly'
+    if (!material || (!isPart && !isAssembly)) return
+
+    const relationRole = direction === 'input'
+      ? OSA_RELATION.operationInput
+      : OSA_RELATION.operationOutput
+    const materialLabel = isAssembly ? 'assembly' : 'part'
+
+    setEdges((currentEdges) => {
+      const alreadyLinked = currentEdges.some((edge) => (
+        edge.source === operationId
+        && edge.target === objectId
+        && edge.data.properties[OSA_PROPERTY.relationRole] === relationRole
+      ))
+      const newEdges: GraphEdge[] = []
+
+      if (!alreadyLinked) {
+        const id = `edge-${nextEdgeId.current}`
+        nextEdgeId.current += 1
+        newEdges.push(createGraphEdge({
+          id,
+          source: operationId,
+          target: objectId,
+          relationship: direction === 'input'
+            ? `requires ${materialLabel}`
+            : `produces ${materialLabel}`,
+          properties: { [OSA_PROPERTY.relationRole]: relationRole },
+        }))
+      }
+
+      // A chosen part-like object becomes part of the Assembly's shared
+      // inventory too. A self-output is valid (the final operation can
+      // represent its own Assembly), but it must not become a self-member.
+      // That gives it one canonical identity across its card, the Assembly
+      // index, Space, and any later BOM view.
+      const canJoinAssemblyInventory = Boolean(
+        assemblyId
+        && assemblyId !== objectId
+        && (!isAssembly || !wouldCreateAssemblyMembershipCycle(assemblyId, objectId, currentEdges))
+      )
+      const isAlreadyInAssembly = !canJoinAssemblyInventory || currentEdges.some((edge) => (
+        edge.source === assemblyId
+        && edge.target === objectId
+        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.assemblyItem
+      ))
+      if (isPart && assemblyId && !isAlreadyInAssembly) {
+        const id = `edge-${nextEdgeId.current}`
+        nextEdgeId.current += 1
+        newEdges.push(createGraphEdge({
+          id,
+          source: assemblyId,
+          target: objectId,
+          relationship: 'uses part',
+          properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.assemblyItem },
+        }))
+      }
+
+      return newEdges.length ? [...currentEdges, ...newEdges] : currentEdges
+    })
+  }, [edges, nodes, setEdges])
+
+  /** Sets the single part or subassembly that an instruction card represents. */
+  const setOperationPrimaryOutput = useCallback((operationId: string, objectId: string) => {
+    const material = nodes.find((node) => node.id === objectId)
+    if (!material || !isPartLike(material)) return
+
+    const assemblyId = parentAssemblyIdForOperation(operationId, edges)
+    const materialIsAssembly = osaRole(material) === 'assembly'
+    const materialLabel = materialIsAssembly ? 'assembly' : 'part'
+
+    setEdges((currentEdges) => {
+      const currentPrimaryEdges = currentEdges.filter((edge) => (
+        edge.source === operationId
+        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationPrimaryOutput
+      ))
+      const alreadyPrimary = currentPrimaryEdges.length === 1
+        && currentPrimaryEdges[0]?.target === objectId
+      const withoutOldPrimary = alreadyPrimary
+        ? currentEdges
+        : currentEdges.filter((edge) => !currentPrimaryEdges.includes(edge))
+      const newEdges: GraphEdge[] = []
+
+      if (!alreadyPrimary) {
+        const id = `edge-${nextEdgeId.current}`
+        nextEdgeId.current += 1
+        newEdges.push(createGraphEdge({
+          id,
+          source: operationId,
+          target: objectId,
+          relationship: `represents ${materialLabel}`,
+          properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.operationPrimaryOutput },
+        }))
+      }
+
+      const canJoinAssemblyInventory = Boolean(
+        assemblyId
+        && assemblyId !== objectId
+        && (!materialIsAssembly || !wouldCreateAssemblyMembershipCycle(assemblyId, objectId, withoutOldPrimary))
+      )
+      const isAlreadyInAssembly = !canJoinAssemblyInventory || withoutOldPrimary.some((edge) => (
+        edge.source === assemblyId
+        && edge.target === objectId
+        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.assemblyItem
+      ))
+      if (assemblyId && !isAlreadyInAssembly) {
+        const id = `edge-${nextEdgeId.current}`
+        nextEdgeId.current += 1
+        newEdges.push(createGraphEdge({
+          id,
+          source: assemblyId,
+          target: objectId,
+          relationship: materialIsAssembly ? 'uses subassembly' : 'uses part',
+          properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.assemblyItem },
+        }))
+      }
+
+      return newEdges.length ? [...withoutOldPrimary, ...newEdges] : withoutOldPrimary
+    })
+  }, [edges, nodes, setEdges])
+
+  /** Backward-compatible inspector action: including a part means Parts In. */
+  const linkPartToOperation = useCallback((operationId: string, partId: string) => {
+    linkOperationMaterial(operationId, partId, 'input')
+  }, [linkOperationMaterial])
+
+  /**
+   * Creates one named-later Part placeholder and makes its two relationships
+   * immediately real: it belongs to the containing Assembly and it is either
+   * an input or an output of the instruction that created it.
+   */
+  const createPartForOperation = useCallback((
+    operationId: string,
+    direction: OperationPartDirection,
+  ) => {
+    const operation = nodes.find((node) => node.id === operationId)
+    const assemblyId = parentAssemblyIdForOperation(operationId, edges)
+    const partId = createObjectNode(
+      'Part to define',
+      'part',
+      null,
+      direction === 'input'
+        ? 'Placeholder part needed before this operation.'
+        : 'Placeholder part produced by this operation.',
+      undefined,
+      {
+        [OSA_PROPERTY.role]: 'bom-item',
+        [OSA_PROPERTY.itemStatus]: 'placeholder',
+        [OSA_PROPERTY.currency]: 'USD',
+      },
+      operation?.data.spaceIds,
+    )
+    const alreadyHasPrimaryOutput = edges.some((edge) => (
+      edge.source === operationId
+      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationPrimaryOutput
+    ))
+    const relationRole = direction === 'input'
+      ? OSA_RELATION.operationInput
+      : (alreadyHasPrimaryOutput ? OSA_RELATION.operationOutput : OSA_RELATION.operationPrimaryOutput)
+
+    setEdges((currentEdges) => {
+      const newEdges: GraphEdge[] = []
+      if (assemblyId && !currentEdges.some((edge) => (
+        edge.source === assemblyId
+        && edge.target === partId
+        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.assemblyItem
+      ))) {
+        const assemblyEdgeId = `edge-${nextEdgeId.current}`
+        nextEdgeId.current += 1
+        newEdges.push(createGraphEdge({
+          id: assemblyEdgeId,
+          source: assemblyId,
+          target: partId,
+          relationship: 'uses part',
+          properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.assemblyItem },
+        }))
+      }
+      const operationEdgeId = `edge-${nextEdgeId.current}`
+      nextEdgeId.current += 1
+      newEdges.push(createGraphEdge({
+        id: operationEdgeId,
+        source: operationId,
+        target: partId,
+        relationship: direction === 'input'
+          ? 'requires part'
+          : (relationRole === OSA_RELATION.operationPrimaryOutput ? 'represents part' : 'produces part'),
+        properties: { [OSA_PROPERTY.relationRole]: relationRole },
+      }))
+      return [...currentEdges, ...newEdges]
+    })
+
+    return partId
+  }, [createObjectNode, edges, nodes, setEdges])
 
   const createNotebookPage = useCallback((kind: 'note' | 'sketch') => {
     const pageId = createObjectNode('', kind)
@@ -829,10 +1764,14 @@ function Flow() {
   const openNodeInSpace = useCallback((nodeId: string) => {
     const node = nodes.find((candidate) => candidate.id === nodeId)
     if (!node) return
+    // A direct "open" action should always reveal its target. Canvas filters
+    // are useful browsing tools, but they should never make navigation fail.
+    setNodeSpaceFilter('')
     setNodeKindFilter('all')
-    setNodeProjectFilter('')
+    setNodeConnectionFilter('all')
     setWorkspaceView('nodes')
     setSelectedItem({ type: 'node', id: nodeId })
+    setInspectorExpanded(true)
     setExpandedNode({ id: nodeId, text: true, details: false })
     window.requestAnimationFrame(() => {
       setCenter(
@@ -846,11 +1785,10 @@ function Flow() {
   const openNotebookPage = useCallback((nodeId: string) => {
     const node = nodes.find((candidate) => candidate.id === nodeId)
     if (!node?.data.notebook) return
-    setSelectedNotebookPageId(nodeId)
-    setSelectedItem({ type: 'node', id: nodeId })
-    setExpandedNode(null)
-    setWorkspaceView('notebook')
-  }, [nodes])
+    // A stored notebook page is ordinary graph data. Until there is a clearly
+    // defined dedicated view for it, open it in Space with every other object.
+    openNodeInSpace(nodeId)
+  }, [nodes, openNodeInSpace])
 
   const openPointerPalette = useCallback((
     x: number,
@@ -867,7 +1805,7 @@ function Flow() {
 
   const closePointerPalette = useCallback(() => setPointerPalette(null), [])
 
-  const createFromPointerPalette = useCallback((kind: 'note' | 'sketch' | 'task' | 'project') => {
+  const createFromPointerPalette = useCallback((kind: 'note' | 'sketch' | 'action' | 'project' | 'space') => {
     if (!pointerPalette) return
     const sourceNode = pointerPalette.sourceNodeId
       ? nodes.find((node) => node.id === pointerPalette.sourceNodeId)
@@ -880,10 +1818,16 @@ function Flow() {
       : pointerPalette.flowPosition
     const targetId = createObjectNode('', kind, null, '', position)
 
+    // Creation on the canvas should never leave the new object hidden by the
+    // canvas filters. A Space itself cannot belong to the Space being viewed.
+    if (kind === 'space') setNodeSpaceFilter('')
+    setNodeKindFilter('all')
+    setNodeConnectionFilter('all')
+
     if (sourceNode) {
-      if (sourceNode.data.kind === 'project' && kind === 'task') {
+      if (sourceNode.data.kind === 'project' && kind === 'action') {
         linkTaskToProject(targetId, sourceNode.id)
-      } else if (sourceNode.data.kind === 'task' && kind === 'project') {
+      } else if (sourceNode.data.kind === 'action' && kind === 'project') {
         linkTaskToProject(sourceNode.id, targetId)
       } else {
         setEdges((currentEdges) => [...currentEdges, makeEdge(sourceNode.id, targetId)])
@@ -901,22 +1845,22 @@ function Flow() {
     const createActions: PointerToolAction[] = [
       { id: 'note', label: 'Note', accent: '#5bcefa', onSelect: () => createFromPointerPalette('note') },
       { id: 'sketch', label: 'Sketch', accent: '#f5a9b8', onSelect: () => createFromPointerPalette('sketch') },
-      { id: 'task', label: 'Task', accent: '#ff8c00', onSelect: () => createFromPointerPalette('task') },
+      { id: 'action', label: 'Action', accent: '#ff8c00', onSelect: () => createFromPointerPalette('action') },
       { id: 'project', label: 'Project', accent: '#9b59d0', onSelect: () => createFromPointerPalette('project') },
+      { id: 'space', label: 'Space', accent: '#5bcefa', onSelect: () => createFromPointerPalette('space') },
     ]
     if (!pointerPalette.sourceNodeId) return createActions
     const sourceNode = nodes.find((node) => node.id === pointerPalette.sourceNodeId)
-    const opensInNotebook = Boolean(sourceNode?.data.notebook)
     return [
       {
-        id: opensInNotebook ? 'notebook' : 'open',
-        label: opensInNotebook ? 'Notebook' : 'Open',
+        id: 'open',
+        label: 'Open in Space',
         accent: '#008026',
         onSelect: () => {
           const nodeId = pointerPalette.sourceNodeId
           setPointerPalette(null)
           if (!nodeId) return
-          if (opensInNotebook) openNotebookPage(nodeId)
+          if (sourceNode?.data.notebook) openNotebookPage(nodeId)
           else openNodeInSpace(nodeId)
         },
       },
@@ -984,11 +1928,6 @@ function Flow() {
 
   useEffect(() => () => cancelPointerPalettePress(), [cancelPointerPalettePress])
 
-  const viewProject = useCallback((projectId: string) => {
-    setSelectedProjectId(projectId)
-    setWorkspaceView('projects')
-  }, [])
-
   const addNode = useCallback(() => {
     const id = String(nextId.current)
     nextId.current += 1
@@ -1003,10 +1942,11 @@ function Flow() {
           position,
           name: `#${id}`,
           text: `Nodes ${id}`,
+          spaceIds: spaceIdsForNewNode(currentNodes, nodeSpaceFilter, 'note'),
         }),
       ]
     })
-  }, [setNodes])
+  }, [nodeSpaceFilter, setNodes])
 
   /**
    * Adds this application's current src/ folder/file hierarchy to the graph.
@@ -1014,6 +1954,12 @@ function Flow() {
    */
   const importCurrentSourceHierarchy = useCallback(() => {
     const hierarchy = createCurrentSourceHierarchy()
+
+    // Imported nodes are not automatically assigned to an organizational
+    // Space, so return to the complete graph where the import is visible.
+    setNodeSpaceFilter('')
+    setNodeKindFilter('all')
+    setNodeConnectionFilter('all')
 
     setNodes((currentNodes) => {
       const existingIds = new Set(currentNodes.map((node) => node.id))
@@ -1034,6 +1980,11 @@ function Flow() {
     setExpandedNode(null)
     setHoveredEdge(null)
     setSelectedNotebookPageId(null)
+    setSelectedProjectId(null)
+    setSelectedAssemblyId(null)
+    setNodeSpaceFilter('')
+    setNodeKindFilter('all')
+    setNodeConnectionFilter('all')
 
     const numericIds = restoredBoard.nodes
       .map((node) => Number(node.id))
@@ -1045,6 +1996,38 @@ function Flow() {
       .filter((id) => Number.isFinite(id))
     nextEdgeId.current = Math.max(0, ...numericEdgeIds) + 1
   }, [setEdges, setNodes])
+
+  /**
+   * A recipient's link restores an assembly snapshot into the normal graph,
+   * then keeps the app on the printable Assembly view. The snapshot is never
+   * written into the recipient's local draft or private board list.
+   */
+  useEffect(() => {
+    if (!sharedAssemblyToken) return
+
+    let cancelled = false
+    setShareStatus('Loading shared assembly…')
+    void fetchSharedAssembly(sharedAssemblyToken)
+      .then(({ board, assemblyId }) => {
+        if (cancelled) return
+        applyBoardSnapshot(board.snapshot)
+        setBoardId(board.id)
+        setBoardName(board.name)
+        setSelectedAssemblyId(assemblyId)
+        setWorkspaceView('assembly')
+        setShareStatus('Shared assembly · read-only')
+      })
+      .catch((error) => {
+        if (cancelled) return
+        setShareStatus(error instanceof SharedAssemblyUnavailableError
+          ? error.message
+          : 'Unable to load this shared assembly.')
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [applyBoardSnapshot, sharedAssemblyToken])
 
   const saveBoardToDatabase = useCallback(async () => {
     const name = boardName.trim()
@@ -1066,7 +2049,7 @@ function Flow() {
 
     setStorageStatus('Saving…')
     try {
-      await replaceBoards(nextBoards)
+      await saveBoard(savedBoard)
       setNeedsSignIn(false)
       setSavedBoards(nextBoards)
       setSelectedBoardId(savedBoard.id)
@@ -1079,6 +2062,57 @@ function Flow() {
         : error instanceof Error ? error.message : 'Unable to save this board.')
     }
   }, [boardId, boardName, edges, nodes, savedBoards])
+
+  /** Saves first, then creates an opaque, read-only link to the selected assembly. */
+  const createAssemblyShareLink = useCallback(async () => {
+    if (!activeAssemblyId) {
+      setShareStatus('Choose an assembly before making a share link.')
+      return
+    }
+
+    const name = boardName.trim()
+    if (!name) {
+      setShareStatus('Give this board a name before making a share link.')
+      return
+    }
+
+    const savedBoard: SavedBoard = {
+      id: boardId,
+      name,
+      updatedAt: new Date().toISOString(),
+      snapshot: createBoardSnapshot(nodes, edges),
+    }
+    const nextBoards = [savedBoard, ...savedBoards.filter((board) => board.id !== savedBoard.id)]
+
+    setShareStatus('Saving the current assembly…')
+    try {
+      await saveBoard(savedBoard)
+      setNeedsSignIn(false)
+      setSavedBoards(nextBoards)
+      setSelectedBoardId(savedBoard.id)
+      setBoardName(name)
+
+      const token = await createAssemblyShare(savedBoard.id, activeAssemblyId)
+      const url = new URL(window.location.href)
+      url.search = ''
+      url.searchParams.set('view', 'assembly')
+      url.searchParams.set('share', token)
+      const nextShareUrl = url.toString()
+      setShareUrl(nextShareUrl)
+
+      try {
+        await navigator.clipboard.writeText(nextShareUrl)
+        setShareStatus('Read-only assembly link copied. It always shows the latest saved version.')
+      } catch {
+        setShareStatus('Read-only assembly link is ready below. Copy it to share the latest saved version.')
+      }
+    } catch (error) {
+      setNeedsSignIn(error instanceof BoardAccessError)
+      setShareStatus(error instanceof BoardUnavailableError
+        ? 'Online board storage is unavailable here.'
+        : error instanceof Error ? error.message : 'Unable to create a share link.')
+    }
+  }, [activeAssemblyId, boardId, boardName, edges, nodes, savedBoards])
 
   const loadSelectedBoard = useCallback(() => {
     const savedBoard = savedBoards.find((board) => board.id === selectedBoardId)
@@ -1134,6 +2168,66 @@ function Flow() {
     }
   }, [applyBoardSnapshot])
 
+  /** Merges structured data into the latest graph, then opens its Assembly. */
+  const addOsaImportPlan = useCallback((
+    plan: OsaImportPlan,
+    options?: { refreshBundledShakoSlideReferences?: boolean },
+  ) => {
+    const merge = mergeOsaImportPlan(latestNodes.current, latestEdges.current, plan)
+    const importedNodes = options?.refreshBundledShakoSlideReferences
+      ? refreshBundledShakoSlideReferences(merge.nodes, plan)
+      : merge.nodes
+    setNodes(importedNodes)
+    setEdges(merge.edges)
+    setNodeSpaceFilter(plan.spaceNodeId ?? '')
+    setNodeKindFilter('all')
+    setNodeConnectionFilter('all')
+    setSelectedAssemblyId(plan.assemblyNodeId)
+    setWorkspaceView('assembly')
+    setStorageStatus(
+      merge.addedNodeCount === 0 && merge.addedEdgeCount === 0
+        ? `Opened “${plan.name}”.`
+        : `Added ${merge.addedNodeCount} objects and ${merge.addedEdgeCount} connections from “${plan.name}”.`,
+    )
+  }, [setEdges, setNodes])
+
+  /** Adds a compact OSA data package without replacing the current board. */
+  const importOsaDataFromJson = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    try {
+      const candidate: unknown = JSON.parse(await file.text())
+      const importPackage = parseOsaImportPackage(candidate)
+      addOsaImportPlan(planOsaImport(importPackage))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to import this OSA data file.'
+      window.alert(message)
+    } finally {
+      event.target.value = ''
+    }
+  }, [addOsaImportPlan])
+
+  /**
+   * The Shako package is bundled with this OSA build, so Julia can reopen the
+   * project without hunting for the original slide deck and workbook again.
+   * It is still parsed through the same validator as a normal imported file.
+   */
+  const openShakoLightWrapStarter = useCallback(() => {
+    try {
+      addOsaImportPlan(bundledShakoImportPlan, {
+        refreshBundledShakoSlideReferences: true,
+      })
+      setBoardName((currentName) => currentName === 'Untitled board'
+        ? 'Shako Light Wrap'
+        : currentName)
+    } catch (error) {
+      setStorageStatus(error instanceof Error
+        ? error.message
+        : 'Unable to open the bundled Shako Light Wrap project.')
+    }
+  }, [addOsaImportPlan, bundledShakoImportPlan])
+
   // Give the display component its UI callback without saving that callback
   // inside the underlying node state.
   const nodesForFlow = useMemo(() => visibleNodes.map((node) => ({
@@ -1150,16 +2244,14 @@ function Flow() {
     },
   })), [expandedNode, visibleNodes, onNameChange, onTextChange, onTextInteractionStart, onLayoutChange, onKindChange])
 
-  const visibleNodeIds = useMemo(() => new Set(visibleNodes.map((node) => node.id)), [visibleNodes])
-  const edgesForFlow = useMemo(() => edges
-    .filter((edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target))
+  const edgesForFlow = useMemo(() => visibleEdges
     .map((edge) => ({
       ...edge,
       label: selectedItem?.type === 'edge' && selectedItem.id === edge.id
         || hoveredEdge?.edge.id === edge.id
         ? edge.data.relationship
         : undefined,
-    })), [edges, hoveredEdge, selectedItem, visibleNodeIds])
+    })), [hoveredEdge, selectedItem, visibleEdges])
 
   const visibleNodesRef = useRef(visibleNodes)
   visibleNodesRef.current = visibleNodes
@@ -1182,16 +2274,25 @@ function Flow() {
     if (!connection.source || !connection.target) return
     const sourceNode = nodes.find((node) => node.id === connection.source)
     const targetNode = nodes.find((node) => node.id === connection.target)
-    if (sourceNode?.data.kind === 'project' && targetNode?.data.kind === 'task') {
+    if (sourceNode?.data.kind === 'space' && targetNode && targetNode.data.kind !== 'space') {
+      setNodes((currentNodes) => addNodeToSpace(currentNodes, targetNode.id, sourceNode.id))
+    } else if (targetNode?.data.kind === 'space' && sourceNode && sourceNode.data.kind !== 'space') {
+      setNodes((currentNodes) => addNodeToSpace(currentNodes, sourceNode.id, targetNode.id))
+    }
+    const sourceIsActionContext = sourceNode?.data.kind === 'project'
+      || (sourceNode !== undefined && osaRole(sourceNode) === 'assembly')
+    const targetIsActionContext = targetNode?.data.kind === 'project'
+      || (targetNode !== undefined && osaRole(targetNode) === 'assembly')
+    if (sourceNode && sourceIsActionContext && targetNode?.data.kind === 'action') {
       linkTaskToProject(targetNode.id, sourceNode.id)
       return
     }
-    if (sourceNode?.data.kind === 'task' && targetNode?.data.kind === 'project') {
+    if (sourceNode?.data.kind === 'action' && targetNode && targetIsActionContext) {
       linkTaskToProject(sourceNode.id, targetNode.id)
       return
     }
     setEdges((currentEdges) => [...currentEdges, makeEdge(connection.source, connection.target)])
-  }, [linkTaskToProject, makeEdge, nodes, setEdges])
+  }, [linkTaskToProject, makeEdge, nodes, setEdges, setNodes])
 
   // USER ACTION: dragging from a handle into empty canvas makes a node and edge.
   const onConnectEnd: OnConnectEnd = useCallback((event, connectionState) => {
@@ -1201,19 +2302,20 @@ function Flow() {
     const id = String(nextId.current)
     nextId.current += 1
     const position = screenToFlowPosition({ x: point.clientX, y: point.clientY })
-    const newNode = createTextNode({
-      id,
-      position,
-      name: `#${id}`,
-      text: `Node: ${id}`,
+    setNodes((currentNodes) => {
+      return [...currentNodes, createTextNode({
+        id,
+        position,
+        name: `#${id}`,
+        text: `Node: ${id}`,
+        spaceIds: spaceIdsForNewNode(currentNodes, nodeSpaceFilter, 'note'),
+      })]
     })
-
-    setNodes((currentNodes) => [...currentNodes, newNode])
     setEdges((currentEdges) => [
       ...currentEdges,
       makeEdge(connectionState.fromNode.id, id),
     ])
-  }, [makeEdge, screenToFlowPosition, setEdges, setNodes])
+  }, [makeEdge, nodeSpaceFilter, screenToFlowPosition, setEdges, setNodes])
 
   return (
     <div
@@ -1224,9 +2326,7 @@ function Flow() {
       onPointerCancelCapture={finishPointerPalettePress}
     >
       <ReactFlow
-      className={showIdleHints
-        ? `show-hidden-hints hint-trail-${hintTrailStage}${idleHintsDismissing ? ' hidden-hints-dismissing' : ''}`
-        : undefined}
+      className="space-canvas"
       inert={workspaceView !== 'nodes'}
       aria-hidden={workspaceView !== 'nodes'}
       nodesFocusable={workspaceView === 'nodes'}
@@ -1235,6 +2335,7 @@ function Flow() {
       edges={edgesForFlow}
       nodeTypes={nodeTypes}
       onNodesChange={onNodesChange}
+      onNodesDelete={onNodesDelete}
       onEdgesChange={onEdgesChange}
       onConnect={onConnect}
       onConnectEnd={onConnectEnd}
@@ -1305,120 +2406,68 @@ function Flow() {
         </defs>
       </svg>
       <Background />
-      {workspaceView === 'nodes' && (canvasToolsExpanded || canvasToolsPreviewPosition) && (
-        <Controls
-          className={`canvas-corner-tools${canvasToolsExpanded ? ' is-expanded' : ' is-preview'}`}
-          style={canvasToolsExpanded ? undefined : {
-            position: 'fixed',
-            right: 'auto',
-            bottom: 'auto',
-            left: canvasToolsPreviewPosition!.x + 14,
-            top: Math.max(8, canvasToolsPreviewPosition!.y - 140),
-          }}
-          aria-label={canvasToolsExpanded ? 'Release canvas tools' : 'Canvas tools preview'}
-        />
-      )}
       {workspaceView === 'nodes' && (
-        <Panel position="bottom-left" className="canvas-tools-reveal-zone">
+        <Panel position="top-left" className="space-canvas-toolbar" aria-label="Space tools">
+          <button type="button" onClick={addNode}>+ Node</button>
           <button
-            className="hidden-panel-trigger"
             type="button"
-            aria-label={canvasToolsExpanded ? 'Hide canvas tools' : 'Reveal canvas tools'}
-            aria-expanded={canvasToolsExpanded}
-            onMouseMove={(event) => {
-              if (!canvasToolsExpanded) {
-                setCanvasToolsPreviewPosition({ x: event.clientX, y: event.clientY })
-              }
-            }}
-            onMouseLeave={() => setCanvasToolsPreviewPosition(null)}
-            onFocus={(event) => {
-              if (!canvasToolsExpanded) {
-                const rect = event.currentTarget.getBoundingClientRect()
-                setCanvasToolsPreviewPosition({ x: rect.right, y: rect.top })
-              }
-            }}
-            onBlur={() => setCanvasToolsPreviewPosition(null)}
-            onClick={(event) => {
-              event.stopPropagation()
-              setCanvasToolsPreviewPosition(null)
-              setCanvasToolsExpanded((isExpanded) => !isExpanded)
-            }}
-          />
+            aria-pressed={showBoardControls}
+            aria-controls="board-controls"
+            onClick={() => setShowBoardControls((isVisible) => !isVisible)}
+          >
+            Boards
+          </button>
+          <button type="button" onClick={importCurrentSourceHierarchy}>Import src</button>
+          <button
+            type="button"
+            aria-pressed={showTable}
+            aria-controls="board-table"
+            onClick={() => setShowTable((isVisible) => !isVisible)}
+          >
+            Table
+          </button>
+          <button
+            type="button"
+            aria-pressed={miniMapExpanded}
+            onClick={() => setMiniMapExpanded((isVisible) => !isVisible)}
+          >
+            Map
+          </button>
         </Panel>
       )}
-      {workspaceView === 'nodes' && (miniMapExpanded || miniMapPreviewPosition) && (
+      {workspaceView === 'nodes' && (
+        <Controls
+          className="canvas-corner-tools"
+          aria-label="Canvas controls"
+        />
+      )}
+      {workspaceView === 'nodes' && miniMapExpanded && (
         <MiniMap
-          className={`canvas-corner-minimap${miniMapExpanded ? ' is-expanded' : ' is-preview'}`}
-          style={miniMapExpanded ? {
+          className="canvas-corner-minimap"
+          style={{
             width: 200,
             height: 150,
-          } : {
-            position: 'fixed',
-            right: 'auto',
-            bottom: 'auto',
-            left: Math.max(8, miniMapPreviewPosition!.x - 134),
-            top: Math.max(8, miniMapPreviewPosition!.y - 98),
-            width: 120,
-            height: 84,
           }}
-          ariaLabel={miniMapExpanded ? 'Release board minimap' : 'Board minimap preview'}
+          ariaLabel="Board minimap"
           onClick={(event) => {
             event.stopPropagation()
-            if (miniMapExpanded) setMiniMapExpanded(false)
+            setMiniMapExpanded(false)
           }}
         />
       )}
-      {workspaceView === 'nodes' && (
-        <Panel position="bottom-right" className="minimap-reveal-zone">
-          <button
-            className="hidden-panel-trigger"
-            type="button"
-            aria-label={miniMapExpanded ? 'Hide board minimap' : 'Reveal board minimap'}
-            aria-expanded={miniMapExpanded}
-            onMouseMove={(event) => {
-              if (!miniMapExpanded) {
-                setMiniMapPreviewPosition({ x: event.clientX, y: event.clientY })
-              }
-            }}
-            onMouseLeave={() => setMiniMapPreviewPosition(null)}
-            onFocus={(event) => {
-              if (!miniMapExpanded) {
-                const rect = event.currentTarget.getBoundingClientRect()
-                setMiniMapPreviewPosition({ x: rect.left, y: rect.top })
-              }
-            }}
-            onBlur={() => setMiniMapPreviewPosition(null)}
-            onClick={(event) => {
-              event.stopPropagation()
-              setMiniMapPreviewPosition(null)
-              setMiniMapExpanded((isExpanded) => !isExpanded)
-            }}
-          />
-        </Panel>
-      )}
-      {workspaceView === 'nodes' && (showBoardControls || boardControlsPreviewPosition) && (
+      {workspaceView === 'nodes' && showBoardControls && (
       <Panel
         position="top-left"
         id="board-controls"
-        className={`board-dock${showBoardControls ? ' is-pinned' : ' is-preview'}`}
-        style={showBoardControls ? {
-          top: '50%',
-          bottom: 'auto',
-          transform: 'translateY(-50%)',
-        } : {
-          position: 'fixed',
-          right: 'auto',
-          bottom: 'auto',
-          left: boardControlsPreviewPosition!.x + 14,
-          top: boardControlsPreviewPosition!.y + 14,
-        }}
+        className="board-dock is-pinned"
+        style={{ top: 56 }}
       >
         <button
           className="board-dock__toggle"
           type="button"
           onClick={() => setShowBoardControls((isVisible) => !isVisible)}
         >
-          {showBoardControls ? 'Close board controls' : 'Board controls'}
+          Close boards
         </button>
         <div className="board-panel">
         <div className="board-panel__storage">
@@ -1450,6 +2499,14 @@ function Flow() {
         <div className="board-panel__actions">
           <button className="board-button" onClick={addNode}>Add Node</button>
           <button className="board-button" onClick={importCurrentSourceHierarchy}>Import SRC Tree</button>
+          <label className="board-button board-file-button">
+            Import OSA Data
+            <input
+              type="file"
+              accept="application/json,.json"
+              onChange={importOsaDataFromJson}
+            />
+          </label>
           <button className="board-button" onClick={saveBoardAsJson}>Save JSON</button>
           <label className="board-button board-file-button">
             Load JSON
@@ -1469,98 +2526,61 @@ function Flow() {
         </div>
       </Panel>
       )}
-      {workspaceView === 'nodes' && (
-        <Panel
-          position="top-left"
-          className="board-reveal-zone"
-          style={{ top: '50%', bottom: 'auto', transform: 'translateY(-50%)' }}
-        >
-          <button
-            className="hidden-panel-trigger"
-            type="button"
-            aria-label={showBoardControls ? 'Hide board controls' : 'Reveal board controls'}
-            aria-expanded={showBoardControls}
-            aria-controls="board-controls"
-            onMouseMove={(event) => {
-              if (!showBoardControls) setBoardControlsPreviewPosition({ x: event.clientX, y: event.clientY })
-            }}
-            onMouseLeave={() => setBoardControlsPreviewPosition(null)}
-            onFocus={(event) => {
-              if (!showBoardControls) {
-                const rect = event.currentTarget.getBoundingClientRect()
-                setBoardControlsPreviewPosition({ x: rect.right, y: rect.top + rect.height / 2 })
-              }
-            }}
-            onBlur={() => setBoardControlsPreviewPosition(null)}
-            onClick={(event) => {
-              event.stopPropagation()
-              setBoardControlsPreviewPosition(null)
-              setShowBoardControls((isVisible) => !isVisible)
-            }}
-          />
-        </Panel>
-      )}
-      {workspaceView === 'nodes' && selectedNode && (inspectorExpanded || inspectorPreviewPosition) && (
+      {workspaceView === 'nodes' && selectedNode && inspectorExpanded && (
         <Panel
           position="top-right"
           id="selected-item-inspector"
-          className={`inspector-dock${inspectorExpanded ? ' is-pinned' : ' is-preview'}`}
-          style={inspectorExpanded ? {
+          className="inspector-dock is-pinned"
+          style={{
             top: '50%',
             bottom: 'auto',
             transform: 'translateY(-50%)',
-          } : {
-            position: 'fixed',
-            right: 'auto',
-            bottom: 'auto',
-            left: Math.max(8, inspectorPreviewPosition!.x - 368),
-            top: inspectorPreviewPosition!.y + 14,
           }}
         >
-          {inspectorExpanded ? (
-            <button
-              className="inspector-dock__toggle"
-              type="button"
-              onClick={() => setInspectorExpanded(false)}
-            >
-              Close inspector
-            </button>
-          ) : null}
+          <button
+            className="inspector-dock__toggle"
+            type="button"
+            onClick={() => setInspectorExpanded(false)}
+          >
+            Close inspector
+          </button>
           <PropertiesPanel
             node={selectedNode}
+            spaces={allSpaces}
+            instructionOperations={operations.filter((operation) => (
+              operation.data.properties[OSA_PROPERTY.role] === 'operation'
+            ))}
+            onSpaceIdsChange={onSpaceIdsChange}
+            onIncludeInInstruction={linkPartToOperation}
             onPropertyChange={onPropertyChange}
             onPropertyRename={onPropertyRename}
             onPropertyRemove={onPropertyRemove}
             onPropertyAdd={onPropertyAdd}
+            ownedVisuals={selectedOwnedVisuals}
+            onCreateOwnedVisualCanvas={createOwnedVisualCanvas}
+            onOpenOwnedVisual={openOwnedVisualCanvas}
+            onRemoveOwnedVisualCanvas={removeOwnedVisualCanvas}
           />
         </Panel>
       )}
-      {workspaceView === 'nodes' && selectedEdge && (inspectorExpanded || inspectorPreviewPosition) && (
+      {workspaceView === 'nodes' && selectedEdge && inspectorExpanded && (
         <Panel
           position="top-right"
           id="selected-item-inspector"
-          className={`inspector-dock${inspectorExpanded ? ' is-pinned' : ' is-preview'}`}
-          style={inspectorExpanded ? {
+          className="inspector-dock is-pinned"
+          style={{
             top: '50%',
             bottom: 'auto',
             transform: 'translateY(-50%)',
-          } : {
-            position: 'fixed',
-            right: 'auto',
-            bottom: 'auto',
-            left: Math.max(8, inspectorPreviewPosition!.x - 368),
-            top: inspectorPreviewPosition!.y + 14,
           }}
         >
-          {inspectorExpanded ? (
-            <button
-              className="inspector-dock__toggle"
-              type="button"
-              onClick={() => setInspectorExpanded(false)}
-            >
-              Close inspector
-            </button>
-          ) : null}
+          <button
+            className="inspector-dock__toggle"
+            type="button"
+            onClick={() => setInspectorExpanded(false)}
+          >
+            Close inspector
+          </button>
           <EdgePropertiesPanel
             edge={selectedEdge}
             onRelationshipChange={onEdgeRelationshipChange}
@@ -1571,57 +2591,24 @@ function Flow() {
           />
         </Panel>
       )}
-      {workspaceView === 'nodes' && (selectedNode || selectedEdge) && (
-        <Panel
-          position="top-right"
-          className="inspector-reveal-zone"
-          style={{ top: '50%', bottom: 'auto', transform: 'translateY(-50%)' }}
-        >
-          <button
-            className="hidden-panel-trigger"
-            type="button"
-            aria-label={inspectorExpanded ? 'Hide selected item inspector' : 'Reveal selected item inspector'}
-            aria-expanded={inspectorExpanded}
-            aria-controls="selected-item-inspector"
-            onMouseMove={(event) => {
-              if (!inspectorExpanded) setInspectorPreviewPosition({ x: event.clientX, y: event.clientY })
-            }}
-            onMouseLeave={() => setInspectorPreviewPosition(null)}
-            onFocus={(event) => {
-              if (!inspectorExpanded) {
-                const rect = event.currentTarget.getBoundingClientRect()
-                setInspectorPreviewPosition({ x: rect.left, y: rect.top + rect.height / 2 })
-              }
-            }}
-            onBlur={() => setInspectorPreviewPosition(null)}
-            onClick={(event) => {
-              event.stopPropagation()
-              setInspectorPreviewPosition(null)
-              setInspectorExpanded((isExpanded) => !isExpanded)
-            }}
-          />
-        </Panel>
-      )}
-      {workspaceView === 'nodes' && (showTable || tablePreviewPosition) && (
+      {workspaceView === 'nodes' && showTable && (
       <Panel
         position="bottom-center"
         id="board-table"
-        className={`table-dock${showTable ? ' is-pinned' : ' is-preview'}`}
-        style={showTable ? undefined : {
-          position: 'fixed',
-          right: 'auto',
-          bottom: 'auto',
-          left: tablePreviewPosition!.x,
-          top: tablePreviewPosition!.y - 14,
-          transform: 'translate(-50%, -100%)',
-        }}
+        className="table-dock is-pinned"
       >
           <GraphTablePanel
             nodes={nodes}
             edges={edges}
             selectedItem={selectedItem}
-            onSelectNode={(id) => setSelectedItem({ type: 'node', id })}
-            onSelectEdge={(id) => setSelectedItem({ type: 'edge', id })}
+            onSelectNode={(id) => {
+              setSelectedItem({ type: 'node', id })
+              setInspectorExpanded(true)
+            }}
+            onSelectEdge={(id) => {
+              setSelectedItem({ type: 'edge', id })
+              setInspectorExpanded(true)
+            }}
           />
         <button
           className="table-dock__toggle"
@@ -1632,68 +2619,21 @@ function Flow() {
         </button>
       </Panel>
       )}
-      {workspaceView === 'nodes' && (
-        <Panel position="bottom-center" className="table-reveal-zone">
-          <button
-            className="hidden-panel-trigger"
-            type="button"
-            aria-label={showTable ? 'Hide board table' : 'Reveal board table'}
-            aria-expanded={showTable}
-            aria-controls="board-table"
-            onMouseMove={(event) => {
-              if (!showTable) setTablePreviewPosition({ x: event.clientX, y: event.clientY })
-            }}
-            onMouseLeave={() => setTablePreviewPosition(null)}
-            onFocus={(event) => {
-              if (!showTable) {
-                const rect = event.currentTarget.getBoundingClientRect()
-                setTablePreviewPosition({ x: rect.left + rect.width / 2, y: rect.top })
-              }
-            }}
-            onBlur={() => setTablePreviewPosition(null)}
-            onClick={(event) => {
-              event.stopPropagation()
-              setTablePreviewPosition(null)
-              setShowTable((isVisible) => !isVisible)
-            }}
-          />
-        </Panel>
-      )}
-      {workspaceView === 'nodes' && showIdleHints && (
-        <>
-          <Panel
-            position="top-left"
-            className="hidden-feature-marker marker-board"
-            style={{ top: '50%', bottom: 'auto', transform: 'translateY(-50%)' }}
-            aria-hidden="true"
-          ><HiddenMarkerCluster refreshDelayMs={0} /></Panel>
-          {(selectedNode || selectedEdge) && (
-            <Panel
-              position="top-right"
-              className="hidden-feature-marker marker-inspector"
-              style={{ top: '50%', bottom: 'auto', transform: 'translateY(-50%)' }}
-              aria-hidden="true"
-            ><HiddenMarkerCluster refreshDelayMs={1_500} /></Panel>
-          )}
-          <Panel position="bottom-left" className="hidden-feature-marker marker-tools" aria-hidden="true">
-            <HiddenMarkerCluster refreshDelayMs={6_000} />
-          </Panel>
-          <Panel position="bottom-center" className="hidden-feature-marker marker-table" aria-hidden="true">
-            <HiddenMarkerCluster refreshDelayMs={4_500} />
-          </Panel>
-          <Panel position="bottom-right" className="hidden-feature-marker marker-minimap" aria-hidden="true">
-            <HiddenMarkerCluster refreshDelayMs={3_000} />
-          </Panel>
-        </>
-      )}
       </ReactFlow>
-      {workspaceMenuVisible ? (
+      {!isSharedAssembly && workspaceMenuVisible ? (
         <nav className="workspace-switcher" aria-label="OSA tools">
+          <button
+            className="workspace-switcher__hide"
+            type="button"
+            aria-label="Hide top menu"
+            onClick={() => setWorkspaceMenuVisible(false)}
+          >
+            Hide
+          </button>
           {([
-            { id: 'notebook', label: 'Notebook' },
-            { id: 'nodes', label: 'Node Space' },
-            { id: 'tasks', label: 'Tasks' },
-            { id: 'projects', label: 'Projects' },
+            { id: 'assembly', label: 'Assembly' },
+            { id: 'projects', label: 'Actions' },
+            { id: 'nodes', label: 'Space' },
           ] as const).map((view) => (
             <button
               className={workspaceView === view.id ? 'is-active' : undefined}
@@ -1705,16 +2645,8 @@ function Flow() {
               {view.label}
             </button>
           ))}
-          <button
-            className="workspace-switcher__hide"
-            type="button"
-            aria-label="Hide top menu"
-            onClick={() => setWorkspaceMenuVisible(false)}
-          >
-            Hide
-          </button>
         </nav>
-      ) : (
+      ) : !isSharedAssembly ? (
         <button
           className="workspace-switcher-reveal"
           type="button"
@@ -1723,9 +2655,13 @@ function Flow() {
         >
           <span aria-hidden="true">⌄</span>
         </button>
+      ) : (
+        <p className="shared-assembly-status" role="status">
+          {shareStatus || 'Loading shared assembly…'}
+        </p>
       )}
-      <span className="local-draft-status" role="status">{draftStatus}</span>
-      {needsSignIn && workspaceView !== 'nodes' ? (
+      {!isSharedAssembly ? <span className="local-draft-status" role="status">{draftStatus}</span> : null}
+      {!isSharedAssembly && needsSignIn && workspaceView !== 'nodes' ? (
         <a
           className="osa-sign-in-reveal"
           href="/api/login"
@@ -1734,35 +2670,16 @@ function Flow() {
           <span>Sign in to saved boards</span>
         </a>
       ) : null}
-      {workspaceView === 'nodes' ? (
-        <div className="node-space-filter" aria-label="Filter Node Space">
-          <span>Node Space</span>
-          <label>
-            <span>Type</span>
-            <select
-              value={nodeKindFilter}
-              onChange={(event) => setNodeKindFilter(event.target.value as NodeKindFilter)}
-            >
-              <option value="all">All types</option>
-              {NODE_KINDS.map((kind) => (
-                <option key={kind.id} value={kind.id}>{kind.label}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>Project</span>
-            <select
-              value={activeNodeProjectFilter}
-              onChange={(event) => setNodeProjectFilter(event.target.value)}
-            >
-              <option value="">All contexts</option>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>{project.data.name || `Project #${project.id}`}</option>
-              ))}
-            </select>
-          </label>
-          <small>{visibleNodes.length} of {nodes.length} nodes</small>
-        </div>
+      {!isSharedAssembly && workspaceView === 'nodes' ? (
+        <SpaceToolbar
+          spaces={allSpaces}
+          selectedSpaceId={selectedSpaceId}
+          kindFilter={nodeKindFilter}
+          connectionFilter={nodeConnectionFilter}
+          onSpaceChange={setNodeSpaceFilter}
+          onKindChange={setNodeKindFilter}
+          onConnectionChange={setNodeConnectionFilter}
+        />
       ) : null}
       {workspaceView !== 'nodes' ? (
         <div className="work-view-shell">
@@ -1781,41 +2698,71 @@ function Flow() {
               onLinkSelection={connectFromTextSelection}
               onOpenNode={openNodeInSpace}
             />
-          ) : workspaceView === 'tasks' ? (
-            <TasksView
-              tasks={tasks}
-              projects={projects}
-              edges={edges}
-              mode={taskViewMode}
-              day={taskViewDay}
-              onModeChange={setTaskViewMode}
-              onDayChange={setTaskViewDay}
-              onCreateTask={createTask}
-              onTaskTextChange={onTextChange}
-              onTaskDayChange={onTaskDayChange}
-              onTaskCompletionChange={onTaskCompletionChange}
-              onLinkProject={linkTaskToProject}
-              onUnlinkProject={unlinkTaskFromProject}
-              onOpenNode={openNodeInSpace}
-              onViewProject={viewProject}
-            />
-          ) : (
+          ) : workspaceView === 'projects' ? (
             <ProjectsView
               projects={projects}
               tasks={tasks}
               edges={edges}
               selectedProjectId={activeProjectId}
+              today={taskViewDay}
               onSelectProject={setSelectedProjectId}
-              onCreateProject={createProject}
+              onCreateAction={createTask}
               onCreateTask={createTaskForProject}
               onProjectTitleChange={onNameChange}
               onProjectTextChange={onTextChange}
               onTaskTextChange={onTextChange}
               onTaskDayChange={onTaskDayChange}
               onTaskCompletionChange={onTaskCompletionChange}
+              onLinkProject={linkTaskToProject}
+              onUnlinkProject={unlinkTaskFromProject}
               onLinkTask={(projectId, taskId) => linkTaskToProject(taskId, projectId)}
               onUnlinkTask={(projectId, taskId) => unlinkTaskFromProject(taskId, projectId)}
               onOpenNode={openNodeInSpace}
+            />
+          ) : (
+            <AssemblyView
+              assemblies={assemblies}
+              nodes={nodes}
+              operations={operations}
+              edges={edges}
+              uiState={assemblyViewState}
+              onUiStateChange={setAssemblyViewState}
+              tools={nodes.filter((node) => (
+                node.data.kind === 'tool' || node.data.properties[OSA_PROPERTY.role] === 'tool'
+              ))}
+              selectedAssemblyId={activeAssemblyId}
+              onSelectAssembly={setSelectedAssemblyId}
+              onCreateAssembly={createAssembly}
+              onCreateOperation={createAssemblyOperation}
+              onCreatePart={createAssemblyPart}
+              onCreateExpense={createAssemblyExpense}
+              onCreateTool={createOperationTool}
+              onLinkPart={linkPartToOperation}
+              onLinkPartInput={(operationId, partId) => (
+                linkOperationMaterial(operationId, partId, 'input')
+              )}
+              onUnlinkPartInput={(operationId, partId) => (
+                unlinkOperationMaterial(operationId, partId, 'input')
+              )}
+              onSetPrimaryOutput={setOperationPrimaryOutput}
+              onCreatePartForOperation={createPartForOperation}
+              onLinkTool={linkToolToOperation}
+              onUnlinkTool={unlinkToolFromOperation}
+              onCreateCanvasSection={createOperationCanvasSection}
+              onLinkObjectVisual={linkObjectVisualToOperation}
+              onUnlinkObjectVisual={unlinkObjectVisualFromOperation}
+              onObjectVisualPlacementChange={updateObjectVisualPlacement}
+              onCreateOwnedVisualForOperation={createOwnedVisualForOperation}
+              onNameChange={onNameChange}
+              onTextChange={onTextChange}
+              onSketchChange={onSketchChange}
+              onPropertyChange={onPropertyChange}
+              onOpenNode={isSharedAssembly ? () => undefined : openNodeInSpace}
+              readOnly={isSharedAssembly}
+              onShare={isSharedAssembly ? undefined : () => void createAssemblyShareLink()}
+              shareStatus={shareStatus}
+              shareUrl={shareUrl}
+              onLoadShakoStarter={isSharedAssembly ? undefined : openShakoLightWrapStarter}
             />
           )}
         </div>
