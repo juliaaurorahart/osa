@@ -124,7 +124,7 @@
     {
       "id": "tool-bits-5-16-1-8-7-64",
       "kind": "tool",
-      "name": "Bits: 5/16”, 1/8”, 7/64”",
+      "name": "5/16 in bit",
       "text": "",
       "spaceIds": [
         "space"
@@ -132,7 +132,38 @@
       "properties": {
         "osa:role": "tool",
         "source:file": "Assembly Instructions.pptx",
-        "source:location": "Slide 2, Tools"
+        "source:location": "Slide 2, Tools",
+        "source:text": "Bits: 5/16”, 1/8”, 7/64”"
+      }
+    },
+    {
+      "id": "tool-bit-1-8",
+      "kind": "tool",
+      "name": "1/8 in bit",
+      "text": "",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "tool",
+        "source:file": "Assembly Instructions.pptx",
+        "source:location": "Slide 2, Tools",
+        "source:text": "Bits: 5/16”, 1/8”, 7/64”"
+      }
+    },
+    {
+      "id": "tool-bit-7-64",
+      "kind": "tool",
+      "name": "7/64 in bit",
+      "text": "",
+      "spaceIds": [
+        "space"
+      ],
+      "properties": {
+        "osa:role": "tool",
+        "source:file": "Assembly Instructions.pptx",
+        "source:location": "Slide 2, Tools",
+        "source:text": "Bits: 5/16”, 1/8”, 7/64”"
       }
     },
     {
@@ -1261,6 +1292,26 @@
       "id": "operation-01-tool-bits-5-16-1-8-7-64",
       "source": "operation-01",
       "target": "tool-bits-5-16-1-8-7-64",
+      "relationKind": "related",
+      "relationship": "uses tool",
+      "properties": {
+        "osa:relation": "operation-tool"
+      }
+    },
+    {
+      "id": "operation-01-tool-bit-1-8",
+      "source": "operation-01",
+      "target": "tool-bit-1-8",
+      "relationKind": "related",
+      "relationship": "uses tool",
+      "properties": {
+        "osa:relation": "operation-tool"
+      }
+    },
+    {
+      "id": "operation-01-tool-bit-7-64",
+      "source": "operation-01",
+      "target": "tool-bit-7-64",
       "relationKind": "related",
       "relationship": "uses tool",
       "properties": {

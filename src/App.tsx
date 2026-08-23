@@ -46,6 +46,7 @@ import {
   type GraphEdge,
   type TextConnectionAnchor,
 } from './graph/graphEdge'
+import { migrateLegacyCardOutputVisualOwners } from './graph/legacyCanvasOwners'
 import { updateTextAnchorAfterEdit } from './graph/textAnchor'
 import { createCurrentSourceHierarchy } from './graph/currentSourceHierarchy'
 import {
@@ -134,6 +135,196 @@ const initialNodes: TextFlowNode[] = [
 const initialEdges: GraphEdge[] = []
 
 const LEGACY_SHAKO_VISUAL = /^\/import-assets\/shako-light-wrap\/operation-\d+\.png$/
+
+/**
+ * The first bundled Shako import treated the three drilling bits as one Tool.
+ * These IDs are deliberately stable: old saved boards already contain the
+ * combined-tool ID, so we reuse it for the first separated bit rather than
+ * deleting a node that may have acquired notes, a Visual, or other links.
+ */
+const LEGACY_SHAKO_DRILL_BITS_TOOL_ID = 'osa:shako-light-wrap:tool-bits-5-16-1-8-7-64'
+const LEGACY_SHAKO_CONNECTOR_BOX_DRILL_ID = 'osa:shako-light-wrap:operation-01'
+const LEGACY_SHAKO_DRILL_BITS_NAME = 'Bits: 5/16”, 1/8”, 7/64”'
+
+const SHAKO_DRILL_BIT_TOOLS = [
+  {
+    id: LEGACY_SHAKO_DRILL_BITS_TOOL_ID,
+    name: '5/16 in bit',
+    xOffset: 0,
+  },
+  {
+    id: 'osa:shako-light-wrap:tool-bit-1-8',
+    name: '1/8 in bit',
+    xOffset: 220,
+  },
+  {
+    id: 'osa:shako-light-wrap:tool-bit-7-64',
+    name: '7/64 in bit',
+    xOffset: 440,
+  },
+] as const
+
+function isToolNode(node: TextFlowNode | undefined) {
+  if (!node) return false
+  return node.data.kind === 'tool' || osaRole(node) === 'tool'
+}
+
+function splitNodeId(preferredId: string, nodeIds: Set<string>) {
+  if (!nodeIds.has(preferredId)) return preferredId
+
+  let attempt = 2
+  let candidate = `${preferredId}:legacy-split`
+  while (nodeIds.has(candidate)) {
+    candidate = `${preferredId}:legacy-split-${attempt}`
+    attempt += 1
+  }
+  return candidate
+}
+
+function splitEdgeId(preferredId: string, edgeIds: Set<string>) {
+  if (!edgeIds.has(preferredId)) return preferredId
+
+  let attempt = 2
+  let candidate = `${preferredId}:legacy-split`
+  while (edgeIds.has(candidate)) {
+    candidate = `${preferredId}:legacy-split-${attempt}`
+    attempt += 1
+  }
+  return candidate
+}
+
+/**
+ * Safely upgrades exactly the original Shako Connector Box Drill bit Tool.
+ *
+ * This is intentionally narrower than a title-based global cleanup. It only
+ * runs when the imported operation and its exact one combined Bits Tool are
+ * both present and connected by one `operation-tool` edge. The legacy node
+ * becomes the 5/16 in bit, preserving all of its durable data and unrelated
+ * edges. The two remaining bit Tools inherit its durable source information
+ * and receive their own `operation-tool` relationship. Re-running it is a
+ * no-op, so local drafts cannot accumulate duplicate nodes or edges.
+ */
+function migrateLegacyShakoDrillBits(
+  currentNodes: TextFlowNode[],
+  currentEdges: GraphEdge[],
+) {
+  const operation = currentNodes.find((node) => (
+    node.id === LEGACY_SHAKO_CONNECTOR_BOX_DRILL_ID
+    && node.data.kind === 'action'
+  ))
+  const legacyTool = currentNodes.find((node) => (
+    node.id === LEGACY_SHAKO_DRILL_BITS_TOOL_ID
+    && isToolNode(node)
+    && node.data.name === LEGACY_SHAKO_DRILL_BITS_NAME
+  ))
+  if (!operation || !legacyTool) {
+    return { nodes: currentNodes, edges: currentEdges }
+  }
+
+  const legacyToolEdges = currentEdges.filter((edge) => (
+    edge.target === legacyTool.id
+    && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationTool
+  ))
+  const legacyConnectorEdge = legacyToolEdges.find((edge) => edge.source === operation.id)
+  // Do not reinterpret a combined tool that someone later reused elsewhere.
+  // The known old Shako data has exactly this one operation-tool link.
+  if (!legacyConnectorEdge || legacyToolEdges.length !== 1) {
+    return { nodes: currentNodes, edges: currentEdges }
+  }
+
+  const firstBit = SHAKO_DRILL_BIT_TOOLS[0]
+  let nextNodes = currentNodes.map((node) => (
+    node.id === legacyTool.id
+      ? {
+          ...node,
+          data: {
+            ...node.data,
+            name: firstBit.name,
+            properties: {
+              ...node.data.properties,
+              [OSA_PROPERTY.sourceText]: node.data.properties[OSA_PROPERTY.sourceText]
+                ?? LEGACY_SHAKO_DRILL_BITS_NAME,
+            },
+          },
+        }
+      : node
+  ))
+  let nodesChanged = true
+  let nextEdges = currentEdges
+  let edgesChanged = false
+  const nodeIds = new Set(nextNodes.map((node) => node.id))
+  const edgeIds = new Set(currentEdges.map((edge) => edge.id))
+
+  for (const bit of SHAKO_DRILL_BIT_TOOLS.slice(1)) {
+    // A newer import may already have supplied the separated Tool. Reuse it
+    // instead of creating a second object with the same meaning.
+    const existingTool = nextNodes.find((node) => (
+      (node.id === bit.id || (
+        node.id.startsWith('osa:shako-light-wrap:')
+        && node.data.name === bit.name
+      ))
+      && isToolNode(node)
+    ))
+    const toolId = existingTool?.id ?? splitNodeId(bit.id, nodeIds)
+
+    if (!existingTool) {
+      const newTool = createTextNode({
+        id: toolId,
+        position: {
+          x: legacyTool.position.x + bit.xOffset,
+          y: legacyTool.position.y,
+        },
+        name: bit.name,
+        text: legacyTool.data.text,
+        kind: 'tool',
+        spaceIds: legacyTool.data.spaceIds,
+        properties: {
+          ...legacyTool.data.properties,
+          [OSA_PROPERTY.role]: 'tool',
+          [OSA_PROPERTY.sourceText]: legacyTool.data.properties[OSA_PROPERTY.sourceText]
+            ?? LEGACY_SHAKO_DRILL_BITS_NAME,
+        },
+        sketch: legacyTool.data.sketch,
+        layout: legacyTool.data.layout,
+        task: legacyTool.data.task,
+        notebook: legacyTool.data.notebook,
+        sourcePosition: legacyTool.sourcePosition,
+        targetPosition: legacyTool.targetPosition,
+      })
+      nextNodes = [...nextNodes, newTool]
+      nodeIds.add(toolId)
+      nodesChanged = true
+    }
+
+    const alreadyLinked = nextEdges.some((edge) => (
+      edge.source === operation.id
+      && edge.target === toolId
+      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationTool
+    ))
+    if (alreadyLinked) continue
+
+    const edgeId = splitEdgeId(
+      `osa:shako-light-wrap:edge:operation-01-${toolId.slice('osa:shako-light-wrap:'.length)}`,
+      edgeIds,
+    )
+    edgeIds.add(edgeId)
+    nextEdges = [...nextEdges, createGraphEdge({
+      id: edgeId,
+      source: operation.id,
+      target: toolId,
+      relationship: legacyConnectorEdge.data.relationship,
+      relationKind: legacyConnectorEdge.data.relationKind,
+      sourceAnchor: legacyConnectorEdge.data.sourceAnchor,
+      properties: legacyConnectorEdge.data.properties,
+    })]
+    edgesChanged = true
+  }
+
+  return {
+    nodes: nodesChanged ? nextNodes : currentNodes,
+    edges: edgesChanged ? nextEdges : currentEdges,
+  }
+}
 
 /**
  * Updates only OSA's old bundled Shako image references when Julia reopens the
@@ -446,15 +637,22 @@ function Flow() {
     window.localStorage.setItem(WORKSPACE_VIEW_KEY, workspaceView)
   }, [workspaceView])
 
-  // New source-slide renders should replace only OSA's own older compact
-  // Shako diagrams. This lets an existing local draft pick up the reference
-  // visuals on refresh while preserving any person-selected visual.
+  // Bundled-Shako upgrades are deliberately narrow: refresh OSA's own older
+  // source slides, then split the one original combined drill-bit Tool. Both
+  // preserve a person's own Visuals, notes, and graph connections.
   useEffect(() => {
-    setNodes((currentNodes) => refreshBundledShakoSlideReferences(
-      currentNodes,
+    const refreshedNodes = refreshBundledShakoSlideReferences(
+      nodes,
       bundledShakoImportPlan,
-    ))
-  }, [bundledShakoImportPlan, nodes, setNodes])
+    )
+    const migratedDrillBits = migrateLegacyShakoDrillBits(refreshedNodes, edges)
+    const migrated = migrateLegacyCardOutputVisualOwners(
+      migratedDrillBits.nodes,
+      migratedDrillBits.edges,
+    )
+    if (migrated.nodes !== nodes) setNodes(migrated.nodes)
+    if (migrated.edges !== edges) setEdges(migrated.edges)
+  }, [bundledShakoImportPlan, edges, nodes, setEdges, setNodes])
 
   useEffect(() => {
     if (isSharedAssembly) return
@@ -1317,18 +1515,12 @@ function Flow() {
   }, [])
 
   /**
-   * Creates the assembly-picture Visual for the Part/Assembly represented by
-   * one instruction card. This is an explicit authoring action—not a side
-   * effect of adding an In, Tool, or Out relationship. The created Visual is
-   * both owned by the represented object and deliberately referenced by this
-   * one card, ready for an image, photo, or later drawing.
+   * Creates one blank Visual owned by the Assembly containing this card, then
+   * deliberately references it from the card. An operation's output remains
+   * output data; it is not mistaken for something needed to create itself.
    */
   const createOwnedVisualForOperation = useCallback((operationId: string) => {
-    const primaryOutputEdge = edges.find((edge) => (
-      edge.source === operationId
-      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationPrimaryOutput
-    ))
-    const ownerId = primaryOutputEdge?.target
+    const ownerId = parentAssemblyIdForOperation(operationId, edges)
     if (!ownerId) return ''
 
     const visualId = createOwnedVisualCanvas(ownerId)

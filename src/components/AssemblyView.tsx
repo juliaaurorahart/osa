@@ -90,9 +90,9 @@ type AssemblyViewProps = {
   /** Legacy section callback retained for host compatibility; Assembly does not call it. */
   onCreateCanvasSection?: (operationId: string) => string
   /**
-   * Creates a canonical Visual owned by this card's primary output, then
-   * deliberately references that Visual from this operation. It never fires
-   * from ordinary In, Tools, or Out editing.
+   * Creates a canonical Visual owned by the card's parent Assembly, then
+   * deliberately references that Visual from this operation. Its owner can
+   * later be changed to a listed In part or Tool without changing the card.
    */
   onCreateOwnedVisualForOperation?: (operationId: string) => string | undefined
   /** Reassigns a Visual to a Part, Assembly, or Tool without changing its card references. */
@@ -118,15 +118,6 @@ function nodeTitle(node: TextFlowNode) {
   return node.data.name.trim()
     || node.data.text.trim().split(/\r?\n/, 1)[0]
     || `#${node.id}`
-}
-
-/**
- * A name match is only a compatibility hint for an older card that has no
- * explicit output relation. The actual relationship is still created only
- * after the person chooses the visible repair action.
- */
-function normalizedNodeName(node: TextFlowNode) {
-  return node.data.name.trim().toLocaleLowerCase()
 }
 
 /** An object owns its reusable visual; an instruction only links to it. */
@@ -275,7 +266,6 @@ export function AssemblyView({
   onLinkPart,
   onLinkPartInput,
   onUnlinkPartInput,
-  onSetPrimaryOutput,
   onCreatePartForOperation,
   onLinkTool,
   onUnlinkTool,
@@ -643,41 +633,6 @@ export function AssemblyView({
           const inputParts = structuredInputParts.length
             ? structuredInputParts
             : legacyInputParts
-          // A modern card explicitly records the one project object it
-          // represents. Older boards may only have a generic Out relation.
-          // A single ordinary output is safe to *show* as the likely object,
-          // but we do not quietly rewrite saved data: the visible repair
-          // action below makes that decision durable.
-          const explicitPrimaryOutput = connectedTargets(
-            operation.id,
-            nodes,
-            edges,
-            OSA_RELATION.operationPrimaryOutput,
-            /^represents primary output$/i,
-          ).find(isPartLike)
-          const ordinaryOutputs = connectedTargets(
-            operation.id,
-            nodes,
-            edges,
-            OSA_RELATION.operationOutput,
-            /^produces? (part|assembly)$/i,
-          ).filter(isPartLike)
-          // Some early boards stored the card title (for example,
-          // "Connector Box Drilled") and its Part independently, but never
-          // connected them. An exact name match is a useful *suggestion* in
-          // that narrow legacy case. It is not automatically saved as a
-          // relationship: the action below asks the person to confirm it.
-          const operationName = normalizedNodeName(operation)
-          const titleMatchedPart = !explicitPrimaryOutput && operationName
-            ? nodes.find((node) => isPartLike(node) && normalizedNodeName(node) === operationName)
-            : undefined
-          const inferredPrimaryOutput = !explicitPrimaryOutput
-            ? titleMatchedPart ?? (ordinaryOutputs.length === 1 ? ordinaryOutputs[0] : undefined)
-            : undefined
-          // This keeps the owner picker useful for a legacy card, but creating
-          // a new canvas still waits for an explicit primary-output relation.
-          const effectivePrimaryOutput = explicitPrimaryOutput ?? inferredPrimaryOutput
-          const namedOutputCandidate = operation.data.name.trim()
           // A View reference is its own deliberate relationship. It does not
           // infer a visual from In, Tools, or Out. New cards point at canonical
           // Visual nodes, whose content is owned by a part, assembly, or tool.
@@ -727,9 +682,9 @@ export function AssemblyView({
             ? uniqueNodes([sourceVisualNode], includedObjectVisuals)
             : includedObjectVisuals
           // Keep ownership choice local to this instruction: the thing this
-          // card makes, the parts it takes in, and the tools it uses.
+          // assembly belongs to, the parts it takes in, and the tools it uses.
           const canvasOwners = uniqueNodes(
-            effectivePrimaryOutput ? [effectivePrimaryOutput] : [],
+            selectedAssembly ? [selectedAssembly] : [],
             inputParts,
             tools,
           ).filter(canOwnOsaVisual)
@@ -1073,74 +1028,19 @@ export function AssemblyView({
 
                       {!readOnly ? (
                         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, paddingTop: 2 }}>
-                          {explicitPrimaryOutput ? (
-                            onCreateOwnedVisualForOperation ? (
-                              <button
-                                className="text-action"
-                                type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  onCreateOwnedVisualForOperation(operation.id)
-                                }}
-                                title="Create a blank canvas"
-                              >
-                                + canvas
-                              </button>
-                            ) : null
-                          ) : inferredPrimaryOutput ? (
-                            onSetPrimaryOutput ? (
-                              <button
-                                className="text-action"
-                                type="button"
-                                title={`use ${nodeTitle(inferredPrimaryOutput)} as this card's output`}
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  // Turn the visible legacy suggestion into
-                                  // the card's durable, singular output before
-                                  // a canvas can be created from it.
-                                  onSetPrimaryOutput(operation.id, inferredPrimaryOutput.id)
-                                }}
-                              >
-                                use {nodeTitle(inferredPrimaryOutput)}
-                              </button>
-                            ) : null
-                          ) : (
-                            <>
-                              {onSetPrimaryOutput ? (
-                                <select
-                                  aria-label={`choose a represented part for ${nodeTitle(operation)}`}
-                                  defaultValue=""
-                                  onChange={(event) => {
-                                    const partId = event.currentTarget.value
-                                    event.currentTarget.value = ''
-                                    if (partId) onSetPrimaryOutput(operation.id, partId)
-                                  }}
-                                  style={{ minWidth: 0, flex: '1 1 210px', border: 0, borderBottom: '1px solid #bbb', background: 'transparent', color: 'inherit', font: 'inherit', fontSize: '0.8rem' }}
-                                >
-                                  <option value="">part</option>
-                                  {availableParts.map((part) => (
-                                    <option value={part.id} key={part.id}>{nodeTitle(part)}</option>
-                                  ))}
-                                </select>
-                              ) : null}
-                              {onCreatePartForOperation && namedOutputCandidate ? (
-                                <button
-                                  className="text-action"
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    onCreatePartForOperation(
-                                      operation.id,
-                                      'output',
-                                      namedOutputCandidate,
-                                    )
-                                  }}
-                                >
-                                  + part
-                                </button>
-                              ) : null}
-                            </>
-                          )}
+                          {onCreateOwnedVisualForOperation ? (
+                            <button
+                              className="text-action"
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                onCreateOwnedVisualForOperation(operation.id)
+                              }}
+                              title="Create a blank canvas"
+                            >
+                              + canvas
+                            </button>
+                          ) : null}
 
                         </div>
                       ) : null}

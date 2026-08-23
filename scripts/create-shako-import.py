@@ -232,6 +232,25 @@ def criteria(content: list[tuple[int, str]]) -> dict[str, list[str]]:
     return sections
 
 
+def canonical_tool_entries(source_name: str) -> tuple[tuple[str, str], ...]:
+    """Turn one source tool label into the project objects it actually names.
+
+    Slide 2 groups three drill-bit sizes into one PowerPoint bullet. They need
+    distinct identities in OSA so a later visual, inventory record, or action
+    can refer to one size without treating the other two as the same tool. The
+    first entry deliberately retains the old import ID, so reimporting an
+    already-started board updates that existing tool instead of duplicating it.
+    """
+    if source_name == "Bits: 5/16”, 1/8”, 7/64”":
+        return (
+            ("tool-bits-5-16-1-8-7-64", "5/16 in bit"),
+            ("tool-bit-1-8", "1/8 in bit"),
+            ("tool-bit-7-64", "7/64 in bit"),
+        )
+    tool_key = re.sub(r"[^a-z0-9]+", "-", source_name.lower()).strip("-")
+    return ((f"tool-{tool_key}", source_name),)
+
+
 def node(
     identifier: str,
     kind: str,
@@ -426,29 +445,31 @@ def create_package(presentation: Path, workbook: Path) -> dict[str, Any]:
                     "uses source visual",
                     "operation-source-visual",
                 ))
-            for tool_name in tools:
-                tool_key = re.sub(r"[^a-z0-9]+", "-", tool_name.lower()).strip("-")
-                tool_id = f"tool-{tool_key}"
-                if not any(existing["id"] == tool_id for existing in nodes):
-                    nodes.append(node(
-                        tool_id,
-                        "tool",
-                        tool_name,
-                        "",
-                        {
+            for source_tool_name in tools:
+                for tool_id, tool_name in canonical_tool_entries(source_tool_name):
+                    if not any(existing["id"] == tool_id for existing in nodes):
+                        tool_properties = {
                             "osa:role": "tool",
                             "source:file": presentation.name,
                             "source:location": f"Slide {source_slide}, Tools",
-                        },
-                        spaces=["space"],
+                        }
+                        if tool_name != source_tool_name:
+                            tool_properties["source:text"] = source_tool_name
+                        nodes.append(node(
+                            tool_id,
+                            "tool",
+                            tool_name,
+                            "",
+                            tool_properties,
+                            spaces=["space"],
+                        ))
+                    edges.append(edge(
+                        f"{identifier}-{tool_id}",
+                        identifier,
+                        tool_id,
+                        "uses tool",
+                        "operation-tool",
                     ))
-                edges.append(edge(
-                    f"{identifier}-{tool_id}",
-                    identifier,
-                    tool_id,
-                    "uses tool",
-                    "operation-tool",
-                ))
         else:
             child_index += 1
             order = f"{top_index + 1}.{child_index}"

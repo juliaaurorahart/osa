@@ -17,6 +17,9 @@ try {
   )
   const { OSA_PROPERTY, OSA_RELATION, osaRole } = await server.ssrLoadModule('/src/graph/osaData.ts')
   const { createGraphEdge } = await server.ssrLoadModule('/src/graph/graphEdge.ts')
+  const { migrateLegacyCardOutputVisualOwners } = await server.ssrLoadModule(
+    '/src/graph/legacyCanvasOwners.ts',
+  )
   const { parseOsaImportPackage, planOsaImport } = await server.ssrLoadModule('/src/graph/osaImport.ts')
   const raw = await readFile(new URL('../imports/shako-light-wrap.osa.json', import.meta.url), 'utf8')
   const plan = planOsaImport(parseOsaImportPackage(JSON.parse(raw)))
@@ -107,7 +110,7 @@ try {
       ...plan.edges,
       createGraphEdge({
         id: 'assembly-view-check-object-visual-owner',
-        source: connectorBoxDrilled.id,
+        source: plan.assemblyNodeId,
         target: connectorBoxDrilledVisual.id,
         relationship: 'owns visual',
         properties: { [OSA_PROPERTY.relationRole]: 'object-visual' },
@@ -133,8 +136,32 @@ try {
         relationship: 'owns visual',
         properties: { [OSA_PROPERTY.relationRole]: 'object-visual' },
       }),
+      createGraphEdge({
+        id: 'assembly-view-check-blank-operation-visual',
+        source: connectorBoxDrill.id,
+        target: connectorBoxBlankVisual.id,
+        relationship: 'shows visual',
+        properties: { [OSA_PROPERTY.relationRole]: 'operation-visual' },
+      }),
     ],
   }
+
+  // Canvases made by the former Assembly UI were output-owned. The current
+  // card model moves that exact legacy pattern to the parent Assembly without
+  // changing the canvas node or the card's link to it.
+  const migratedCanvasOwners = migrateLegacyCardOutputVisualOwners(
+    nodesWithCanvas,
+    planWithObjectVisual.edges,
+  )
+  const migratedBlankOwner = migratedCanvasOwners.edges.find((edge) => (
+    edge.id === 'assembly-view-check-blank-visual-owner'
+  ))
+  assert.equal(migratedBlankOwner?.source, plan.assemblyNodeId)
+  assert.ok(migratedCanvasOwners.edges.some((edge) => (
+    edge.id === 'assembly-view-check-blank-operation-visual'
+    && edge.source === connectorBoxDrill.id
+    && edge.target === connectorBoxBlankVisual.id
+  )))
 
   const renderAssembly = (
     boardEdges,
@@ -171,7 +198,7 @@ try {
     onOpenNode: noop,
   }))
 
-  const markup = renderAssembly(planWithObjectVisual.edges)
+  const markup = renderAssembly(migratedCanvasOwners.edges)
 
   assert.equal((markup.match(/assembly-operation-card/g) ?? []).length, 6)
   assert.equal((markup.match(/<img /g) ?? []).length, 4)
@@ -209,11 +236,17 @@ try {
     connectorVisualOwnerStart,
     connectorVisualOwnerEnd,
   )
-  assert.match(connectorVisualOwnerMarkup, /Connector Box Drilled/)
+  const connectorVisualOwnerOptions = connectorVisualOwnerMarkup.slice(
+    connectorVisualOwnerMarkup.indexOf('>') + 1,
+  )
+  assert.match(connectorVisualOwnerMarkup, /Shako Hat Assembly Instructions/)
   assert.match(connectorVisualOwnerMarkup, /Electronics Box/)
   assert.match(connectorVisualOwnerMarkup, /Drill/)
-  assert.match(connectorVisualOwnerMarkup, /Bits: 5\/16”/)
-  assert.doesNotMatch(connectorVisualOwnerMarkup, /DC-DC Converter/)
+  assert.match(connectorVisualOwnerMarkup, /5\/16 in bit/)
+  assert.match(connectorVisualOwnerMarkup, /1\/8 in bit/)
+  assert.match(connectorVisualOwnerMarkup, /7\/64 in bit/)
+  assert.doesNotMatch(connectorVisualOwnerOptions, /Connector Box Drilled/)
+  assert.doesNotMatch(connectorVisualOwnerOptions, /DC-DC Converter/)
 
   // Canvas creation remains visible on an unfocused card: people should not
   // need to discover the card-focus interaction before they can continue
@@ -224,9 +257,8 @@ try {
   })
   assert.match(unfocusedMarkup, /\+ canvas/)
 
-  // Legacy cards may have a normal Out relationship but no explicit primary
-  // output. The first render shows a clear repair action instead of offering
-  // an enabled Visual button that cannot find a durable owner in the host.
+  // A canvas belongs to the card's parent Assembly, not to its Out item. Even
+  // an older card with no primary-output relation can create one immediately.
   const legacySingleOutputEdges = [
     ...planWithObjectVisual.edges.filter((edge) => !(
       edge.source === connectorBoxDrill.id
@@ -253,56 +285,9 @@ try {
     legacyConnectorEnd === -1 ? undefined : legacyConnectorEnd,
   )
   assert.match(
-    legacySingleOutputMarkup,
-    />use Connector Box Drilled</,
-    'The card offers an explicit repair that stamps the ordinary output as primary.',
-  )
-  assert.doesNotMatch(
     legacyConnectorMarkup,
     /\+ canvas/,
-    'Visual creation waits until the repair has made the primary-output relationship durable.',
-  )
-
-  // An even older board may have neither Out nor primary-output relationships,
-  // while its card title and its Part were saved independently. The exact
-  // title match remains a visible, user-confirmed repair—not a silent graph
-  // mutation—and avoids making people rebuild a known project object.
-  const titleOnlyNodes = nodesWithCanvas.map((node) => (
-    node.id === connectorBoxDrill.id
-      ? { ...node, data: { ...node.data, name: 'Connector Box Drilled' } }
-      : node
-  ))
-  const titleOnlyEdges = planWithObjectVisual.edges.filter((edge) => !(
-    edge.source === connectorBoxDrill.id
-    && (
-      edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationOutput
-      || edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationPrimaryOutput
-    )
-  ))
-  const titleOnlyMarkup = renderAssembly(titleOnlyEdges, focusedAssemblyUiState, titleOnlyNodes)
-  assert.match(
-    titleOnlyMarkup,
-    />use Connector Box Drilled</,
-    'The title-only match remains a deliberate durable-repair action.',
-  )
-
-  // With no clear candidate, the builder can choose from existing part-like
-  // project objects rather than being blocked by a legacy missing relation.
-  const ambiguousOutputEdges = [
-    ...legacySingleOutputEdges,
-    createGraphEdge({
-      id: 'assembly-view-check-ambiguous-output',
-      source: connectorBoxDrill.id,
-      target: plan.assemblyNodeId,
-      relationship: 'produces assembly',
-      properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.operationOutput },
-    }),
-  ]
-  const ambiguousOutputMarkup = renderAssembly(ambiguousOutputEdges)
-  assert.match(
-    ambiguousOutputMarkup,
-    /<option value="" selected="">part<\/option>/,
-    'Ambiguous legacy Out relations show a compact represented-part picker.',
+    'Canvas creation does not confuse a card output with an input or owner.',
   )
   console.log('Assembly board checks passed: 1 index, 6 cards, source provenance, and canvases.')
 } finally {

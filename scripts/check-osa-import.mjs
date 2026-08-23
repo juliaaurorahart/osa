@@ -41,8 +41,8 @@ try {
   const importPackage = parseOsaImportPackage(JSON.parse(raw))
   const plan = planOsaImport(importPackage)
 
-  assert.equal(plan.nodes.length, 61)
-  assert.equal(plan.edges.length, 84)
+  assert.equal(plan.nodes.length, 63)
+  assert.equal(plan.edges.length, 86)
   assert.equal(plan.nodes.filter((node) => osaRole(node) === 'operation').length, 6)
   assert.equal(plan.nodes.filter((node) => osaRole(node) === 'bom-item').length, 17)
   assert.equal(plan.nodes.filter((node) => osaRole(node) === 'assembly').length, 3)
@@ -162,9 +162,24 @@ try {
       ))
       .map((edge) => plan.nodes.find((node) => node.id === edge.target)?.data.name)
       .sort(),
-    ['Bits: 5/16”, 1/8”, 7/64”', 'Drill'],
-    'Tools remain canonical graph objects linked to the operation, not copied card text.',
+    ['1/8 in bit', '5/16 in bit', '7/64 in bit', 'Drill'],
+    'Tools and each required bit remain distinct canonical graph objects linked to the operation.',
   )
+  for (const [bitId, bitName] of Object.entries({
+    'tool-bits-5-16-1-8-7-64': '5/16 in bit',
+    'tool-bit-1-8': '1/8 in bit',
+    'tool-bit-7-64': '7/64 in bit',
+  })) {
+    const bit = plan.nodes.find((node) => node.id === `osa:shako-light-wrap:${bitId}`)
+    assert.equal(bit?.data.name, bitName)
+    assert.equal(bit?.data.kind, 'tool')
+    assert.equal(osaRole(bit), 'tool')
+    assert.equal(
+      bit?.data.properties[OSA_PROPERTY.sourceText],
+      'Bits: 5/16”, 1/8”, 7/64”',
+      `${bitName} preserves the source bullet it came from.`,
+    )
+  }
 
   const boostAttach = plan.nodes.find((node) => (
     osaRole(node) === 'operation' && node.data.name === 'Boost Attach V-out Wires'
