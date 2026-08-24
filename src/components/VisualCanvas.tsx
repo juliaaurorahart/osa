@@ -183,7 +183,9 @@ export function VisualCanvasEditor({
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const cameraInputRef = useRef<HTMLInputElement | null>(null)
   const identityPhotoInputRef = useRef<HTMLInputElement | null>(null)
+  const identityCameraInputRef = useRef<HTMLInputElement | null>(null)
   const replacePhotoInputRef = useRef<HTMLInputElement | null>(null)
+  const replacePhotoCameraInputRef = useRef<HTMLInputElement | null>(null)
   const savedVersions = visual.data.visualVersions?.records ?? []
   const viewingVersion = viewingVersionId
     ? savedVersions.find((record) => record.id === viewingVersionId) ?? null
@@ -444,14 +446,26 @@ export function VisualCanvasEditor({
             {!readOnly && identity === 'photo' ? (
               <>
                 <button type="button" onClick={() => replacePhotoInputRef.current?.click()}>
-                  replace photo
+                  library
+                </button>
+                <button type="button" onClick={() => replacePhotoCameraInputRef.current?.click()}>
+                  camera
                 </button>
                 <input
                   ref={replacePhotoInputRef}
                   className="visual-canvas-editor__file-input"
                   type="file"
                   accept="image/*"
-                  aria-label="Replace this photo"
+                  aria-label="Choose a replacement photo from your library"
+                  onChange={onReplacePhotoChange}
+                />
+                <input
+                  ref={replacePhotoCameraInputRef}
+                  className="visual-canvas-editor__file-input"
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  aria-label="Take a replacement photo"
                   onChange={onReplacePhotoChange}
                 />
               </>
@@ -496,14 +510,14 @@ export function VisualCanvasEditor({
                             <option value={candidate.id} key={candidate.id}>{candidate.data.name || candidate.id}</option>
                           ))}
                         </select>
-                        <button type="button" onClick={() => fileInputRef.current?.click()}>file</button>
-                        <button type="button" onClick={() => cameraInputRef.current?.click()}>photo</button>
+                        <button type="button" onClick={() => fileInputRef.current?.click()}>library</button>
+                        <button type="button" onClick={() => cameraInputRef.current?.click()}>camera</button>
                         <input
                           ref={fileInputRef}
                           className="visual-canvas-editor__file-input"
                           type="file"
                           accept="image/*"
-                          aria-label="Add an image asset to this canvas"
+                          aria-label="Choose an image from your library for this canvas"
                           onChange={onImageChange}
                         />
                         <input
@@ -531,7 +545,10 @@ export function VisualCanvasEditor({
               <h2>canvas type</h2>
               <div>
                 <button type="button" onClick={() => identityPhotoInputRef.current?.click()}>
-                  photo
+                  library
+                </button>
+                <button type="button" onClick={() => identityCameraInputRef.current?.click()}>
+                  camera
                 </button>
                 <button type="button" onClick={() => selectIdentity('osa-draw')}>
                   OSA draw
@@ -542,7 +559,16 @@ export function VisualCanvasEditor({
                 className="visual-canvas-editor__file-input"
                 type="file"
                 accept="image/*"
-                aria-label="Choose a photo for this canvas"
+                aria-label="Choose a photo from your library for this canvas"
+                onChange={onIdentityPhotoChange}
+              />
+              <input
+                ref={identityCameraInputRef}
+                className="visual-canvas-editor__file-input"
+                type="file"
+                accept="image/*"
+                capture="environment"
+                aria-label="Take a photo for this canvas"
                 onChange={onIdentityPhotoChange}
               />
             </section>
