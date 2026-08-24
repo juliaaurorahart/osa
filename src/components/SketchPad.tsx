@@ -207,9 +207,15 @@ function sizedEmbedPlacementUpdate(
   }
 
   const ratio = placement.width / placement.height
-  return dimension === 'width'
-    ? { width: value, height: Math.max(24, value / ratio) }
-    : { width: Math.max(24, value * ratio), height: value }
+  if (dimension === 'width') {
+    // Keep both dimensions above the image-box minimum without breaking ratio.
+    const width = Math.max(value, 24 * ratio)
+    return { width, height: width / ratio }
+  }
+
+  // Keep both dimensions above the image-box minimum without breaking ratio.
+  const height = Math.max(value, 24 / ratio)
+  return { width: height * ratio, height }
 }
 
 function isCompoundPartKind(kind: SketchElement['kind']): kind is SketchCompoundPart['kind'] {
