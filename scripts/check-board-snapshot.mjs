@@ -586,7 +586,10 @@ try {
     name: '5/16 in bit',
     text: 'A drill bit for the side cut.',
     kind: 'tool',
-    properties: { 'spec:diameter': '5/16 in' },
+    properties: {
+      'spec:diameter': '5/16 in',
+      [OSA_PROPERTY.appearanceAccentColor]: '#9b59d0',
+    },
   })
   const annotationCanvas = structuredClone(visualCanvas)
   annotationCanvas.id = 'annotation-canvas-1'
@@ -646,6 +649,11 @@ try {
   assert.match(annotationMarkup, /5\/16 in bit/, 'A bound text box renders the current canonical object name.')
   assert.match(annotationMarkup, /5\/16 in/, 'A bound text box renders a selected canonical property.')
   assert.doesNotMatch(annotationMarkup, /annotation-bit-5-16/, 'A drawing never exposes its raw target ID as the visible label.')
+  assert.match(
+    annotationMarkup,
+    /data-sketch-element-id="annotation-name-1"[\s\S]*?<text[^>]*fill="#9b59d0"/,
+    'A bound text box inherits the semantic color of its canonical Tool.',
+  )
 
   const renamedAnnotationTarget = annotationTargetsForNodes([{
     ...annotatedBit,
@@ -670,6 +678,53 @@ try {
       fallback: 'drill bit',
     },
     'Renaming a project object changes the view, not the drawing reference.',
+  )
+
+  const recoloredAnnotationTargets = annotationTargetsForNodes([{
+    ...annotatedBit,
+    data: {
+      ...annotatedBit.data,
+      properties: {
+        ...annotatedBit.data.properties,
+        [OSA_PROPERTY.appearanceAccentColor]: '#ff8c00',
+      },
+    },
+  }])
+  const recoloredAnnotationMarkup = renderToStaticMarkup(createElement(SketchPreview, {
+    document: annotationCanvas.data.sketch,
+    annotationTargets: recoloredAnnotationTargets,
+  }))
+  assert.match(
+    recoloredAnnotationMarkup,
+    /data-sketch-element-id="annotation-name-1"[\s\S]*?<text[^>]*fill="#ff8c00"/,
+    'Changing the canonical accent recolors every bound annotation without rewriting its drawing record.',
+  )
+  assert.deepEqual(
+    annotationNameElement.annotation,
+    {
+      kind: 'project-value',
+      targetId: annotatedBit.id,
+      field: 'name',
+      fallback: 'drill bit',
+    },
+    'A semantic color remains derived project data rather than an annotation field.',
+  )
+
+  const noAccentAnnotationTargets = annotationTargetsForNodes([{
+    ...annotatedBit,
+    data: {
+      ...annotatedBit.data,
+      properties: { 'spec:diameter': '5/16 in' },
+    },
+  }])
+  const noAccentAnnotationMarkup = renderToStaticMarkup(createElement(SketchPreview, {
+    document: annotationCanvas.data.sketch,
+    annotationTargets: noAccentAnnotationTargets,
+  }))
+  assert.match(
+    noAccentAnnotationMarkup,
+    /data-sketch-element-id="annotation-name-1"[\s\S]*?<text[^>]*fill="#151515"/,
+    'A bound text box with no semantic color keeps its own normal text color.',
   )
 
   const missingTargetMarkup = renderToStaticMarkup(createElement(SketchPreview, {

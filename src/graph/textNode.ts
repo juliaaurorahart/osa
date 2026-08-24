@@ -59,6 +59,8 @@ export type SketchAnnotationTarget = {
   kind: NodeKind
   text: string
   properties: Record<string, string>
+  /** Optional semantic color derived from the canonical project object. */
+  accentColor?: string
 }
 
 /**

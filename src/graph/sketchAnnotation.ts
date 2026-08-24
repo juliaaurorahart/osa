@@ -4,6 +4,7 @@ import type {
   SketchTextAnnotation,
   TextFlowNode,
 } from './textNode'
+import { appearanceAccentColor } from './osaData'
 
 /** A friendly label for a data field in OSA's variable picker. */
 export type SketchAnnotationField = {
@@ -20,13 +21,17 @@ export type SketchAnnotationField = {
 export function annotationTargetsForNodes(
   nodes: readonly TextFlowNode[],
 ): SketchAnnotationTarget[] {
-  return nodes.map((node) => ({
-    id: node.id,
-    name: node.data.name,
-    kind: node.data.kind,
-    text: node.data.text,
-    properties: { ...node.data.properties },
-  }))
+  return nodes.map((node) => {
+    const accentColor = appearanceAccentColor(node)
+    return {
+      id: node.id,
+      name: node.data.name,
+      kind: node.data.kind,
+      text: node.data.text,
+      properties: { ...node.data.properties },
+      ...(accentColor ? { accentColor } : {}),
+    }
+  })
 }
 
 export function annotationTargetLabel(target: SketchAnnotationTarget) {
@@ -76,6 +81,19 @@ export function resolveSketchTextAnnotation(
     return target.properties[annotation.propertyKey ?? ''] ?? annotation.fallback
   }
   return annotation.fallback
+}
+
+/**
+ * Bound text inherits the target object's semantic color. The color is
+ * derived at render time, so changing it in Assembly updates every drawing
+ * without rewriting any canvas element.
+ */
+export function resolveSketchAnnotationColor(
+  annotation: SketchTextAnnotation | undefined,
+  targets: readonly SketchAnnotationTarget[],
+) {
+  if (!annotation) return undefined
+  return targets.find((candidate) => candidate.id === annotation.targetId)?.accentColor
 }
 
 /** A text element is literal by default, or a live annotation when one exists. */

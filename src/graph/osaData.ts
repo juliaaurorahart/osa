@@ -101,7 +101,7 @@ export const OSA_PROPERTY = {
    * A canonical object's semantic accent. This is intentionally separate
    * from a canvas stroke/fill or a photo's pixels: a Tool or Part can carry
    * one color that every interested view derives for labels, visual cues, and
-   * future bound annotations.
+   * bound annotations.
    */
   appearanceAccentColor: 'appearance:accentColor',
   itemQuantity: 'item:quantity',

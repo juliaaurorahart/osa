@@ -19,6 +19,7 @@ import {
 import {
   annotationFieldsForTarget,
   annotationTargetLabel,
+  resolveSketchAnnotationColor,
   resolveSketchTextAnnotation,
   resolvedSketchText,
 } from '../graph/sketchAnnotation'
@@ -519,6 +520,9 @@ function SketchElementGraphic({
   const bounds = elementBounds(element)
   const hitStroke = Math.max(16, element.strokeWidth + 10)
   const text = resolvedSketchText(element, annotationTargets) || 'Text'
+  // A bound label coordinates with its Part or Tool automatically. Literal
+  // text keeps the drawing's manually selected stroke color.
+  const annotationColor = resolveSketchAnnotationColor(element.annotation, annotationTargets)
   const stroke = strokeVisible ? element.stroke : 'transparent'
   const fill = fillVisible ? element.fill : 'transparent'
   const arrowMarkerId = `sketch-arrow-head-${markerNamespace ? `${markerNamespace}-` : ''}${element.id}`
@@ -761,7 +765,7 @@ function SketchElementGraphic({
           <text
             x={element.x}
             y={element.y}
-            fill={stroke}
+            fill={annotationColor ?? stroke}
             fontSize={element.fontSize ?? 26}
             fontFamily="inherit"
             dominantBaseline="hanging"
