@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { createServer } from 'vite'
 
 /**
@@ -20,6 +22,12 @@ try {
   } = await server.ssrLoadModule('/src/graph/boardSnapshot.ts')
   const { createGraphEdge } = await server.ssrLoadModule('/src/graph/graphEdge.ts')
   const { OSA_PROPERTY, OSA_RELATION } = await server.ssrLoadModule('/src/graph/osaData.ts')
+  const {
+    visualDraftEmbedsForCanvas,
+    visualEmbedsForCanvas,
+  } = await server.ssrLoadModule('/src/graph/visualEmbed.ts')
+  const { SketchPreview } = await server.ssrLoadModule('/src/components/SketchPad.tsx')
+  const { visualForOfficialVersion } = await server.ssrLoadModule('/src/graph/visualVersion.ts')
   const { createProjectTaskEdge } = await server.ssrLoadModule('/src/graph/taskProject.ts')
   const { addNodeToSpace } = await server.ssrLoadModule('/src/graph/space.ts')
 
@@ -39,6 +47,7 @@ try {
     kind: 'document',
     notebook: { format: 'sketch' },
     spaceIds: ['space-1', 'missing-space', 'space-1'],
+    properties: { [OSA_PROPERTY.appearanceAccentColor]: '#9b59d0' },
   })
   const formerAction = createTextNode({
     id: 'former-action-1',
@@ -68,6 +77,11 @@ try {
     restoredCurrent.nodes.find((node) => node.id === 'page-1')?.data.notebook,
     { format: 'sketch' },
     'Notebook format survives a semantic type change',
+  )
+  assert.equal(
+    restoredCurrent.nodes.find((node) => node.id === 'page-1')?.data.properties[OSA_PROPERTY.appearanceAccentColor],
+    '#9b59d0',
+    'A canonical semantic accent survives the ordinary board save/load boundary.',
   )
   assert.deepEqual(
     restoredCurrent.nodes.find((node) => node.id === 'former-action-1')?.data.task,
@@ -138,6 +152,7 @@ try {
       [OSA_PROPERTY.operationVisualY]: '18.5',
       [OSA_PROPERTY.operationVisualWidth]: '36',
       [OSA_PROPERTY.operationVisualHeight]: '24.5',
+      [OSA_PROPERTY.operationVisualOrder]: '3',
     },
   })
   const savedVisualSnapshot = createBoardSnapshot([space, notebookPage, action], [operationVisual])
@@ -156,8 +171,9 @@ try {
 
   // A reusable Visual keeps its source image and its editable canvas in the
   // same ordinary graph object. The image is a background ingredient; the
-  // rectangle, ellipse, arrow, text, and handwriting layers are the durable
-  // canvas content that every Assembly-card reference should redraw.
+  // rectangle, ellipse, diagram shapes, arrows, text, and handwriting layers
+  // are the durable canvas content that every Assembly-card reference should
+  // redraw.
   const visualCanvas = createTextNode({
     id: 'visual-canvas-1',
     position: { x: 200, y: 200 },
@@ -190,6 +206,7 @@ try {
             fill: '#dceef6',
             strokeWidth: 6,
             opacity: 1,
+            groupId: 'connector-box-outline',
           },
           {
             id: 'visual-ellipse-1',
@@ -202,6 +219,75 @@ try {
             fill: '#16a3d8',
             strokeWidth: 5,
             opacity: 0.9,
+            groupId: 'connector-box-outline',
+          },
+          {
+            id: 'visual-compound-1',
+            kind: 'compound',
+            x: 420,
+            y: 90,
+            width: 230,
+            height: 110,
+            stroke: '#194c33',
+            fill: '#d7f3df',
+            strokeWidth: 4,
+            opacity: 1,
+            compoundParts: [
+              {
+                id: 'visual-compound-part-1',
+                kind: 'rounded-rectangle',
+                x: 0,
+                y: 0,
+                width: 130,
+                height: 110,
+                cornerRadius: 42,
+              },
+              {
+                id: 'visual-compound-part-2',
+                kind: 'rounded-rectangle',
+                x: 70,
+                y: 20,
+                width: 160,
+                height: 70,
+                cornerRadius: 22,
+              },
+            ],
+          },
+          {
+            id: 'visual-diamond-1',
+            kind: 'diamond',
+            x: 710,
+            y: 105,
+            width: 100,
+            height: 100,
+            stroke: '#55337f',
+            fill: '#e8dcff',
+            strokeWidth: 4,
+            opacity: 1,
+          },
+          {
+            id: 'visual-triangle-1',
+            kind: 'triangle',
+            x: 860,
+            y: 105,
+            width: 120,
+            height: 105,
+            stroke: '#8d4214',
+            fill: '#ffe5d4',
+            strokeWidth: 4,
+            opacity: 1,
+          },
+          {
+            id: 'visual-line-1',
+            kind: 'line',
+            x: 700,
+            y: 270,
+            width: -145,
+            height: 50,
+            stroke: '#1e5777',
+            fill: 'transparent',
+            strokeWidth: 5,
+            opacity: 1,
           },
           {
             id: 'visual-arrow-1',
@@ -257,6 +343,149 @@ try {
     'A Visual source image remains associated with the same canvas object after save/load.',
   )
 
+  // A canvas can retain several editable records while exactly one of them is
+  // the official content projected into Assembly cards. The Visual's ordinary
+  // name/properties are deliberately outside that history so they stay shared.
+  const versionedVisualCanvas = structuredClone(visualCanvas)
+  versionedVisualCanvas.data.visualVersions = {
+    officialId: 'visual-version-official',
+    records: [
+      {
+        id: 'visual-version-draft',
+        label: 'Aug 24, 9:00 AM',
+        createdAt: '2026-08-24T13:00:00.000Z',
+        kind: 'draft',
+        sketch: structuredClone(visualCanvas.data.sketch),
+        embeds: [{
+          id: 'visual-embed-draft-1',
+          visualId: 'photo-1',
+          placement: { x: 120, y: 80, width: 360, height: 240 },
+        }],
+      },
+      {
+        id: 'visual-version-official',
+        label: 'Aug 24, 9:30 AM',
+        createdAt: '2026-08-24T13:30:00.000Z',
+        kind: 'official',
+        sketch: structuredClone(visualCanvas.data.sketch),
+        embeds: [{
+          id: 'visual-embed-official-1',
+          visualId: 'photo-1',
+          placement: { x: 24, y: 36, width: 480, height: 300 },
+        }],
+      },
+    ],
+  }
+  // Deliberately change the live drawing after the snapshot: the card-facing
+  // projection must still use the official record.
+  versionedVisualCanvas.data.sketch.background = '#1f2933'
+  const versionedVisualSnapshot = createBoardSnapshot([versionedVisualCanvas], [])
+  const restoredVersionedVisualSnapshot = parseBoardSnapshot(
+    JSON.parse(JSON.stringify(versionedVisualSnapshot)),
+  )
+  assert.deepEqual(
+    restoredVersionedVisualSnapshot?.nodes[0].data.visualVersions,
+    versionedVisualCanvas.data.visualVersions,
+    'Draft, official, and frozen child placements survive a board save/load round trip.',
+  )
+  assert.equal(
+    visualForOfficialVersion(versionedVisualCanvas).data.sketch.background,
+    visualCanvas.data.sketch.background,
+    'The official Visual projection ignores a later live-draft drawing change.',
+  )
+
+  const photoVisual = createTextNode({
+    id: 'photo-1',
+    position: { x: 0, y: 0 },
+    name: 'Photo',
+    text: '',
+    kind: 'visual',
+    properties: { [OSA_PROPERTY.role]: 'visual' },
+  })
+
+  // A photo placed inside a drawing canvas is its own image object. It must
+  // not bring the Visual's default 1000 × 700 paper rectangle or a permanent
+  // border along with it. The editor adds an invisible hit target and only
+  // shows its selection outline after the person selects it.
+  const immutablePhotoVisual = createTextNode({
+    id: 'photo-render-1',
+    position: { x: 0, y: 0 },
+    name: 'Photo render check',
+    text: '',
+    kind: 'visual',
+    properties: {
+      [OSA_PROPERTY.role]: 'visual',
+      [OSA_PROPERTY.visualContent]: 'image',
+      [OSA_PROPERTY.visualImmutable]: 'true',
+      [OSA_PROPERTY.assetImage]: 'data:image/svg+xml;base64,PHN2Zy8+',
+    },
+  })
+  const embeddedPhotoMarkup = renderToStaticMarkup(createElement(SketchPreview, {
+    document: visualCanvas.data.sketch,
+    embeddedVisuals: [{
+      id: 'photo-render-embed-1',
+      visual: immutablePhotoVisual,
+      placement: { x: 120, y: 80, width: 360, height: 240 },
+    }],
+  }))
+  assert.equal(
+    (embeddedPhotoMarkup.match(/<svg/g) ?? []).length,
+    1,
+    'An immutable photo renders directly in its placement instead of adding a blank nested canvas page.',
+  )
+  assert.match(
+    embeddedPhotoMarkup,
+    /<image href="data:image\/svg\+xml;base64,PHN2Zy8\+" x="120" y="80" width="360" height="240" preserveAspectRatio="xMidYMid meet"/,
+    'An immutable photo keeps its source aspect ratio inside its parent-side placement.',
+  )
+  assert.doesNotMatch(
+    embeddedPhotoMarkup,
+    /#7b8794/,
+    'An unselected immutable photo has no visible frame.',
+  )
+  const liveEmbed = createGraphEdge({
+    id: 'visual-embed-live-1',
+    source: versionedVisualCanvas.id,
+    target: photoVisual.id,
+    relationship: 'includes visual',
+    properties: {
+      [OSA_PROPERTY.relationRole]: OSA_RELATION.visualEmbed,
+      [OSA_PROPERTY.visualEmbedX]: '120',
+      [OSA_PROPERTY.visualEmbedY]: '80',
+      [OSA_PROPERTY.visualEmbedWidth]: '360',
+      [OSA_PROPERTY.visualEmbedHeight]: '240',
+    },
+  })
+  assert.deepEqual(
+    visualEmbedsForCanvas(versionedVisualCanvas.id, [versionedVisualCanvas, photoVisual], [liveEmbed])
+      .map((embed) => embed.placement),
+    [{ x: 24, y: 36, width: 480, height: 300 }],
+    'Card projections use the official Visual placement rather than the live draft edge.',
+  )
+  assert.deepEqual(
+    visualDraftEmbedsForCanvas(versionedVisualCanvas.id, [versionedVisualCanvas, photoVisual], [liveEmbed])
+      .map((embed) => embed.placement),
+    [{ x: 120, y: 80, width: 360, height: 240 }],
+    'The editor retains the live draft placement while an official version exists.',
+  )
+
+  const preVersionsSnapshot = structuredClone(visualCanvasSnapshot)
+  preVersionsSnapshot.version = 6
+  delete preVersionsSnapshot.nodes[0].data.visualVersions
+  assert.equal(
+    parseBoardSnapshot(preVersionsSnapshot)?.nodes[0].data.visualVersions,
+    null,
+    'Version-6 boards load with no canvas-version history rather than failing.',
+  )
+
+  const malformedVisualVersionSnapshot = structuredClone(versionedVisualSnapshot)
+  malformedVisualVersionSnapshot.nodes[0].data.visualVersions.records[0].embeds[0].placement.width = 0
+  assert.equal(
+    parseBoardSnapshot(malformedVisualVersionSnapshot),
+    null,
+    'A saved Visual version rejects an invalid embedded-Visual placement.',
+  )
+
   // Boards saved before visual elements existed are still valid: their
   // handwritten layers simply acquire an empty elements list on load.
   const preElementsSnapshot = structuredClone(visualCanvasSnapshot)
@@ -276,6 +505,24 @@ try {
     parseBoardSnapshot(malformedVisualSnapshot),
     null,
     'Canvas elements with invalid opacity are rejected.',
+  )
+
+  const malformedGroupSnapshot = structuredClone(visualCanvasSnapshot)
+  malformedGroupSnapshot.nodes[0].data.sketch.layers[0].elements[0].groupId = 42
+  assert.equal(
+    parseBoardSnapshot(malformedGroupSnapshot),
+    null,
+    'Canvas elements with a non-string group ID are rejected.',
+  )
+
+  const malformedCompoundSnapshot = structuredClone(visualCanvasSnapshot)
+  malformedCompoundSnapshot.nodes[0].data.sketch.layers[0].elements[2].compoundParts = [
+    malformedCompoundSnapshot.nodes[0].data.sketch.layers[0].elements[2].compoundParts[0],
+  ]
+  assert.equal(
+    parseBoardSnapshot(malformedCompoundSnapshot),
+    null,
+    'Compound canvas shapes need at least two valid component parts.',
   )
 
   console.log('Board snapshot checks passed.')

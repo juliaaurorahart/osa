@@ -1,0 +1,115 @@
+.code-editor-lab {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  height: calc(100dvh - 86px);
+  min-height: 480px;
+  overflow: hidden;
+  border: 1px solid var(--osa-border);
+  border-radius: 8px;
+  background: var(--osa-bg);
+  color: var(--osa-text);
+  box-shadow: 0 8px 22px var(--osa-shadow);
+}
+
+.code-editor-lab__header,
+.code-editor-lab__title,
+.code-editor-lab__controls {
+  display: flex;
+  align-items: center;
+}
+
+.code-editor-lab__header {
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 50px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--osa-border);
+  background: var(--osa-surface);
+}
+
+.code-editor-lab__title,
+.code-editor-lab__controls {
+  gap: 8px;
+}
+
+.code-editor-lab__title h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 650;
+}
+
+.code-editor-lab__title span {
+  color: var(--osa-muted);
+  font-size: 0.78rem;
+}
+
+.code-editor-lab__controls button {
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 1px solid var(--osa-border);
+  border-radius: 5px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+}
+
+.code-editor-lab__controls button:hover,
+.code-editor-lab__controls button:focus-visible {
+  border-color: var(--osa-focus);
+  background: var(--osa-hover-surface);
+  outline: 0;
+}
+
+.code-editor-lab__body {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+}
+
+.code-editor-lab__editor {
+  position: relative;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.code-editor-lab__editor .cm-editor {
+  height: 100%;
+  font-size: 0.92rem;
+}
+
+.code-editor-lab__editor .cm-scroller {
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  line-height: 1.55;
+}
+
+.code-editor-lab__editor .cm-editor.cm-focused {
+  outline: 2px solid var(--osa-focus);
+  outline-offset: -2px;
+}
+
+@media (max-width: 700px) {
+  .code-editor-lab {
+    height: calc(100dvh - 104px);
+    min-height: 420px;
+    border-radius: 0;
+  }
+
+  .code-editor-lab__header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 7px;
+    padding: 10px 12px;
+  }
+
+  .code-editor-lab__controls {
+    width: 100%;
+    overflow-x: auto;
+  }
+}

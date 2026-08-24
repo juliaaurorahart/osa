@@ -2,6 +2,7 @@ import type { ChangeEvent, DragEvent } from 'react'
 import type { TextFlowNode } from '../graph/textNode'
 import { NODE_KINDS } from '../graph/nodeKinds'
 import {
+  appearanceAccentColor,
   isManagedOsaProperty,
   isPartLike,
   OSA_PROPERTY,
@@ -57,15 +58,21 @@ export function PropertiesPanel({
   onRemoveOwnedVisualCanvas,
 }: PropertiesPanelProps) {
   const propertyEntries = Object.entries(node.data.properties)
+  const accentColor = appearanceAccentColor(node)
   const assetImage = node.data.properties[OSA_PROPERTY.assetImage] ?? ''
   const assetImageAlt = node.data.properties[OSA_PROPERTY.assetImageAlt] ?? ''
   const isAssetProperty = (name: string) => (
     name === OSA_PROPERTY.assetImage || name === OSA_PROPERTY.assetImageAlt
   )
+  // Semantic color is a canonical object field with its own color-picker
+  // control below. Do not make someone hunt for it among arbitrary strings.
+  const isAppearanceProperty = (name: string) => (
+    name === OSA_PROPERTY.appearanceAccentColor
+  )
   // Image data can be a large data URL. Keep it in the dedicated Image area,
   // rather than rendering that long value in the general property editor.
   const properties = propertyEntries.filter(([name]) => (
-    !isManagedOsaProperty(name) && !isAssetProperty(name)
+    !isManagedOsaProperty(name) && !isAssetProperty(name) && !isAppearanceProperty(name)
   ))
   const managedProperties = propertyEntries.filter(([name]) => (
     isManagedOsaProperty(name) && !isAssetProperty(name)
@@ -76,6 +83,15 @@ export function PropertiesPanel({
   const nodeLabel = nodeName ? `${kindLabel} ${nodeName}` : `${kindLabel} #${node.id}`
   const isVisual = role === 'visual' || node.data.kind === 'visual'
   const canOwnVisualCanvases = isPartLike(node) || node.data.kind === 'tool' || role === 'tool'
+  // Keep the ordinary-object photo action at the top of the panel. It writes
+  // the same `asset:image` property as the detailed Image section below; it
+  // does not create a Visual canvas or change the graph relationship.
+  const showsQuickPhoto = !isVisual && (
+    node.data.kind === 'part'
+    || node.data.kind === 'tool'
+    || role === 'bom-item'
+    || role === 'tool'
+  )
   // Keep this panel backward-compatible while App.tsx gains the durable
   // owner-to-Visual graph relationship. Once the host supplies either value,
   // an eligible part/tool gets the concise canvas section below.
@@ -127,6 +143,62 @@ export function PropertiesPanel({
     <section className="properties-panel">
       <p className="properties-panel__eyebrow">selected node</p>
       <h2>{nodeLabel}</h2>
+      {showsQuickPhoto ? (
+        <div
+          className="properties-panel__quick-photo"
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={onImageDrop}
+        >
+          <label className="board-file-button properties-panel__quick-photo-button">
+            {assetImage ? 'replace photo' : '+ photo'}
+            <input
+              type="file"
+              accept="image/*"
+              aria-label={`${assetImage ? 'Replace' : 'Choose'} a photo for ${nodeLabel}`}
+              onChange={onImageFileChange}
+            />
+          </label>
+          <label className="board-file-button properties-panel__quick-photo-button">
+            camera
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              aria-label={`Take a photo for ${nodeLabel}`}
+              onChange={onImageFileChange}
+            />
+          </label>
+          <span>drop photo</span>
+        </div>
+      ) : null}
+      <fieldset className="properties-panel__appearance">
+        <legend>appearance</legend>
+        <label className="properties-panel__accent-control">
+          <span>accent</span>
+          <input
+            type="color"
+            aria-label={`Accent color for ${nodeLabel}`}
+            // The picker needs a valid color even while this object has no
+            // accent. Its value does not become durable until it changes.
+            value={accentColor ?? '#9b59d0'}
+            onChange={(event) => onPropertyChange(
+              node.id,
+              OSA_PROPERTY.appearanceAccentColor,
+              event.target.value,
+            )}
+          />
+          <output>{accentColor ?? 'none'}</output>
+          {accentColor ? (
+            <button
+              className="board-button"
+              type="button"
+              onClick={() => onPropertyChange(node.id, OSA_PROPERTY.appearanceAccentColor, '')}
+            >
+              clear
+            </button>
+          ) : null}
+        </label>
+      </fieldset>
       {role ? (
         <p className="properties-panel__managed">
           imported view hint: {role.replace('-', ' ')}. This remains ordinary OSA data.

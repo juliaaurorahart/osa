@@ -1,0 +1,118 @@
+.vega-lab {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 520px;
+  overflow: hidden;
+  border: 1px solid var(--osa-border);
+  border-radius: 8px;
+  background: var(--osa-surface);
+  color: var(--osa-text);
+  box-shadow: 0 8px 22px var(--osa-shadow);
+}
+
+.vega-lab__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--osa-border);
+}
+
+.vega-lab__header h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+.vega-lab__header p,
+.vega-lab__footer {
+  margin: 3px 0 0;
+  color: var(--osa-muted);
+  font-size: 0.8rem;
+}
+
+.vega-lab__control {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--osa-muted);
+  font-size: 0.8rem;
+}
+
+.vega-lab__control select {
+  min-width: 150px;
+  padding: 6px 8px;
+  border: 1px solid var(--osa-border);
+  border-radius: 5px;
+  background: var(--osa-input);
+  color: var(--osa-text);
+}
+
+.vega-lab__control select:focus-visible {
+  border-color: var(--osa-focus);
+  outline: 1px solid var(--osa-focus);
+}
+
+.vega-lab__chart-wrap {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 1px 1px, var(--osa-grid-dot) 1px, transparent 0) 0 0 / 18px 18px,
+    var(--osa-bg);
+}
+
+.vega-lab__chart {
+  min-width: 560px;
+  padding: 16px;
+  border: 1px solid var(--osa-border);
+  border-radius: 7px;
+  background: var(--osa-surface);
+}
+
+.vega-lab__chart .vega-embed,
+.vega-lab__chart .vega-embed > div {
+  display: grid;
+  justify-content: center;
+}
+
+.vega-lab__chart .vega-actions {
+  margin-top: 8px;
+  text-align: right;
+}
+
+.vega-lab__chart .vega-actions a {
+  color: var(--osa-link);
+  font-size: 0.76rem;
+}
+
+.vega-lab__error {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--osa-danger-border);
+  border-radius: 5px;
+  background: var(--osa-danger-surface);
+  color: var(--osa-danger-text);
+}
+
+.vega-lab__footer {
+  padding: 10px 16px;
+  border-top: 1px solid var(--osa-border);
+}
+
+@media (max-width: 700px) {
+  .vega-lab__header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .vega-lab__chart-wrap {
+    justify-content: start;
+    place-items: start;
+    padding: 12px;
+  }
+}

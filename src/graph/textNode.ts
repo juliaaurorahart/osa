@@ -1,5 +1,6 @@
 import { Position, type Node } from '@xyflow/react'
 import { DEFAULT_NODE_KIND, type NodeKind } from './nodeKinds'
+import type { VisualVersionState } from './visualVersion'
 
 export type { NodeKind } from './nodeKinds'
 export type NodeExpansion = 'text' | 'details'
@@ -20,17 +21,33 @@ export type SketchStroke = {
   points: SketchPoint[]
 }
 
+/** Geometry retained inside one compound canvas shape. */
+export type SketchCompoundPart = {
+  id: string
+  kind: 'rectangle' | 'rounded-rectangle' | 'ellipse' | 'diamond' | 'triangle'
+  /** Coordinates are relative to the compound shape's top-left corner. */
+  x: number
+  y: number
+  width: number
+  height: number
+  cornerRadius?: number
+}
+
 /**
  * A movable, editable object on a visual canvas.
  *
  * Strokes capture handwriting. Elements capture the deliberate PowerPoint-
- * style pieces: boxes, circles, arrows, and typed labels. Both live in the
- * same ordered layer so a reusable Visual can be edited once and shown in
- * every Assembly card that references it.
+ * style pieces: boxes, circles, simple diagram shapes, arrows, and typed
+ * labels. Both live in the same ordered layer so a reusable Visual can be
+ * edited once and shown in every Assembly card that references it.
  */
 export type SketchElement = {
   id: string
-  kind: 'rectangle' | 'ellipse' | 'arrow' | 'text'
+  /**
+   * These are deliberately portable SVG primitives. Keeping them as small
+   * named kinds makes a saved canvas easy to render in any future OSA view.
+   */
+  kind: 'rectangle' | 'rounded-rectangle' | 'ellipse' | 'diamond' | 'triangle' | 'line' | 'arrow' | 'text' | 'compound'
   x: number
   y: number
   width: number
@@ -39,6 +56,25 @@ export type SketchElement = {
   fill: string
   strokeWidth: number
   opacity: number
+  /**
+   * Keeps width and height proportional while this object is resized. This is
+   * saved with the object so reopening a canvas does not silently unlock it.
+   */
+  aspectRatioLocked?: boolean
+  /**
+   * Corner radius in canvas-coordinate units. This only changes the shape of
+   * a rounded rectangle; omitted values keep the original OSA default so
+   * older saved boards continue to look the same.
+   */
+  cornerRadius?: number
+  /**
+   * Optional canvas-local grouping token. A group is still made from ordinary
+   * portable elements, so any future OSA view can keep rendering its members
+   * even if it does not expose group editing yet.
+   */
+  groupId?: string
+  /** A real combined shape with geometry held in its reusable component parts. */
+  compoundParts?: SketchCompoundPart[]
   text?: string
   fontSize?: number
 }
@@ -85,7 +121,12 @@ export function cloneSketchDocument(document: SketchDocument): SketchDocument {
       ...layer,
       // `elements` is absent only on a document made by an older OSA build.
       // Treat it as an empty list until board parsing migrates it on save.
-      elements: (layer.elements ?? []).map((element) => ({ ...element })),
+      elements: (layer.elements ?? []).map((element) => ({
+        ...element,
+        ...(element.compoundParts
+          ? { compoundParts: element.compoundParts.map((part) => ({ ...part })) }
+          : {}),
+      })),
       strokes: layer.strokes.map((stroke) => ({
         ...stroke,
         points: stroke.points.map((point) => ({ ...point })),
@@ -119,6 +160,12 @@ export type TextNodeData = {
   text: string
   /** Durable layered drawing document used when this node is a sketch. */
   sketch: SketchDocument
+  /**
+   * Saved draft/official/history records for a Visual canvas. It remains null
+   * for ordinary project objects and for Visuals that have not yet been
+   * explicitly versioned.
+   */
+  visualVersions?: VisualVersionState | null
   /** Durable notebook dimensions restored with the board. */
   layout: NodeLayout
   /** The node's selected category from the kind registry. */
@@ -218,6 +265,7 @@ export function createTextNode({
           }
         : null,
       sketch: cloneSketchDocument(sketch),
+      visualVersions: null,
       layout: {
         width: layout.width ?? 190,
         textHeight: layout.textHeight ?? 120,

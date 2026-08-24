@@ -11,6 +11,7 @@ import {
   createSketchDocument,
   type NotebookPageData,
   type NodeLayout,
+  type SketchCompoundPart,
   type SketchDocument,
   type SketchElement,
   type SketchLayer,
@@ -19,6 +20,13 @@ import {
   type TextFlowNode,
   type TextNodeData,
 } from './textNode'
+import {
+  cloneVisualVersionState,
+  type VisualVersionEmbed,
+  type VisualVersionKind,
+  type VisualVersionRecord,
+  type VisualVersionState,
+} from './visualVersion'
 
 const DEFAULT_LAYOUT: NodeLayout = {
   width: 190,
@@ -28,7 +36,7 @@ const DEFAULT_LAYOUT: NodeLayout = {
 
 /** The current, stable, JSON-safe shape of a saved board. */
 export type BoardSnapshot = {
-  version: 6
+  version: 7
   nodes: SavedTextFlowNode[]
   edges: SavedEdge[]
 }
@@ -40,7 +48,7 @@ export type SavedTextFlowNode = Pick<
 > & {
   data: Pick<
     TextNodeData,
-    'name' | 'text' | 'kind' | 'spaceIds' | 'notebook' | 'task' | 'properties' | 'sketch' | 'layout'
+    'name' | 'text' | 'kind' | 'spaceIds' | 'notebook' | 'task' | 'properties' | 'sketch' | 'visualVersions' | 'layout'
   >
 }
 
@@ -60,7 +68,7 @@ export function createBoardSnapshot(
   )
 
   return {
-    version: 6,
+    version: 7,
     nodes: nodes.map((node) => ({
       id: node.id,
       type: node.type,
@@ -83,6 +91,7 @@ export function createBoardSnapshot(
             ? { day: null, completedAt: null }
             : null,
         sketch: cloneSketchDocument(node.data.sketch),
+        visualVersions: cloneVisualVersionState(node.data.visualVersions),
         layout: { ...node.data.layout },
         properties: { ...node.data.properties },
       },
@@ -202,17 +211,69 @@ function parseSketchStrokes(
   return strokes
 }
 
-/** Parses the portable rectangle, ellipse, arrow, and text objects on a canvas layer. */
+/** Parses the relative primitive geometry inside a true compound shape. */
+function parseSketchCompoundParts(value: unknown): SketchCompoundPart[] | null {
+  if (!Array.isArray(value) || value.length < 2) return null
+  const parts: SketchCompoundPart[] = []
+  for (const part of value) {
+    if (
+      !isRecord(part)
+      || typeof part.id !== 'string'
+      || !['rectangle', 'rounded-rectangle', 'ellipse', 'diamond', 'triangle'].includes(String(part.kind))
+      || typeof part.x !== 'number'
+      || typeof part.y !== 'number'
+      || typeof part.width !== 'number'
+      || typeof part.height !== 'number'
+      || !Number.isFinite(part.x)
+      || !Number.isFinite(part.y)
+      || !Number.isFinite(part.width)
+      || !Number.isFinite(part.height)
+      || part.width < 0
+      || part.height < 0
+      || (part.cornerRadius !== undefined && (
+        part.kind !== 'rounded-rectangle'
+        || typeof part.cornerRadius !== 'number'
+        || !Number.isFinite(part.cornerRadius)
+        || part.cornerRadius < 0
+      ))
+    ) return null
+    parts.push({
+      id: part.id,
+      kind: part.kind as SketchCompoundPart['kind'],
+      x: part.x,
+      y: part.y,
+      width: part.width,
+      height: part.height,
+      ...(typeof part.cornerRadius === 'number' ? { cornerRadius: part.cornerRadius } : {}),
+    })
+  }
+  return parts
+}
+
+/** Parses the portable shape and text objects on a canvas layer. */
 function parseSketchElements(value: unknown): SketchElement[] | null {
   if (value === undefined) return []
   if (!Array.isArray(value)) return null
 
   const elements: SketchElement[] = []
   for (const element of value) {
+    const compoundParts = isRecord(element) && element.kind === 'compound'
+      ? parseSketchCompoundParts(element.compoundParts)
+      : undefined
     if (
       !isRecord(element)
       || typeof element.id !== 'string'
-      || !['rectangle', 'ellipse', 'arrow', 'text'].includes(String(element.kind))
+      || ![
+        'rectangle',
+        'rounded-rectangle',
+        'ellipse',
+        'diamond',
+        'triangle',
+        'line',
+        'arrow',
+        'text',
+        'compound',
+      ].includes(String(element.kind))
       || typeof element.x !== 'number'
       || typeof element.y !== 'number'
       || typeof element.width !== 'number'
@@ -227,14 +288,32 @@ function parseSketchElements(value: unknown): SketchElement[] | null {
       || !Number.isFinite(element.height)
       || !Number.isFinite(element.strokeWidth)
       || !Number.isFinite(element.opacity)
-      // Rectangles, ellipses, and text use a top-left corner plus a positive
-      // size. An arrow deliberately keeps its signed width/height: that is
-      // its direction from x/y to x + width/y + height, so it can point in
-      // any direction without inventing a second coordinate model.
-      || (element.kind !== 'arrow' && (element.width < 0 || element.height < 0))
+      // Enclosed shapes and text use a top-left corner plus a positive size.
+      // Lines and arrows deliberately keep signed width/height: that is their
+      // direction from x/y to x + width/y + height, so they can point in any
+      // direction without inventing a second coordinate model.
+      || (!['line', 'arrow'].includes(String(element.kind)) && (element.width < 0 || element.height < 0))
       || element.strokeWidth <= 0
       || element.opacity < 0
       || element.opacity > 1
+      || (element.aspectRatioLocked !== undefined && typeof element.aspectRatioLocked !== 'boolean')
+      || (element.cornerRadius !== undefined && (
+        element.kind !== 'rounded-rectangle'
+        || typeof element.cornerRadius !== 'number'
+        || !Number.isFinite(element.cornerRadius)
+        || element.cornerRadius < 0
+      ))
+      || (element.groupId !== undefined && (
+        typeof element.groupId !== 'string'
+        || element.groupId.length === 0
+      ))
+      || (element.kind === 'compound' && (
+        compoundParts === null
+        || element.cornerRadius !== undefined
+        || element.text !== undefined
+        || element.fontSize !== undefined
+      ))
+      || (element.kind !== 'compound' && element.compoundParts !== undefined)
       || (element.kind === 'text' && typeof element.text !== 'string')
       || (element.text !== undefined && typeof element.text !== 'string')
       || (element.fontSize !== undefined && (
@@ -255,6 +334,12 @@ function parseSketchElements(value: unknown): SketchElement[] | null {
       fill: element.fill,
       strokeWidth: element.strokeWidth,
       opacity: element.opacity,
+      ...(typeof element.aspectRatioLocked === 'boolean'
+        ? { aspectRatioLocked: element.aspectRatioLocked }
+        : {}),
+      ...(typeof element.cornerRadius === 'number' ? { cornerRadius: element.cornerRadius } : {}),
+      ...(typeof element.groupId === 'string' ? { groupId: element.groupId } : {}),
+      ...(compoundParts ? { compoundParts } : {}),
       ...(typeof element.text === 'string' ? { text: element.text } : {}),
       ...(typeof element.fontSize === 'number' ? { fontSize: element.fontSize } : {}),
     })
@@ -320,6 +405,86 @@ function parseSketchDocument(value: unknown): SketchDocument | null {
   }
 }
 
+/** Parses the compact visual draft/official/history record stored on a Visual. */
+function parseVisualVersionState(value: unknown): VisualVersionState | null | undefined {
+  // Boards saved before canvas versions simply have no history yet.
+  if (value === undefined || value === null) return null
+  if (!isRecord(value) || !Array.isArray(value.records)) return undefined
+  if (value.officialId !== null && typeof value.officialId !== 'string') return undefined
+
+  const records: VisualVersionRecord[] = []
+  for (const candidate of value.records) {
+    if (
+      !isRecord(candidate)
+      || typeof candidate.id !== 'string'
+      || typeof candidate.label !== 'string'
+      || typeof candidate.createdAt !== 'string'
+      || Number.isNaN(Date.parse(candidate.createdAt))
+      || !['draft', 'official', 'history'].includes(String(candidate.kind))
+      || !Array.isArray(candidate.embeds)
+    ) return undefined
+
+    const sketch = parseSketchDocument(candidate.sketch)
+    if (!sketch) return undefined
+
+    const embeds: VisualVersionEmbed[] = []
+    for (const embed of candidate.embeds) {
+      if (
+        !isRecord(embed)
+        || typeof embed.id !== 'string'
+        || typeof embed.visualId !== 'string'
+        || !isRecord(embed.placement)
+        || typeof embed.placement.x !== 'number'
+        || typeof embed.placement.y !== 'number'
+        || typeof embed.placement.width !== 'number'
+        || typeof embed.placement.height !== 'number'
+        || !Number.isFinite(embed.placement.x)
+        || !Number.isFinite(embed.placement.y)
+        || !Number.isFinite(embed.placement.width)
+        || !Number.isFinite(embed.placement.height)
+        || embed.placement.width <= 0
+        || embed.placement.height <= 0
+        || (embed.placement.aspectRatioLocked !== undefined
+          && typeof embed.placement.aspectRatioLocked !== 'boolean')
+      ) return undefined
+      embeds.push({
+        id: embed.id,
+        visualId: embed.visualId,
+        placement: {
+          x: embed.placement.x,
+          y: embed.placement.y,
+          width: embed.placement.width,
+          height: embed.placement.height,
+          ...(embed.placement.aspectRatioLocked ? { aspectRatioLocked: true } : {}),
+        },
+      })
+    }
+    if (new Set(embeds.map((embed) => embed.id)).size !== embeds.length) return undefined
+    records.push({
+      id: candidate.id,
+      label: candidate.label,
+      createdAt: candidate.createdAt,
+      kind: candidate.kind as VisualVersionKind,
+      sketch,
+      embeds,
+    })
+  }
+
+  if (new Set(records.map((record) => record.id)).size !== records.length) return undefined
+  const officialRecords = records.filter((record) => record.kind === 'official')
+  if (officialRecords.length > 1) return undefined
+  if (value.officialId === null && officialRecords.length !== 0) return undefined
+  if (
+    typeof value.officialId === 'string'
+    && (officialRecords.length !== 1 || officialRecords[0].id !== value.officialId)
+  ) return undefined
+
+  return {
+    officialId: value.officialId,
+    records,
+  }
+}
+
 function migrateLegacySketch(value: unknown): SketchDocument | null {
   const sketch = createSketchDocument()
   const strokes = value === undefined
@@ -369,7 +534,7 @@ function parseConnectorPosition(value: unknown, fallback: Position): Position | 
   return Object.values(Position).includes(value as Position) ? value as Position : null
 }
 
-function parseNode(value: unknown, version: 1 | 2 | 3 | 4 | 5 | 6): SavedTextFlowNode | null {
+function parseNode(value: unknown, version: 1 | 2 | 3 | 4 | 5 | 6 | 7): SavedTextFlowNode | null {
   if (!isRecord(value) || value.type !== 'text' || typeof value.id !== 'string') return null
   if (!isRecord(value.position) || typeof value.position.x !== 'number' || typeof value.position.y !== 'number') {
     return null
@@ -396,7 +561,8 @@ function parseNode(value: unknown, version: 1 | 2 | 3 | 4 | 5 | 6): SavedTextFlo
   const sketch = version >= 3
     ? parseSketchDocument(data.sketch)
     : migrateLegacySketch(data.sketchStrokes)
-  if (!properties || !sketch || !layout) return null
+  const visualVersions = parseVisualVersionState(data.visualVersions)
+  if (!properties || !sketch || !layout || visualVersions === undefined) return null
 
   const spaceIds = data.spaceIds === undefined && version < 6
     ? []
@@ -445,6 +611,7 @@ function parseNode(value: unknown, version: 1 | 2 | 3 | 4 | 5 | 6): SavedTextFlo
       task,
       properties: { ...properties },
       sketch,
+      visualVersions,
       layout,
     },
   }
@@ -487,7 +654,7 @@ function parseConnectionAnchor(value: unknown): ConnectionAnchor | null | undefi
   return undefined
 }
 
-function parseEdge(value: unknown, version: 1 | 2 | 3 | 4 | 5 | 6): SavedEdge | null {
+function parseEdge(value: unknown, version: 1 | 2 | 3 | 4 | 5 | 6 | 7): SavedEdge | null {
   if (
     !isRecord(value)
     || typeof value.id !== 'string'
@@ -553,6 +720,7 @@ export function parseBoardSnapshot(value: unknown): BoardSnapshot | null {
       && value.version !== 4
       && value.version !== 5
       && value.version !== 6
+      && value.version !== 7
     )
   ) return null
   if (!Array.isArray(value.nodes) || !Array.isArray(value.edges)) return null
@@ -592,7 +760,7 @@ export function parseBoardSnapshot(value: unknown): BoardSnapshot | null {
   ))
   if (invalidProjectTaskLink) return null
 
-  return { version: 6, nodes: normalizedNodes, edges: parsedEdges }
+  return { version: 7, nodes: normalizedNodes, edges: parsedEdges }
 }
 
 /** Creates fresh live graph state from a normalized current snapshot. */
@@ -620,6 +788,7 @@ export function restoreBoardSnapshot(snapshot: BoardSnapshot): {
           notebook: node.data.notebook ? { ...node.data.notebook } : null,
           task: node.data.task ? { ...node.data.task } : null,
           sketch: cloneSketchDocument(node.data.sketch),
+          visualVersions: cloneVisualVersionState(node.data.visualVersions),
           layout: { ...node.data.layout },
           properties: { ...node.data.properties },
         },

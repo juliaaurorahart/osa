@@ -13,14 +13,14 @@
 
 .visual-canvas-editor {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
   width: min(1460px, 100%);
   height: 100%;
   margin: auto;
   overflow: hidden;
-  border: 1px solid #b9b9b2;
+  border: 1px solid var(--osa-border);
   border-radius: 7px;
-  background: #fff;
+  background: var(--osa-surface);
   box-shadow: 0 20px 70px rgb(0 0 0 / 36%);
 }
 
@@ -31,8 +31,8 @@
   gap: 14px;
   min-width: 0;
   padding: 8px 12px;
-  border-bottom: 1px solid #deded8;
-  background: #fbfbf8;
+  border-bottom: 1px solid var(--osa-border);
+  background: var(--osa-surface);
 }
 
 .visual-canvas-editor__header > input {
@@ -41,7 +41,7 @@
   border: 0;
   outline: 0;
   background: transparent;
-  color: #171717;
+  color: var(--osa-text);
   font: 600 1rem/1.2 inherit;
 }
 
@@ -54,10 +54,22 @@
 
 .visual-canvas-editor__header button {
   padding: 4px 7px;
-  border: 1px solid #bdbdb7;
+  border: 1px solid var(--osa-border);
   border-radius: 4px;
-  background: #fff;
-  color: #30302e;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+.visual-canvas-editor__header select {
+  max-width: min(190px, 38vw);
+  padding: 4px 7px;
+  border: 1px solid var(--osa-border);
+  border-radius: 4px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
   cursor: pointer;
   font: inherit;
   font-size: 0.78rem;
@@ -65,8 +77,15 @@
 
 .visual-canvas-editor__header button:hover,
 .visual-canvas-editor__header button:focus-visible {
-  border-color: #26799b;
-  background: #edf8fc;
+  border-color: var(--osa-focus);
+  background: var(--osa-hover-surface);
+  outline: 0;
+}
+
+.visual-canvas-editor__header select:hover,
+.visual-canvas-editor__header select:focus-visible {
+  border-color: var(--osa-focus);
+  background: var(--osa-hover-surface);
   outline: 0;
 }
 
@@ -84,13 +103,81 @@
   min-height: 0;
   overflow: auto;
   padding: clamp(10px, 1.8vw, 22px);
-  background: #f2f2ef;
+  background: var(--osa-bg);
 }
 
 .visual-canvas-editor__body > .sketch-preview {
   width: 100%;
   height: auto;
   background: #fff;
+}
+
+/* A card creates only an untyped canvas. Its first open is where the canvas
+   receives the permanent editor/asset identity that all other views will use. */
+.visual-canvas-editor__identity {
+  display: grid;
+  place-content: center;
+  justify-items: start;
+  gap: 14px;
+  min-height: min(56vh, 620px);
+  padding: clamp(22px, 5vw, 64px);
+  background: var(--osa-surface);
+}
+
+.visual-canvas-editor__identity h2 {
+  margin: 0;
+  color: var(--osa-text);
+  font-size: clamp(1rem, 2vw, 1.4rem);
+}
+
+.visual-canvas-editor__identity > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.visual-canvas-editor__identity button {
+  min-width: 104px;
+  padding: 9px 12px;
+  border: 1px solid var(--osa-border);
+  border-radius: 5px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
+  cursor: pointer;
+  font: inherit;
+}
+
+.visual-canvas-editor__identity button:hover,
+.visual-canvas-editor__identity button:focus-visible {
+  border-color: var(--osa-focus);
+  background: var(--osa-hover-surface);
+  outline: 0;
+}
+
+.visual-canvas-editor__footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 12px;
+  border-top: 1px solid var(--osa-border);
+  background: var(--osa-surface);
+}
+
+.visual-canvas-editor__remove {
+  padding: 4px 7px;
+  border: 1px solid var(--osa-border);
+  border-radius: 4px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+.visual-canvas-editor__remove:hover,
+.visual-canvas-editor__remove:focus-visible {
+  border-color: var(--osa-focus);
+  background: var(--osa-hover-surface);
+  outline: 0;
 }
 
 .visual-canvas-editor .sketch-editor__viewport {

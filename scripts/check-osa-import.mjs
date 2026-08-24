@@ -660,6 +660,103 @@ try {
     'Invalid resize values preserve a safe image-box size.',
   )
 
+  // A Visual can place another canonical Visual as an image box in its own
+  // editable canvas. The edge carries geometry only: neither visual copies
+  // the other one's image or sketch content.
+  const visualEmbedProperties = {
+    [OSA_PROPERTY.relationRole]: OSA_RELATION.visualEmbed,
+    [OSA_PROPERTY.visualEmbedX]: '42.5',
+    [OSA_PROPERTY.visualEmbedY]: '0',
+    [OSA_PROPERTY.visualEmbedWidth]: '360',
+    [OSA_PROPERTY.visualEmbedHeight]: '250',
+  }
+  const visualEmbedPackage = parseOsaImportPackage({
+    format: 'osa-import',
+    version: 1,
+    id: 'nested-visual-placement',
+    name: 'Nested visual placement',
+    sources: [],
+    nodes: [
+      {
+        id: 'parent-canvas',
+        kind: 'visual',
+        name: 'Assembly diagram',
+        text: '',
+        spaceIds: [],
+        properties: { [OSA_PROPERTY.role]: 'visual' },
+      },
+      {
+        id: 'child-image',
+        kind: 'visual',
+        name: 'Connector box photo',
+        text: '',
+        spaceIds: [],
+        properties: {
+          [OSA_PROPERTY.role]: 'visual',
+          [OSA_PROPERTY.visualContent]: 'image',
+          [OSA_PROPERTY.assetImage]: '/connector-box.png',
+        },
+      },
+    ],
+    edges: [{
+      id: 'embed-photo',
+      source: 'parent-canvas',
+      target: 'child-image',
+      relationKind: 'related',
+      relationship: 'includes visual',
+      properties: visualEmbedProperties,
+    }],
+  })
+  assert.deepEqual(
+    visualEmbedPackage.edges[0].properties,
+    visualEmbedProperties,
+    'A nested visual stores finite placement geometry on its edge.',
+  )
+
+  const missingEmbedX = { ...visualEmbedProperties }
+  delete missingEmbedX[OSA_PROPERTY.visualEmbedX]
+  const invalidVisualEmbedGeometry = [
+    {
+      label: 'missing x position',
+      properties: missingEmbedX,
+      expected: /visual-embed:x must be a finite nonnegative decimal/,
+    },
+    {
+      label: 'negative y position',
+      properties: { ...visualEmbedProperties, [OSA_PROPERTY.visualEmbedY]: '-1' },
+      expected: /visual-embed:y must be a finite nonnegative decimal/,
+    },
+    {
+      label: 'non-finite x position',
+      properties: { ...visualEmbedProperties, [OSA_PROPERTY.visualEmbedX]: 'NaN' },
+      expected: /visual-embed:x must be a finite nonnegative decimal/,
+    },
+    {
+      label: 'infinite width',
+      properties: { ...visualEmbedProperties, [OSA_PROPERTY.visualEmbedWidth]: 'Infinity' },
+      expected: /visual-embed:width must be a finite positive decimal/,
+    },
+    {
+      label: 'zero height',
+      properties: { ...visualEmbedProperties, [OSA_PROPERTY.visualEmbedHeight]: '0' },
+      expected: /visual-embed:height must be a finite positive decimal/,
+    },
+  ]
+  for (const invalidGeometry of invalidVisualEmbedGeometry) {
+    assert.throws(
+      () => parseOsaImportPackage({
+        ...visualEmbedPackage,
+        id: `invalid-nested-visual-${invalidGeometry.label}`,
+        edges: [{
+          ...visualEmbedPackage.edges[0],
+          properties: invalidGeometry.properties,
+        }],
+      }),
+      invalidGeometry.expected,
+      `A nested visual rejects ${invalidGeometry.label}.`,
+    )
+  }
+
   // A part, assembly, or tool owns the canonical Visual canvas/content. The
   // operation/card only points at that Visual when it wants to place an
   // image box. A newly created Visual may be blank before it gains an image,

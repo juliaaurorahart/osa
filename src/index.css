@@ -1,6 +1,57 @@
 @import url('@xyflow/react/dist/style.css');
 
+:root {
+  color-scheme: dark;
+  --osa-bg: #0d1117;
+  --osa-surface: #161b22;
+  --osa-surface-raised: #21262d;
+  --osa-input: #0d1117;
+  --osa-border: #30363d;
+  --osa-border-subtle: #262c35;
+  --osa-text: #e6edf3;
+  --osa-muted: #9da7b3;
+  --osa-link: #79c0ff;
+  --osa-focus: #58a6ff;
+  --osa-hover-surface: #1f3348;
+  --osa-hover-text: #dff1ff;
+  --osa-positive-border: #2f6f4f;
+  --osa-positive-surface: #122b20;
+  --osa-positive-text: #a5e4c2;
+  --osa-danger-border: #ff7b72;
+  --osa-danger-surface: #401f24;
+  --osa-danger-text: #ffd8d3;
+  --osa-board-overlay: rgb(13 17 23 / 82%);
+  --osa-grid-dot: rgb(139 148 158 / 18%);
+  --osa-shadow: rgb(0 0 0 / 28%);
+}
+
+html[data-theme='light'] {
+  color-scheme: light;
+  --osa-bg: #f6f8fa;
+  --osa-surface: #ffffff;
+  --osa-surface-raised: #f1f3f5;
+  --osa-input: #ffffff;
+  --osa-border: #c9d1d9;
+  --osa-border-subtle: #d8dee4;
+  --osa-text: #1f2328;
+  --osa-muted: #57606a;
+  --osa-link: #0969da;
+  --osa-focus: #0969da;
+  --osa-hover-surface: #ddf4ff;
+  --osa-hover-text: #1f2328;
+  --osa-positive-border: #1a7f37;
+  --osa-positive-surface: #dafbe1;
+  --osa-positive-text: #116329;
+  --osa-danger-border: #cf222e;
+  --osa-danger-surface: #ffebe9;
+  --osa-danger-text: #a40e26;
+  --osa-board-overlay: rgb(246 248 250 / 88%);
+  --osa-grid-dot: rgb(87 96 106 / 18%);
+  --osa-shadow: rgb(0 0 0 / 16%);
+}
+
 html {
+  background: var(--osa-bg);
   font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
     "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 }
@@ -11,6 +62,8 @@ body,
   width: 100%;
   height: 100%;
   margin: 0;
+  background: var(--osa-bg);
+  color: var(--osa-text);
 }
 
 button,

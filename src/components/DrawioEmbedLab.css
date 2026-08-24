@@ -1,0 +1,120 @@
+/* Scoped styling for the standalone draw.io experiment. It deliberately does
+   not borrow Assembly or canvas classes, because it is not an OSA view yet. */
+.drawio-embed-lab {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--osa-border);
+  border-radius: 8px;
+  background: var(--osa-bg);
+  color: var(--osa-text);
+  box-shadow: 0 8px 22px var(--osa-shadow);
+}
+
+.drawio-embed-lab__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  min-height: 42px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--osa-border);
+  background: var(--osa-surface);
+}
+
+.drawio-embed-lab h2 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.drawio-embed-lab h2 small {
+  color: var(--osa-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.drawio-embed-lab__controls {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.drawio-embed-lab__controls button {
+  padding: 6px 9px;
+  border: 1px solid var(--osa-border);
+  border-radius: 5px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+}
+
+.drawio-embed-lab__controls button:hover,
+.drawio-embed-lab__controls button:focus-visible {
+  border-color: var(--osa-focus);
+  background: var(--osa-hover-surface);
+  outline: 0;
+}
+
+.drawio-embed-lab__status {
+  max-width: 30ch;
+  color: var(--osa-muted);
+  font-size: 0.8rem;
+  line-height: 1.3;
+  text-align: right;
+}
+
+.drawio-embed-lab__status--autosaved,
+.drawio-embed-lab__status--saved {
+  color: var(--osa-positive-text);
+}
+
+.drawio-embed-lab__status--error {
+  color: var(--osa-danger-text);
+}
+
+.drawio-embed-lab__editor {
+  min-height: min(72vh, 780px);
+  background: var(--osa-bg);
+}
+
+.drawio-embed-lab__editor iframe {
+  display: block;
+  width: 100%;
+  height: min(72vh, 780px);
+  min-height: 520px;
+  border: 0;
+  background: var(--osa-bg);
+}
+
+.drawio-embed-lab__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 12px;
+  border-top: 1px solid var(--osa-border);
+  background: var(--osa-surface);
+  color: var(--osa-muted);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+@media (max-width: 700px) {
+  .drawio-embed-lab__header {
+    gap: 8px;
+  }
+
+  .drawio-embed-lab__status {
+    text-align: left;
+  }
+
+  .drawio-embed-lab__editor,
+  .drawio-embed-lab__editor iframe {
+    min-height: 440px;
+    height: 62vh;
+  }
+}

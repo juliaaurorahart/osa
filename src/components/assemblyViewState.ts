@@ -13,6 +13,8 @@ export type AssemblyViewUiState = {
   lockedCardId: string | null
   /** The Visual being edited over this Assembly card; never saved as project data. */
   editingVisualId: string | null
+  /** The specific card that opened the Visual editor; also temporary UI state. */
+  editingOperationId: string | null
   drawingCardId: string | null
   toolDraft: string
   toolDraftFor: AssemblyToolDraft | null
@@ -24,6 +26,7 @@ export function createAssemblyViewUiState(): AssemblyViewUiState {
     focusedCardId: 'assembly-index',
     lockedCardId: null,
     editingVisualId: null,
+    editingOperationId: null,
     drawingCardId: null,
     toolDraft: '',
     toolDraftFor: null,

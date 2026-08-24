@@ -1,0 +1,371 @@
+.konva-lab {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  min-height: 720px;
+  overflow: hidden;
+  border: 1px solid var(--osa-border);
+  border-radius: 8px;
+  background: var(--osa-surface);
+  color: var(--osa-text);
+  box-shadow: 0 8px 22px var(--osa-shadow);
+}
+
+.konva-lab__header,
+.konva-lab__toolbar,
+.konva-lab__footer,
+.konva-lab__section-heading,
+.konva-lab__view-buttons,
+.konva-lab__item-actions,
+.konva-lab__document-actions,
+.konva-lab__tool-group,
+.konva-lab__style-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.konva-lab__header {
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 56px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--osa-border);
+  background: var(--osa-surface-raised);
+}
+
+.konva-lab__title h2,
+.konva-lab__title p,
+.konva-lab__inspector h3,
+.konva-lab__inspector p {
+  margin: 0;
+}
+
+.konva-lab__title h2 {
+  font-size: 0.98rem;
+  font-weight: 650;
+}
+
+.konva-lab__title p,
+.konva-lab__view-tools p,
+.konva-lab__empty-properties {
+  color: var(--osa-muted);
+  font-size: 0.76rem;
+}
+
+.konva-lab__title p {
+  margin-top: 2px;
+}
+
+.konva-lab__document-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.konva-lab__toolbar {
+  flex-wrap: wrap;
+  min-height: 44px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--osa-border);
+  background: var(--osa-surface);
+}
+
+.konva-lab__tool-group,
+.konva-lab__style-group {
+  flex-wrap: wrap;
+  padding-right: 7px;
+  border-right: 1px solid var(--osa-border-subtle);
+}
+
+.konva-lab__style-group {
+  border-right: 0;
+}
+
+.konva-lab__style-group > span,
+.konva-lab__style-group label > span {
+  color: var(--osa-muted);
+  font-size: 0.72rem;
+}
+
+.konva-lab button,
+.konva-lab input,
+.konva-lab select,
+.konva-lab textarea {
+  font: inherit;
+}
+
+.konva-lab button {
+  padding: 4px 7px;
+  border: 1px solid var(--osa-border);
+  border-radius: 4px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
+  cursor: pointer;
+  font-size: 0.76rem;
+}
+
+.konva-lab button:hover:not(:disabled),
+.konva-lab button:focus-visible:not(:disabled),
+.konva-lab button.is-active {
+  border-color: var(--osa-focus);
+  background: var(--osa-hover-surface);
+  outline: 0;
+}
+
+.konva-lab button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.konva-lab__style-group > button {
+  width: 17px;
+  height: 17px;
+  min-width: 17px;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--konva-color);
+}
+
+.konva-lab__style-group > button.is-color-active {
+  outline: 2px solid var(--osa-focus);
+  outline-offset: 1px;
+}
+
+.konva-lab__style-group label,
+.konva-lab__compact-range {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.konva-lab input[type='color'] {
+  width: 23px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.konva-lab input[type='range'] {
+  width: 74px;
+  accent-color: var(--osa-focus);
+}
+
+.konva-lab output {
+  color: var(--osa-muted);
+  font-size: 0.72rem;
+}
+
+.konva-lab__hidden-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.konva-lab__workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(225px, 270px);
+  min-height: 0;
+}
+
+.konva-lab__stage-host {
+  min-width: 0;
+  min-height: 580px;
+  overflow: hidden;
+  background: var(--osa-bg);
+  outline: 0;
+}
+
+.konva-lab__stage-host:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--osa-focus);
+}
+
+.konva-lab__stage-host > div {
+  touch-action: none;
+}
+
+.konva-lab__stage-host.is-hand > div {
+  cursor: grab;
+}
+
+.konva-lab__inspector {
+  min-width: 0;
+  overflow: auto;
+  border-left: 1px solid var(--osa-border);
+  background: var(--osa-surface);
+}
+
+.konva-lab__inspector section {
+  padding: 10px;
+  border-bottom: 1px solid var(--osa-border);
+}
+
+.konva-lab__section-heading {
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.konva-lab__section-heading h3 {
+  font-size: 0.82rem;
+  font-weight: 650;
+  text-transform: lowercase;
+}
+
+.konva-lab__view-tools p {
+  margin-top: 8px;
+  line-height: 1.35;
+}
+
+.konva-lab__property-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+
+.konva-lab__property-fields label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 3px;
+  min-width: 0;
+  color: var(--osa-muted);
+  font-size: 0.69rem;
+}
+
+.konva-lab__property-fields input:not([type='color']):not([type='range']),
+.konva-lab__property-fields select,
+.konva-lab__property-fields textarea {
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 4px 5px;
+  border: 1px solid var(--osa-border);
+  border-radius: 4px;
+  background: var(--osa-input);
+  color: var(--osa-text);
+  font-size: 0.78rem;
+}
+
+.konva-lab__property-fields textarea {
+  min-height: 62px;
+  resize: vertical;
+}
+
+.konva-lab__property-fields input:focus-visible,
+.konva-lab__property-fields select:focus-visible,
+.konva-lab__property-fields textarea:focus-visible {
+  border-color: var(--osa-focus);
+  outline: 0;
+}
+
+.konva-lab__wide-field {
+  grid-column: 1 / -1;
+}
+
+.konva-lab__range-field {
+  grid-template-columns: 46px minmax(0, 1fr) auto !important;
+  align-items: center;
+}
+
+.konva-lab__range-field input[type='range'] {
+  width: 100%;
+}
+
+.konva-lab__item-actions {
+  flex-wrap: wrap;
+  padding-top: 2px;
+}
+
+.konva-lab__empty-properties {
+  line-height: 1.4;
+}
+
+.konva-lab__stack {
+  border-bottom: 0 !important;
+}
+
+.konva-lab__stack-list {
+  display: grid;
+  gap: 4px;
+}
+
+.konva-lab__stack-list > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 3px;
+  align-items: center;
+  padding: 3px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+}
+
+.konva-lab__stack-list > div.is-selected {
+  border-color: var(--osa-focus);
+  background: var(--osa-hover-surface);
+}
+
+.konva-lab__stack-list > div > button:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.konva-lab__stack-list > div > button:first-child span {
+  margin-right: 4px;
+  color: var(--osa-muted);
+  font-size: 0.66rem;
+}
+
+.konva-lab__footer {
+  justify-content: space-between;
+  min-height: 30px;
+  padding: 0 12px;
+  border-top: 1px solid var(--osa-border);
+  background: var(--osa-surface-raised);
+  color: var(--osa-muted);
+  font-size: 0.72rem;
+}
+
+@media (max-width: 900px) {
+  .konva-lab__workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .konva-lab__inspector {
+    max-height: 340px;
+    border-top: 1px solid var(--osa-border);
+    border-left: 0;
+  }
+}
+
+@media (max-width: 700px) {
+  .konva-lab {
+    min-height: 620px;
+  }
+
+  .konva-lab__header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .konva-lab__document-actions {
+    justify-content: flex-start;
+  }
+
+  .konva-lab__toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .konva-lab__tool-group,
+  .konva-lab__style-group {
+    border-right: 0;
+  }
+
+  .konva-lab__stage-host {
+    min-height: 480px;
+  }
+}

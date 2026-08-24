@@ -7,16 +7,26 @@ import {
 } from 'react'
 import type { GraphEdge } from '../graph/graphEdge'
 import {
+  appearanceAccentColor,
   OSA_PROPERTY,
   OSA_RELATION,
   canOwnOsaVisual,
+  isImmutableVisual,
   isPartLike,
   operationOrder,
+  operationVisualDisplayOrder,
   osaRole,
-  OPERATION_CANVAS_SOURCE_SECTION_ID,
   type OperationVisualPlacement,
 } from '../graph/osaData'
 import type { SketchDocument, TextFlowNode } from '../graph/textNode'
+import {
+  isVisualNode,
+  visualAccentColor,
+  visualOwnerFor,
+  visualDraftEmbedsForCanvas,
+  visualEmbedsForCanvas,
+  type VisualEmbedInstance,
+} from '../graph/visualEmbed'
 import type { AssemblyToolDraft, AssemblyViewUiState } from './assemblyViewState'
 import { VisualCanvasEditor, VisualCanvasPreview } from './VisualCanvas'
 import './AssemblyView.css'
@@ -78,6 +88,12 @@ type AssemblyViewProps = {
   onLinkObjectVisual?: (operationId: string, objectId: string, sectionId: string) => void
   /** Removes only this card's View link; the object's reusable visual remains. */
   onUnlinkObjectVisual?: (operationId: string, objectId: string) => void
+  /** Moves one editable canvas up or down in this card's visual column. */
+  onReorderOperationVisual?: (
+    operationId: string,
+    visualId: string,
+    direction: 'up' | 'down',
+  ) => void
   /** Legacy placement editor callback retained for hosts that still provide it. */
   onObjectVisualPlacementChange?: (
     operationId: string,
@@ -87,16 +103,30 @@ type AssemblyViewProps = {
   /** Legacy section callback retained for host compatibility; Assembly does not call it. */
   onCreateCanvasSection?: (operationId: string) => string
   /**
-   * Creates a canonical Visual owned by the card's parent Assembly, then
-   * deliberately references that Visual from this operation. Its owner can
-   * later be changed to a listed In part or Tool without changing the card.
+   * Creates one generic canvas owned by the card's represented part (with a
+   * parent-Assembly fallback), then references it from this operation. The
+   * canvas chooses its own permanent identity only after it is opened.
    */
-  onCreateOwnedVisualForOperation?: (operationId: string) => string | undefined
+  onCreateOwnedVisualForOperation?: (
+    operationId: string,
+    initialIdentity?: 'osa-draw' | 'untyped',
+  ) => string | undefined
   /** Reassigns a Visual to a Part, Assembly, or Tool without changing its card references. */
   onChangeVisualOwner?: (visualId: string, ownerId: string) => void
+  /** Publishes direct canvas -> Visual placements when the editor locks. */
+  onEmbeddedVisualsChange?: (parentVisualId: string, embeds: VisualEmbedInstance[]) => void
+  /** Saves an editable canvas record without changing the card-visible official version. */
+  onSaveVisualDraftVersion?: (visualId: string) => void
+  /** Makes the canvas's current draft the one version cards display. */
+  onMakeVisualOfficialVersion?: (visualId: string) => void
+  /** Opens one saved visual record as the canvas's current editable draft. */
+  onRestoreVisualVersion?: (visualId: string, versionId: string) => void
+  /** Clones an OSA drawing into an independently editable canonical Visual. */
+  onCreateIndependentVisualCopy?: (sourceVisualId: string) => TextFlowNode | null
   onNameChange: (nodeId: string, name: string) => void
   onTextChange: (nodeId: string, text: string) => void
-  onPropertyChange: (nodeId: string, propertyName: string, value: string) => void
+  /** Updates durable Visual metadata chosen inside the canvas editor. */
+  onPropertyChange?: (nodeId: string, propertyName: string, value: string) => void
   onOpenNode: (nodeId: string) => void
   onSketchChange?: (nodeId: string, sketch: SketchDocument) => void
   /** A shared link can project a board without exposing editing controls. */
@@ -155,6 +185,38 @@ function connectedTargets(
     .sort((left, right) => (order.get(left.id) ?? 0) - (order.get(right.id) ?? 0))
 }
 
+/**
+ * Card-linked Visuals have an explicit relationship order once a person
+ * changes it. Older boards have no order value, so their existing edge order
+ * remains their visible order until then.
+ */
+function orderedOperationVisualTargets(
+  operationId: string,
+  candidates: TextFlowNode[],
+  edges: GraphEdge[],
+) {
+  const nodesById = new Map(candidates.map((node) => [node.id, node]))
+  return edges
+    .map((edge, edgeIndex) => ({ edge, edgeIndex }))
+    .filter(({ edge }) => (
+      edge.source === operationId
+      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationVisual
+      && nodesById.has(edge.target)
+    ))
+    .sort((left, right) => (
+      operationVisualDisplayOrder(
+        left.edge.data.properties[OSA_PROPERTY.operationVisualOrder],
+        left.edgeIndex,
+      )
+      - operationVisualDisplayOrder(
+        right.edge.data.properties[OSA_PROPERTY.operationVisualOrder],
+        right.edgeIndex,
+      )
+      || left.edgeIndex - right.edgeIndex
+    ))
+    .map(({ edge }) => nodesById.get(edge.target)!)
+}
+
 /** Preserves the first relationship order while avoiding duplicate chips. */
 function uniqueNodes(...groups: TextFlowNode[][]) {
   const unique = new Map<string, TextFlowNode>()
@@ -196,10 +258,10 @@ const cardShell: CSSProperties = {
   // grow with its criteria, visual, and steps so the browser page is the only
   // place someone needs to scroll.
   overflow: 'visible',
-  border: '1px solid #b9b9b9',
+  border: '1px solid var(--osa-border)',
   borderRadius: 4,
-  background: '#fff',
-  color: '#171717',
+  background: 'var(--osa-surface)',
+  color: 'var(--osa-text)',
   boxShadow: '0 8px 22px rgb(0 0 0 / 7%)',
 }
 
@@ -231,17 +293,143 @@ const NEW_PART_OPTION = '__new-part__'
 
 export type OperationPartDirection = 'input' | 'output'
 
-/** Finds the project object that owns a reusable Visual, when one is recorded. */
-function ownerForVisual(
-  visualId: string,
+/** A small, derived view hint that never rewrites the canonical object. */
+function semanticAccentStyleFromColor(accent: string | undefined): CSSProperties | undefined {
+  // Use a direct text color as well as the shared CSS variable. The direct
+  // value keeps the in/tools labels reliable even when another style layer
+  // supplies a default button color.
+  return accent
+    ? { '--osa-semantic-accent': accent, color: accent } as CSSProperties
+    : undefined
+}
+
+function semanticAccentStyle(node: TextFlowNode | undefined) {
+  return semanticAccentStyleFromColor(appearanceAccentColor(node))
+}
+
+type AssemblySemanticItem = {
+  node: TextFlowNode
+  kind: 'part' | 'tool'
+}
+
+/**
+ * The Assembly overview is the project-facing place to designate semantic
+ * information. This list is derived from the Assembly's real relationships;
+ * it never creates a second, manually maintained inventory just for the view.
+ */
+function semanticItemsForAssembly(
+  assemblyParts: TextFlowNode[],
+  assemblyOperations: TextFlowNode[],
+  nodes: TextFlowNode[],
+  edges: GraphEdge[],
+): AssemblySemanticItem[] {
+  const items = new Map<string, AssemblySemanticItem>()
+  const add = (node: TextFlowNode, kind: AssemblySemanticItem['kind']) => {
+    if (!items.has(node.id)) items.set(node.id, { node, kind })
+  }
+
+  assemblyParts.filter(isPartLike).forEach((part) => add(part, 'part'))
+
+  assemblyOperations.forEach((operation) => {
+    const operationTools = connectedTargets(
+      operation.id,
+      nodes,
+      edges,
+      OSA_RELATION.operationTool,
+      /\b(tool|tools)\b/i,
+    )
+    operationTools.forEach((tool) => add(tool, 'tool'))
+
+    const legacyInputs = connectedTargets(
+      operation.id,
+      nodes,
+      edges,
+      OSA_RELATION.operationItem,
+      /\b(part|parts|material|materials|component|components)\b/i,
+    ).filter(isPartLike)
+    const structuredInputs = connectedTargets(
+      operation.id,
+      nodes,
+      edges,
+      OSA_RELATION.operationInput,
+      /\b(parts? in|input|inputs|requires?|needs?)\b/i,
+    ).filter(isPartLike)
+    const outputs = uniqueNodes(
+      connectedTargets(
+        operation.id,
+        nodes,
+        edges,
+        OSA_RELATION.operationPrimaryOutput,
+        /\b(represents?|primary output)\b/i,
+      ).filter(isPartLike),
+      connectedTargets(
+        operation.id,
+        nodes,
+        edges,
+        OSA_RELATION.operationOutput,
+        /\b(produces?|parts? out|output)\b/i,
+      ).filter(isPartLike),
+    )
+
+    // Structured In is authoritative once it exists, matching the card view.
+    ;(structuredInputs.length ? structuredInputs : legacyInputs)
+      .forEach((part) => add(part, 'part'))
+    outputs.forEach((part) => add(part, 'part'))
+  })
+
+  return [...items.values()].sort((left, right) => (
+    left.kind.localeCompare(right.kind)
+      || nodeTitle(left.node).localeCompare(nodeTitle(right.node))
+  ))
+}
+
+/**
+ * The canvas picker stays deliberately local to the card being edited:
+ * source slide, current canvases, and Visuals owned by its in/tools/out
+ * objects. Broader project-wide filtering is a later view concern.
+ */
+function visualCandidatesForOperation(
+  operationId: string,
   nodes: TextFlowNode[],
   edges: GraphEdge[],
 ) {
-  const ownership = edges.find((edge) => (
-    edge.target === visualId
-    && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
-  ))
-  return ownership ? nodes.find((node) => node.id === ownership.source) : undefined
+  const contextObjectIds = new Set(edges
+    .filter((edge) => {
+      if (edge.source === operationId) {
+        const role = edge.data.properties[OSA_PROPERTY.relationRole]
+        return role === OSA_RELATION.operationInput
+          || role === OSA_RELATION.operationOutput
+          || role === OSA_RELATION.operationPrimaryOutput
+          || role === OSA_RELATION.operationTool
+      }
+      return edge.target === operationId
+        && (
+          edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.assemblyOperation
+          || edge.data.relationKind === 'project-task'
+        )
+    })
+    .map((edge) => edge.source === operationId ? edge.target : edge.source))
+
+  const directVisualIds = edges
+    .filter((edge) => (
+      edge.source === operationId
+      && (
+        edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationVisual
+        || edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationSourceVisual
+      )
+    ))
+    .map((edge) => edge.target)
+  const ownedVisualIds = edges
+    .filter((edge) => (
+      contextObjectIds.has(edge.source)
+      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
+    ))
+    .map((edge) => edge.target)
+
+  return uniqueNodes(nodes.filter((node) => (
+    (directVisualIds.includes(node.id) || ownedVisualIds.includes(node.id))
+    && isVisualNode(node)
+  )))
 }
 
 /** A printable card board projected from the ordinary objects in one Space. */
@@ -266,13 +454,19 @@ export function AssemblyView({
   onCreatePartForOperation,
   onLinkTool,
   onUnlinkTool,
-  onLinkObjectVisual,
+  onUnlinkObjectVisual,
+  onReorderOperationVisual,
   onCreateOwnedVisualForOperation,
   onChangeVisualOwner,
+  onEmbeddedVisualsChange,
+  onSaveVisualDraftVersion,
+  onMakeVisualOfficialVersion,
+  onRestoreVisualVersion,
+  onCreateIndependentVisualCopy,
   onNameChange,
   onTextChange,
-  onSketchChange,
   onPropertyChange,
+  onSketchChange,
   onOpenNode,
   readOnly = false,
   onShare,
@@ -304,10 +498,17 @@ export function AssemblyView({
       .filter((tool) => tool.data.kind === 'tool' || osaRole(tool) === 'tool')
       .sort((left, right) => nodeTitle(left).localeCompare(nodeTitle(right)))
   }, [nodes, tools])
+  const assemblySemanticItems = useMemo(() => semanticItemsForAssembly(
+    assemblyParts,
+    assemblyOperations,
+    nodes,
+    edges,
+  ), [assemblyOperations, assemblyParts, edges, nodes])
   const {
     focusedCardId,
     lockedCardId,
     editingVisualId,
+    editingOperationId,
     toolDraft,
     toolDraftFor,
   } = uiState
@@ -326,8 +527,12 @@ export function AssemblyView({
         : nextCardId,
     }))
   }
-  const setEditingVisualId = (visualId: string | null) => {
-    onUiStateChange((current) => ({ ...current, editingVisualId: visualId }))
+  const setEditingVisual = (visualId: string | null, operationId: string | null = null) => {
+    onUiStateChange((current) => ({
+      ...current,
+      editingVisualId: visualId,
+      editingOperationId: visualId ? operationId : null,
+    }))
   }
   const setToolDraft = (nextDraft: string) => {
     onUiStateChange((current) => ({ ...current, toolDraft: nextDraft }))
@@ -349,9 +554,28 @@ export function AssemblyView({
   const toggleCardLock = (cardId: string) => {
     setLockedCardId((currentCardId) => currentCardId === cardId ? null : cardId)
   }
-  const editingVisual = editingVisualId
+  const editingVisualCandidate = editingVisualId
     ? nodes.find((node) => node.id === editingVisualId)
     : undefined
+  // A card can deliberately reference either a reusable Visual or an
+  // ordinary Part/Tool photo. Only a real Visual opens the canvas editor.
+  const editingVisual = isVisualNode(editingVisualCandidate)
+    ? editingVisualCandidate
+    : undefined
+  const canRemoveEditingVisualFromCard = editingVisual !== undefined
+    && editingOperationId !== null
+    && onUnlinkObjectVisual !== undefined
+    && edges.some((edge) => (
+      edge.source === editingOperationId
+      && edge.target === editingVisual.id
+      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationVisual
+    ))
+  const editingVisualEmbeds = editingVisual
+    ? visualDraftEmbedsForCanvas(editingVisual.id, nodes, edges)
+    : []
+  const editingVisualCandidates = editingOperationId
+    ? visualCandidatesForOperation(editingOperationId, nodes, edges)
+    : []
 
   const createAssembly = () => {
     if (readOnly) return
@@ -540,7 +764,7 @@ export function AssemblyView({
                     {nodeTitle(operation)}
                   </button>
                 </li>
-              )) : <li style={{ color: '#777' }}>add the first instruction card.</li>}
+              )) : <li style={{ color: 'var(--osa-muted)' }}>add the first instruction card.</li>}
             </ol>
             <textarea
               aria-label="assembly overview"
@@ -555,7 +779,7 @@ export function AssemblyView({
                 ...transparentInput,
                 minHeight: 120,
                 resize: 'none',
-                color: '#555',
+                color: 'var(--osa-muted)',
                 fontSize: 'clamp(0.72rem, 1.35vw, 1rem)',
                 lineHeight: 1.45,
               }}
@@ -568,8 +792,11 @@ export function AssemblyView({
                 {assemblyParts.map((part) => (
                   <button
                     type="button"
-                    className="assembly-object-link"
+                    className={appearanceAccentColor(part)
+                      ? 'assembly-object-link assembly-object-link--accented'
+                      : 'assembly-object-link'}
                     key={part.id}
+                    style={semanticAccentStyle(part)}
                     onClick={(event) => {
                       event.stopPropagation()
                       onOpenNode(part.id)
@@ -579,6 +806,77 @@ export function AssemblyView({
                   </button>
                 ))}
               </div>
+            </section>
+          ) : null}
+          {assemblySemanticItems.length ? (
+            <section className="assembly-semantic-table" aria-label="semantic information">
+              <strong>semantic information</strong>
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">item</th>
+                    <th scope="col">kind</th>
+                    <th scope="col">color</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {assemblySemanticItems.map(({ node, kind }) => {
+                    const accent = appearanceAccentColor(node)
+                    const canEditColor = !readOnly && Boolean(onPropertyChange)
+                    return (
+                      <tr key={node.id}>
+                        <td>
+                          <button
+                            type="button"
+                            className={accent
+                              ? 'assembly-object-link assembly-object-link--accented'
+                              : 'assembly-object-link'}
+                            style={semanticAccentStyle(node)}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              onOpenNode(node.id)
+                            }}
+                          >
+                            {nodeTitle(node)}
+                          </button>
+                        </td>
+                        <td>{kind}</td>
+                        <td>
+                          <span className="assembly-semantic-table__color-control">
+                            <input
+                              type="color"
+                              aria-label={`Set semantic color for ${nodeTitle(node)}`}
+                              value={accent ?? '#d6d6d6'}
+                              disabled={!canEditColor}
+                              onClick={(event) => event.stopPropagation()}
+                              onChange={(event) => onPropertyChange?.(
+                                node.id,
+                                OSA_PROPERTY.appearanceAccentColor,
+                                event.target.value,
+                              )}
+                            />
+                            <output>{accent ?? 'default'}</output>
+                            {canEditColor ? (
+                              <button
+                                className="assembly-semantic-table__default"
+                                type="button"
+                                aria-label={`Use the default color for ${nodeTitle(node)}`}
+                                aria-pressed={!accent}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  onPropertyChange?.(node.id, OSA_PROPERTY.appearanceAccentColor, '')
+                                }}
+                              >
+                                default
+                              </button>
+                            ) : null}
+                          </span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </section>
           ) : null}
           {!readOnly ? (
@@ -640,16 +938,31 @@ export function AssemblyView({
           const inputParts = structuredInputParts.length
             ? structuredInputParts
             : legacyInputParts
+          // A card's represented part is its primary output. Other outputs
+          // are legitimate project objects too, so retain both in the owner
+          // picker. A canvas can belong to the thing this card creates.
+          const primaryOutputParts = connectedTargets(
+            operation.id,
+            nodes,
+            edges,
+            OSA_RELATION.operationPrimaryOutput,
+            /\b(represents?|primary output)\b/i,
+          )
+          const outputParts = connectedTargets(
+            operation.id,
+            nodes,
+            edges,
+            OSA_RELATION.operationOutput,
+            /\b(produces?|parts? out|output)\b/i,
+          )
           // A View reference is its own deliberate relationship. It does not
           // infer a visual from In, Tools, or Out. New cards point at canonical
           // Visual nodes, whose content is owned by a part, assembly, or tool.
           // Existing boards can still display a legacy object image here.
-          const includedObjectVisuals = connectedTargets(
+          const includedObjectVisuals = orderedOperationVisualTargets(
             operation.id,
             nodes,
             edges,
-            OSA_RELATION.operationVisual,
-            /^shows (object )?visual$/i,
           )
           const availableParts = uniqueNodes(
             // An Assembly is a part-like object too. Keep the current parent
@@ -682,33 +995,42 @@ export function AssemblyView({
           const visualAlt = operation.data.properties[OSA_PROPERTY.instructionVisualAlt]?.trim()
             || (sourceVisualNode ? objectImageAlt(sourceVisualNode) : '')
             || 'Instruction visual'
+          // An instruction can reference two different kinds of visual
+          // material: canonical Visual nodes (editable canvases or immutable
+          // image Visuals) and a direct primary photo attached to an ordinary
+          // Part/Tool. The latter is not a canvas and must not be sent to the
+          // canvas editor just because it appears on this card.
+          const includedCanvasVisuals = includedObjectVisuals.filter((node) => isVisualNode(node))
+          const includedPhotoObjects = includedObjectVisuals.filter((node) => !isVisualNode(node))
           // A source slide is a normal Visual too. Put it first, then show
           // any deliberately added Visuals below it without duplicating a
           // source Visual that also happens to be placed on the card.
-          const canvasVisuals = sourceVisualNode
-            ? uniqueNodes([sourceVisualNode], includedObjectVisuals)
-            : includedObjectVisuals
-          // Keep ownership choice local to this instruction: the thing this
-          // assembly belongs to, the parts it takes in, and the tools it uses.
+          const linkedVisuals = sourceVisualNode
+            ? uniqueNodes([sourceVisualNode], includedCanvasVisuals)
+            : includedCanvasVisuals
+          // The source visual is the instruction's provenance record and
+          // remains first. Every directly linked canvas below it, including
+          // photo canvases, can be reordered with its operation-to-Visual
+          // relationship.
+          const reorderableCardVisuals = linkedVisuals.filter((visual) => (
+            visual.id !== sourceVisualNode?.id
+            && includedCanvasVisuals.some((candidate) => candidate.id === visual.id)
+          ))
+          // A board saved before source slides became first-class Visual
+          // objects keeps its slide as a raw `instruction:visual` URL. It is
+          // still the first canvas. Do not let the presence of a later blank
+          // reusable Visual hide that source slide.
+          const legacySourceImage = sourceVisualNode ? '' : visualSource
+          // Keep ownership choice local to this instruction: the parent
+          // Assembly, its represented/produced parts, its inputs, and tools.
+          // This is a stable data rule, not a visual special case.
           const canvasOwners = uniqueNodes(
             selectedAssembly ? [selectedAssembly] : [],
+            primaryOutputParts,
+            outputParts,
             inputParts,
             tools,
           ).filter(canOwnOsaVisual)
-          const currentVisualIds = new Set(canvasVisuals.map((visual) => visual.id))
-          // A card can include an already-made canvas from any project object
-          // it already names in In or Tools (plus its parent Assembly). The
-          // visual remains owned by that object; this is only a live View link.
-          const availableVisuals = uniqueNodes(edges
-            .filter((edge) => (
-              canvasOwners.some((owner) => owner.id === edge.source)
-              && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
-              && !currentVisualIds.has(edge.target)
-            ))
-            .map((edge) => nodes.find((node) => node.id === edge.target))
-            .filter((visual): visual is TextFlowNode => Boolean(visual && (
-              visual.data.kind === 'visual' || osaRole(visual) === 'visual'
-            ))))
           const focusCard = () => {
             setFocusedCardId(operation.id)
           }
@@ -774,8 +1096,11 @@ export function AssemblyView({
                             <span className="assembly-object-chip" key={part.id}>
                               {index ? <span aria-hidden="true"> · </span> : null}
                               <button
-                                className="assembly-object-link"
+                                className={appearanceAccentColor(part)
+                                  ? 'assembly-object-link assembly-object-link--accented'
+                                  : 'assembly-object-link'}
                                 type="button"
+                                style={semanticAccentStyle(part)}
                                 onClick={(event) => {
                                   event.stopPropagation()
                                   onOpenNode(part.id)
@@ -814,7 +1139,7 @@ export function AssemblyView({
                             }
                             if (partId) (onLinkPartInput ?? onLinkPart)(operation.id, partId)
                           }}
-                          style={{ ...transparentInput, marginTop: 5, borderBottom: '1px solid #ccc' }}
+                          style={{ ...transparentInput, marginTop: 5, borderBottom: '1px solid var(--osa-border)' }}
                         >
                           <option value="">link or add a part or assembly…</option>
                           {availableParts.map((part) => {
@@ -846,8 +1171,11 @@ export function AssemblyView({
                             <span className="assembly-object-chip" key={tool.id}>
                               {index ? <span aria-hidden="true"> · </span> : null}
                               <button
-                                className="assembly-object-link"
+                                className={appearanceAccentColor(tool)
+                                  ? 'assembly-object-link assembly-object-link--accented'
+                                  : 'assembly-object-link'}
                                 type="button"
+                                style={semanticAccentStyle(tool)}
                                 onClick={(event) => {
                                   event.stopPropagation()
                                   onOpenNode(tool.id)
@@ -871,7 +1199,7 @@ export function AssemblyView({
                               ) : null}
                             </span>
                           ))
-                          : <span style={{ color: '#888' }}>add the tools needed here.</span>}
+                          : <span style={{ color: 'var(--osa-muted)' }}>add the tools needed here.</span>}
                       </div>
                       {focused && !readOnly ? (
                         <select
@@ -890,7 +1218,7 @@ export function AssemblyView({
                             }
                             if (selectedValue) onLinkTool?.(operation.id, selectedValue)
                           }}
-                          style={{ ...transparentInput, marginTop: 5, borderBottom: '1px solid #ccc' }}
+                          style={{ ...transparentInput, marginTop: 5, borderBottom: '1px solid var(--osa-border)' }}
                         >
                           <option value="">link or add a tool…</option>
                           {toolInventory.length ? (
@@ -930,7 +1258,7 @@ export function AssemblyView({
                             placeholder={toolDraftForOperation.placeholder ? 'tool to determine' : 'tool name'}
                             value={toolDraft}
                             onChange={(event) => setToolDraft(event.target.value)}
-                            style={{ ...transparentInput, borderBottom: '1px solid #ccc' }}
+                            style={{ ...transparentInput, borderBottom: '1px solid var(--osa-border)' }}
                           />
                           <button className="text-action" type="submit">add</button>
                           <button
@@ -967,53 +1295,192 @@ export function AssemblyView({
 
                 <section className="assembly-card__view" aria-label={`${nodeTitle(operation)} view`}>
                   <header className="assembly-card__view-header">
-                    <h2>canvas</h2>
+                    <h2>visuals</h2>
                   </header>
                   <div style={{ display: 'grid', gap: 12, padding: 'clamp(10px, 1.5vw, 18px)' }}>
                     <section
-                      aria-label="Canvases"
+                      aria-label="Visuals"
                       style={{ display: 'grid', gap: 8, minWidth: 0 }}
                     >
-                      {canvasVisuals.length ? canvasVisuals.map((visual) => {
-                        const label = nodeTitle(visual)
-                        const owner = ownerForVisual(visual.id, nodes, edges)
+                      {legacySourceImage ? (
+                        <article
+                          aria-label={`${nodeTitle(operation)} source slide`}
+                          style={{ display: 'grid', gap: 8, minWidth: 0, paddingBottom: 12, borderBottom: '1px solid var(--osa-border-subtle)' }}
+                        >
+                          <img
+                            src={legacySourceImage}
+                            alt={visualAlt}
+                            style={{ display: 'block', width: '100%', height: 'auto', border: '1px solid #d8d8d8', background: '#fff', objectFit: 'contain' }}
+                          />
+                        </article>
+                      ) : null}
 
+                      {includedPhotoObjects.map((object) => {
+                        const image = objectImageSource(object)
+                        const label = nodeTitle(object)
+                        const accent = appearanceAccentColor(object)
+                        return (
+                          <figure
+                            className={accent
+                              ? 'assembly-card__direct-photo assembly-card__visual-accent'
+                              : 'assembly-card__direct-photo'}
+                            key={object.id}
+                            style={semanticAccentStyleFromColor(accent)}
+                          >
+                            <figcaption className="assembly-card__direct-photo-header">
+                              <button
+                                className={accent
+                                  ? 'assembly-object-link assembly-object-link--accented'
+                                  : 'assembly-object-link'}
+                                type="button"
+                                style={semanticAccentStyleFromColor(accent)}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  onOpenNode(object.id)
+                                }}
+                              >
+                                {label}
+                              </button>
+                              {focused && !readOnly && onUnlinkObjectVisual ? (
+                                <button
+                                  className="assembly-object-unlink"
+                                  type="button"
+                                  title="remove this photo from the instruction"
+                                  aria-label={`remove ${label} photo from this instruction`}
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    onUnlinkObjectVisual(operation.id, object.id)
+                                  }}
+                                >
+                                  <span aria-hidden="true">×</span> remove
+                                </button>
+                              ) : null}
+                            </figcaption>
+                            {image ? (
+                              <img
+                                className="assembly-card__direct-photo-image"
+                                src={image}
+                                alt={objectImageAlt(object)}
+                              />
+                            ) : (
+                              <div className="assembly-card__photo-unavailable">
+                                photo unavailable
+                              </div>
+                            )}
+                          </figure>
+                        )
+                      })}
+
+                      {linkedVisuals.map((visual) => {
+                        const label = nodeTitle(visual)
+                        const owner = visualOwnerFor(visual.id, nodes, edges)
+                        const accent = visualAccentColor(visual, nodes, edges)
+                        const immutableVisual = isImmutableVisual(visual)
+                        const visualEmbeds = visualEmbedsForCanvas(visual.id, nodes, edges)
+                        const reorderIndex = reorderableCardVisuals.findIndex((candidate) => (
+                          candidate.id === visual.id
+                        ))
+                        // Source-slide provenance remains a static first item.
+                        // Every Visual explicitly linked to this card opens in
+                        // the same canvas dialog, including a photo canvas.
+                        const canOpenVisual = reorderIndex >= 0
+                        const canMoveUp = reorderIndex > 0
+                        const canMoveDown = reorderIndex >= 0
+                          && reorderIndex < reorderableCardVisuals.length - 1
                         return (
                           <article
+                            className={accent ? 'assembly-card__visual-accent' : undefined}
                             key={visual.id}
-                            style={{ display: 'grid', gap: 8, minWidth: 0, paddingBottom: 12, borderBottom: '1px solid #deded9' }}
+                            style={{
+                              display: 'grid',
+                              gap: 8,
+                              minWidth: 0,
+                              paddingBottom: 12,
+                              borderBottom: '1px solid var(--osa-border-subtle)',
+                              ...semanticAccentStyleFromColor(accent),
+                            }}
                           >
-                            <input
-                              aria-label={`${label} name`}
-                              value={visual.data.name}
-                              readOnly={readOnly}
-                              onClick={(event) => event.stopPropagation()}
-                              onChange={(event) => {
-                                if (!readOnly) onNameChange(visual.id, event.target.value)
-                              }}
-                              style={{ ...transparentInput, fontSize: '0.88rem', fontWeight: 600 }}
-                            />
-                            <button
-                              type="button"
-                              aria-label={`open ${label}`}
-                              title="Open visual"
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                // A Visual is edited in-place over this card.
-                                // Do not jump to Space: the card is a live
-                                // viewport onto the same durable canvas.
-                                setEditingVisualId(visual.id)
-                              }}
-                              style={{ display: 'block', width: '100%', padding: 0, border: 0, background: 'transparent', cursor: 'pointer' }}
-                            >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+                              <input
+                                aria-label={`${label} name`}
+                                value={visual.data.name}
+                                readOnly={readOnly || immutableVisual}
+                                onClick={(event) => event.stopPropagation()}
+                                onChange={(event) => {
+                                  if (!readOnly && !immutableVisual) onNameChange(visual.id, event.target.value)
+                                }}
+                                style={{
+                                  ...transparentInput,
+                                  flex: '1 1 auto',
+                                  fontSize: '0.88rem',
+                                  fontWeight: 600,
+                                  ...(accent ? { color: accent } : {}),
+                                }}
+                              />
+                              {!readOnly && onReorderOperationVisual && reorderIndex >= 0 ? (
+                                <span style={{ display: 'inline-flex', gap: 2 }}>
+                                  <button
+                                    type="button"
+                                    aria-label={`move ${label} up`}
+                                    title="Move up"
+                                    disabled={!canMoveUp}
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      onReorderOperationVisual(operation.id, visual.id, 'up')
+                                    }}
+                                    style={{ padding: '0 4px', minWidth: 24 }}
+                                  >
+                                    ↑
+                                  </button>
+                                  <button
+                                    type="button"
+                                    aria-label={`move ${label} down`}
+                                    title="Move down"
+                                    disabled={!canMoveDown}
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      onReorderOperationVisual(operation.id, visual.id, 'down')
+                                    }}
+                                    style={{ padding: '0 4px', minWidth: 24 }}
+                                  >
+                                    ↓
+                                  </button>
+                                </span>
+                              ) : null}
+                            </div>
+                            {canOpenVisual ? (
+                              <button
+                                type="button"
+                                aria-label={`open ${label}`}
+                                title="Open visual"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  // A Visual is edited in-place over this card.
+                                  // Do not jump to Space: the card is a live
+                                  // viewport onto the same durable canvas.
+                                  setEditingVisual(visual.id, operation.id)
+                                }}
+                                style={{ display: 'block', width: '100%', padding: 0, border: 0, background: 'transparent', cursor: 'pointer' }}
+                              >
+                                <VisualCanvasPreview
+                                  visual={visual}
+                                  embeddedVisuals={visualEmbeds}
+                                  className="assembly-card__visual-preview"
+                                />
+                              </button>
+                            ) : (
                               <VisualCanvasPreview
                                 visual={visual}
+                                embeddedVisuals={visualEmbeds}
                                 className="assembly-card__visual-preview"
                               />
-                            </button>
+                            )}
                             <select
                               aria-label={`${label} owner`}
                               value={owner?.id ?? ''}
+                              // The owner is an edge relationship rather than
+                              // part of the photo/image itself. Keep it
+                              // editable for every Visual type.
                               disabled={readOnly || !onChangeVisualOwner}
                               onClick={(event) => event.stopPropagation()}
                               onChange={(event) => {
@@ -1021,7 +1488,7 @@ export function AssemblyView({
                                 const ownerId = event.currentTarget.value
                                 if (!readOnly && ownerId) onChangeVisualOwner?.(visual.id, ownerId)
                               }}
-                              style={{ width: 'fit-content', maxWidth: '100%', padding: 0, border: 0, background: 'transparent', color: '#666', font: 'inherit', fontSize: '0.76rem', cursor: readOnly ? 'default' : 'pointer' }}
+                              style={{ width: 'fit-content', maxWidth: '100%', padding: 0, border: 0, background: 'transparent', color: accent ?? 'var(--osa-muted)', font: 'inherit', fontSize: '0.76rem', cursor: readOnly ? 'default' : 'pointer' }}
                             >
                               <option value="" disabled>owner</option>
                               {canvasOwners.map((candidate) => (
@@ -1032,63 +1499,27 @@ export function AssemblyView({
                             </select>
                           </article>
                         )
-                      }) : (
-                        visualSource ? (
-                          <img
-                            src={visualSource}
-                            alt={visualAlt}
-                            style={{ display: 'block', width: '100%', height: 'auto', border: '1px solid #d8d8d8', background: '#fff', objectFit: 'contain' }}
-                          />
-                        ) : <div style={{ minHeight: 8 }} />
-                      )}
+                      })}
 
-                      {!readOnly ? (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, paddingTop: 2 }}>
-                          {onLinkObjectVisual && availableVisuals.length ? (
-                            <select
-                              aria-label={`Add an existing visual to ${nodeTitle(operation)}`}
-                              defaultValue=""
-                              onClick={(event) => event.stopPropagation()}
-                              onChange={(event) => {
-                                event.stopPropagation()
-                                const visualId = event.currentTarget.value
-                                if (visualId) {
-                                  onLinkObjectVisual(
-                                    operation.id,
-                                    visualId,
-                                    OPERATION_CANVAS_SOURCE_SECTION_ID,
-                                  )
-                                }
-                                event.currentTarget.value = ''
-                              }}
-                              style={{ width: 'fit-content', maxWidth: '100%', padding: 0, border: 0, borderBottom: '1px solid #aaa', background: 'transparent', color: '#555', font: 'inherit', fontSize: '0.78rem', cursor: 'pointer' }}
-                            >
-                              <option value="">+ visual</option>
-                              {availableVisuals.map((visual) => {
-                                const owner = ownerForVisual(visual.id, nodes, edges)
-                                return (
-                                  <option value={visual.id} key={visual.id}>
-                                    {nodeTitle(visual)}{owner ? ` — ${nodeTitle(owner)}` : ''}
-                                  </option>
-                                )
-                              })}
-                            </select>
-                          ) : null}
-                          {onCreateOwnedVisualForOperation ? (
-                            <button
-                              className="text-action"
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                const visualId = onCreateOwnedVisualForOperation(operation.id)
-                                if (visualId) setEditingVisualId(visualId)
-                              }}
-                              title="Create a blank canvas"
-                            >
-                              + canvas
-                            </button>
-                          ) : null}
+                      {!legacySourceImage && !linkedVisuals.length && !includedPhotoObjects.length ? (
+                        <div style={{ minHeight: 8 }} />
+                      ) : null}
 
+                      {!readOnly && onCreateOwnedVisualForOperation ? (
+                        <div className="assembly-card__canvas-create">
+                          <button
+                            className="text-action"
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              // A card only creates a blank canvas record.
+                              // The canvas itself chooses its permanent type
+                              // (photo, OSA draw, Draw.io, or Konva) on first open.
+                              onCreateOwnedVisualForOperation(operation.id, 'untyped')
+                            }}
+                          >
+                            + canvas
+                          </button>
                         </div>
                       ) : null}
                     </section>
@@ -1101,12 +1532,26 @@ export function AssemblyView({
       </div>
       {editingVisual && onSketchChange ? (
         <VisualCanvasEditor
+          key={editingVisual.id}
           visual={editingVisual}
+          embeddedVisuals={editingVisualEmbeds}
+          availableVisuals={editingVisualCandidates}
           readOnly={readOnly}
-          onClose={() => setEditingVisualId(null)}
+          onClose={() => setEditingVisual(null)}
+          onRemoveFromCard={canRemoveEditingVisualFromCard ? () => {
+            onUnlinkObjectVisual?.(editingOperationId!, editingVisual.id)
+            setEditingVisual(null)
+          } : undefined}
           onNameChange={onNameChange}
           onSketchChange={onSketchChange}
           onPropertyChange={onPropertyChange}
+          onEmbeddedVisualsChange={onEmbeddedVisualsChange}
+          graphNodes={nodes}
+          graphEdges={edges}
+          onSaveDraftVersion={onSaveVisualDraftVersion}
+          onMakeOfficialVersion={onMakeVisualOfficialVersion}
+          onRestoreVisualVersion={onRestoreVisualVersion}
+          onCreateIndependentVisualCopy={onCreateIndependentVisualCopy}
         />
       ) : null}
     </section>

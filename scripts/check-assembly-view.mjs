@@ -12,14 +12,14 @@ const server = await createServer({
 
 try {
   const { AssemblyView } = await server.ssrLoadModule('/src/components/AssemblyView.tsx')
+  const { VisualCanvasEditor } = await server.ssrLoadModule('/src/components/VisualCanvas.tsx')
+  const { PropertiesPanel } = await server.ssrLoadModule('/src/components/PropertiesPanel.tsx')
   const { createAssemblyViewUiState } = await server.ssrLoadModule(
     '/src/components/assemblyViewState.ts',
   )
   const { OSA_PROPERTY, OSA_RELATION, osaRole } = await server.ssrLoadModule('/src/graph/osaData.ts')
+  const { visualAccentColor, visualEmbedsForCanvas } = await server.ssrLoadModule('/src/graph/visualEmbed.ts')
   const { createGraphEdge } = await server.ssrLoadModule('/src/graph/graphEdge.ts')
-  const { migrateLegacyCardOutputVisualOwners } = await server.ssrLoadModule(
-    '/src/graph/legacyCanvasOwners.ts',
-  )
   const { parseOsaImportPackage, planOsaImport } = await server.ssrLoadModule('/src/graph/osaImport.ts')
   const raw = await readFile(new URL('../imports/shako-light-wrap.osa.json', import.meta.url), 'utf8')
   const plan = planOsaImport(parseOsaImportPackage(JSON.parse(raw)))
@@ -57,6 +57,8 @@ try {
   )
   const drill = plan.nodes.find((node) => node.data.name === 'Drill')
   assert.ok(drill, 'expected the Drill tool used by Connector Box Drill')
+  const electronicsBox = plan.nodes.find((node) => node.data.name === 'Electronics Box')
+  assert.ok(electronicsBox, 'expected the Electronics Box input object')
   const connectorBoxDrillWithCanvas = {
     ...connectorBoxDrill,
     data: {
@@ -196,18 +198,14 @@ try {
     ],
   }
 
-  // Canvases made by the former Assembly UI were output-owned. The current
-  // card model moves that exact legacy pattern to the parent Assembly without
-  // changing the canvas node or the card's link to it.
-  const migratedCanvasOwners = migrateLegacyCardOutputVisualOwners(
-    nodesWithCanvas,
-    planWithObjectVisual.edges,
-  )
-  const migratedBlankOwner = migratedCanvasOwners.edges.find((edge) => (
+  // A card's output is a valid and deliberate Visual owner. Rendering and
+  // bundled-data upgrades must preserve that relationship instead of moving
+  // it to the project-level Assembly.
+  const blankCanvasOwner = planWithObjectVisual.edges.find((edge) => (
     edge.id === 'assembly-view-check-blank-visual-owner'
   ))
-  assert.equal(migratedBlankOwner?.source, plan.assemblyNodeId)
-  assert.ok(migratedCanvasOwners.edges.some((edge) => (
+  assert.equal(blankCanvasOwner?.source, connectorBoxDrilled.id)
+  assert.ok(planWithObjectVisual.edges.some((edge) => (
     edge.id === 'assembly-view-check-blank-operation-visual'
     && edge.source === connectorBoxDrill.id
     && edge.target === connectorBoxBlankVisual.id
@@ -238,6 +236,7 @@ try {
     onUnlinkTool: noop,
     onLinkObjectVisual: noop,
     onUnlinkObjectVisual: noop,
+    onReorderOperationVisual: noop,
     onObjectVisualPlacementChange: noop,
     onCreateCanvasSection: () => 'section-3',
     onCreateOwnedVisualForOperation: () => '',
@@ -249,7 +248,7 @@ try {
     onOpenNode: noop,
   }))
 
-  const markup = renderAssembly(migratedCanvasOwners.edges)
+  const markup = renderAssembly(planWithObjectVisual.edges)
 
   assert.equal((markup.match(/assembly-operation-card/g) ?? []).length, 6)
   // Every card preview is a live SVG composition now: the stored source
@@ -268,16 +267,32 @@ try {
   assert.doesNotMatch(markup, /<span>Out<\/span>/)
   assert.match(markup, /<h1 id="assembly-view-title">Assembly<\/h1>/)
   assert.doesNotMatch(markup, /assembly instructions/)
-  assert.match(markup, />canvas</)
+  assert.match(markup, />visuals</)
   assert.match(markup, /aria-label="Connector Box Drilled — Assembly Picture name"/)
   assert.match(markup, /aria-label="Connector Box Drilled — Assembly Picture owner"/)
+  assert.match(markup, /aria-label="move Connector Box Drilled — Assembly Picture down"/)
+  assert.doesNotMatch(markup, /Remove canvas from this card/)
   assert.match(markup, /\+ canvas/)
-  assert.match(markup, /\+ visual/)
-  assert.match(markup, /Drill reference — Drill/)
+  assert.doesNotMatch(
+    markup,
+    /\+ visual/,
+    'Assembly cards have one creation action: + canvas. Reusing a visual happens inside an opened canvas.',
+  )
+  assert.doesNotMatch(
+    markup,
+    /\+ photo/,
+    'Assembly cards have one creation action: + canvas. A photo is a canvas type, not a competing card action.',
+  )
+  // A tool-owned visual is still eligible for reuse *inside* an opened
+  // drawing canvas, but it must not become another card-level creation
+  // control. The card itself exposes only + canvas.
+  assert.doesNotMatch(markup, /Drill reference — Drill/)
   assert.doesNotMatch(markup, /reusable visual canvases/)
   assert.doesNotMatch(markup, /Create one for this card’s represented part/)
   assert.doesNotMatch(markup, /Drill diagram/)
-  assert.doesNotMatch(markup, /assembly-card__canvas-/)
+  // The new minimal creation affordance deliberately uses
+  // `assembly-card__canvas-create`; the old multi-section canvas UI does not.
+  assert.doesNotMatch(markup, /assembly-card__canvas-section/)
   assert.doesNotMatch(markup, /add section/)
   assert.doesNotMatch(markup, /resize .* visual box/)
   assert.doesNotMatch(markup, /add an object visual/)
@@ -287,6 +302,118 @@ try {
   assert.doesNotMatch(markup, /Add assembly|Bill of materials|Project expenses/)
   assert.match(markup, /assembly-object-unlink/)
   assert.match(markup, /already in this instruction/)
+
+  // Semantic color belongs to the canonical project object. A Tool's accent
+  // drives both its Assembly label and every owned Visual cue without
+  // recoloring the Visual's pixels or copying a color onto placement edges.
+  const accentedDrill = {
+    ...drill,
+    data: {
+      ...drill.data,
+      properties: {
+        ...drill.data.properties,
+        [OSA_PROPERTY.appearanceAccentColor]: '#9b59d0',
+      },
+    },
+  }
+  const accentParentVisual = {
+    ...connectorBoxBlankVisual,
+    id: 'assembly-view-check-accent-parent',
+    data: {
+      ...connectorBoxBlankVisual.data,
+      name: 'Accent parent',
+    },
+  }
+  const accentedNodes = [
+    ...nodesWithCanvas.map((node) => node.id === drill.id ? accentedDrill : node),
+    accentParentVisual,
+  ]
+  const accentedEdges = [
+    ...planWithObjectVisual.edges,
+    createGraphEdge({
+      id: 'assembly-view-check-accent-embed',
+      source: accentParentVisual.id,
+      target: drillVisual.id,
+      relationship: 'shows visual',
+      properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.visualEmbed },
+    }),
+  ]
+  const accentedMarkup = renderAssembly(accentedEdges, focusedAssemblyUiState, accentedNodes)
+  assert.match(
+    accentedMarkup,
+    /assembly-object-link--accented[^>]*style="--osa-semantic-accent:#9b59d0"/,
+    'A Tool accent colors its linked Assembly text through the canonical object property.',
+  )
+  assert.equal(
+    visualAccentColor(drillVisual, accentedNodes, accentedEdges),
+    '#9b59d0',
+    'An owned Visual inherits its Tool accent without storing a copied color.',
+  )
+  assert.equal(
+    visualEmbedsForCanvas(accentParentVisual.id, accentedNodes, accentedEdges)[0]?.accentColor,
+    '#9b59d0',
+    'An embedded Visual receives a derived accent cue for its canvas rendering.',
+  )
+  const accentPanelMarkup = renderToStaticMarkup(createElement(PropertiesPanel, {
+    node: accentedDrill,
+    spaces: [],
+    instructionOperations: [],
+    onSpaceIdsChange: noop,
+    onIncludeInInstruction: noop,
+    onPropertyChange: noop,
+    onPropertyRename: noop,
+    onPropertyRemove: noop,
+    onPropertyAdd: noop,
+  }))
+  assert.match(accentPanelMarkup, /type="color"/)
+  assert.match(accentPanelMarkup, /aria-label="Accent color for [^"]*Drill"/)
+  assert.doesNotMatch(
+    accentPanelMarkup,
+    /appearance:accentColor property value/,
+    'Semantic color has a dedicated color-picker rather than a second generic text row.',
+  )
+
+  // Legacy card links have no explicit order yet, so their current edge
+  // sequence remains visible. Once an order property is present, it becomes
+  // the durable source of vertical canvas order instead.
+  const pictureNameLabel = 'aria-label="Connector Box Drilled — Assembly Picture name"'
+  const blankNameLabel = 'aria-label="Connector Box Drilled — Blank Canvas name"'
+  assert.ok(
+    markup.indexOf(pictureNameLabel) < markup.indexOf(blankNameLabel),
+    'Older cards preserve their existing operation-visual edge order.',
+  )
+  const reorderedCanvasEdges = planWithObjectVisual.edges.map((edge) => {
+    if (edge.id === 'assembly-view-check-operation-visual') {
+      return {
+        ...edge,
+        data: {
+          ...edge.data,
+          properties: {
+            ...edge.data.properties,
+            [OSA_PROPERTY.operationVisualOrder]: '2',
+          },
+        },
+      }
+    }
+    if (edge.id === 'assembly-view-check-blank-operation-visual') {
+      return {
+        ...edge,
+        data: {
+          ...edge.data,
+          properties: {
+            ...edge.data.properties,
+            [OSA_PROPERTY.operationVisualOrder]: '0',
+          },
+        },
+      }
+    }
+    return edge
+  })
+  const reorderedCanvasMarkup = renderAssembly(reorderedCanvasEdges)
+  assert.ok(
+    reorderedCanvasMarkup.indexOf(blankNameLabel) < reorderedCanvasMarkup.indexOf(pictureNameLabel),
+    'An operation-visual order property controls the visible vertical canvas order.',
+  )
 
   const connectorVisualOwnerStart = markup.indexOf(
     'aria-label="Connector Box Drilled — Assembly Picture owner"',
@@ -305,7 +432,9 @@ try {
   assert.match(connectorVisualOwnerMarkup, /5\/16 in bit/)
   assert.match(connectorVisualOwnerMarkup, /1\/8 in bit/)
   assert.match(connectorVisualOwnerMarkup, /7\/64 in bit/)
-  assert.doesNotMatch(connectorVisualOwnerOptions, /Connector Box Drilled/)
+  // The card's represented primary output is a real project object too, so it
+  // is a valid owner for a reusable Visual alongside its parent, In, and Tools.
+  assert.match(connectorVisualOwnerOptions, /Connector Box Drilled/)
   assert.doesNotMatch(connectorVisualOwnerOptions, /DC-DC Converter/)
 
   // Canvas creation remains visible on an unfocused card: people should not
@@ -317,18 +446,159 @@ try {
   })
   assert.match(unfocusedMarkup, /\+ canvas/)
 
+  // A photo attached directly to a Part remains a photo when a card chooses
+  // to show it. It is not silently promoted to an editable canvas merely
+  // because an Assembly card references it.
+  const electronicsBoxWithPhoto = {
+    ...electronicsBox,
+    data: {
+      ...electronicsBox.data,
+      properties: {
+        ...electronicsBox.data.properties,
+        [OSA_PROPERTY.assetImage]: '/assembly-view-check/electronics-box.jpg',
+        [OSA_PROPERTY.assetImageAlt]: 'Electronics Box product photo',
+      },
+    },
+  }
+  const nodesWithDirectPhoto = nodesWithCanvas.map((node) => (
+    node.id === electronicsBox.id ? electronicsBoxWithPhoto : node
+  ))
+  const photoCardMarkup = renderAssembly(
+    planWithObjectVisual.edges,
+    focusedAssemblyUiState,
+    nodesWithDirectPhoto,
+  )
+  assert.match(photoCardMarkup, /\+ canvas/)
+  assert.doesNotMatch(photoCardMarkup, /\+ photo/)
+  assert.doesNotMatch(photoCardMarkup, /\+ visual/)
+
+  const directPhotoEdges = [
+    ...planWithObjectVisual.edges,
+    createGraphEdge({
+      id: 'assembly-view-check-direct-photo',
+      source: connectorBoxDrill.id,
+      target: electronicsBox.id,
+      relationship: 'shows object visual',
+      properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.operationVisual },
+    }),
+  ]
+  const directPhotoMarkup = renderAssembly(
+    directPhotoEdges,
+    focusedAssemblyUiState,
+    nodesWithDirectPhoto,
+  )
+  assert.match(directPhotoMarkup, /assembly-card__direct-photo/)
+  assert.match(directPhotoMarkup, /assembly-view-check\/electronics-box\.jpg/)
+  assert.match(directPhotoMarkup, /aria-label="remove Electronics Box photo from this instruction"/)
+  assert.doesNotMatch(directPhotoMarkup, /aria-label="Electronics Box owner"/)
+
+  const attemptedPhotoEditorMarkup = renderAssembly(
+    directPhotoEdges,
+    {
+      ...focusedAssemblyUiState,
+      editingVisualId: electronicsBox.id,
+      editingOperationId: connectorBoxDrill.id,
+    },
+    nodesWithDirectPhoto,
+  )
+  assert.doesNotMatch(
+    attemptedPhotoEditorMarkup,
+    /visual-canvas-editor/,
+    'A direct Part photo cannot open the canvas editor.',
+  )
+
+  // A canonical photo Visual remains part of the graph: its pixels cannot be
+  // drawn on, but its owner relationship stays both visible and editable.
+  const canonicalPhotoVisual = {
+    ...connectorBoxBlankVisual,
+    id: 'assembly-view-check-canonical-photo-visual',
+    data: {
+      ...connectorBoxBlankVisual.data,
+      name: 'Electronics Box photo visual',
+      properties: {
+        ...connectorBoxBlankVisual.data.properties,
+        [OSA_PROPERTY.visualContent]: 'image',
+        [OSA_PROPERTY.visualIdentity]: 'photo',
+        [OSA_PROPERTY.visualImmutable]: 'true',
+        [OSA_PROPERTY.assetImage]: '/assembly-view-check/electronics-box-canonical.jpg',
+        [OSA_PROPERTY.assetImageAlt]: 'Electronics Box product image',
+      },
+    },
+  }
+  const canonicalPhotoNodes = [...nodesWithCanvas, canonicalPhotoVisual]
+  const canonicalPhotoEdges = [
+    ...planWithObjectVisual.edges,
+    createGraphEdge({
+      id: 'assembly-view-check-canonical-photo-owner',
+      source: electronicsBox.id,
+      target: canonicalPhotoVisual.id,
+      relationship: 'owns visual',
+      properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.objectVisual },
+    }),
+    createGraphEdge({
+      id: 'assembly-view-check-canonical-photo-card',
+      source: connectorBoxDrill.id,
+      target: canonicalPhotoVisual.id,
+      relationship: 'shows visual',
+      properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.operationVisual },
+    }),
+  ]
+  const canonicalPhotoMarkup = renderAssembly(
+    canonicalPhotoEdges,
+    focusedAssemblyUiState,
+    canonicalPhotoNodes,
+  )
+  const canonicalPhotoOwnerStart = canonicalPhotoMarkup.indexOf(
+    'aria-label="Electronics Box photo visual owner"',
+  )
+  const canonicalPhotoOwnerEnd = canonicalPhotoMarkup.indexOf('</select>', canonicalPhotoOwnerStart)
+  assert.notEqual(canonicalPhotoOwnerStart, -1, 'A photo Visual keeps its owner selector visible.')
+  assert.match(
+    canonicalPhotoMarkup.slice(canonicalPhotoOwnerStart, canonicalPhotoOwnerEnd),
+    /Electronics Box[^]*selected=""/,
+    'The canonical photo Visual displays its current owner.',
+  )
+
+  // A card creates only an untyped record. The first-open picker determines
+  // whether it becomes a protected photo or an OSA drawing canvas.
+  const untypedVisual = {
+    ...connectorBoxBlankVisual,
+    id: 'assembly-view-check-untyped-visual',
+    data: {
+      ...connectorBoxBlankVisual.data,
+      properties: {
+        ...connectorBoxBlankVisual.data.properties,
+        [OSA_PROPERTY.visualContent]: 'canvas',
+        [OSA_PROPERTY.visualIdentity]: 'untyped',
+      },
+    },
+  }
+  const canvasTypePickerMarkup = renderToStaticMarkup(createElement(VisualCanvasEditor, {
+    visual: untypedVisual,
+    onClose: noop,
+    onNameChange: noop,
+    onSketchChange: noop,
+    onPropertyChange: noop,
+  }))
+  assert.match(canvasTypePickerMarkup, /aria-label="Choose canvas type"/)
+  assert.match(canvasTypePickerMarkup, />photo<\/button>/)
+  assert.match(canvasTypePickerMarkup, />OSA draw<\/button>/)
+
   // Opening a canvas stays within Assembly: it renders an in-place editor
   // above the same card board rather than calling the Space/node view.
   const editorMarkup = renderAssembly(planWithObjectVisual.edges, {
     ...focusedAssemblyUiState,
-    editingVisualId: connectorBoxDrilledVisual.id,
+    editingVisualId: connectorBoxBlankVisual.id,
+    editingOperationId: connectorBoxDrill.id,
   })
   assert.match(editorMarkup, /role="dialog"/)
   assert.match(editorMarkup, /aria-label="Canvas name"/)
-  assert.match(editorMarkup, /Reusable label/)
+  assert.match(editorMarkup, />unlock<\/button>/)
+  assert.match(editorMarkup, /visual-canvas-editor__footer/)
+  assert.match(editorMarkup, /aria-label="Remove canvas from this card"/)
 
-  // A canvas belongs to the card's parent Assembly, not to its Out item. Even
-  // an older card with no primary-output relation can create one immediately.
+  // A card with no represented output can still create a canvas immediately;
+  // that rare incomplete case falls back to its parent Assembly as owner.
   const legacySingleOutputEdges = [
     ...planWithObjectVisual.edges.filter((edge) => !(
       edge.source === connectorBoxDrill.id
@@ -358,6 +628,111 @@ try {
     legacyConnectorMarkup,
     /\+ canvas/,
     'Canvas creation does not confuse a card output with an input or owner.',
+  )
+
+  const noExtraVisualsMarkup = renderAssembly(planWithObjectVisual.edges.filter((edge) => (
+    edge.data.properties[OSA_PROPERTY.relationRole] !== OSA_RELATION.objectVisual
+  )))
+  assert.match(
+    noExtraVisualsMarkup,
+    /\+ canvas/,
+    'Canvas creation stays available even when this card has no existing Visuals.',
+  )
+  assert.doesNotMatch(noExtraVisualsMarkup, /\+ visual/)
+  assert.doesNotMatch(noExtraVisualsMarkup, /\+ photo/)
+
+  // Regression: some saved boards predate canonical source Visual nodes. Their
+  // source slide remains a raw `instruction:visual` URL on the operation,
+  // while later work may add a separate blank `operation-visual` canvas. The
+  // source slide must still be the first thing the card renders; adding the
+  // blank canvas must not replace it.
+  const legacyRawSourceUrl = '/legacy/connector-box-drill-source-slide.png'
+  const legacyRawSourceOperation = {
+    ...connectorBoxDrillWithCanvas,
+    data: {
+      ...connectorBoxDrillWithCanvas.data,
+      properties: {
+        ...connectorBoxDrillWithCanvas.data.properties,
+        [OSA_PROPERTY.instructionVisual]: legacyRawSourceUrl,
+        [OSA_PROPERTY.instructionVisualAlt]: 'Legacy Connector Box Drill source slide',
+      },
+    },
+  }
+  const legacyRawSourceBlankVisual = {
+    ...connectorBoxBlankVisual,
+    id: 'assembly-view-check-legacy-raw-source-blank-visual',
+    data: {
+      ...connectorBoxBlankVisual.data,
+      name: 'Added blank canvas',
+      sketch: {
+        ...connectorBoxBlankVisual.data.sketch,
+        layers: connectorBoxBlankVisual.data.sketch.layers.map((layer) => ({
+          ...layer,
+          strokes: [],
+          elements: [],
+        })),
+      },
+      properties: {
+        ...connectorBoxBlankVisual.data.properties,
+        [OSA_PROPERTY.assetImage]: '',
+        [OSA_PROPERTY.assetImageAlt]: '',
+        [OSA_PROPERTY.instructionVisual]: '',
+        [OSA_PROPERTY.instructionVisualAlt]: '',
+      },
+    },
+  }
+  const legacyRawSourceNodes = [
+    ...nodesWithCanvas.map((node) => (
+      node.id === connectorBoxDrill.id ? legacyRawSourceOperation : node
+    )),
+    legacyRawSourceBlankVisual,
+  ]
+  const legacyRawSourceEdges = [
+    ...planWithObjectVisual.edges.filter((edge) => !(
+      edge.source === connectorBoxDrill.id
+      && (
+        edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationSourceVisual
+        || edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationVisual
+      )
+    )),
+    createGraphEdge({
+      id: 'assembly-view-check-legacy-raw-source-blank-operation-visual',
+      source: connectorBoxDrill.id,
+      target: legacyRawSourceBlankVisual.id,
+      relationship: 'shows visual',
+      properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.operationVisual },
+    }),
+  ]
+  const legacyRawSourceMarkup = renderAssembly(
+    legacyRawSourceEdges,
+    focusedAssemblyUiState,
+    legacyRawSourceNodes,
+  )
+  const legacyRawSourceIndex = legacyRawSourceMarkup.indexOf(legacyRawSourceUrl)
+  const legacyBlankCanvasIndex = legacyRawSourceMarkup.indexOf('Added blank canvas')
+  assert.notEqual(
+    legacyRawSourceIndex,
+    -1,
+    'A raw legacy instruction:visual source URL still renders in the card.',
+  )
+  assert.match(
+    legacyRawSourceMarkup,
+    /aria-label="Connector Box Drill source slide"/,
+    'The raw source is rendered as the card’s source-slide canvas, not only retained in data.',
+  )
+  assert.notEqual(
+    legacyBlankCanvasIndex,
+    -1,
+    'A later blank operation-visual still renders in the same card.',
+  )
+  assert.match(
+    legacyRawSourceMarkup,
+    /aria-label="open Added blank canvas"/,
+    'The later blank Visual is still an editable canvas in the same card.',
+  )
+  assert.ok(
+    legacyRawSourceIndex < legacyBlankCanvasIndex,
+    'The legacy source slide renders before a later blank operation-visual canvas.',
   )
   console.log('Assembly board checks passed: 1 index, 6 cards, source provenance, and canvases.')
 } finally {

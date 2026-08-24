@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -6,21 +7,49 @@ import {
 } from 'react'
 import {
   cloneSketchDocument,
+  type SketchCompoundPart,
   type SketchDocument,
   type SketchElement,
   type SketchLayer,
   type SketchPoint,
   type SketchStroke,
 } from '../graph/textNode'
+import {
+  isImmutableVisual,
+  OSA_PROPERTY,
+  visualIdentity,
+  type VisualEmbedPlacement,
+} from '../graph/osaData'
+import type { VisualEmbedInstance } from '../graph/visualEmbed'
 
 const PEN_COLORS = ['#222222', '#f5a9b8', '#5bcefa', '#9b59d0', '#ff8c00'] as const
 const MIN_PAGE_SIZE = 100
 const MAX_PAGE_SIZE = 20_000
 const MIN_ZOOM = 0.1
 const MAX_ZOOM = 8
+/** Keep a group usable even when its resize handle is dragged almost closed. */
+const MIN_GROUP_DIMENSION = 1
 
-/** The small, portable tool set stored on every Visual canvas. */
-type SketchTool = 'select' | 'pen' | 'rectangle' | 'ellipse' | 'arrow' | 'text' | 'eraser' | 'pan'
+/**
+ * The canvas uses a deliberately small set of portable SVG primitives. They
+ * are real, saved objects rather than a visual effect tied to this editor.
+ */
+const SHAPE_TOOLS = [
+  'rectangle',
+  'rounded-rectangle',
+  'ellipse',
+  'diamond',
+  'triangle',
+  'line',
+  'arrow',
+] as const
+
+type ShapeTool = typeof SHAPE_TOOLS[number]
+type SketchTool = 'select' | 'pen' | ShapeTool | 'text' | 'eraser' | 'pan'
+
+function isShapeTool(tool: SketchTool): tool is ShapeTool {
+  return SHAPE_TOOLS.some((shapeTool) => shapeTool === tool)
+}
 
 type SketchPadProps = {
   document: SketchDocument
@@ -31,6 +60,20 @@ type SketchPadProps = {
   ariaLabel?: string
   /** Notebook sketches begin with a pen; Visual canvases begin in selection. */
   initialTool?: SketchTool
+  /**
+   * Canonical child Visuals placed on this canvas. The child content stays on
+   * the child Visual; this list only supplies the parent-side placement.
+   */
+  embeddedVisuals?: VisualEmbedInstance[]
+  /** Updates one parent -> child placement while the canvas is being edited. */
+  onEmbeddedVisualPlacementChange?: (id: string, placement: VisualEmbedPlacement) => void
+  /** Removes only the placement edge, never the child Visual itself. */
+  onEmbeddedVisualRemove?: (id: string) => void
+  /**
+   * Replaces one placed OSA drawing with a new independent Visual canvas.
+   * Image/photo assets deliberately remain shared reusable source material.
+   */
+  onEmbeddedVisualMakeIndependent?: (id: string) => void
 }
 
 type PanState = {
@@ -56,11 +99,170 @@ type ActiveElementInteraction = {
   layerId: string
   element: SketchElement
   original: SketchElement | null
+  /** Original members of a same-layer group, captured before a drag begins. */
+  groupMembers?: SketchElement[]
+  /** Temporary moved members shown during the current drag only. */
+  groupElements?: SketchElement[]
   startPoint: SketchPoint
   mode: 'create' | 'move' | 'resize'
 }
 
+/** A temporary selection box; it is UI state and is never saved to the canvas. */
+type ActiveRegionSelection = {
+  pointerId: number
+  startPoint: SketchPoint
+  endPoint: SketchPoint
+  /** Cmd/Ctrl keeps the existing selection and toggles this region's shapes. */
+  toggleSelection: boolean
+}
+
+/** A canvas-local copy buffer remembers each selected shape and its layer. */
+type ShapeClipboardItem = {
+  layerId: string
+  element: SketchElement
+}
+
+/** A parent canvas can move/resize an embed without changing its child Visual. */
+type ActiveEmbedInteraction = {
+  pointerId: number
+  embedId: string
+  original: VisualEmbedPlacement
+  placement: VisualEmbedPlacement
+  startPoint: SketchPoint
+  mode: 'move' | 'resize'
+}
+
 type ElementBounds = { x: number; y: number; width: number; height: number }
+
+function isLineElement(kind: SketchElement['kind']): kind is 'line' | 'arrow' {
+  return kind === 'line' || kind === 'arrow'
+}
+
+function isFillableElement(kind: SketchElement['kind']) {
+  return kind !== 'line' && kind !== 'arrow' && kind !== 'text'
+}
+
+/** Shapes with a rectangular drawing box can be sized exactly in the inspector. */
+function isResizableShape(kind: SketchElement['kind']) {
+  return kind !== 'line' && kind !== 'arrow' && kind !== 'text'
+}
+
+/**
+ * Preserve an object's current proportions while resizing from its lower-right
+ * handle. The pointer dimension that moved farther, relative to the original
+ * shape, determines the shared scale.
+ */
+function proportionalDimensions(
+  original: Pick<ElementBounds, 'width' | 'height'>,
+  requestedWidth: number,
+  requestedHeight: number,
+  minimum = 1,
+) {
+  const width = Math.max(minimum, requestedWidth)
+  const height = Math.max(minimum, requestedHeight)
+  if (original.width <= 0 || original.height <= 0) return { width, height }
+
+  const widthScale = width / original.width
+  const heightScale = height / original.height
+  const scale = Math.abs(widthScale - 1) >= Math.abs(heightScale - 1)
+    ? widthScale
+    : heightScale
+  const minimumScale = Math.max(minimum / original.width, minimum / original.height)
+  const safeScale = Math.max(minimumScale, scale)
+
+  return {
+    width: original.width * safeScale,
+    height: original.height * safeScale,
+  }
+}
+
+/** Use one dimension field to update both dimensions when an object is locked. */
+function sizedElementUpdate(
+  element: SketchElement,
+  dimension: 'width' | 'height',
+  requestedValue: number,
+): Pick<SketchElement, 'width' | 'height'> {
+  const value = Math.max(1, requestedValue)
+  if (!element.aspectRatioLocked || element.width <= 0 || element.height <= 0) {
+    return dimension === 'width' ? { width: value, height: element.height } : { width: element.width, height: value }
+  }
+
+  const ratio = element.width / element.height
+  return dimension === 'width'
+    ? { width: value, height: Math.max(1, value / ratio) }
+    : { width: Math.max(1, value * ratio), height: value }
+}
+
+/** Use one placed Visual dimension to update both values when its link is locked. */
+function sizedEmbedPlacementUpdate(
+  placement: VisualEmbedPlacement,
+  dimension: 'width' | 'height',
+  requestedValue: number,
+): Pick<VisualEmbedPlacement, 'width' | 'height'> {
+  const value = Math.max(24, requestedValue)
+  if (!placement.aspectRatioLocked || placement.width <= 0 || placement.height <= 0) {
+    return dimension === 'width'
+      ? { width: value, height: placement.height }
+      : { width: placement.width, height: value }
+  }
+
+  const ratio = placement.width / placement.height
+  return dimension === 'width'
+    ? { width: value, height: Math.max(24, value / ratio) }
+    : { width: Math.max(24, value * ratio), height: value }
+}
+
+function isCompoundPartKind(kind: SketchElement['kind']): kind is SketchCompoundPart['kind'] {
+  return ['rectangle', 'rounded-rectangle', 'ellipse', 'diamond', 'triangle'].includes(kind)
+}
+
+function cloneSketchElement(element: SketchElement): SketchElement {
+  return {
+    ...element,
+    ...(element.compoundParts
+      ? { compoundParts: element.compoundParts.map((part) => ({ ...part })) }
+      : {}),
+  }
+}
+
+/** Resize a compound's local geometry so its exterior remains a true shape. */
+function resizeCompoundElement(element: SketchElement, update: Partial<SketchElement>): SketchElement {
+  const nextElement = { ...element, ...update }
+  if (element.kind !== 'compound' || !element.compoundParts) return nextElement
+  // Imported zero-size shapes are legal data. Avoid letting a later resize
+  // turn their saved component geometry into NaN.
+  const scaleX = element.width === 0 ? 1 : nextElement.width / element.width
+  const scaleY = element.height === 0 ? 1 : nextElement.height / element.height
+  const radiusScale = Math.min(Math.abs(scaleX), Math.abs(scaleY))
+  return {
+    ...nextElement,
+    compoundParts: element.compoundParts.map((part) => ({
+      ...part,
+      x: part.x * scaleX,
+      y: part.y * scaleY,
+      width: part.width * scaleX,
+      height: part.height * scaleY,
+      ...(typeof part.cornerRadius === 'number' ? { cornerRadius: part.cornerRadius * radiusScale } : {}),
+    })),
+  }
+}
+
+/** The maximum SVG corner radius that still fits inside this shape's bounds. */
+function maximumCornerRadius(element: SketchElement) {
+  return Math.max(0, Math.min(Math.abs(element.width), Math.abs(element.height)) / 2)
+}
+
+/**
+ * Older boards did not store corner radii. Preserve their original appearance
+ * until someone intentionally adjusts the selected rounded rectangle.
+ */
+function displayedCornerRadius(element: SketchElement) {
+  const legacyDefault = Math.min(24, Math.abs(element.width) / 5, Math.abs(element.height) / 5)
+  const requested = typeof element.cornerRadius === 'number' && Number.isFinite(element.cornerRadius)
+    ? element.cornerRadius
+    : legacyDefault
+  return Math.min(Math.max(0, requested), maximumCornerRadius(element))
+}
 
 function replaceLayer(
   document: SketchDocument,
@@ -78,7 +280,7 @@ function visibleLayers(document: SketchDocument) {
 }
 
 function elementBounds(element: SketchElement): ElementBounds {
-  if (element.kind === 'arrow') {
+  if (isLineElement(element.kind)) {
     return {
       x: Math.min(element.x, element.x + element.width),
       y: Math.min(element.y, element.y + element.height),
@@ -94,6 +296,67 @@ function elementBounds(element: SketchElement): ElementBounds {
   }
 }
 
+/** The smallest canvas box that contains every supplied shape. */
+function combinedElementBounds(elements: readonly SketchElement[]): ElementBounds {
+  const bounds = elements.map(elementBounds)
+  const left = Math.min(...bounds.map((box) => box.x))
+  const top = Math.min(...bounds.map((box) => box.y))
+  const right = Math.max(...bounds.map((box) => box.x + box.width))
+  const bottom = Math.max(...bounds.map((box) => box.y + box.height))
+  return {
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top,
+  }
+}
+
+/**
+ * Scale one member from a group's original bounding box. Lines retain their
+ * signed vectors, so an arrow that pointed up-left continues to do so after
+ * its group is resized. Compound elements resize their saved local geometry
+ * through the same path as an individually resized compound.
+ */
+function scaleElementFromGroupBounds(
+  element: SketchElement,
+  groupBounds: ElementBounds,
+  scaleX: number,
+  scaleY: number,
+): SketchElement {
+  const x = groupBounds.x + (element.x - groupBounds.x) * scaleX
+  const y = groupBounds.y + (element.y - groupBounds.y) * scaleY
+
+  if (isLineElement(element.kind)) {
+    return {
+      ...element,
+      x,
+      y,
+      width: element.width * scaleX,
+      height: element.height * scaleY,
+    }
+  }
+
+  const radiusScale = Math.min(Math.abs(scaleX), Math.abs(scaleY))
+  const resized = resizeCompoundElement(element, {
+    x,
+    y,
+    width: element.width * scaleX,
+    height: element.height * scaleY,
+  })
+  return {
+    ...resized,
+    ...(element.kind === 'rounded-rectangle' && typeof element.cornerRadius === 'number'
+      ? { cornerRadius: Math.max(0, element.cornerRadius * radiusScale) }
+      : {}),
+    // Text has a drawing box too, but its visible glyphs are controlled by
+    // fontSize. Scale it with the smallest axis so it remains readable rather
+    // than becoming artificially stretched on a non-uniform group resize.
+    ...(element.kind === 'text' && typeof element.fontSize === 'number'
+      ? { fontSize: Math.max(1, element.fontSize * radiusScale) }
+      : {}),
+  }
+}
+
 function normalizedBox(start: SketchPoint, end: SketchPoint): ElementBounds {
   return {
     x: Math.min(start.x, end.x),
@@ -103,11 +366,45 @@ function normalizedBox(start: SketchPoint, end: SketchPoint): ElementBounds {
   }
 }
 
+/** Keep a line or move on the dominant horizontal/vertical axis while Shift is held. */
+function axisLockedPoint(start: SketchPoint, end: SketchPoint): SketchPoint {
+  const dx = end.x - start.x
+  const dy = end.y - start.y
+  return Math.abs(dx) >= Math.abs(dy)
+    ? { ...end, y: start.y }
+    : { ...end, x: start.x }
+}
+
+/**
+ * A group is a canvas-local relationship, so it is intentionally scoped to
+ * its layer. That keeps a locked/hidden layer from being silently moved by a
+ * group drag on another layer.
+ */
+function selectedIdsIncludingLayerGroups(document: SketchDocument, selectedIds: readonly string[]) {
+  const selectedIdSet = new Set(selectedIds)
+  const selectedGroupKeys = new Set<string>()
+  for (const layer of document.layers) {
+    for (const element of layer.elements ?? []) {
+      if (selectedIdSet.has(element.id) && element.groupId) {
+        selectedGroupKeys.add(`${layer.id}:${element.groupId}`)
+      }
+    }
+  }
+  return document.layers.flatMap((layer) => (
+    (layer.elements ?? []).flatMap((element) => (
+      selectedIdSet.has(element.id) || (element.groupId && selectedGroupKeys.has(`${layer.id}:${element.groupId}`))
+        ? [element.id]
+        : []
+    ))
+  ))
+}
+
 function createElement(
   kind: Exclude<SketchElement['kind'], 'text'>,
   start: SketchPoint,
   end: SketchPoint,
   color: string,
+  fill: string,
   strokeWidth: number,
   opacity: number,
 ): SketchElement {
@@ -115,16 +412,19 @@ function createElement(
   return {
     id: crypto.randomUUID(),
     kind,
-    // Arrows retain their signed vector so they can point left/up as well as
-    // right/down. Everything else uses a normalized drawing box.
-    x: kind === 'arrow' ? start.x : box.x,
-    y: kind === 'arrow' ? start.y : box.y,
-    width: kind === 'arrow' ? end.x - start.x : box.width,
-    height: kind === 'arrow' ? end.y - start.y : box.height,
+    // Lines and arrows retain their signed vectors so they can point in any
+    // direction. Enclosed shapes use a normalized drawing box.
+    x: isLineElement(kind) ? start.x : box.x,
+    y: isLineElement(kind) ? start.y : box.y,
+    width: isLineElement(kind) ? end.x - start.x : box.width,
+    height: isLineElement(kind) ? end.y - start.y : box.height,
     stroke: color,
-    fill: 'transparent',
+    fill,
     strokeWidth,
     opacity,
+    ...(kind === 'rounded-rectangle'
+      ? { cornerRadius: Math.min(24, box.width / 5, box.height / 5) }
+      : {}),
   }
 }
 
@@ -133,15 +433,30 @@ function SketchElementGraphic({
   interactive = false,
   selected = false,
   onPointerDown,
+  markerNamespace,
+  strokeVisible = true,
+  fillVisible = true,
 }: {
   element: SketchElement
   interactive?: boolean
   selected?: boolean
   onPointerDown?: (event: ReactPointerEvent<SVGGElement>) => void
+  /** Prevent arrow marker IDs from colliding when a Visual is reused twice. */
+  markerNamespace?: string
+  /** Compound shapes render their shared outer stroke separately. */
+  strokeVisible?: boolean
+  /** An interactive compound overlay needs hit targets, not a second fill. */
+  fillVisible?: boolean
 }) {
   const bounds = elementBounds(element)
   const hitStroke = Math.max(16, element.strokeWidth + 10)
   const text = element.text ?? 'Text'
+  const stroke = strokeVisible ? element.stroke : 'transparent'
+  const fill = fillVisible ? element.fill : 'transparent'
+  const arrowMarkerId = `sketch-arrow-head-${markerNamespace ? `${markerNamespace}-` : ''}${element.id}`
+    .replace(/[^a-zA-Z0-9_-]/g, '-')
+  const compoundFilterId = `sketch-compound-outline-${markerNamespace ? `${markerNamespace}-` : ''}${element.id}`
+    .replace(/[^a-zA-Z0-9_-]/g, '-')
 
   return (
     <g
@@ -151,16 +466,61 @@ function SketchElementGraphic({
       pointerEvents={interactive ? 'all' : 'none'}
       onPointerDown={onPointerDown}
     >
-      {element.kind === 'rectangle' ? (
+      {(element.kind === 'rectangle' || element.kind === 'rounded-rectangle') ? (
         <>
           <rect
             x={element.x}
             y={element.y}
             width={element.width}
             height={element.height}
-            fill={element.fill}
-            stroke={element.stroke}
+            rx={element.kind === 'rounded-rectangle' ? displayedCornerRadius(element) : undefined}
+            ry={element.kind === 'rounded-rectangle' ? displayedCornerRadius(element) : undefined}
+            fill={fill}
+            stroke={stroke}
             strokeWidth={element.strokeWidth}
+          />
+          {interactive ? (
+            <rect
+              x={element.x}
+              y={element.y}
+              width={element.width}
+              height={element.height}
+              fill="transparent"
+              stroke="transparent"
+              strokeWidth={hitStroke}
+            />
+          ) : null}
+        </>
+      ) : null}
+      {element.kind === 'diamond' ? (
+        <>
+          <polygon
+            points={`${element.x + element.width / 2},${element.y} ${element.x + element.width},${element.y + element.height / 2} ${element.x + element.width / 2},${element.y + element.height} ${element.x},${element.y + element.height / 2}`}
+            fill={fill}
+            stroke={stroke}
+            strokeWidth={element.strokeWidth}
+          />
+          {interactive ? (
+            <rect
+              x={element.x}
+              y={element.y}
+              width={element.width}
+              height={element.height}
+              fill="transparent"
+              stroke="transparent"
+              strokeWidth={hitStroke}
+            />
+          ) : null}
+        </>
+      ) : null}
+      {element.kind === 'triangle' ? (
+        <>
+          <polygon
+            points={`${element.x + element.width / 2},${element.y} ${element.x + element.width},${element.y + element.height} ${element.x},${element.y + element.height}`}
+            fill={fill}
+            stroke={stroke}
+            strokeWidth={element.strokeWidth}
+            strokeLinejoin="round"
           />
           {interactive ? (
             <rect
@@ -182,8 +542,8 @@ function SketchElementGraphic({
             cy={element.y + element.height / 2}
             rx={element.width / 2}
             ry={element.height / 2}
-            fill={element.fill}
-            stroke={element.stroke}
+            fill={fill}
+            stroke={stroke}
             strokeWidth={element.strokeWidth}
           />
           {interactive ? (
@@ -199,31 +559,17 @@ function SketchElementGraphic({
           ) : null}
         </>
       ) : null}
-      {element.kind === 'arrow' ? (
+      {element.kind === 'line' ? (
         <>
-          <defs>
-            <marker
-              id={`sketch-arrow-head-${element.id}`}
-              markerWidth="10"
-              markerHeight="8"
-              refX="9"
-              refY="4"
-              orient="auto"
-              markerUnits="strokeWidth"
-            >
-              <path d="M 0 0 L 10 4 L 0 8 z" fill={element.stroke} />
-            </marker>
-          </defs>
           <line
             x1={element.x}
             y1={element.y}
             x2={element.x + element.width}
             y2={element.y + element.height}
             fill="none"
-            stroke={element.stroke}
+            stroke={stroke}
             strokeWidth={element.strokeWidth}
             strokeLinecap="round"
-            markerEnd={`url(#sketch-arrow-head-${element.id})`}
           />
           {interactive ? (
             <line
@@ -235,6 +581,100 @@ function SketchElementGraphic({
               stroke="transparent"
               strokeWidth={hitStroke}
               strokeLinecap="round"
+            />
+          ) : null}
+        </>
+      ) : null}
+      {element.kind === 'arrow' ? (
+        <>
+          <defs>
+            <marker
+              id={arrowMarkerId}
+              markerWidth="10"
+              markerHeight="8"
+              refX="9"
+              refY="4"
+              orient="auto"
+              markerUnits="strokeWidth"
+            >
+              <path d="M 0 0 L 10 4 L 0 8 z" fill={stroke} />
+            </marker>
+          </defs>
+          <line
+            x1={element.x}
+            y1={element.y}
+            x2={element.x + element.width}
+            y2={element.y + element.height}
+            fill="none"
+            stroke={stroke}
+            strokeWidth={element.strokeWidth}
+            strokeLinecap="round"
+            markerEnd={`url(#${arrowMarkerId})`}
+          />
+          {interactive ? (
+            <line
+              x1={element.x}
+              y1={element.y}
+              x2={element.x + element.width}
+              y2={element.y + element.height}
+              fill="none"
+              stroke="transparent"
+              strokeWidth={hitStroke}
+              strokeLinecap="round"
+            />
+          ) : null}
+        </>
+      ) : null}
+      {element.kind === 'compound' && element.compoundParts ? (
+        <>
+          <defs>
+            <filter id={compoundFilterId} x="-20%" y="-20%" width="140%" height="140%" colorInterpolationFilters="sRGB">
+              <feMorphology
+                in="SourceAlpha"
+                operator="dilate"
+                radius={Math.max(1, element.strokeWidth / 2)}
+                result="expanded"
+              />
+              <feComposite in="expanded" in2="SourceAlpha" operator="out" result="outside" />
+              <feFlood floodColor={stroke} result="outlineColor" />
+              <feComposite in="outlineColor" in2="outside" operator="in" result="outerOutline" />
+              <feMerge>
+                <feMergeNode in="outerOutline" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+          <g transform={`translate(${element.x} ${element.y})`} filter={`url(#${compoundFilterId})`} pointerEvents="none">
+            {element.compoundParts.map((part) => (
+              <SketchElementGraphic
+                key={`${element.id}-${part.id}`}
+                element={{
+                  id: `${element.id}-${part.id}`,
+                  kind: part.kind,
+                  x: part.x,
+                  y: part.y,
+                  width: part.width,
+                  height: part.height,
+                  stroke,
+                  fill,
+                  strokeWidth: element.strokeWidth,
+                  opacity: 1,
+                  ...(typeof part.cornerRadius === 'number' ? { cornerRadius: part.cornerRadius } : {}),
+                }}
+                markerNamespace={markerNamespace}
+                strokeVisible={false}
+              />
+            ))}
+          </g>
+          {interactive ? (
+            <rect
+              x={element.x}
+              y={element.y}
+              width={element.width}
+              height={element.height}
+              fill="transparent"
+              stroke="transparent"
+              strokeWidth={hitStroke}
             />
           ) : null}
         </>
@@ -253,7 +693,7 @@ function SketchElementGraphic({
           <text
             x={element.x}
             y={element.y}
-            fill={element.stroke}
+            fill={stroke}
             fontSize={element.fontSize ?? 26}
             fontFamily="inherit"
             dominantBaseline="hanging"
@@ -275,6 +715,148 @@ function SketchElementGraphic({
           strokeWidth={2}
           strokeDasharray="7 5"
           pointerEvents="none"
+        />
+      ) : null}
+    </g>
+  )
+}
+
+/** Preserves ordinary elements and their durable compound-shape records. */
+function SketchLayerElementGraphics({
+  layer,
+  interactive = false,
+  selectedElementIds = [],
+  onElementPointerDown,
+  markerNamespace,
+}: {
+  layer: SketchLayer
+  interactive?: boolean
+  selectedElementIds?: readonly string[]
+  onElementPointerDown?: (event: ReactPointerEvent<SVGGElement>, element: SketchElement) => void
+  markerNamespace?: string
+}) {
+  const elements = layer.elements ?? []
+
+  return (
+    <>
+      {elements.map((element) => (
+          <SketchElementGraphic
+            key={element.id}
+            element={element}
+            interactive={interactive}
+            selected={selectedElementIds.includes(element.id)}
+            markerNamespace={markerNamespace}
+            onPointerDown={(event) => onElementPointerDown?.(event, element)}
+          />
+      ))}
+    </>
+  )
+}
+
+/**
+ * A placed Visual is rendered directly from its canonical node. Nothing is
+ * copied into the parent sketch document: the parent owns only `placement`.
+ */
+function EmbeddedVisualGraphic({
+  embed,
+  interactive = false,
+  selected = false,
+  onPointerDown,
+}: {
+  embed: VisualEmbedInstance
+  interactive?: boolean
+  selected?: boolean
+  onPointerDown?: (event: ReactPointerEvent<SVGGElement>) => void
+}) {
+  const { placement, visual } = embed
+  const accentColor = embed.accentColor
+  const childDocument = visual.data.sketch
+  const directImage = visual.data.properties[OSA_PROPERTY.assetImage]?.trim() ?? ''
+  // Pre-Visual boards can keep an image directly on an otherwise editable
+  // canvas. Preserve it in nested previews while the normal migration runs.
+  const hasLegacyBackground = !visual.data.properties[OSA_PROPERTY.visualContent]
+    && Boolean(directImage)
+  const image = isImmutableVisual(visual) || hasLegacyBackground
+    ? directImage
+    : ''
+
+  return (
+    <g
+      className={selected ? 'sketch-visual-embed is-selected' : 'sketch-visual-embed'}
+      data-visual-embed-id={embed.id}
+      pointerEvents={interactive ? 'all' : 'none'}
+      onPointerDown={onPointerDown}
+    >
+      {image ? (
+        // A photo is an image asset, not a 1000 × 700 OSA drawing page. Draw
+        // it directly in this parent-side placement so no blank paper or
+        // permanent frame travels with the photo. `meet` keeps the source
+        // aspect ratio without stretching or unexpectedly cropping it.
+        <image
+          href={image}
+          x={placement.x}
+          y={placement.y}
+          width={placement.width}
+          height={placement.height}
+          preserveAspectRatio="xMidYMid meet"
+          pointerEvents="none"
+        />
+      ) : (
+        <svg
+          x={placement.x}
+          y={placement.y}
+          width={placement.width}
+          height={placement.height}
+          viewBox={`0 0 ${childDocument.width} ${childDocument.height}`}
+          preserveAspectRatio="xMidYMid meet"
+          overflow="hidden"
+          pointerEvents="none"
+        >
+          <rect width={childDocument.width} height={childDocument.height} fill={childDocument.background} />
+          {(embed.embeddedVisuals ?? []).map((childEmbed) => (
+            <EmbeddedVisualGraphic key={childEmbed.id} embed={childEmbed} />
+          ))}
+          {visibleLayers(childDocument).flatMap((layer) => [
+            <SketchLayerElementGraphics
+              key={`${embed.id}-${layer.id}-elements`}
+              layer={layer}
+              markerNamespace={embed.id}
+            />,
+            ...layer.strokes.map((stroke) => (
+              <Stroke key={`${embed.id}-${stroke.id}`} stroke={stroke} erase={false} />
+            )),
+          ])}
+        </svg>
+      )}
+      {accentColor ? (
+        // Shade the placed rendering without changing its canonical source.
+        // Light areas take on the owner's semantic color while the actual
+        // drawing or photo remains visible underneath.
+        <rect
+          className="sketch-visual-embed__accent"
+          x={placement.x}
+          y={placement.y}
+          width={placement.width}
+          height={placement.height}
+          fill={accentColor}
+          fillOpacity={0.22}
+          pointerEvents="none"
+        />
+      ) : null}
+      {interactive ? (
+        // This is an invisible hit target until the item is selected. A photo
+        // therefore looks like just a photo in the canvas, while still being
+        // selectable and resizable from the ordinary Select tool.
+        <rect
+          x={placement.x}
+          y={placement.y}
+          width={placement.width}
+          height={placement.height}
+          fill="transparent"
+          stroke={selected ? '#26799b' : 'none'}
+          strokeWidth={selected ? 3 : 0}
+          strokeDasharray={selected ? '7 5' : undefined}
+          pointerEvents="all"
         />
       ) : null}
     </g>
@@ -371,12 +953,15 @@ export function SketchPreview({
   document,
   height,
   backgroundImage,
+  embeddedVisuals = [],
   ariaLabel = 'Sketch preview',
   className,
 }: {
   document: SketchDocument
   height?: number | string
   backgroundImage?: string
+  /** Direct child Visuals placed in this preview's parent canvas. */
+  embeddedVisuals?: VisualEmbedInstance[]
   ariaLabel?: string
   className?: string
 }) {
@@ -398,10 +983,11 @@ export function SketchPreview({
           preserveAspectRatio="xMidYMid meet"
         />
       ) : null}
+      {embeddedVisuals.map((embed) => (
+        <EmbeddedVisualGraphic key={embed.id} embed={embed} />
+      ))}
       {visibleLayers(document).flatMap((layer) => [
-        ...layer.elements.map((element) => (
-          <SketchElementGraphic key={element.id} element={element} />
-        )),
+        <SketchLayerElementGraphics key={`${layer.id}-elements`} layer={layer} />,
         ...layer.strokes.map((stroke) => (
           <Stroke key={stroke.id} stroke={stroke} erase={false} />
         )),
@@ -416,16 +1002,26 @@ export function SketchPad({
   backgroundImage,
   ariaLabel = 'Drawing page',
   initialTool = 'pen',
+  embeddedVisuals = [],
+  onEmbeddedVisualPlacementChange,
+  onEmbeddedVisualRemove,
+  onEmbeddedVisualMakeIndependent,
 }: SketchPadProps) {
   const [tool, setTool] = useState<SketchTool>(initialTool)
   const [color, setColor] = useState<string>(PEN_COLORS[0])
+  /** New enclosed shapes use this fill; lines, arrows, text, and pen ignore it. */
+  const [fillColor, setFillColor] = useState<string>('transparent')
   const [brushWidth, setBrushWidth] = useState(4)
   const [opacity, setOpacity] = useState(1)
   const [zoom, setZoom] = useState(0.75)
   const [activeStroke, setActiveStroke] = useState<SketchStroke | null>(null)
   const [activeStrokeLayerId, setActiveStrokeLayerId] = useState<string | null>(null)
   const [activeElement, setActiveElement] = useState<ActiveElementInteraction | null>(null)
-  const [selectedElementId, setSelectedElementId] = useState<string | null>(null)
+  const [activeRegionSelection, setActiveRegionSelection] = useState<ActiveRegionSelection | null>(null)
+  const [selectedElementIds, setSelectedElementIds] = useState<string[]>([])
+  const [clipboardCount, setClipboardCount] = useState(0)
+  const [activeEmbed, setActiveEmbed] = useState<ActiveEmbedInteraction | null>(null)
+  const [selectedEmbedId, setSelectedEmbedId] = useState<string | null>(null)
   const [activeLayerId, setActiveLayerId] = useState(document.layers.at(-1)?.id ?? '')
   const [historyState, setHistoryState] = useState({ undo: 0, redo: 0 })
   const undoStack = useRef<SketchDocument[]>([])
@@ -437,6 +1033,10 @@ export function SketchPad({
   const activeStrokePointerIdRef = useRef<number | null>(null)
   const activeStrokeLayerIdRef = useRef<string | null>(null)
   const activeElementRef = useRef<ActiveElementInteraction | null>(null)
+  const activeRegionSelectionRef = useRef<ActiveRegionSelection | null>(null)
+  const shapeClipboardRef = useRef<ShapeClipboardItem[]>([])
+  const pasteOffsetRef = useRef(0)
+  const activeEmbedRef = useRef<ActiveEmbedInteraction | null>(null)
   const activePenPointerIdRef = useRef<number | null>(null)
   const ignoreTouchUntilRef = useRef(0)
   const touchPointersRef = useRef(new Map<number, TouchPoint>())
@@ -445,9 +1045,56 @@ export function SketchPad({
   const zoomRef = useRef(zoom)
   const activeLayer = document.layers.find((layer) => layer.id === activeLayerId)
     ?? document.layers.at(-1)
-  const selectedElement = document.layers
+  const selectedElements = document.layers
     .flatMap((layer) => (layer.elements ?? []).map((element) => ({ layer, element })))
-    .find(({ element }) => element.id === selectedElementId)
+    .filter(({ element }) => selectedElementIds.includes(element.id))
+  const selectedElement = selectedElements[0]
+  const selectedElementCount = selectedElements.length
+  const selectedGroupIds = [...new Set(
+    selectedElements.flatMap(({ element }) => element.groupId ? [element.groupId] : []),
+  )]
+  const selectedElementsShareEditableLayer = selectedElements.length > 0
+    && selectedElements.every(({ layer }) => (
+      !layer.locked && layer.id === selectedElements[0]?.layer.id
+    ))
+  const selectedElementsAreOneGroup = selectedElementCount > 1
+    && selectedGroupIds.length === 1
+    && selectedElements.every(({ element }) => element.groupId === selectedGroupIds[0])
+  const canGroupSelectedElements = selectedElementCount > 1
+    && selectedElementsShareEditableLayer
+    && !selectedElementsAreOneGroup
+  const canUngroupSelectedElements = selectedGroupIds.length > 0 && selectedElementsShareEditableLayer
+  /** A durable group is selected as one object, including every member. */
+  const selectedGroup = selectedElementsAreOneGroup && selectedElementsShareEditableLayer && selectedElement
+    ? {
+      layer: selectedElement.layer,
+      id: selectedGroupIds[0],
+      members: (selectedElement.layer.elements ?? []).filter((element) => (
+        element.groupId === selectedGroupIds[0]
+      )),
+    }
+    : null
+  const selectedGroupBounds = selectedGroup && selectedGroup.members.length > 0
+    ? combinedElementBounds(selectedGroup.members)
+    : null
+  /**
+   * Combine makes one new geometric object. It intentionally accepts only
+   * filled, enclosed SVG primitives: lines and text have no filled silhouette
+   * to union, and compounds should be broken apart before being recombined.
+   */
+  const canCombineSelectedElements = selectedElementCount > 1
+    && selectedElementsShareEditableLayer
+    && selectedElements.every(({ element }) => (
+      isCompoundPartKind(element.kind) && element.fill !== 'transparent'
+    ))
+  const canBreakApartSelectedElement = Boolean(
+    selectedElementCount === 1
+    && selectedElement
+    && !selectedElement.layer.locked
+    && selectedElement.element.kind === 'compound'
+    && selectedElement.element.compoundParts?.length,
+  )
+  const selectedEmbed = embeddedVisuals.find((embed) => embed.id === selectedEmbedId)
 
   useEffect(() => {
     zoomRef.current = zoom
@@ -459,28 +1106,28 @@ export function SketchPad({
     }
   }, [])
 
-  const commit = (nextDocument: SketchDocument) => {
+  const commit = useCallback((nextDocument: SketchDocument) => {
     undoStack.current.push(cloneSketchDocument(document))
     redoStack.current = []
     onChange(cloneSketchDocument(nextDocument))
     setHistoryState({ undo: undoStack.current.length, redo: 0 })
-  }
+  }, [document, onChange])
 
-  const undo = () => {
+  const undo = useCallback(() => {
     const previous = undoStack.current.pop()
     if (!previous) return
     redoStack.current.push(cloneSketchDocument(document))
     onChange(previous)
     setHistoryState({ undo: undoStack.current.length, redo: redoStack.current.length })
-  }
+  }, [document, onChange])
 
-  const redo = () => {
+  const redo = useCallback(() => {
     const next = redoStack.current.pop()
     if (!next) return
     undoStack.current.push(cloneSketchDocument(document))
     onChange(next)
     setHistoryState({ undo: undoStack.current.length, redo: redoStack.current.length })
-  }
+  }, [document, onChange])
 
   const pointFromPointer = (
     pointer: globalThis.PointerEvent,
@@ -612,10 +1259,9 @@ export function SketchPad({
 
   const isObjectTool = (candidate: SketchTool) => (
     candidate === 'select'
-    || candidate === 'rectangle'
-    || candidate === 'ellipse'
-    || candidate === 'arrow'
+    || isShapeTool(candidate)
     || candidate === 'text'
+    || candidate === 'eraser'
   )
 
   const clearPenTouchConflict = (event: ReactPointerEvent<SVGElement>) => {
@@ -639,19 +1285,146 @@ export function SketchPad({
     }
   }
 
+  const updateActiveRegionSelection = (event: ReactPointerEvent<SVGSVGElement>) => {
+    const selection = activeRegionSelectionRef.current
+    if (!selection || selection.pointerId !== event.pointerId) return false
+    const next = {
+      ...selection,
+      endPoint: pointFromPointer(event.nativeEvent, event.currentTarget.getBoundingClientRect()),
+    }
+    activeRegionSelectionRef.current = next
+    setActiveRegionSelection(next)
+    return true
+  }
+
+  const finishActiveRegionSelection = (
+    event: ReactPointerEvent<SVGSVGElement>,
+    cancelled: boolean,
+  ) => {
+    const selection = activeRegionSelectionRef.current
+    if (!selection || selection.pointerId !== event.pointerId) return false
+    activeRegionSelectionRef.current = null
+    setActiveRegionSelection(null)
+    if (cancelled) return true
+
+    const bounds = normalizedBox(selection.startPoint, selection.endPoint)
+    // A normal click on empty canvas keeps the familiar behavior: no object is
+    // selected. A real drag selects only shapes fully inside the marquee.
+    if (bounds.width < 4 || bounds.height < 4) return true
+    const selectedIds = document.layers.flatMap((layer) => (
+      layer.visible && !layer.locked
+        ? (layer.elements ?? []).flatMap((element) => {
+          const elementBox = elementBounds(element)
+          const fullyContained = (
+            elementBox.x >= bounds.x
+            && elementBox.y >= bounds.y
+            && elementBox.x + elementBox.width <= bounds.x + bounds.width
+            && elementBox.y + elementBox.height <= bounds.y + bounds.height
+          )
+          return fullyContained ? [element.id] : []
+        })
+        : []
+    ))
+    const regionIds = selectedIdsIncludingLayerGroups(document, selectedIds)
+    if (selection.toggleSelection) {
+      setSelectedElementIds((currentIds) => {
+        const currentIdSet = new Set(currentIds)
+        const regionAlreadySelected = regionIds.length > 0 && regionIds.every((id) => currentIdSet.has(id))
+        for (const id of regionIds) {
+          if (regionAlreadySelected) currentIdSet.delete(id)
+          else currentIdSet.add(id)
+        }
+        // Keep a stable document order for predictable inspector behavior.
+        return document.layers.flatMap((layer) => (
+          (layer.elements ?? []).flatMap((element) => currentIdSet.has(element.id) ? [element.id] : [])
+        ))
+      })
+    } else {
+      setSelectedElementIds(regionIds)
+    }
+    return true
+  }
+
+  const updateActiveEmbed = (event: ReactPointerEvent<SVGSVGElement>) => {
+    const interaction = activeEmbedRef.current
+    if (!interaction || interaction.pointerId !== event.pointerId) return false
+
+    const point = pointFromPointer(event.nativeEvent, event.currentTarget.getBoundingClientRect())
+    const dx = point.x - interaction.startPoint.x
+    const dy = point.y - interaction.startPoint.y
+    const placement: VisualEmbedPlacement = interaction.mode === 'move'
+      ? {
+        ...interaction.original,
+        x: interaction.original.x + dx,
+        y: interaction.original.y + dy,
+      }
+      : {
+        ...interaction.original,
+        ...((interaction.original.aspectRatioLocked || event.shiftKey)
+          ? proportionalDimensions(
+            interaction.original,
+            interaction.original.width + dx,
+            interaction.original.height + dy,
+            24,
+          )
+          : {
+            width: Math.max(24, interaction.original.width + dx),
+            height: Math.max(24, interaction.original.height + dy),
+          }),
+      }
+
+    const next = { ...interaction, placement }
+    activeEmbedRef.current = next
+    setActiveEmbed(next)
+    onEmbeddedVisualPlacementChange?.(interaction.embedId, placement)
+    return true
+  }
+
+  const startEmbedInteraction = (
+    event: ReactPointerEvent<SVGGElement>,
+    embed: VisualEmbedInstance,
+    mode: 'move' | 'resize',
+  ) => {
+    if (tool !== 'select' || !onEmbeddedVisualPlacementChange) return
+    event.stopPropagation()
+    const surface = surfaceRef.current
+    if (!surface) return
+
+    clearPenTouchConflict(event)
+    if (!surface.hasPointerCapture(event.pointerId)) surface.setPointerCapture(event.pointerId)
+    const point = pointFromPointer(event.nativeEvent, surface.getBoundingClientRect())
+    const interaction: ActiveEmbedInteraction = {
+      pointerId: event.pointerId,
+      embedId: embed.id,
+      original: { ...embed.placement },
+      placement: { ...embed.placement },
+      startPoint: point,
+      mode,
+    }
+    activeEmbedRef.current = interaction
+    setActiveEmbed(interaction)
+    setSelectedEmbedId(embed.id)
+    setSelectedElementIds([])
+  }
+
   const updateActiveElement = (event: ReactPointerEvent<SVGSVGElement>) => {
     const interaction = activeElementRef.current
     if (!interaction || interaction.pointerId !== event.pointerId) return false
-    const point = pointFromPointer(event.nativeEvent, event.currentTarget.getBoundingClientRect())
+    const rawPoint = pointFromPointer(event.nativeEvent, event.currentTarget.getBoundingClientRect())
     const original = interaction.original
     let element = interaction.element
+    let groupElements = interaction.groupElements
 
     if (interaction.mode === 'create') {
+      const point = event.shiftKey && isLineElement(interaction.element.kind)
+        ? axisLockedPoint(interaction.startPoint, rawPoint)
+        : rawPoint
       element = createElement(
         interaction.element.kind as Exclude<SketchElement['kind'], 'text'>,
         interaction.startPoint,
         point,
         interaction.element.stroke,
+        interaction.element.fill,
         interaction.element.strokeWidth,
         interaction.element.opacity,
       )
@@ -659,23 +1432,65 @@ export function SketchPad({
       // only on pointer-up.
       element.id = interaction.element.id
     } else if (original && interaction.mode === 'move') {
-      const dx = point.x - interaction.startPoint.x
-      const dy = point.y - interaction.startPoint.y
-      element = { ...original, x: original.x + dx, y: original.y + dy }
+      const rawDx = rawPoint.x - interaction.startPoint.x
+      const rawDy = rawPoint.y - interaction.startPoint.y
+      const moveHorizontally = Math.abs(rawDx) >= Math.abs(rawDy)
+      const dx = event.shiftKey && !moveHorizontally ? 0 : rawDx
+      const dy = event.shiftKey && moveHorizontally ? 0 : rawDy
+      groupElements = interaction.groupMembers?.map((member) => ({
+        ...member,
+        x: member.x + dx,
+        y: member.y + dy,
+      }))
+      element = groupElements?.find((member) => member.id === original.id)
+        ?? { ...original, x: original.x + dx, y: original.y + dy }
     } else if (original && interaction.mode === 'resize') {
-      if (original.kind === 'arrow') {
+      if (interaction.groupMembers && interaction.groupMembers.length > 1) {
+        const groupBounds = combinedElementBounds(interaction.groupMembers)
+        const requestedWidth = Math.max(MIN_GROUP_DIMENSION, rawPoint.x - groupBounds.x)
+        const requestedHeight = Math.max(MIN_GROUP_DIMENSION, rawPoint.y - groupBounds.y)
+        // A multi-selection has no durable object of its own to store a lock
+        // on, but holding Shift keeps the group proportional for this resize.
+        const lockedSize = event.shiftKey
+          ? proportionalDimensions(groupBounds, requestedWidth, requestedHeight)
+          : { width: requestedWidth, height: requestedHeight }
+        const width = Math.max(MIN_GROUP_DIMENSION, lockedSize.width)
+        const height = Math.max(MIN_GROUP_DIMENSION, lockedSize.height)
+        const scaleX = groupBounds.width === 0 ? 1 : width / groupBounds.width
+        const scaleY = groupBounds.height === 0 ? 1 : height / groupBounds.height
+        groupElements = interaction.groupMembers.map((member) => (
+          scaleElementFromGroupBounds(member, groupBounds, scaleX, scaleY)
+        ))
+        element = groupElements.find((member) => member.id === original.id) ?? original
+      } else if (isLineElement(original.kind)) {
+        const point = event.shiftKey
+          ? axisLockedPoint({ x: original.x, y: original.y }, rawPoint)
+          : rawPoint
         element = {
           ...original,
           width: point.x - original.x,
           height: point.y - original.y,
         }
       } else {
-        const box = normalizedBox({ x: original.x, y: original.y }, point)
-        element = { ...original, ...box }
+        const keepAspectRatio = Boolean(original.aspectRatioLocked || event.shiftKey)
+        // The resize handle is at lower-right, so a locked resize keeps the
+        // opposite (top-left) corner stable instead of flipping the object.
+        const box = keepAspectRatio
+          ? {
+            x: original.x,
+            y: original.y,
+            ...proportionalDimensions(
+              original,
+              rawPoint.x - original.x,
+              rawPoint.y - original.y,
+            ),
+          }
+          : normalizedBox({ x: original.x, y: original.y }, rawPoint)
+        element = resizeCompoundElement(original, box)
       }
     }
 
-    const next = { ...interaction, element }
+    const next = { ...interaction, element, ...(groupElements ? { groupElements } : {}) }
     activeElementRef.current = next
     setActiveElement(next)
     return true
@@ -692,26 +1507,68 @@ export function SketchPad({
     const surface = surfaceRef.current
     if (!surface) return
     clearPenTouchConflict(event)
+    const isAlreadySelected = selectedElementIds.includes(element.id)
+    // Shift-click adds a new item to a selection. Once an item is already in
+    // the selection, Shift remains available for the promised axis-locked
+    // drag. Cmd/Ctrl-click remains the explicit toggle/remove gesture.
+    const selectionModifier = event.metaKey || event.ctrlKey || (event.shiftKey && !isAlreadySelected)
+    if (selectionModifier) {
+      const groupIds = selectedIdsIncludingLayerGroups(document, [element.id])
+      setSelectedElementIds((currentIds) => {
+        const currentIdSet = new Set(currentIds)
+        const groupAlreadySelected = groupIds.every((id) => currentIdSet.has(id))
+        for (const id of groupIds) {
+          if (groupAlreadySelected) currentIdSet.delete(id)
+          else currentIdSet.add(id)
+        }
+        return document.layers.flatMap((candidateLayer) => (
+          (candidateLayer.elements ?? []).flatMap((candidate) => (
+            currentIdSet.has(candidate.id) ? [candidate.id] : []
+          ))
+        ))
+      })
+      setSelectedEmbedId(null)
+      return
+    }
     if (!surface.hasPointerCapture(event.pointerId)) surface.setPointerCapture(event.pointerId)
     const point = pointFromPointer(event.nativeEvent, surface.getBoundingClientRect())
+    const selectedMembers = isAlreadySelected
+      ? (layer.elements ?? []).filter((candidate) => selectedElementIds.includes(candidate.id))
+      : []
+    // A temporary multi-selection moves together even before the person
+    // decides it deserves a durable `groupId`. A saved group uses the same
+    // movement path, but remains a relationship after selection changes.
+    const groupMembers = selectedMembers.length > 1
+      ? selectedMembers.map(cloneSketchElement)
+      : element.groupId
+      ? (layer.elements ?? [])
+        .filter((candidate) => candidate.groupId === element.groupId)
+        .map(cloneSketchElement)
+      : []
     const interaction: ActiveElementInteraction = {
       pointerId: event.pointerId,
       layerId: layer.id,
-      element: { ...element },
-      original: { ...element },
+      element: cloneSketchElement(element),
+      original: cloneSketchElement(element),
+      ...(groupMembers.length > 1 ? { groupMembers } : {}),
       startPoint: point,
       mode,
     }
     activeElementRef.current = interaction
     setActiveElement(interaction)
-    setSelectedElementId(element.id)
+    setSelectedElementIds(
+      groupMembers.length > 1
+        ? selectedIdsIncludingLayerGroups(document, groupMembers.map((member) => member.id))
+        : selectedIdsIncludingLayerGroups(document, [element.id]),
+    )
+    setSelectedEmbedId(null)
   }
 
   const beginInteraction = (event: ReactPointerEvent<SVGSVGElement>) => {
     event.stopPropagation()
-    // Finger gestures remain navigation while drawing/erasing. When a person
-    // deliberately picks a shape or Select, that same finger can manipulate
-    // objects; Pan is always available for navigation.
+    // Finger gestures remain navigation while drawing. When a person
+    // deliberately picks, creates, or erases an object, that same finger
+    // operates on the canvas; Pan is always available for navigation.
     if (event.pointerType === 'touch' && !isObjectTool(tool)) {
       beginTouchNavigation(event)
       return
@@ -736,7 +1593,20 @@ export function SketchPad({
     }
 
     if (tool === 'select') {
-      setSelectedElementId(null)
+      if (!event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.setPointerCapture(event.pointerId)
+      }
+      const point = pointFromPointer(event.nativeEvent, event.currentTarget.getBoundingClientRect())
+      const selection: ActiveRegionSelection = {
+        pointerId: event.pointerId,
+        startPoint: point,
+        endPoint: point,
+        toggleSelection: event.metaKey || event.ctrlKey,
+      }
+      activeRegionSelectionRef.current = selection
+      setActiveRegionSelection(selection)
+      if (!selection.toggleSelection) setSelectedElementIds([])
+      setSelectedEmbedId(null)
       return
     }
 
@@ -762,16 +1632,17 @@ export function SketchPad({
         ...layer,
         elements: [...(layer.elements ?? []), element],
       })))
-      setSelectedElementId(element.id)
+      setSelectedElementIds([element.id])
+      setSelectedEmbedId(null)
       setTool('select')
       return
     }
 
-    if (tool === 'rectangle' || tool === 'ellipse' || tool === 'arrow') {
+    if (isShapeTool(tool)) {
       if (!event.currentTarget.hasPointerCapture(event.pointerId)) {
         event.currentTarget.setPointerCapture(event.pointerId)
       }
-      const element = createElement(tool, point, point, color, brushWidth, opacity)
+      const element = createElement(tool, point, point, color, fillColor, brushWidth, opacity)
       const interaction: ActiveElementInteraction = {
         pointerId: event.pointerId,
         layerId: activeLayer.id,
@@ -782,7 +1653,8 @@ export function SketchPad({
       }
       activeElementRef.current = interaction
       setActiveElement(interaction)
-      setSelectedElementId(element.id)
+      setSelectedElementIds([element.id])
+      setSelectedEmbedId(null)
       return
     }
 
@@ -812,6 +1684,8 @@ export function SketchPad({
       return
     }
 
+    if (updateActiveRegionSelection(event)) return
+    if (updateActiveEmbed(event)) return
     if (updateActiveElement(event)) return
 
     if (panState.current?.pointerId === event.pointerId) {
@@ -853,11 +1727,25 @@ export function SketchPad({
     if (cancelled) return true
 
     const element = interaction.element
-    const hasUsefulSize = element.kind === 'arrow'
+    const hasUsefulSize = isLineElement(element.kind)
       ? Math.hypot(element.width, element.height) >= 4
       : element.width >= 4 && element.height >= 4
     if (interaction.mode === 'create' && !hasUsefulSize) {
-      setSelectedElementId(null)
+      setSelectedElementIds([])
+      return true
+    }
+    if (
+      (interaction.mode === 'move' || interaction.mode === 'resize')
+      && interaction.groupElements
+      && interaction.groupElements.length > 1
+    ) {
+      const groupElementsById = new Map(interaction.groupElements.map((member) => [member.id, member]))
+      commit(replaceLayer(document, interaction.layerId, (layer) => ({
+        ...layer,
+        elements: (layer.elements ?? []).map((candidate) => (
+          groupElementsById.get(candidate.id) ?? candidate
+        )),
+      })))
       return true
     }
     commit(replaceLayer(document, interaction.layerId, (layer) => ({
@@ -869,6 +1757,23 @@ export function SketchPad({
     return true
   }
 
+  const finishActiveEmbed = (
+    event: ReactPointerEvent<SVGSVGElement>,
+    cancelled: boolean,
+  ) => {
+    const interaction = activeEmbedRef.current
+    if (!interaction || interaction.pointerId !== event.pointerId) return false
+    activeEmbedRef.current = null
+    setActiveEmbed(null)
+    if (cancelled) return true
+
+    // Most moves have already streamed their draft placement through the
+    // callback. Send the final value as well so a click/release sequence is
+    // always deterministic for the parent canvas draft.
+    onEmbeddedVisualPlacementChange?.(interaction.embedId, interaction.placement)
+    return true
+  }
+
   const finishInteraction = (
     event: ReactPointerEvent<SVGSVGElement>,
     cancelled = false,
@@ -876,6 +1781,28 @@ export function SketchPad({
     event.stopPropagation()
     if (event.pointerType === 'touch' && touchPointersRef.current.has(event.pointerId)) {
       finishTouchNavigation(event)
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      }
+      return
+    }
+
+    if (finishActiveRegionSelection(event, cancelled)) {
+      if (activePenPointerIdRef.current === event.pointerId) {
+        activePenPointerIdRef.current = null
+        ignoreTouchUntilRef.current = event.timeStamp + 300
+      }
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      }
+      return
+    }
+
+    if (finishActiveEmbed(event, cancelled)) {
+      if (activePenPointerIdRef.current === event.pointerId) {
+        activePenPointerIdRef.current = null
+        ignoreTouchUntilRef.current = event.timeStamp + 300
+      }
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
         event.currentTarget.releasePointerCapture(event.pointerId)
       }
@@ -928,6 +1855,20 @@ export function SketchPad({
       finishTouchNavigation(event)
       return
     }
+    if (finishActiveRegionSelection(event, true)) {
+      if (activePenPointerIdRef.current === event.pointerId) {
+        activePenPointerIdRef.current = null
+        ignoreTouchUntilRef.current = event.timeStamp + 300
+      }
+      return
+    }
+    if (finishActiveEmbed(event, true)) {
+      if (activePenPointerIdRef.current === event.pointerId) {
+        activePenPointerIdRef.current = null
+        ignoreTouchUntilRef.current = event.timeStamp + 300
+      }
+      return
+    }
     if (finishActiveElement(event, true)) {
       if (activePenPointerIdRef.current === event.pointerId) {
         activePenPointerIdRef.current = null
@@ -959,6 +1900,17 @@ export function SketchPad({
       strokes: candidate.strokes.filter((stroke) => stroke.id !== strokeId),
     })))
   }
+
+  /** The erase tool removes durable shapes/text as well as freehand strokes. */
+  const eraseElement = useCallback((layerId: string, elementId: string) => {
+    const layer = document.layers.find((candidate) => candidate.id === layerId)
+    if (!layer || layer.locked) return
+    commit(replaceLayer(document, layerId, (candidate) => ({
+      ...candidate,
+      elements: (candidate.elements ?? []).filter((element) => element.id !== elementId),
+    })))
+    setSelectedElementIds((ids) => ids.filter((id) => id !== elementId))
+  }, [commit, document])
 
   const updatePageSize = (dimension: 'width' | 'height', value: number) => {
     if (!Number.isFinite(value)) return
@@ -995,45 +1947,457 @@ export function SketchPad({
       elements: [],
       strokes: [],
     })))
-    setSelectedElementId(null)
+    setSelectedElementIds([])
   }
 
   const updateSelectedElement = (update: Partial<SketchElement>) => {
-    if (!selectedElement || selectedElement.layer.locked) return
+    if (!selectedElement || selectedElementCount !== 1 || selectedElement.layer.locked) return
     const { layer, element } = selectedElement
     commit(replaceLayer(document, layer.id, (candidate) => ({
       ...candidate,
       elements: (candidate.elements ?? []).map((item) => (
-        item.id === element.id ? { ...item, ...update } : item
+        item.id === element.id ? resizeCompoundElement(item, update) : item
       )),
     })))
   }
 
-  const deleteSelectedElement = () => {
-    if (!selectedElement || selectedElement.layer.locked) return
-    commit(replaceLayer(document, selectedElement.layer.id, (layer) => ({
-      ...layer,
-      elements: (layer.elements ?? []).filter((element) => element.id !== selectedElement.element.id),
-    })))
-    setSelectedElementId(null)
+  /** A locked shape updates both numeric size fields as one durable edit. */
+  const updateSelectedShapeDimension = (dimension: 'width' | 'height', value: number) => {
+    if (!selectedElement || selectedElementCount !== 1 || !isResizableShape(selectedElement.element.kind)) return
+    updateSelectedElement(sizedElementUpdate(selectedElement.element, dimension, value))
   }
 
+  /** Resize the selected durable group from its top-left group boundary. */
+  const updateSelectedGroupSize = (dimension: 'width' | 'height', value: number) => {
+    if (!selectedGroup || !selectedGroupBounds || !Number.isFinite(value)) return
+    const nextDimension = Math.max(MIN_GROUP_DIMENSION, value)
+    const scaleX = dimension === 'width'
+      ? (selectedGroupBounds.width === 0 ? 1 : nextDimension / selectedGroupBounds.width)
+      : 1
+    const scaleY = dimension === 'height'
+      ? (selectedGroupBounds.height === 0 ? 1 : nextDimension / selectedGroupBounds.height)
+      : 1
+    const membersById = new Map(selectedGroup.members.map((member) => [member.id, member]))
+
+    commit(replaceLayer(document, selectedGroup.layer.id, (layer) => ({
+      ...layer,
+      elements: (layer.elements ?? []).map((element) => {
+        const member = membersById.get(element.id)
+        return member
+          ? scaleElementFromGroupBounds(member, selectedGroupBounds, scaleX, scaleY)
+          : element
+      }),
+    })))
+  }
+
+  /** Move the selected durable group without changing any member's geometry. */
+  const updateSelectedGroupPosition = (dimension: 'x' | 'y', value: number) => {
+    if (!selectedGroup || !selectedGroupBounds || !Number.isFinite(value)) return
+    const deltaX = dimension === 'x' ? value - selectedGroupBounds.x : 0
+    const deltaY = dimension === 'y' ? value - selectedGroupBounds.y : 0
+    if (deltaX === 0 && deltaY === 0) return
+    const memberIds = new Set(selectedGroup.members.map((member) => member.id))
+
+    commit(replaceLayer(document, selectedGroup.layer.id, (layer) => ({
+      ...layer,
+      elements: (layer.elements ?? []).map((element) => (
+        memberIds.has(element.id)
+          ? { ...element, x: element.x + deltaX, y: element.y + deltaY }
+          : element
+      )),
+    })))
+  }
+
+  /** Give the selected same-layer shapes one durable canvas-local group ID. */
+  const groupSelectedElements = () => {
+    if (!canGroupSelectedElements || !selectedElement) return
+    const groupId = crypto.randomUUID()
+    const selectedIds = new Set(selectedElementIds)
+    commit(replaceLayer(document, selectedElement.layer.id, (layer) => ({
+      ...layer,
+      elements: (layer.elements ?? []).map((element) => (
+        selectedIds.has(element.id) ? { ...element, groupId } : element
+      )),
+    })))
+  }
+
+  /** Remove the grouping relationship without changing any underlying shape. */
+  const ungroupSelectedElements = () => {
+    if (!canUngroupSelectedElements || !selectedElement) return
+    const groupIds = new Set(selectedGroupIds)
+    commit(replaceLayer(document, selectedElement.layer.id, (layer) => ({
+      ...layer,
+      elements: (layer.elements ?? []).map((element) => {
+        if (!element.groupId || !groupIds.has(element.groupId)) return element
+        const ungroupedElement = { ...element }
+        delete ungroupedElement.groupId
+        return ungroupedElement
+      }),
+    })))
+  }
+
+  /**
+   * Replace overlapping filled primitives with one compound object. The parts
+   * remain inside that object so "break apart" can restore editable pieces,
+   * but the canvas now renders a single shared exterior outline.
+   */
+  const combineSelectedElements = () => {
+    if (!canCombineSelectedElements || !selectedElement) return
+    const selectedIds = new Set(selectedElementIds)
+    const layer = selectedElement.layer
+    const members = (layer.elements ?? []).filter((element) => selectedIds.has(element.id))
+    if (members.length < 2) return
+
+    const bounds = combinedElementBounds(members)
+    const firstMember = members[0]
+    const compound: SketchElement = {
+      id: crypto.randomUUID(),
+      kind: 'compound',
+      x: bounds.x,
+      y: bounds.y,
+      width: bounds.width,
+      height: bounds.height,
+      stroke: firstMember.stroke,
+      fill: firstMember.fill,
+      strokeWidth: firstMember.strokeWidth,
+      opacity: firstMember.opacity,
+      compoundParts: members.map((member) => ({
+        id: crypto.randomUUID(),
+        // `canCombineSelectedElements` ensures only enclosed primitive kinds
+        // reach this conversion.
+        kind: member.kind as SketchCompoundPart['kind'],
+        x: member.x - bounds.x,
+        y: member.y - bounds.y,
+        width: member.width,
+        height: member.height,
+        ...(member.kind === 'rounded-rectangle' && typeof member.cornerRadius === 'number'
+          ? { cornerRadius: member.cornerRadius }
+          : {}),
+      })),
+    }
+    const firstMemberId = members[0].id
+
+    commit(replaceLayer(document, layer.id, (candidate) => ({
+      ...candidate,
+      elements: (candidate.elements ?? []).flatMap((element) => {
+        if (element.id === firstMemberId) return [compound]
+        return selectedIds.has(element.id) ? [] : [element]
+      }),
+    })))
+    setSelectedElementIds([compound.id])
+    setSelectedEmbedId(null)
+  }
+
+  /** Restore a compound shape's saved primitive parts as independent shapes. */
+  const breakApartSelectedElement = () => {
+    if (!canBreakApartSelectedElement || !selectedElement) return
+    const { layer, element } = selectedElement
+    const parts = element.compoundParts ?? []
+    const restoredParts: SketchElement[] = parts.map((part) => ({
+      id: crypto.randomUUID(),
+      kind: part.kind,
+      x: element.x + part.x,
+      y: element.y + part.y,
+      width: part.width,
+      height: part.height,
+      stroke: element.stroke,
+      fill: element.fill,
+      strokeWidth: element.strokeWidth,
+      opacity: element.opacity,
+      ...(part.kind === 'rounded-rectangle' && typeof part.cornerRadius === 'number'
+        ? { cornerRadius: part.cornerRadius }
+        : {}),
+    }))
+    if (restoredParts.length === 0) return
+
+    commit(replaceLayer(document, layer.id, (candidate) => ({
+      ...candidate,
+      elements: (candidate.elements ?? []).flatMap((candidateElement) => (
+        candidateElement.id === element.id ? restoredParts : [candidateElement]
+      )),
+    })))
+    setSelectedElementIds(restoredParts.map((part) => part.id))
+  }
+
+  /** Apply one shared appearance value across the current multi-selection. */
+  const updateSelectedElements = useCallback((
+    update: Partial<SketchElement>,
+    { fillableOnly = false }: { fillableOnly?: boolean } = {},
+  ) => {
+    if (selectedElementIds.length === 0) return
+    const selectedIds = new Set(selectedElementIds)
+    const canUpdate = document.layers.some((layer) => (
+      !layer.locked && (layer.elements ?? []).some((element) => (
+        selectedIds.has(element.id) && (!fillableOnly || isFillableElement(element.kind))
+      ))
+    ))
+    if (!canUpdate) return
+    commit({
+      ...document,
+      layers: document.layers.map((layer) => (
+        layer.locked
+          ? layer
+          : {
+            ...layer,
+            elements: (layer.elements ?? []).map((element) => (
+              selectedIds.has(element.id) && (!fillableOnly || isFillableElement(element.kind))
+                ? { ...element, ...update }
+                : element
+            )),
+          }
+      )),
+    })
+  }, [commit, document, selectedElementIds])
+
+  /** Nudge every selected shape without changing its dimensions or direction. */
+  const nudgeSelectedElements = useCallback((dx: number, dy: number) => {
+    if (selectedElementIds.length === 0) return
+    const selectedIds = new Set(selectedElementIds)
+    const canMove = document.layers.some((layer) => (
+      !layer.locked && (layer.elements ?? []).some((element) => selectedIds.has(element.id))
+    ))
+    if (!canMove) return
+    commit({
+      ...document,
+      layers: document.layers.map((layer) => (
+        layer.locked
+          ? layer
+          : {
+            ...layer,
+            elements: (layer.elements ?? []).map((element) => (
+              selectedIds.has(element.id)
+                ? { ...element, x: element.x + dx, y: element.y + dy }
+                : element
+            )),
+          }
+      )),
+    })
+  }, [commit, document, selectedElementIds])
+
+  const deleteSelectedElements = useCallback(() => {
+    if (selectedElementIds.length === 0) return
+    const ids = new Set(selectedElementIds)
+    const canDelete = document.layers.some((layer) => (
+      !layer.locked && (layer.elements ?? []).some((element) => ids.has(element.id))
+    ))
+    if (!canDelete) return
+    commit({
+      ...document,
+      layers: document.layers.map((layer) => (
+        layer.locked
+          ? layer
+          : { ...layer, elements: (layer.elements ?? []).filter((element) => !ids.has(element.id)) }
+      )),
+    })
+    setSelectedElementIds([])
+  }, [commit, document, selectedElementIds])
+
+  /** Copy selected shapes into this canvas's local clipboard without changing the drawing. */
+  const copySelectedElements = useCallback(() => {
+    if (selectedElementIds.length === 0) return
+    const ids = new Set(selectedElementIds)
+    const copiedShapes = document.layers.flatMap((layer) => (
+      layer.locked
+        ? []
+        : (layer.elements ?? [])
+          .filter((element) => ids.has(element.id))
+          .map((element) => ({ layerId: layer.id, element: cloneSketchElement(element) }))
+    ))
+    shapeClipboardRef.current = copiedShapes
+    pasteOffsetRef.current = 0
+    setClipboardCount(copiedShapes.length)
+  }, [document, selectedElementIds])
+
+  /**
+   * Paste a new copy each time. The increasing offset makes repeated pastes
+   * visible instead of placing identical shapes directly on top of each other.
+   */
+  const pasteCopiedElements = useCallback(() => {
+    const copiedShapes = shapeClipboardRef.current
+    if (copiedShapes.length === 0) return
+    const offset = 24 * (pasteOffsetRef.current + 1)
+    const pastedIds: string[] = []
+    // A copied group remains grouped internally, but becomes a distinct group
+    // so moving the pasted version never moves its source shapes.
+    const copiedGroupIds = new Map<string, string>()
+    const nextDocument: SketchDocument = {
+      ...document,
+      layers: document.layers.map((layer) => {
+        if (layer.locked) return layer
+        const pastedShapes = copiedShapes
+          .filter((item) => item.layerId === layer.id)
+          .map(({ element }) => {
+            const id = crypto.randomUUID()
+            pastedIds.push(id)
+            const groupId = element.groupId
+              ? (copiedGroupIds.get(element.groupId) ?? (() => {
+                const nextGroupId = crypto.randomUUID()
+                copiedGroupIds.set(element.groupId as string, nextGroupId)
+                return nextGroupId
+              })())
+              : undefined
+            return {
+              ...cloneSketchElement(element),
+              id,
+              x: element.x + offset,
+              y: element.y + offset,
+              ...(groupId ? { groupId } : {}),
+            }
+          })
+        return pastedShapes.length === 0
+          ? layer
+          : { ...layer, elements: [...(layer.elements ?? []), ...pastedShapes] }
+      }),
+    }
+    if (pastedIds.length === 0) return
+    pasteOffsetRef.current += 1
+    commit(nextDocument)
+    setSelectedElementIds(pastedIds)
+    setSelectedEmbedId(null)
+  }, [commit, document])
+
+  /**
+   * `elements` are rendered in array order. Moving one object here changes
+   * its local z-order without changing the rest of the canvas or any asset.
+   */
+  const moveSelectedElement = (direction: 'forward' | 'back') => {
+    if (!selectedElement || selectedElementCount !== 1 || selectedElement.layer.locked) return
+    const { layer, element } = selectedElement
+    const currentIndex = (layer.elements ?? []).findIndex((item) => item.id === element.id)
+    const nextIndex = direction === 'forward' ? currentIndex + 1 : currentIndex - 1
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= (layer.elements ?? []).length) return
+    commit(replaceLayer(document, layer.id, (candidate) => {
+      const elements = [...(candidate.elements ?? [])]
+      const [moved] = elements.splice(currentIndex, 1)
+      elements.splice(nextIndex, 0, moved)
+      return { ...candidate, elements }
+    }))
+  }
+
+  /** Removes only this canvas's placement edge; the child Visual survives. */
+  const removeEmbed = useCallback((embedId: string) => {
+    onEmbeddedVisualRemove?.(embedId)
+    if (selectedEmbedId === embedId) setSelectedEmbedId(null)
+  }, [onEmbeddedVisualRemove, selectedEmbedId])
+
+  useEffect(() => {
+    const handleCanvasShortcut = (event: KeyboardEvent) => {
+      // Do not repurpose normal editing keys while a person is typing a label,
+      // text object, page size, or other control in the editor.
+      const target = event.target
+      const typingIntoControl = target instanceof HTMLInputElement
+        || target instanceof HTMLTextAreaElement
+        || target instanceof HTMLSelectElement
+        || (target instanceof HTMLElement && target.isContentEditable)
+      if (typingIntoControl) return
+
+      const commandOrControl = event.metaKey || event.ctrlKey
+      if (commandOrControl && event.key.toLowerCase() === 'z') {
+        // This follows the standard canvas convention on both macOS and
+        // Windows: Cmd/Ctrl+Z reverses a change; Shift re-applies it.
+        const redoRequested = event.shiftKey
+        const historyAvailable = redoRequested
+          ? redoStack.current.length > 0
+          : undoStack.current.length > 0
+        if (!historyAvailable) return
+        event.preventDefault()
+        if (redoRequested) {
+          redo()
+        } else {
+          undo()
+        }
+        return
+      }
+      if (commandOrControl && event.key.toLowerCase() === 'c') {
+        if (selectedElementCount === 0) return
+        event.preventDefault()
+        copySelectedElements()
+        return
+      }
+      if (commandOrControl && event.key.toLowerCase() === 'v') {
+        if (clipboardCount === 0) return
+        event.preventDefault()
+        pasteCopiedElements()
+        return
+      }
+      const nudgeDirections: Record<string, [number, number]> = {
+        ArrowLeft: [-1, 0],
+        ArrowRight: [1, 0],
+        ArrowUp: [0, -1],
+        ArrowDown: [0, 1],
+      }
+      const nudgeDirection = nudgeDirections[event.key]
+      if (nudgeDirection) {
+        if (selectedElementCount === 0) return
+        event.preventDefault()
+        const distance = event.shiftKey ? 10 : 1
+        nudgeSelectedElements(nudgeDirection[0] * distance, nudgeDirection[1] * distance)
+        return
+      }
+      if (event.key !== 'Backspace' && event.key !== 'Delete') return
+      if (selectedEmbed) {
+        event.preventDefault()
+        removeEmbed(selectedEmbed.id)
+        return
+      }
+      if (selectedElementCount === 0) return
+      event.preventDefault()
+      deleteSelectedElements()
+    }
+
+    window.addEventListener('keydown', handleCanvasShortcut)
+    return () => window.removeEventListener('keydown', handleCanvasShortcut)
+  }, [clipboardCount, copySelectedElements, deleteSelectedElements, nudgeSelectedElements, pasteCopiedElements, redo, removeEmbed, selectedElementCount, selectedEmbed, undo])
+
+  const activeElementsById = new Map(
+    activeElement?.groupElements?.map((element) => [element.id, element])
+      ?? (activeElement && activeElement.mode !== 'create' ? [[activeElement.element.id, activeElement.element]] : []),
+  )
   const renderedLayers = document.layers.map((layer) => ({
     ...layer,
-    elements: activeElement && layer.id === activeElement.layerId
-      ? activeElement.mode === 'create'
-        ? [...(layer.elements ?? []), activeElement.element]
-        : (layer.elements ?? []).map((element) => (
-          element.id === activeElement.element.id ? activeElement.element : element
-        ))
-      : (layer.elements ?? []),
+    elements: activeElement?.mode === 'create' && layer.id === activeElement.layerId
+      ? [...(layer.elements ?? []), activeElement.element]
+      : (layer.elements ?? []).map((element) => activeElementsById.get(element.id) ?? element),
     strokes: activeStroke && layer.id === activeStrokeLayerId
       ? [...layer.strokes, activeStroke]
       : layer.strokes,
   }))
-  const selectedElementForRender = selectedElement && activeElement?.element.id === selectedElement.element.id
+  const selectedGroupForRender = selectedGroup
+    ? renderedLayers.find((layer) => layer.id === selectedGroup.layer.id)
+    : undefined
+  const selectedGroupMembersForRender = selectedGroupForRender && selectedGroup
+    ? (selectedGroupForRender.elements ?? []).filter((element) => element.groupId === selectedGroup.id)
+    : []
+  const selectedGroupBoundsForRender = selectedGroupMembersForRender.length > 0
+    ? combinedElementBounds(selectedGroupMembersForRender)
+    : null
+  // A durable group gets one tight frame rather than a dashed rectangle around
+  // every member. Individual and temporary multi-selections keep their normal
+  // per-shape feedback.
+  const selectedElementIdsForRender = selectedGroup ? [] : selectedElementIds
+  const selectedElementForRender = selectedElement && selectedElementCount === 1 && activeElement?.element.id === selectedElement.element.id
     ? { ...selectedElement, element: activeElement.element }
-    : selectedElement
+    : selectedElementCount === 1 ? selectedElement : undefined
+  const renderedEmbeds = embeddedVisuals.map((embed) => (
+    activeEmbed?.embedId === embed.id
+      ? { ...embed, placement: { ...activeEmbed.placement } }
+      : embed
+  ))
+  const selectedEmbedForRender = renderedEmbeds.find((embed) => embed.id === selectedEmbedId)
+  const selectedEmbedPlacement = selectedEmbedForRender?.placement ?? selectedEmbed?.placement
+  /** Update the parent-side image box only; the referenced Visual is unchanged. */
+  const updateSelectedEmbedPlacement = (update: Partial<VisualEmbedPlacement>) => {
+    if (!selectedEmbedForRender || !onEmbeddedVisualPlacementChange) return
+    onEmbeddedVisualPlacementChange(selectedEmbedForRender.id, {
+      ...selectedEmbedForRender.placement,
+      ...update,
+    })
+  }
+  /** A locked photo/Visual box updates both dimensions as one placement edit. */
+  const updateSelectedEmbedDimension = (dimension: 'width' | 'height', value: number) => {
+    if (!selectedEmbedPlacement) return
+    updateSelectedEmbedPlacement(sizedEmbedPlacementUpdate(selectedEmbedPlacement, dimension, value))
+  }
   const onSelectedElementResizePointerDown = (event: ReactPointerEvent<SVGGElement>) => {
     if (!selectedElementForRender) return
     startElementInteraction(
@@ -1043,20 +2407,63 @@ export function SketchPad({
       'resize',
     )
   }
+  const onSelectedGroupResizePointerDown = (event: ReactPointerEvent<SVGGElement>) => {
+    if (!selectedGroup || selectedGroup.members.length === 0) return
+    startElementInteraction(
+      event,
+      selectedGroup.layer,
+      selectedGroup.members[0],
+      'resize',
+    )
+  }
+  const onSelectedEmbedResizePointerDown = (event: ReactPointerEvent<SVGGElement>) => {
+    if (!selectedEmbedForRender) return
+    startEmbedInteraction(event, selectedEmbedForRender, 'resize')
+  }
 
   return (
     <div className="sketch-editor">
       <div className="sketch-editor__toolbar" aria-label="Sketch tools">
-        <div className="sketch-editor__tool-group">
+        <div className="sketch-editor__tool-group" aria-label="Navigate canvas">
           {([
             ['select', 'select'],
+            ['pan', 'hand'],
+          ] as const).map(([candidate, label]) => (
+            <button
+              className={tool === candidate ? 'is-selected' : undefined}
+              type="button"
+              key={candidate}
+              onClick={() => setTool(candidate)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="sketch-editor__tool-group" aria-label="Add shapes">
+          {([
             ['rectangle', 'box'],
+            ['rounded-rectangle', 'round'],
             ['ellipse', 'oval'],
+            ['diamond', 'diamond'],
+            ['triangle', 'triangle'],
+            ['line', 'line'],
             ['arrow', 'arrow'],
+          ] as const).map(([candidate, label]) => (
+            <button
+              className={tool === candidate ? 'is-selected' : undefined}
+              type="button"
+              key={candidate}
+              onClick={() => setTool(candidate)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="sketch-editor__tool-group" aria-label="Draw and edit">
+          {([
             ['text', 'text'],
             ['pen', 'pen'],
             ['eraser', 'erase'],
-            ['pan', 'pan'],
           ] as const).map(([candidate, label]) => (
             <button
               className={tool === candidate ? 'is-selected' : undefined}
@@ -1092,6 +2499,23 @@ export function SketchPad({
             onChange={(event) => {
               setColor(event.target.value)
             }}
+          />
+        </div>
+        <div className="sketch-editor__fill" aria-label="New shape fill">
+          <button
+            type="button"
+            className={fillColor === 'transparent' ? 'is-selected' : undefined}
+            aria-label="Use no fill for new shapes"
+            title="No fill"
+            onClick={() => setFillColor('transparent')}
+          >
+            no fill
+          </button>
+          <input
+            type="color"
+            aria-label="New shape fill color"
+            value={fillColor === 'transparent' ? '#ffffff' : fillColor}
+            onChange={(event) => setFillColor(event.target.value)}
           />
         </div>
         <label>
@@ -1150,28 +2574,104 @@ export function SketchPad({
                 pointerEvents="none"
               />
             ) : null}
+            {renderedEmbeds.map((embed) => (
+              <EmbeddedVisualGraphic
+                key={embed.id}
+                embed={embed}
+                interactive={(
+                  (tool === 'select' && Boolean(onEmbeddedVisualPlacementChange))
+                  || (tool === 'eraser' && Boolean(onEmbeddedVisualRemove))
+                )}
+                selected={tool === 'select' && embed.id === selectedEmbedId}
+                onPointerDown={(event) => {
+                  if (tool === 'eraser') {
+                    event.stopPropagation()
+                    clearPenTouchConflict(event)
+                    removeEmbed(embed.id)
+                    return
+                  }
+                  startEmbedInteraction(event, embed, 'move')
+                }}
+              />
+            ))}
             {renderedLayers.filter((layer) => layer.visible).flatMap((layer) => [
-              ...layer.elements.map((element) => (
-                <SketchElementGraphic
-                  key={element.id}
-                  element={element}
-                  interactive={tool === 'select' && !layer.locked}
-                  selected={element.id === selectedElementId}
-                  onPointerDown={(event) => startElementInteraction(event, layer, element, 'move')}
-                />
-              )),
+              <SketchLayerElementGraphics
+                key={`${layer.id}-elements`}
+                layer={layer}
+                interactive={(tool === 'select' || tool === 'eraser') && !layer.locked}
+                selectedElementIds={selectedElementIdsForRender}
+                onElementPointerDown={(event, element) => {
+                  if (tool === 'eraser') {
+                    event.stopPropagation()
+                    clearPenTouchConflict(event)
+                    eraseElement(layer.id, element.id)
+                    return
+                  }
+                  startElementInteraction(event, layer, element, 'move')
+                }}
+              />,
               ...layer.strokes.map((stroke) => (
                 <Stroke
                   key={stroke.id}
                   stroke={stroke}
                   erase={tool === 'eraser'}
                   onErase={(event) => {
-                    if (event.pointerType === 'touch') return
+                    event.stopPropagation()
+                    clearPenTouchConflict(event)
                     eraseStroke(layer.id, stroke.id)
                   }}
                 />
               )),
             ])}
+            {tool === 'select' && activeRegionSelection ? (() => {
+              const bounds = normalizedBox(
+                activeRegionSelection.startPoint,
+                activeRegionSelection.endPoint,
+              )
+              return (
+                <rect
+                  className="sketch-selection-marquee"
+                  x={bounds.x}
+                  y={bounds.y}
+                  width={bounds.width}
+                  height={bounds.height}
+                  pointerEvents="none"
+                />
+              )
+            })() : null}
+            {tool === 'select' && selectedGroup && selectedGroupBoundsForRender ? (() => {
+              const bounds = selectedGroupBoundsForRender
+              return (
+                <>
+                  <rect
+                    x={bounds.x - 3}
+                    y={bounds.y - 3}
+                    width={Math.max(bounds.width + 6, 10)}
+                    height={Math.max(bounds.height + 6, 10)}
+                    fill="none"
+                    stroke="#26799b"
+                    strokeWidth={2}
+                    strokeDasharray="7 5"
+                    pointerEvents="none"
+                  />
+                  <g
+                    className="sketch-element__resize-handle"
+                    onPointerDown={onSelectedGroupResizePointerDown}
+                  >
+                    <rect
+                      x={bounds.x + bounds.width - 7}
+                      y={bounds.y + bounds.height - 7}
+                      width={14}
+                      height={14}
+                      fill="#eaf6fb"
+                      stroke="#26799b"
+                      strokeWidth={2}
+                      rx={2}
+                    />
+                  </g>
+                </>
+              )
+            })() : null}
             {tool === 'select' && selectedElementForRender && !selectedElementForRender.layer.locked ? (() => {
               const bounds = elementBounds(selectedElementForRender.element)
               return (
@@ -1192,6 +2692,23 @@ export function SketchPad({
                 </g>
               )
             })() : null}
+            {tool === 'select' && selectedEmbedForRender && onEmbeddedVisualPlacementChange ? (
+              <g
+                className="sketch-visual-embed__resize-handle"
+                onPointerDown={onSelectedEmbedResizePointerDown}
+              >
+                <rect
+                  x={selectedEmbedForRender.placement.x + selectedEmbedForRender.placement.width - 9}
+                  y={selectedEmbedForRender.placement.y + selectedEmbedForRender.placement.height - 9}
+                  width={18}
+                  height={18}
+                  fill="#eaf6fb"
+                  stroke="#26799b"
+                  strokeWidth={2}
+                  rx={2}
+                />
+              </g>
+            ) : null}
           </svg>
         </div>
 
@@ -1207,9 +2724,149 @@ export function SketchPad({
           {selectedElement ? (
             <section className="sketch-editor__selected-object">
               <div className="sketch-editor__section-heading">
-                <h3>{selectedElement.element.kind}</h3>
-                <button type="button" onClick={deleteSelectedElement}>delete</button>
+                <h3>{selectedElementCount === 1 ? selectedElement.element.kind : `${selectedElementCount} shapes`}</h3>
+                <div className="sketch-editor__object-actions">
+                  <button type="button" onClick={copySelectedElements}>copy</button>
+                  <button
+                    type="button"
+                    disabled={clipboardCount === 0}
+                    onClick={pasteCopiedElements}
+                  >
+                    paste
+                  </button>
+                  {canCombineSelectedElements ? (
+                    <button type="button" onClick={combineSelectedElements}>combine</button>
+                  ) : null}
+                  {canGroupSelectedElements ? (
+                    <button type="button" onClick={groupSelectedElements}>group</button>
+                  ) : null}
+                  {canUngroupSelectedElements ? (
+                    <button type="button" onClick={ungroupSelectedElements}>ungroup</button>
+                  ) : null}
+                  {canBreakApartSelectedElement ? (
+                    <button type="button" onClick={breakApartSelectedElement}>break apart</button>
+                  ) : null}
+                  {selectedElementCount === 1 ? (
+                    <>
+                      <button type="button" onClick={() => moveSelectedElement('back')}>back</button>
+                      <button type="button" onClick={() => moveSelectedElement('forward')}>forward</button>
+                    </>
+                  ) : null}
+                  <button type="button" onClick={deleteSelectedElements}>delete</button>
+                </div>
               </div>
+              {selectedElementCount > 1 ? (
+                <>
+                  {selectedGroupBounds ? (
+                    <>
+                      <label>
+                        <span>Group X</span>
+                        <input
+                          type="number"
+                          aria-label="Selected group horizontal position"
+                          min="-20000"
+                          max="20000"
+                          step="1"
+                          value={Math.round(selectedGroupBounds.x)}
+                          onChange={(event) => {
+                            const x = Number(event.target.value)
+                            if (Number.isFinite(x)) updateSelectedGroupPosition('x', x)
+                          }}
+                        />
+                      </label>
+                      <label>
+                        <span>Group Y</span>
+                        <input
+                          type="number"
+                          aria-label="Selected group vertical position"
+                          min="-20000"
+                          max="20000"
+                          step="1"
+                          value={Math.round(selectedGroupBounds.y)}
+                          onChange={(event) => {
+                            const y = Number(event.target.value)
+                            if (Number.isFinite(y)) updateSelectedGroupPosition('y', y)
+                          }}
+                        />
+                      </label>
+                      <label>
+                        <span>Group width</span>
+                        <input
+                          type="number"
+                          aria-label="Selected group width"
+                          min={MIN_GROUP_DIMENSION}
+                          max="20000"
+                          step="1"
+                          value={Math.round(selectedGroupBounds.width)}
+                          onChange={(event) => {
+                            const width = Number(event.target.value)
+                            if (Number.isFinite(width) && width >= MIN_GROUP_DIMENSION) {
+                              updateSelectedGroupSize('width', width)
+                            }
+                          }}
+                        />
+                      </label>
+                      <label>
+                        <span>Group height</span>
+                        <input
+                          type="number"
+                          aria-label="Selected group height"
+                          min={MIN_GROUP_DIMENSION}
+                          max="20000"
+                          step="1"
+                          value={Math.round(selectedGroupBounds.height)}
+                          onChange={(event) => {
+                            const height = Number(event.target.value)
+                            if (Number.isFinite(height) && height >= MIN_GROUP_DIMENSION) {
+                              updateSelectedGroupSize('height', height)
+                            }
+                          }}
+                        />
+                      </label>
+                    </>
+                  ) : null}
+                  <label>
+                    <span>Color</span>
+                    <input
+                      type="color"
+                      aria-label="Selected shapes shared stroke color"
+                      value={selectedElement.element.stroke}
+                      onChange={(event) => {
+                        const stroke = event.target.value
+                        updateSelectedElements({ stroke })
+                        // Keep this exact color ready for the next shape too.
+                        setColor(stroke)
+                      }}
+                    />
+                  </label>
+                  <label>
+                    <span>Fill</span>
+                    <span className="sketch-editor__fill-control">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          updateSelectedElements({ fill: 'transparent' }, { fillableOnly: true })
+                          setFillColor('transparent')
+                        }}
+                      >
+                        none
+                      </button>
+                      <input
+                        type="color"
+                        aria-label="Selected shapes shared fill color"
+                        value={selectedElement.element.fill === 'transparent' ? '#ffffff' : selectedElement.element.fill}
+                        onChange={(event) => {
+                          const fill = event.target.value
+                          updateSelectedElements({ fill }, { fillableOnly: true })
+                          setFillColor(fill)
+                        }}
+                      />
+                    </span>
+                  </label>
+                </>
+              ) : null}
+              {selectedElementCount === 1 ? (
+                <>
               {selectedElement.element.kind === 'text' ? (
                 <label>
                   <span>Text</span>
@@ -1221,23 +2878,164 @@ export function SketchPad({
                 </label>
               ) : null}
               <label>
-                <span>Stroke</span>
+                <span>Color</span>
                 <input
                   type="color"
                   aria-label="Selected object stroke color"
                   value={selectedElement.element.stroke}
-                  onChange={(event) => updateSelectedElement({ stroke: event.target.value })}
+                  onChange={(event) => {
+                    const stroke = event.target.value
+                    updateSelectedElement({ stroke })
+                    setColor(stroke)
+                  }}
                 />
               </label>
-              {selectedElement.element.kind !== 'arrow' && selectedElement.element.kind !== 'text' ? (
+              <label>
+                <span>{`Stroke ${Math.round(selectedElement.element.strokeWidth)}`}</span>
+                <input
+                  type="range"
+                  aria-label="Selected object stroke width"
+                  min="1"
+                  max="40"
+                  value={selectedElement.element.strokeWidth}
+                  onChange={(event) => updateSelectedElement({ strokeWidth: Number(event.target.value) })}
+                />
+              </label>
+              <label>
+                <span>X</span>
+                <input
+                  type="number"
+                  aria-label="Selected object horizontal position"
+                  min="-20000"
+                  max="20000"
+                  step="1"
+                  value={Math.round(selectedElement.element.x)}
+                  onChange={(event) => {
+                    const x = Number(event.target.value)
+                    if (Number.isFinite(x)) {
+                      // For a line or arrow, x is its start point; keeping its
+                      // width unchanged moves the entire line without changing
+                      // its direction or length.
+                      updateSelectedElement({ x })
+                    }
+                  }}
+                />
+              </label>
+              <label>
+                <span>Y</span>
+                <input
+                  type="number"
+                  aria-label="Selected object vertical position"
+                  min="-20000"
+                  max="20000"
+                  step="1"
+                  value={Math.round(selectedElement.element.y)}
+                  onChange={(event) => {
+                    const y = Number(event.target.value)
+                    if (Number.isFinite(y)) {
+                      updateSelectedElement({ y })
+                    }
+                  }}
+                />
+              </label>
+              {isResizableShape(selectedElement.element.kind) ? (
+                <>
+                  <label>
+                    <span>Width</span>
+                    <input
+                      type="number"
+                      aria-label="Selected shape width"
+                      min="1"
+                      max="20000"
+                      step="1"
+                      value={Math.round(selectedElement.element.width)}
+                      onChange={(event) => {
+                        const width = Number(event.target.value)
+                        if (Number.isFinite(width) && width >= 1) {
+                          updateSelectedShapeDimension('width', width)
+                        }
+                      }}
+                    />
+                  </label>
+                  <label>
+                    <span>Height</span>
+                    <input
+                      type="number"
+                      aria-label="Selected shape height"
+                      min="1"
+                      max="20000"
+                      step="1"
+                      value={Math.round(selectedElement.element.height)}
+                      onChange={(event) => {
+                        const height = Number(event.target.value)
+                        if (Number.isFinite(height) && height >= 1) {
+                          updateSelectedShapeDimension('height', height)
+                        }
+                      }}
+                    />
+                  </label>
+                  <label>
+                    <span>Lock ratio</span>
+                    <input
+                      type="checkbox"
+                      aria-label="Lock selected shape aspect ratio"
+                      checked={Boolean(selectedElement.element.aspectRatioLocked)}
+                      onChange={(event) => updateSelectedElement({ aspectRatioLocked: event.target.checked })}
+                    />
+                  </label>
+                </>
+              ) : null}
+              {selectedElement.element.kind === 'rounded-rectangle' ? (
+                <label>
+                  <span>{`Corners ${Math.round(displayedCornerRadius(selectedElement.element))}`}</span>
+                  <input
+                    type="range"
+                    aria-label="Selected rounded rectangle corner radius"
+                    min="0"
+                    max={Math.floor(maximumCornerRadius(selectedElement.element))}
+                    step="1"
+                    value={Math.round(displayedCornerRadius(selectedElement.element))}
+                    onChange={(event) => updateSelectedElement({ cornerRadius: Number(event.target.value) })}
+                  />
+                </label>
+              ) : null}
+              <label>
+                <span>Opacity</span>
+                <input
+                  type="range"
+                  aria-label="Selected object opacity"
+                  min="0.05"
+                  max="1"
+                  step="0.05"
+                  value={selectedElement.element.opacity}
+                  onChange={(event) => updateSelectedElement({ opacity: Number(event.target.value) })}
+                />
+              </label>
+              {isFillableElement(selectedElement.element.kind) ? (
                 <label>
                   <span>Fill</span>
-                  <input
-                    type="color"
-                    aria-label="Selected object fill color"
-                    value={selectedElement.element.fill === 'transparent' ? '#ffffff' : selectedElement.element.fill}
-                    onChange={(event) => updateSelectedElement({ fill: event.target.value })}
-                  />
+                  <span className="sketch-editor__fill-control">
+                    <button
+                      type="button"
+                      className={selectedElement.element.fill === 'transparent' ? 'is-selected' : undefined}
+                      onClick={() => {
+                        updateSelectedElement({ fill: 'transparent' })
+                        setFillColor('transparent')
+                      }}
+                    >
+                      none
+                    </button>
+                    <input
+                      type="color"
+                      aria-label="Selected object fill color"
+                      value={selectedElement.element.fill === 'transparent' ? '#ffffff' : selectedElement.element.fill}
+                      onChange={(event) => {
+                        const fill = event.target.value
+                        updateSelectedElement({ fill })
+                        setFillColor(fill)
+                      }}
+                    />
+                  </span>
                 </label>
               ) : null}
               {selectedElement.element.kind === 'text' ? (
@@ -1252,6 +3050,99 @@ export function SketchPad({
                   />
                 </label>
               ) : null}
+                </>
+              ) : null}
+            </section>
+          ) : null}
+          {selectedEmbed && selectedEmbedPlacement ? (
+            <section className="sketch-editor__selected-object">
+              <div className="sketch-editor__section-heading">
+                <h3>{selectedEmbed.visual.data.name || 'visual'}</h3>
+                {onEmbeddedVisualMakeIndependent
+                  && !isImmutableVisual(selectedEmbed.visual)
+                  && visualIdentity(selectedEmbed.visual) === 'osa-draw' ? (
+                    <button
+                      type="button"
+                      onClick={() => onEmbeddedVisualMakeIndependent(selectedEmbed.id)}
+                    >
+                      make independent
+                    </button>
+                  ) : null}
+                <button type="button" onClick={() => removeEmbed(selectedEmbed.id)}>delete</button>
+              </div>
+              <label>
+                <span>X</span>
+                <input
+                  type="number"
+                  aria-label="Selected visual horizontal position"
+                  min="-20000"
+                  max="20000"
+                  step="1"
+                  value={Math.round(selectedEmbedPlacement.x)}
+                  onChange={(event) => {
+                    const x = Number(event.target.value)
+                    if (Number.isFinite(x)) updateSelectedEmbedPlacement({ x })
+                  }}
+                />
+              </label>
+              <label>
+                <span>Y</span>
+                <input
+                  type="number"
+                  aria-label="Selected visual vertical position"
+                  min="-20000"
+                  max="20000"
+                  step="1"
+                  value={Math.round(selectedEmbedPlacement.y)}
+                  onChange={(event) => {
+                    const y = Number(event.target.value)
+                    if (Number.isFinite(y)) updateSelectedEmbedPlacement({ y })
+                  }}
+                />
+              </label>
+              <label>
+                <span>Width</span>
+                <input
+                  type="number"
+                  aria-label="Selected visual width"
+                  min="24"
+                  max="20000"
+                  step="1"
+                  value={Math.round(selectedEmbedPlacement.width)}
+                  onChange={(event) => {
+                    const width = Number(event.target.value)
+                    if (Number.isFinite(width) && width >= 24) {
+                      updateSelectedEmbedDimension('width', width)
+                    }
+                  }}
+                />
+              </label>
+              <label>
+                <span>Height</span>
+                <input
+                  type="number"
+                  aria-label="Selected visual height"
+                  min="24"
+                  max="20000"
+                  step="1"
+                  value={Math.round(selectedEmbedPlacement.height)}
+                  onChange={(event) => {
+                    const height = Number(event.target.value)
+                    if (Number.isFinite(height) && height >= 24) {
+                      updateSelectedEmbedDimension('height', height)
+                    }
+                  }}
+                />
+              </label>
+              <label>
+                <span>Lock ratio</span>
+                <input
+                  type="checkbox"
+                  aria-label="Lock selected visual aspect ratio"
+                  checked={Boolean(selectedEmbedPlacement.aspectRatioLocked)}
+                  onChange={(event) => updateSelectedEmbedPlacement({ aspectRatioLocked: event.target.checked })}
+                />
+              </label>
             </section>
           ) : null}
           <section>

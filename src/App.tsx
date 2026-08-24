@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -46,36 +48,55 @@ import {
   type GraphEdge,
   type TextConnectionAnchor,
 } from './graph/graphEdge'
-import { migrateLegacyCardOutputVisualOwners } from './graph/legacyCanvasOwners'
 import { updateTextAnchorAfterEdit } from './graph/textAnchor'
 import { createCurrentSourceHierarchy } from './graph/currentSourceHierarchy'
 import {
+  cloneSketchDocument,
   createTextNode,
   type NodeExpansion,
   type NodeLayout,
   type SketchDocument,
   type TextFlowNode,
 } from './graph/textNode'
+import { migrateLegacyCanvasBackgroundImages } from './graph/legacyCanvasImages'
+import { migrateLegacyOperationSourceVisuals } from './graph/legacySourceVisuals'
 import type { NodeKind } from './graph/nodeKinds'
 import {
   defaultOperationVisualPosition,
   defaultOperationVisualSize,
+  defaultVisualEmbedPlacement,
   canOwnOsaVisual,
+  isImmutableVisual,
   isOperationCanvasSectionId,
   isManagedOsaProperty,
   isPartLike,
   nextOperationCanvasSection,
   normalizeOperationVisualPosition,
   normalizeOperationVisualSize,
+  normalizeVisualEmbedPlacement,
+  operationVisualDisplayOrder,
   operationVisualSectionId,
   OSA_PROPERTY,
   OSA_RELATION,
   osaRole,
   parseOperationCanvasSections,
   serializeOperationCanvasSections,
+  visualIdentity,
   OPERATION_CANVAS_SOURCE_SECTION_ID,
   type OperationVisualPlacement,
 } from './graph/osaData'
+import {
+  isVisualEmbedEdge,
+  isVisualNode,
+  visualDraftEmbedsForCanvas,
+  visualEmbedsForVersion,
+  visualEmbedWouldCreateCycle,
+  type VisualEmbedInstance,
+} from './graph/visualEmbed'
+import {
+  cloneVisualVersionState,
+  type VisualVersionRecord,
+} from './graph/visualVersion'
 import {
   mergeOsaImportPlan,
   parseOsaImportPackage,
@@ -120,6 +141,13 @@ import './App.css'
 
 /** React Flow uses this map to choose the component for `type: 'text'` nodes. */
 const nodeTypes = { text: TextNode }
+
+// The editor comparison is intentionally split out of the normal OSA bundle.
+// It loads only from the temporary dev-only Canvas Lab entry point.
+const CanvasLab = lazy(async () => {
+  const module = await import('./components/CanvasLab')
+  return { default: module.CanvasLab }
+})
 
 /** Starting graph: nodes and edges that appear when the app first loads. */
 const initialNodes: TextFlowNode[] = [
@@ -443,11 +471,23 @@ function wouldCreateAssemblyMembershipCycle(
 const LOCAL_DRAFT_KEY = 'osa:current-draft'
 const WORKSPACE_VIEW_KEY = 'osa:workspace-view'
 const SELECTED_ASSEMBLY_KEY = 'osa:selected-assembly'
+const OSA_THEME_KEY = 'osa:theme'
+
+type OsaTheme = 'dark' | 'light'
+
+function readOsaTheme(): OsaTheme {
+  return window.localStorage.getItem(OSA_THEME_KEY) === 'light' ? 'light' : 'dark'
+}
 
 /** A share token is intentionally opaque; it is never a board or user ID. */
 function readSharedAssemblyToken() {
   const token = new URLSearchParams(window.location.search).get('share')
   return token?.trim() || null
+}
+
+/** The editor comparison is a temporary dev-only overlay, never a saved view. */
+function readCanvasLabRequested() {
+  return new URLSearchParams(window.location.search).get('lab') === 'canvas'
 }
 
 function readWorkspaceView(): WorkspaceView {
@@ -539,10 +579,49 @@ function getNextNodePosition(nodes: TextFlowNode[]) {
   }
 }
 
+/**
+ * The order belongs to the card-to-Visual relationship. Old boards omit the
+ * property, so their current edge sequence is used as the stable fallback.
+ */
+function orderedOperationVisualEdges(operationId: string, edges: GraphEdge[]) {
+  return edges
+    .map((edge, edgeIndex) => ({ edge, edgeIndex }))
+    .filter(({ edge }) => (
+      edge.source === operationId
+      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationVisual
+    ))
+    .sort((left, right) => (
+      operationVisualDisplayOrder(
+        left.edge.data.properties[OSA_PROPERTY.operationVisualOrder],
+        left.edgeIndex,
+      )
+      - operationVisualDisplayOrder(
+        right.edge.data.properties[OSA_PROPERTY.operationVisualOrder],
+        right.edgeIndex,
+      )
+      || left.edgeIndex - right.edgeIndex
+    ))
+}
+
+/** Appends newly linked Visuals after the current card order, including legacy links. */
+function nextOperationVisualOrder(operationId: string, edges: GraphEdge[]) {
+  return orderedOperationVisualEdges(operationId, edges).reduce(
+    (highest, { edge, edgeIndex }) => Math.max(
+      highest,
+      operationVisualDisplayOrder(
+        edge.data.properties[OSA_PROPERTY.operationVisualOrder],
+        edgeIndex,
+      ),
+    ),
+    -1,
+  ) + 1
+}
+
 /** Owns the live React Flow node/edge state and responds to user actions. */
 function Flow() {
   const [startupDraft] = useState(readLocalDraft)
   const [sharedAssemblyToken] = useState(readSharedAssemblyToken)
+  const [theme, setTheme] = useState<OsaTheme>(readOsaTheme)
   const bundledShakoImportPlan = useMemo(
     () => planOsaImport(parseOsaImportPackage(JSON.parse(shakoLightWrapRaw) as unknown)),
     [],
@@ -570,6 +649,7 @@ function Flow() {
     readSharedAssemblyToken() ? 'assembly' : readWorkspaceView()
   ))
   const [workspaceMenuVisible, setWorkspaceMenuVisible] = useState(true)
+  const [canvasLabVisible, setCanvasLabVisible] = useState(readCanvasLabRequested)
   // Assembly's focus, lock, drawing, and draft controls are presentation
   // state. Keep them mounted here so switching to Actions or Space and back
   // returns the builder to the exact card state they deliberately left.
@@ -637,21 +717,61 @@ function Flow() {
     window.localStorage.setItem(WORKSPACE_VIEW_KEY, workspaceView)
   }, [workspaceView])
 
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    window.localStorage.setItem(OSA_THEME_KEY, theme)
+  }, [theme])
+
+  const toggleTheme = useCallback(() => {
+    setTheme((currentTheme) => currentTheme === 'dark' ? 'light' : 'dark')
+  }, [])
+
+  // Keep browser Back/Forward consistent with the temporary lab query flag.
+  useEffect(() => {
+    const syncCanvasLab = () => setCanvasLabVisible(readCanvasLabRequested())
+    window.addEventListener('popstate', syncCanvasLab)
+    return () => window.removeEventListener('popstate', syncCanvasLab)
+  }, [])
+
+  const openCanvasLab = useCallback(() => {
+    const url = new URL(window.location.href)
+    url.searchParams.set('lab', 'canvas')
+    window.history.pushState({}, '', `${url.pathname}${url.search}${url.hash}`)
+    setCanvasLabVisible(true)
+  }, [])
+
+  const closeCanvasLab = useCallback(() => {
+    const url = new URL(window.location.href)
+    url.searchParams.delete('lab')
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+    setCanvasLabVisible(false)
+  }, [])
+
   // Bundled-Shako upgrades are deliberately narrow: refresh OSA's own older
-  // source slides, then split the one original combined drill-bit Tool. Both
-  // preserve a person's own Visuals, notes, and graph connections.
+  // source slides, promote direct source-image URLs into real Visuals, then
+  // split the one original combined drill-bit Tool. They preserve a person's
+  // Visuals, notes, graph connections, and chosen canvas owners. In
+  // particular, this must never rewrite a canvas owner after someone changes
+  // it in Assembly.
   useEffect(() => {
     const refreshedNodes = refreshBundledShakoSlideReferences(
       nodes,
       bundledShakoImportPlan,
     )
-    const migratedDrillBits = migrateLegacyShakoDrillBits(refreshedNodes, edges)
-    const migrated = migrateLegacyCardOutputVisualOwners(
+    const migratedSourceVisuals = migrateLegacyOperationSourceVisuals(refreshedNodes, edges)
+    const migratedDrillBits = migrateLegacyShakoDrillBits(
+      migratedSourceVisuals.nodes,
+      migratedSourceVisuals.edges,
+    )
+    // Old editable canvases stored uploaded images as untouchable background
+    // pixels. Promote those images to their own immutable Visual objects so
+    // they become normal, selectable placements in the parent canvas.
+    const migratedCanvasImages = migrateLegacyCanvasBackgroundImages(
       migratedDrillBits.nodes,
       migratedDrillBits.edges,
     )
-    if (migrated.nodes !== nodes) setNodes(migrated.nodes)
-    if (migrated.edges !== edges) setEdges(migrated.edges)
+    if (migratedCanvasImages.nodes !== nodes) setNodes(migratedCanvasImages.nodes)
+    if (migratedCanvasImages.edges !== edges) setEdges(migratedCanvasImages.edges)
   }, [bundledShakoImportPlan, edges, nodes, setEdges, setNodes])
 
   useEffect(() => {
@@ -675,6 +795,38 @@ function Flow() {
       }
     }, 900)
     return () => window.clearTimeout(saveTimer)
+  }, [boardId, boardName, edges, isSharedAssembly, nodes])
+
+  // The ordinary autosave is debounced so drawing stays responsive. When the
+  // page is about to disappear, however, save the most recent graph
+  // immediately. This protects an in-progress canvas edit from a refresh or
+  // browser lifecycle pause before the debounce has elapsed.
+  useEffect(() => {
+    if (isSharedAssembly) return
+
+    const flushLocalDraft = () => {
+      try {
+        writeLocalDraft({
+          id: boardId,
+          name: boardName,
+          updatedAt: new Date().toISOString(),
+          snapshot: createBoardSnapshot(nodes, edges),
+        })
+      } catch {
+        // The normal autosave status is where we report storage failures.
+      }
+    }
+
+    const flushWhenHidden = () => {
+      if (document.visibilityState === 'hidden') flushLocalDraft()
+    }
+
+    window.addEventListener('pagehide', flushLocalDraft)
+    document.addEventListener('visibilitychange', flushWhenHidden)
+    return () => {
+      window.removeEventListener('pagehide', flushLocalDraft)
+      document.removeEventListener('visibilitychange', flushWhenHidden)
+    }
   }, [boardId, boardName, edges, isSharedAssembly, nodes])
 
   const suppressPaneCollapseUntil = useRef(0)
@@ -1433,7 +1585,13 @@ function Flow() {
       null,
       '',
       undefined,
-      { [OSA_PROPERTY.role]: 'visual' },
+      {
+        [OSA_PROPERTY.role]: 'visual',
+        [OSA_PROPERTY.visualContent]: 'canvas',
+        // Existing callers explicitly create an OSA drawing canvas. The new
+        // operation-level creator below is the only path that starts untyped.
+        [OSA_PROPERTY.visualIdentity]: 'osa-draw',
+      },
       owner.data.spaceIds,
     )
     const edgeId = `edge-${nextEdgeId.current}`
@@ -1508,6 +1666,289 @@ function Flow() {
     })
   }, [nodes, setEdges])
 
+  /**
+   * Publishes one editable canvas's direct Visual placements.
+   *
+   * The canvas editor keeps its own draft while unlocked. Locking calls this
+   * once, which reconciles only `visual-embed` edges from that parent. The
+   * child Visuals remain independent graph objects, so deleting a placement
+   * never destroys a photo, source slide, drawing, or another canvas.
+   */
+  const saveVisualEmbeds = useCallback((
+    parentVisualId: string,
+    requestedEmbeds: VisualEmbedInstance[],
+  ) => {
+    const parent = latestNodes.current.find((node) => node.id === parentVisualId)
+    if (!parent || !isVisualNode(parent) || isImmutableVisual(parent)) return
+
+    // A placement is an edge, not a property on the child Visual. Preserve
+    // deliberate repeated placements of the same child, while still rejecting
+    // a malformed duplicate placement id from a stale editor draft.
+    const requestedByPlacementId = new Map<string, VisualEmbedInstance>()
+    requestedEmbeds.forEach((embed) => {
+      if (
+        embed.visual.id !== parentVisualId
+        && isVisualNode(embed.visual)
+        && !requestedByPlacementId.has(embed.id)
+      ) {
+        requestedByPlacementId.set(embed.id, embed)
+      }
+    })
+    const requestedPlacements = [...requestedByPlacementId.values()]
+
+    // Imported File/photo items exist only in the editor draft until this
+    // point. Add them as ordinary Visual nodes before creating their links.
+    setNodes((currentNodes) => {
+      const knownIds = new Set(currentNodes.map((node) => node.id))
+      const additions = requestedPlacements.reduce<TextFlowNode[]>((current, embed) => {
+        if (!knownIds.has(embed.visual.id)) {
+          knownIds.add(embed.visual.id)
+          current.push(embed.visual)
+        }
+        return current
+      }, [])
+      return additions.length ? [...currentNodes, ...additions] : currentNodes
+    })
+
+    setEdges((currentEdges) => {
+      const oldEmbeds = currentEdges.filter((edge) => isVisualEmbedEdge(edge, parentVisualId))
+      const oldByPlacementId = new Map(oldEmbeds.map((edge) => [edge.id, edge]))
+      // The proposed outgoing edges replace this one parent's existing
+      // placements. Cycle checking ignores those old outgoing edges, then
+      // follows every other already-durable Visual relationship.
+      const retainedEdges = currentEdges.filter((edge) => !isVisualEmbedEdge(edge, parentVisualId))
+      const acceptedEmbeds = requestedPlacements.filter((embed) => (
+        !visualEmbedWouldCreateCycle(parentVisualId, embed.visual.id, retainedEdges)
+      ))
+
+      const nextEdges = acceptedEmbeds.map((embed, index) => {
+        const existing = oldByPlacementId.get(embed.id)
+        const placement = normalizeVisualEmbedPlacement(
+          embed.placement,
+          defaultVisualEmbedPlacement(index),
+        )
+        return createGraphEdge({
+          id: existing?.id ?? `edge-${nextEdgeId.current++}`,
+          source: parentVisualId,
+          target: embed.visual.id,
+          relationship: 'includes visual',
+          relationKind: existing?.data.relationKind ?? 'related',
+          sourceAnchor: existing?.data.sourceAnchor ?? null,
+          properties: {
+            ...(existing?.data.properties ?? {}),
+            [OSA_PROPERTY.relationRole]: OSA_RELATION.visualEmbed,
+            [OSA_PROPERTY.visualEmbedX]: String(placement.x),
+            [OSA_PROPERTY.visualEmbedY]: String(placement.y),
+            [OSA_PROPERTY.visualEmbedWidth]: String(placement.width),
+            [OSA_PROPERTY.visualEmbedHeight]: String(placement.height),
+            [OSA_PROPERTY.visualEmbedAspectRatioLocked]: String(Boolean(placement.aspectRatioLocked)),
+          },
+        })
+      })
+      return [...retainedEdges, ...nextEdges]
+    })
+  }, [setEdges, setNodes])
+
+  /**
+   * Creates a separate OSA drawing from one existing canvas without copying
+   * its child Visual objects. The new canvas owns a cloned drawing document
+   * and cloned direct placements, while photos/canvases inside it remain the
+   * same reusable project objects. A selected parent-side placement can then
+   * switch to this clone without affecting any other place using the source.
+   */
+  const createIndependentVisualCopy = useCallback((sourceVisualId: string): TextFlowNode | null => {
+    const source = latestNodes.current.find((node) => node.id === sourceVisualId)
+    if (
+      !source
+      || !isVisualNode(source)
+      || isImmutableVisual(source)
+      || visualIdentity(source) !== 'osa-draw'
+    ) return null
+
+    // Canonical visuals retain their semantic owner. A clone is not a child
+    // of the canvas that happens to display it; it belongs to the same Part,
+    // Tool, or Assembly that owned the drawing it started from.
+    const ownerId = latestEdges.current.find((edge) => (
+      edge.target === sourceVisualId
+      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
+    ))?.source
+    const owner = ownerId
+      ? latestNodes.current.find((node) => node.id === ownerId)
+      : undefined
+    if (!owner || !canOwnOsaVisual(owner)) return null
+
+    const id = String(nextId.current)
+    nextId.current += 1
+    const properties = { ...source.data.properties }
+    // OSA drawings do not own a background image. Imported photos are their
+    // own immutable Visual assets and stay as child placements instead.
+    delete properties[OSA_PROPERTY.assetImage]
+    delete properties[OSA_PROPERTY.assetImageAlt]
+    properties[OSA_PROPERTY.role] = 'visual'
+    properties[OSA_PROPERTY.visualContent] = 'canvas'
+    properties[OSA_PROPERTY.visualIdentity] = 'osa-draw'
+    properties[OSA_PROPERTY.visualImmutable] = 'false'
+
+    const copy = createTextNode({
+      id,
+      position: {
+        x: source.position.x + 40,
+        y: source.position.y + 40,
+      },
+      name: `${source.data.name.trim() || 'canvas'} copy`,
+      text: source.data.text,
+      kind: 'visual',
+      spaceIds: source.data.spaceIds,
+      notebook: source.data.notebook,
+      task: source.data.task,
+      sketch: cloneSketchDocument(source.data.sketch),
+      layout: source.data.layout,
+      properties,
+      sourcePosition: source.sourcePosition,
+      targetPosition: source.targetPosition,
+    })
+
+    // Copy direct placements with new edge identities. Each child remains a
+    // shared graph object, but this new canvas can now arrange/remove them
+    // independently from the source drawing.
+    const sourceEmbedEdges = latestEdges.current.filter((edge) => (
+      isVisualEmbedEdge(edge, sourceVisualId)
+    ))
+    const sourceEmbedEdgesById = new Map(sourceEmbedEdges.map((edge) => [edge.id, edge]))
+    const copiedEmbeds = visualDraftEmbedsForCanvas(
+      sourceVisualId,
+      latestNodes.current,
+      latestEdges.current,
+    )
+
+    setNodes((currentNodes) => [...currentNodes, copy])
+    setEdges((currentEdges) => {
+      const ownershipEdge = createGraphEdge({
+        id: `edge-${nextEdgeId.current++}`,
+        source: owner.id,
+        target: copy.id,
+        relationship: 'owns visual',
+        properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.objectVisual },
+      })
+      const copiedEmbedEdges = copiedEmbeds.map((embed, index) => {
+        const sourceEdge = sourceEmbedEdgesById.get(embed.id)
+        const placement = normalizeVisualEmbedPlacement(
+          embed.placement,
+          defaultVisualEmbedPlacement(index),
+        )
+        return createGraphEdge({
+          id: `edge-${nextEdgeId.current++}`,
+          source: copy.id,
+          target: embed.visual.id,
+          relationship: sourceEdge?.data.relationship ?? 'includes visual',
+          relationKind: sourceEdge?.data.relationKind ?? 'related',
+          sourceAnchor: sourceEdge?.data.sourceAnchor ?? null,
+          properties: {
+            ...(sourceEdge?.data.properties ?? {}),
+            [OSA_PROPERTY.relationRole]: OSA_RELATION.visualEmbed,
+            [OSA_PROPERTY.visualEmbedX]: String(placement.x),
+            [OSA_PROPERTY.visualEmbedY]: String(placement.y),
+            [OSA_PROPERTY.visualEmbedWidth]: String(placement.width),
+            [OSA_PROPERTY.visualEmbedHeight]: String(placement.height),
+            [OSA_PROPERTY.visualEmbedAspectRatioLocked]: String(Boolean(placement.aspectRatioLocked)),
+          },
+        })
+      })
+      return [...currentEdges, ownershipEdge, ...copiedEmbedEdges]
+    })
+    return copy
+  }, [setEdges, setNodes])
+
+  /**
+   * Captures the live canvas draft as a durable record. A record holds only
+   * content (drawing plus direct child placements): the Visual's name,
+   * identity, owner, and project relationships remain canonical graph data.
+   */
+  const captureVisualVersion = useCallback((
+    visualId: string,
+    kind: 'draft' | 'official',
+  ) => {
+    setNodes((currentNodes) => {
+      const visual = currentNodes.find((node) => node.id === visualId)
+      if (!visual || !isVisualNode(visual) || isImmutableVisual(visual)) return currentNodes
+
+      const capturedAt = new Date()
+      const record: VisualVersionRecord = {
+        id: `visual-version:${crypto.randomUUID()}`,
+        label: capturedAt.toLocaleString([], {
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+        }),
+        createdAt: capturedAt.toISOString(),
+        kind,
+        sketch: cloneSketchDocument(visual.data.sketch),
+        // A saved record freezes the direct placements, but never duplicates
+        // the referenced objects. The same photo/canvas can still be reused.
+        embeds: visualDraftEmbedsForCanvas(visualId, currentNodes, latestEdges.current)
+          .map((embed) => ({
+            id: embed.id,
+            visualId: embed.visual.id,
+            placement: { ...embed.placement },
+          })),
+      }
+
+      return currentNodes.map((node) => {
+        if (node.id !== visualId) return node
+        const previous = cloneVisualVersionState(node.data.visualVersions) ?? {
+          officialId: null,
+          records: [],
+        }
+        const records = kind === 'official'
+          ? [
+              ...previous.records.map((candidate) => (
+                candidate.kind === 'official'
+                  ? { ...candidate, kind: 'history' as const }
+                  : candidate
+              )),
+              record,
+            ]
+          : [...previous.records, record]
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            visualVersions: {
+              officialId: kind === 'official' ? record.id : previous.officialId,
+              records,
+            },
+          },
+        }
+      })
+    })
+  }, [setNodes])
+
+  /**
+   * Reopens a saved record as the live editable draft. The prior official
+   * record remains untouched until the person deliberately makes a new one.
+   */
+  const restoreVisualVersionAsDraft = useCallback((visualId: string, versionId: string) => {
+    const visual = latestNodes.current.find((node) => node.id === visualId)
+    const record = visual?.data.visualVersions?.records.find((candidate) => candidate.id === versionId)
+    if (!visual || !record || !isVisualNode(visual) || isImmutableVisual(visual)) return
+
+    const embeds = visualEmbedsForVersion(
+      visualId,
+      record,
+      latestNodes.current,
+      latestEdges.current,
+      new Set(),
+      'draft',
+    )
+    setNodes((currentNodes) => currentNodes.map((node) => (
+      node.id === visualId
+        ? { ...node, data: { ...node.data, sketch: cloneSketchDocument(record.sketch) } }
+        : node
+    )))
+    saveVisualEmbeds(visualId, embeds)
+  }, [saveVisualEmbeds, setNodes])
+
   /** Opens a canonical Visual in the ordinary node inspector for editing. */
   const openOwnedVisualCanvas = useCallback((visualId: string) => {
     setSelectedItem({ type: 'node', id: visualId })
@@ -1515,15 +1956,57 @@ function Flow() {
   }, [])
 
   /**
-   * Creates one blank Visual owned by the Assembly containing this card, then
-   * deliberately references it from the card. An operation's output remains
-   * output data; it is not mistaken for something needed to create itself.
+   * Creates one blank Visual owned by the part or subassembly this card
+   * represents, then deliberately references it from the card. That keeps a
+   * part's drawings, photos, and diagrams with the part while an Assembly
+   * card remains only one place that can display them. Older/incomplete cards
+   * safely fall back to their parent Assembly until a represented part exists.
    */
-  const createOwnedVisualForOperation = useCallback((operationId: string) => {
-    const ownerId = parentAssemblyIdForOperation(operationId, edges)
+  const createOwnedVisualForOperation = useCallback((
+    operationId: string,
+    initialIdentity: 'osa-draw' | 'untyped' = 'osa-draw',
+  ) => {
+    const ownerId = edges.find((edge) => (
+      edge.source === operationId
+      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationPrimaryOutput
+    ))?.target ?? parentAssemblyIdForOperation(operationId, edges)
     if (!ownerId) return ''
 
-    const visualId = createOwnedVisualCanvas(ownerId)
+    // Existing callers retain the established OSA drawing canvas behavior.
+    // The Assembly's single "+ canvas" action can deliberately request an
+    // untyped Visual instead, then let its editor choose the permanent type.
+    const visualId = initialIdentity === 'osa-draw'
+      ? createOwnedVisualCanvas(ownerId)
+      : (() => {
+          const owner = nodes.find((node) => node.id === ownerId)
+          if (!owner || !canOwnOsaVisual(owner)) return ''
+
+          const id = createObjectNode(
+            'canvas',
+            'visual',
+            null,
+            '',
+            undefined,
+            {
+              [OSA_PROPERTY.role]: 'visual',
+              [OSA_PROPERTY.visualContent]: 'canvas',
+              [OSA_PROPERTY.visualIdentity]: 'untyped',
+            },
+            owner.data.spaceIds,
+          )
+          const ownershipEdgeId = `edge-${nextEdgeId.current}`
+          nextEdgeId.current += 1
+          setEdges((currentEdges) => [...currentEdges, createGraphEdge({
+            id: ownershipEdgeId,
+            source: ownerId,
+            target: id,
+            relationship: 'owns visual',
+            properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.objectVisual },
+          })])
+          setSelectedItem({ type: 'node', id })
+          setInspectorExpanded(true)
+          return id
+        })()
     if (!visualId) return ''
 
     const edgeId = `edge-${nextEdgeId.current}`
@@ -1533,10 +2016,15 @@ function Flow() {
       source: operationId,
       target: visualId,
       relationship: 'shows visual',
-      properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.operationVisual },
+      properties: {
+        [OSA_PROPERTY.relationRole]: OSA_RELATION.operationVisual,
+        [OSA_PROPERTY.operationVisualOrder]: String(
+          nextOperationVisualOrder(operationId, currentEdges),
+        ),
+      },
     })])
     return visualId
-  }, [createOwnedVisualCanvas, edges, setEdges])
+  }, [createObjectNode, createOwnedVisualCanvas, edges, nodes, setEdges])
 
   /** Connects an existing tool from the shared inventory to one instruction. */
   const linkToolToOperation = useCallback((operationId: string, toolId: string) => {
@@ -1642,6 +2130,9 @@ function Flow() {
         relationship: 'shows object visual',
         properties: {
           [OSA_PROPERTY.relationRole]: OSA_RELATION.operationVisual,
+          [OSA_PROPERTY.operationVisualOrder]: String(
+            nextOperationVisualOrder(operationId, currentEdges),
+          ),
           [OSA_PROPERTY.operationVisualSection]: normalizedSectionId,
           [OSA_PROPERTY.operationVisualX]: String(placement.x),
           [OSA_PROPERTY.operationVisualY]: String(placement.y),
@@ -1695,6 +2186,76 @@ function Flow() {
         && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationVisual
       ))
       return nextEdges.length === currentEdges.length ? currentEdges : nextEdges
+    })
+  }, [setEdges])
+
+  /**
+   * Reorders the canvases shown by one Assembly card.
+   *
+   * The order is stored on every direct operation-to-Visual edge after the
+   * first move. That makes it survive JSON, local draft recovery, and any
+   * future view that projects the same relationship. Source-slide provenance
+   * remains pinned above the user-created canvases.
+   */
+  const reorderOperationVisual = useCallback((
+    operationId: string,
+    visualId: string,
+    direction: 'up' | 'down',
+  ) => {
+    setEdges((currentEdges) => {
+      const ordered = orderedOperationVisualEdges(operationId, currentEdges)
+      const sourceVisualIds = new Set(currentEdges
+        .filter((edge) => (
+          edge.source === operationId
+          && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationSourceVisual
+        ))
+        .map((edge) => edge.target))
+      const movable = ordered.filter(({ edge }) => {
+        const visual = latestNodes.current.find((node) => node.id === edge.target)
+        return visual !== undefined
+          && isVisualNode(visual)
+          && !sourceVisualIds.has(visual.id)
+      })
+      const currentMovableIndex = movable.findIndex(({ edge }) => edge.target === visualId)
+      const nextMovableIndex = direction === 'up'
+        ? currentMovableIndex - 1
+        : currentMovableIndex + 1
+      if (
+        currentMovableIndex < 0
+        || nextMovableIndex < 0
+        || nextMovableIndex >= movable.length
+      ) return currentEdges
+
+      const currentEdgeId = movable[currentMovableIndex].edge.id
+      const nextEdgeId = movable[nextMovableIndex].edge.id
+      const currentOrderIndex = ordered.findIndex(({ edge }) => edge.id === currentEdgeId)
+      const nextOrderIndex = ordered.findIndex(({ edge }) => edge.id === nextEdgeId)
+      if (currentOrderIndex < 0 || nextOrderIndex < 0) return currentEdges
+
+      const reordered = [...ordered]
+      const moved = reordered[currentOrderIndex]
+      reordered[currentOrderIndex] = reordered[nextOrderIndex]
+      reordered[nextOrderIndex] = moved
+      const orderByEdgeId = new Map(
+        reordered.map(({ edge }, index) => [edge.id, String(index)]),
+      )
+
+      return currentEdges.map((edge) => {
+        const order = orderByEdgeId.get(edge.id)
+        if (order === undefined || edge.data.properties[OSA_PROPERTY.operationVisualOrder] === order) {
+          return edge
+        }
+        return {
+          ...edge,
+          data: {
+            ...edge.data,
+            properties: {
+              ...edge.data.properties,
+              [OSA_PROPERTY.operationVisualOrder]: order,
+            },
+          },
+        }
+      })
     })
   }, [setEdges])
 
@@ -2589,17 +3150,17 @@ function Flow() {
   return (
     <div
       className={`osa-workspace${workspaceMenuVisible ? '' : ' workspace-menu-hidden'}`}
-      onPointerDownCapture={beginPointerPalettePress}
-      onPointerMoveCapture={movePointerPalettePress}
-      onPointerUpCapture={finishPointerPalettePress}
-      onPointerCancelCapture={finishPointerPalettePress}
+      onPointerDownCapture={canvasLabVisible ? undefined : beginPointerPalettePress}
+      onPointerMoveCapture={canvasLabVisible ? undefined : movePointerPalettePress}
+      onPointerUpCapture={canvasLabVisible ? undefined : finishPointerPalettePress}
+      onPointerCancelCapture={canvasLabVisible ? undefined : finishPointerPalettePress}
     >
       <ReactFlow
       className="space-canvas"
-      inert={workspaceView !== 'nodes'}
-      aria-hidden={workspaceView !== 'nodes'}
-      nodesFocusable={workspaceView === 'nodes'}
-      edgesFocusable={workspaceView === 'nodes'}
+      inert={workspaceView !== 'nodes' || canvasLabVisible}
+      aria-hidden={workspaceView !== 'nodes' || canvasLabVisible}
+      nodesFocusable={workspaceView === 'nodes' && !canvasLabVisible}
+      edgesFocusable={workspaceView === 'nodes' && !canvasLabVisible}
       nodes={nodesForFlow}
       edges={edgesForFlow}
       nodeTypes={nodeTypes}
@@ -2635,7 +3196,7 @@ function Flow() {
       fitViewOptions={{ padding: 0.45, maxZoom: 0.78 }}
       minZoom={0.05}
       maxZoom={8}
-      colorMode="light"
+      colorMode={theme}
       proOptions={{ hideAttribution: true }}
       >
       <svg className="hand-drawn-filter" aria-hidden="true">
@@ -2889,8 +3450,14 @@ function Flow() {
       </Panel>
       )}
       </ReactFlow>
-      {!isSharedAssembly && workspaceMenuVisible ? (
-        <nav className="workspace-switcher" aria-label="OSA tools">
+      {canvasLabVisible ? (
+        <Suspense fallback={<div className="canvas-lab-loading" role="status">Opening lab…</div>}>
+          <CanvasLab theme={theme} onToggleTheme={toggleTheme} onExit={closeCanvasLab} />
+        </Suspense>
+      ) : null}
+      {!canvasLabVisible ? (
+        !isSharedAssembly && workspaceMenuVisible ? (
+          <nav className="workspace-switcher" aria-label="OSA tools">
           <button
             className="workspace-switcher__hide"
             type="button"
@@ -2914,23 +3481,43 @@ function Flow() {
               {view.label}
             </button>
           ))}
-        </nav>
-      ) : !isSharedAssembly ? (
-        <button
-          className="workspace-switcher-reveal"
-          type="button"
-          aria-label="Show top menu"
-          onClick={() => setWorkspaceMenuVisible(true)}
-        >
-          <span aria-hidden="true">⌄</span>
-        </button>
+          {import.meta.env.DEV ? (
+            <button
+              type="button"
+              aria-label="Open Canvas Lab"
+              onClick={openCanvasLab}
+            >
+              Lab
+            </button>
+          ) : null}
+          <button
+            className="workspace-switcher__theme"
+            type="button"
+            aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+            onClick={toggleTheme}
+          >
+            {theme === 'dark' ? 'light' : 'dark'}
+          </button>
+          </nav>
+        ) : !isSharedAssembly ? (
+          <button
+            className="workspace-switcher-reveal"
+            type="button"
+            aria-label="Show top menu"
+            onClick={() => setWorkspaceMenuVisible(true)}
+          >
+            <span aria-hidden="true">⌄</span>
+          </button>
+        ) : (
+          <p className="shared-assembly-status" role="status">
+            {shareStatus || 'Loading shared assembly…'}
+          </p>
+        )
       ) : (
-        <p className="shared-assembly-status" role="status">
-          {shareStatus || 'Loading shared assembly…'}
-        </p>
+        null
       )}
-      {!isSharedAssembly ? <span className="local-draft-status" role="status">{draftStatus}</span> : null}
-      {!isSharedAssembly && needsSignIn && workspaceView !== 'nodes' ? (
+      {!canvasLabVisible && !isSharedAssembly ? <span className="local-draft-status" role="status">{draftStatus}</span> : null}
+      {!canvasLabVisible && !isSharedAssembly && needsSignIn && workspaceView !== 'nodes' ? (
         <a
           className="osa-sign-in-reveal"
           href="/api/login"
@@ -2939,7 +3526,7 @@ function Flow() {
           <span>Sign in to saved boards</span>
         </a>
       ) : null}
-      {!isSharedAssembly && workspaceView === 'nodes' ? (
+      {!canvasLabVisible && !isSharedAssembly && workspaceView === 'nodes' ? (
         <SpaceToolbar
           spaces={allSpaces}
           selectedSpaceId={selectedSpaceId}
@@ -2950,7 +3537,7 @@ function Flow() {
           onConnectionChange={setNodeConnectionFilter}
         />
       ) : null}
-      {workspaceView !== 'nodes' ? (
+      {!canvasLabVisible && workspaceView !== 'nodes' ? (
         <div className="work-view-shell">
           {workspaceView === 'notebook' ? (
             <NotebookView
@@ -3020,13 +3607,19 @@ function Flow() {
               onCreateCanvasSection={createOperationCanvasSection}
               onLinkObjectVisual={linkObjectVisualToOperation}
               onUnlinkObjectVisual={unlinkObjectVisualFromOperation}
+              onReorderOperationVisual={reorderOperationVisual}
               onObjectVisualPlacementChange={updateObjectVisualPlacement}
               onCreateOwnedVisualForOperation={createOwnedVisualForOperation}
               onChangeVisualOwner={changeVisualOwner}
+              onEmbeddedVisualsChange={saveVisualEmbeds}
+              onSaveVisualDraftVersion={(visualId) => captureVisualVersion(visualId, 'draft')}
+              onMakeVisualOfficialVersion={(visualId) => captureVisualVersion(visualId, 'official')}
+              onRestoreVisualVersion={restoreVisualVersionAsDraft}
+              onCreateIndependentVisualCopy={createIndependentVisualCopy}
               onNameChange={onNameChange}
               onTextChange={onTextChange}
-              onSketchChange={onSketchChange}
               onPropertyChange={onPropertyChange}
+              onSketchChange={onSketchChange}
               onOpenNode={isSharedAssembly ? () => undefined : openNodeInSpace}
               readOnly={isSharedAssembly}
               onShare={isSharedAssembly ? undefined : () => void createAssemblyShareLink()}
@@ -3037,7 +3630,7 @@ function Flow() {
           )}
         </div>
       ) : null}
-      {pointerPalette ? (
+      {!canvasLabVisible && pointerPalette ? (
         <PointerToolPalette
           x={pointerPalette.x}
           y={pointerPalette.y}
@@ -3046,7 +3639,7 @@ function Flow() {
           onClose={closePointerPalette}
         />
       ) : null}
-      {hoveredEdge && createPortal(
+      {!canvasLabVisible && hoveredEdge && createPortal(
         <EdgeHoverCard
           edge={hoveredEdge.edge}
           x={hoveredEdge.x}

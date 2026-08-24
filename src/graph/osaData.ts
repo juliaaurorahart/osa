@@ -39,6 +39,36 @@ export const OSA_PROPERTY = {
   assetImage: 'asset:image',
   /** Plain-language alternative text for {@link OSA_PROPERTY.assetImage}. */
   assetImageAlt: 'asset:imageAlt',
+  /**
+   * The durable content category for a drawable project object.
+   *
+   * `image` means an imported/file asset is read-only in OSA; `canvas` means
+   * the object owns an editable drawing surface. Keeping this explicit avoids
+   * accidentally drawing over an original PowerPoint slide or photo.
+  */
+  visualContent: 'visual:content',
+  /**
+   * The editor/asset identity selected for a Visual.
+   *
+   * A newly created Visual begins as `untyped`. Once its editor establishes
+   * an identity, that identity is durable so every view knows whether it is
+   * looking at a photo, an OSA drawing, a Draw.io document, or a Konva scene.
+   * `visual:content` remains the lower-level compatibility field used by
+   * older boards to distinguish canvas-like data from immutable image data.
+   */
+  visualIdentity: 'visual:identity',
+  /** Imported/file image assets stay protected from direct canvas edits. */
+  visualImmutable: 'visual:immutable',
+  /** Horizontal pixel position of a Visual placed inside another canvas. */
+  visualEmbedX: 'visual-embed:x',
+  /** Vertical pixel position of a Visual placed inside another canvas. */
+  visualEmbedY: 'visual-embed:y',
+  /** Pixel width of a Visual placed inside another canvas. */
+  visualEmbedWidth: 'visual-embed:width',
+  /** Pixel height of a Visual placed inside another canvas. */
+  visualEmbedHeight: 'visual-embed:height',
+  /** Whether one placed Visual keeps its current proportions while resizing. */
+  visualEmbedAspectRatioLocked: 'visual-embed:aspect-ratio-locked',
   /** Normalized horizontal placement of one linked object visual in an operation View. */
   operationVisualX: 'operation-visual:x',
   /** Normalized vertical placement of one linked object visual in an operation View. */
@@ -51,6 +81,14 @@ export const OSA_PROPERTY = {
   operationCanvasSections: 'operation:canvasSections',
   /** Which durable operation canvas contains one linked object visual. */
   operationVisualSection: 'operation-visual:section',
+  /**
+   * The vertical order of one card-linked Visual in an Assembly card.
+   *
+   * This belongs to the operation-to-Visual relationship rather than the
+   * Visual itself: the same reusable canvas may appear in a different order
+   * on another instruction card.
+   */
+  operationVisualOrder: 'operation-visual:order',
   /** Durable physical/logical feature data, independent of any one view. */
   featureType: 'feature:type',
   featureDiameter: 'feature:diameter',
@@ -59,6 +97,13 @@ export const OSA_PROPERTY = {
   visualMarker: 'visual:marker',
   visualColor: 'visual:color',
   visualLocation: 'visual:location',
+  /**
+   * A canonical object's semantic accent. This is intentionally separate
+   * from a canvas stroke/fill or a photo's pixels: a Tool or Part can carry
+   * one color that every interested view derives for labels, visual cues, and
+   * future bound annotations.
+   */
+  appearanceAccentColor: 'appearance:accentColor',
   itemQuantity: 'item:quantity',
   itemPackageQuantity: 'item:packageQuantity',
   itemPackagePrice: 'item:packagePrice',
@@ -105,6 +150,22 @@ export type OperationCanvasSection = {
 /** Location of one object visual within a specific operation canvas section. */
 export type OperationVisualPlacement = CanvasPercentPosition & CanvasPercentSize & {
   sectionId: string
+}
+
+/**
+ * One drawable Visual's placement inside another Visual's editable canvas.
+ *
+ * These use the parent SketchDocument's native pixel coordinate system so a
+ * person can drag and resize alongside boxes, text, arrows, and pen marks.
+ * The child Visual still owns its actual image/sketch content.
+ */
+export type VisualEmbedPlacement = {
+  x: number
+  y: number
+  width: number
+  height: number
+  /** A parent-side setting; it never changes the reusable child Visual itself. */
+  aspectRatioLocked?: boolean
 }
 
 function normalizeOperationCanvasSections(
@@ -170,6 +231,19 @@ export function operationVisualSectionId(
   return isOperationCanvasSectionId(candidate, sections)
     ? candidate
     : OPERATION_CANVAS_SOURCE_SECTION_ID
+}
+
+/**
+ * Reads one Assembly-card Visual's durable vertical order.
+ *
+ * Boards made before explicit ordering simply fall back to their existing
+ * edge order, which preserves their current appearance without a migration.
+ */
+export function operationVisualDisplayOrder(value: string | undefined, fallback: number) {
+  const parsed = value?.trim() ? Number(value) : Number.NaN
+  return Number.isSafeInteger(parsed) && parsed >= 0
+    ? parsed
+    : Math.max(0, Math.trunc(fallback))
 }
 
 /** Allocates the next stable section id after the reserved source canvas. */
@@ -260,6 +334,40 @@ export function normalizeOperationVisualSize(
   }
 }
 
+const VISUAL_EMBED_DEFAULT_SIZE = { width: 360, height: 250 }
+
+/** Stagger initial placements so newly added visuals do not completely overlap. */
+export function defaultVisualEmbedPlacement(index: number): VisualEmbedPlacement {
+  const safeIndex = Number.isFinite(index) ? Math.max(0, Math.trunc(index)) : 0
+  const offset = (safeIndex % 6) * 32
+  return {
+    x: 72 + offset,
+    y: 72 + offset,
+    ...VISUAL_EMBED_DEFAULT_SIZE,
+  }
+}
+
+function normalizeCanvasPixel(value: unknown, fallback: number, minimum: number) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
+  return Math.min(20_000, Math.max(minimum, Math.round(value * 1000) / 1000))
+}
+
+/** Keeps a nested Visual placement finite and drawable without imposing a view size. */
+export function normalizeVisualEmbedPlacement(
+  placement: Partial<VisualEmbedPlacement> | null | undefined,
+  fallback: VisualEmbedPlacement = defaultVisualEmbedPlacement(0),
+): VisualEmbedPlacement {
+  return {
+    x: normalizeCanvasPixel(placement?.x, fallback.x, 0),
+    y: normalizeCanvasPixel(placement?.y, fallback.y, 0),
+    width: normalizeCanvasPixel(placement?.width, fallback.width, 1),
+    height: normalizeCanvasPixel(placement?.height, fallback.height, 1),
+    ...((placement?.aspectRatioLocked ?? fallback.aspectRatioLocked)
+      ? { aspectRatioLocked: true }
+      : {}),
+  }
+}
+
 export type OsaRole =
   | 'assembly'
   | 'operation'
@@ -269,6 +377,58 @@ export type OsaRole =
   | 'expense'
   | 'source'
   | 'visual'
+
+export type VisualContent = 'canvas' | 'image'
+
+/**
+ * The durable editor/asset identity of a canonical Visual.
+ *
+ * This is deliberately broader than {@link VisualContent}: several editor
+ * implementations can create a drawable visual, while a photo is an
+ * immutable asset. New canvases start `untyped` until their editor is chosen.
+ */
+export type VisualIdentity = 'untyped' | 'photo' | 'osa-draw' | 'drawio' | 'konva'
+
+const VISUAL_IDENTITIES: readonly VisualIdentity[] = [
+  'untyped',
+  'photo',
+  'osa-draw',
+  'drawio',
+  'konva',
+]
+
+/**
+ * Returns the visual identity while providing meaningful defaults for older
+ * boards that predate `visual:identity`.
+ */
+export function visualIdentity(node: TextFlowNode): VisualIdentity {
+  const candidate = node.data.properties[OSA_PROPERTY.visualIdentity]
+  if (VISUAL_IDENTITIES.includes(candidate as VisualIdentity)) {
+    return candidate as VisualIdentity
+  }
+
+  return node.data.properties[OSA_PROPERTY.visualContent] === 'image'
+    ? 'photo'
+    : 'osa-draw'
+}
+
+/**
+ * Every drawable object remains a normal graph node. This explicit field
+ * distinguishes an immutable image asset from an editable canvas without
+ * inventing a separate hidden storage model for files.
+ */
+export function visualContent(node: TextFlowNode): VisualContent {
+  return visualIdentity(node) === 'photo'
+    || node.data.properties[OSA_PROPERTY.visualContent] === 'image'
+    ? 'image'
+    : 'canvas'
+}
+
+/** An image asset can be placed in a canvas but does not accept drawing edits. */
+export function isImmutableVisual(node: TextFlowNode) {
+  return visualContent(node) === 'image'
+    || node.data.properties[OSA_PROPERTY.visualImmutable] === 'true'
+}
 
 export const OSA_RELATION = {
   assemblyOperation: 'assembly-operation',
@@ -326,6 +486,8 @@ export const OSA_RELATION = {
    * operation's source record into a placement record.
    */
   operationSourceVisual: 'operation-source-visual',
+  /** One editable Visual canvas places another Visual/image asset as an item. */
+  visualEmbed: 'visual-embed',
   /** A physical component owns one of its features. */
   componentFeature: 'has-feature',
   /** An operation creates, changes, checks, or otherwise uses a feature. */
@@ -435,4 +597,17 @@ export function formatMoney(value: number | null, currency = 'USD') {
  */
 export function isManagedOsaProperty(name: string) {
   return /^osa:/.test(name)
+}
+
+/**
+ * Returns a safe canonical semantic accent for an object, when one is set.
+ *
+ * The first authoring control writes six-digit hex values. Keeping the parser
+ * deliberately narrow prevents an arbitrary property value from becoming CSS
+ * in every OSA view, while still allowing this durable field to remain a plain
+ * string in imports and board snapshots.
+ */
+export function appearanceAccentColor(node: TextFlowNode | undefined) {
+  const value = node?.data.properties[OSA_PROPERTY.appearanceAccentColor]?.trim()
+  return value && /^#[0-9a-f]{6}$/i.test(value) ? value : undefined
 }

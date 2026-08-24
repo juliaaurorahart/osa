@@ -121,6 +121,9 @@ const RELATION_ENDPOINT_ROLES: Record<RelationRoles, RelationEndpointRoles> = {
   // placements. This permits one source slide to remain authoritative while
   // also being placed as an ordinary image box in a user-created canvas.
   [OSA_RELATION.operationSourceVisual]: [['operation'], ['visual']],
+  // A canvas may place an immutable image asset or another editable canvas.
+  // Its edge carries only the child placement; neither side copies content.
+  [OSA_RELATION.visualEmbed]: [['visual'], ['visual']],
   // Today a component is represented by the existing `bom-item` role. A
   // future component role can be added here without changing feature nodes.
   [OSA_RELATION.componentFeature]: [['bom-item'], ['feature']],
@@ -168,6 +171,35 @@ function isDecimal(value: string, allowZero: boolean) {
   if (!/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(trimmed)) return false
   const number = Number(trimmed)
   return Number.isFinite(number) && (allowZero ? number >= 0 : number > 0)
+}
+
+/**
+ * A nested Visual is positioned by edge data, not copied into its parent.
+ * Imports must therefore carry a complete, drawable placement. Keeping this
+ * check at the import boundary prevents an invalid coordinate from becoming
+ * durable graph state that every visual view would then need to defend
+ * against.
+ */
+function validateVisualEmbedGeometry(properties: Record<string, string>, path: string) {
+  const geometry = [
+    [OSA_PROPERTY.visualEmbedX, true],
+    [OSA_PROPERTY.visualEmbedY, true],
+    [OSA_PROPERTY.visualEmbedWidth, false],
+    [OSA_PROPERTY.visualEmbedHeight, false],
+  ] as const
+
+  for (const [propertyName, allowZero] of geometry) {
+    const propertyValue = properties[propertyName]
+    if (propertyValue === undefined || !isDecimal(propertyValue, allowZero)) {
+      const constraint = allowZero ? 'a finite nonnegative decimal' : 'a finite positive decimal'
+      throw new Error(`${path}.${propertyName} must be ${constraint}.`)
+    }
+  }
+
+  const aspectRatioLocked = properties[OSA_PROPERTY.visualEmbedAspectRatioLocked]
+  if (aspectRatioLocked !== undefined && aspectRatioLocked !== 'true' && aspectRatioLocked !== 'false') {
+    throw new Error(`${path}.${OSA_PROPERTY.visualEmbedAspectRatioLocked} must be true or false.`)
+  }
 }
 
 function validateManagedNodeProperties(
@@ -242,6 +274,10 @@ function validateManagedEdgeProperties(
     || !expectedTargetRoles.includes(targetRole)
   ) {
     throw new Error(`${path}.${OSA_PROPERTY.relationRole} has incompatible endpoint roles.`)
+  }
+
+  if (relationRole === OSA_RELATION.visualEmbed) {
+    validateVisualEmbedGeometry(edge.properties, path)
   }
 }
 

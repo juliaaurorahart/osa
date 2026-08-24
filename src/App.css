@@ -1926,6 +1926,88 @@
   font-size: 1rem;
 }
 
+/* A semantic accent belongs to the selected OSA object, not to a particular
+   drawing. Assembly, Space, and future views can all derive the same quiet
+   cue from this durable property. */
+.properties-panel__appearance {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 14px;
+  padding: 0;
+  border: 0;
+}
+
+.properties-panel__appearance legend {
+  padding: 0;
+  color: #666;
+  font-size: 0.78rem;
+}
+
+.properties-panel__accent-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  color: #555;
+  font-size: 0.8rem;
+}
+
+.properties-panel__accent-control input[type='color'] {
+  box-sizing: border-box;
+  width: 28px;
+  height: 24px;
+  padding: 2px;
+  border: 1px solid #c8c8c8;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.properties-panel__accent-control output {
+  min-width: 52px;
+  color: #777;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.76rem;
+}
+
+/* Compact direct-photo entry for Parts and Tools. The detailed Image section
+   below remains the place to inspect, describe, or remove that same photo. */
+.properties-panel__quick-photo {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: fit-content;
+  margin: 8px 0 12px;
+  padding: 4px 6px;
+  border: 1px dashed #b4b4b4;
+  border-radius: 6px;
+  color: #777;
+  font-size: 0.76rem;
+}
+
+.properties-panel__quick-photo:hover {
+  border-color: #5bcefa;
+  background: #f1fbff;
+  color: #276b87;
+}
+
+.properties-panel__quick-photo-button {
+  position: relative;
+  white-space: nowrap;
+}
+
+.properties-panel__quick-photo-button input {
+  position: absolute;
+  display: block;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .properties-panel__rows {
   display: grid;
   gap: 8px;
@@ -2752,10 +2834,16 @@
 
 .sketch-editor__tool-group,
 .sketch-editor__colors,
+.sketch-editor__fill,
 .sketch-editor__toolbar > label {
   display: flex;
   align-items: center;
   gap: 7px;
+}
+
+.sketch-editor__tool-group + .sketch-editor__tool-group {
+  padding-left: 12px;
+  border-left: 1px solid #e4e4e4;
 }
 
 .sketch-editor__toolbar button,
@@ -2800,6 +2888,36 @@
   background: transparent;
 }
 
+.sketch-editor__fill {
+  padding-left: 12px;
+  border-left: 1px solid #e4e4e4;
+}
+
+.sketch-editor__fill button,
+.sketch-editor__fill-control button {
+  min-height: 22px;
+  padding: 2px 5px;
+  border: 1px solid #bbb;
+  border-radius: 3px;
+  background: #fff;
+  color: #555;
+}
+
+.sketch-editor__fill button.is-selected,
+.sketch-editor__fill-control button.is-selected {
+  border-color: #26799b;
+  background: #eaf6fb;
+  color: #173e4e;
+}
+
+.sketch-editor__fill input[type='color'] {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
 .sketch-editor__toolbar input[type='range'] {
   width: 90px;
 }
@@ -2828,7 +2946,11 @@
 .sketch-editor__viewport.is-pen,
 .sketch-editor__viewport.is-eraser,
 .sketch-editor__viewport.is-rectangle,
+.sketch-editor__viewport.is-rounded-rectangle,
 .sketch-editor__viewport.is-ellipse,
+.sketch-editor__viewport.is-diamond,
+.sketch-editor__viewport.is-triangle,
+.sketch-editor__viewport.is-line,
 .sketch-editor__viewport.is-arrow,
 .sketch-editor__viewport.is-text {
   cursor: crosshair;
@@ -2897,12 +3019,29 @@
   background: transparent;
 }
 
+.sketch-editor__settings input[type='range'] {
+  width: 100%;
+  min-width: 0;
+}
+
 .sketch-editor__zoom,
 .sketch-editor__section-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+.sketch-editor__object-actions,
+.sketch-editor__fill-control {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.sketch-editor__object-actions {
+  justify-content: flex-end;
 }
 
 .sketch-editor__layers {
@@ -2938,6 +3077,14 @@
   cursor: nwse-resize;
 }
 
+/* Temporary region selection only; this never becomes part of a saved canvas. */
+.sketch-selection-marquee {
+  fill: rgb(91 206 250 / 14%);
+  stroke: #26799b;
+  stroke-width: 2px;
+  stroke-dasharray: 8 5;
+}
+
 .sketch-editor__selected-object textarea {
   box-sizing: border-box;
   width: 100%;
@@ -2958,6 +3105,17 @@
   object-fit: contain;
 }
 
+.canvas-lab-loading {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: #f4f4f0;
+  color: #52514c;
+  font-size: 0.9rem;
+}
+
 @media (max-width: 820px) {
   .sketch-editor__workspace {
     grid-template-columns: 1fr;
@@ -2966,4 +3124,411 @@
   .sketch-editor__settings {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+}
+
+/* Application theme ---------------------------------------------------------
+   Dark is the initial preference, but the same semantic layer also supplies
+   the light theme. Source images and drawing paper remain authored content. */
+.osa-workspace,
+.work-view-shell,
+.notebook-view.is-page-focused,
+.canvas-lab-loading {
+  background: var(--osa-bg);
+  color: var(--osa-text);
+}
+
+.work-view,
+.workspace-switcher,
+.pointer-tool-palette,
+.space-toolbar,
+.sketch-editor,
+.text-node,
+.node-attributes,
+.properties-panel,
+.graph-table-panel,
+.edge-hover-card,
+.board-panel {
+  color: var(--osa-text);
+}
+
+.workspace-switcher,
+.workspace-switcher-reveal,
+.pointer-tool-palette__action,
+.pointer-tool-palette__close,
+.osa-sign-in-reveal:hover,
+.board-panel,
+.space-canvas-toolbar,
+.properties-panel,
+.graph-table-panel,
+.edge-hover-card {
+  border-color: var(--osa-border);
+  background: var(--osa-surface);
+  box-shadow: 0 12px 34px var(--osa-shadow);
+}
+
+.workspace-switcher button,
+.work-view button,
+.work-view input,
+.work-view select,
+.work-view textarea,
+.workspace-switcher-reveal,
+.pointer-tool-palette__action,
+.pointer-tool-palette__close,
+.osa-sign-in-reveal,
+.space-toolbar,
+.board-panel,
+.space-canvas-toolbar,
+.properties-panel,
+.graph-table-panel,
+.edge-hover-card,
+.text-node,
+.node-attributes,
+.sketch-editor {
+  color: var(--osa-text);
+}
+
+.workspace-switcher button:hover,
+.workspace-switcher button.is-active,
+.task-filter button:hover,
+.task-filter button.is-active,
+.text-action:hover,
+.workspace-switcher-reveal:hover,
+.workspace-switcher-reveal:focus-visible,
+.pointer-tool-palette__close:hover,
+.pointer-tool-palette__close:focus-visible,
+.osa-sign-in-reveal:hover,
+.osa-sign-in-reveal:focus-visible,
+.space-toolbar__control select:hover {
+  color: var(--osa-text);
+}
+
+.workspace-switcher button:hover,
+.workspace-switcher button.is-active {
+  border-bottom-color: var(--osa-text);
+}
+
+.workspace-switcher .workspace-switcher__hide,
+.pointer-tool-palette__label,
+.local-draft-status,
+.work-view__header > span,
+.project-detail__task-heading span,
+.work-view__eyebrow,
+.work-view__empty,
+.task-row__facts,
+.task-row__facts input,
+.context-links__empty,
+.assembly-start p,
+.assembly-detail__overview,
+.assembly-section-heading > span,
+.assembly-tabs button,
+.assembly-outline > button small,
+.operation-editor__heading label,
+.operation-field,
+.assembly-record-editor label,
+.operation-tools > select,
+.assembly-source-note,
+.assembly-sources,
+.project-link-existing,
+.project-list small,
+.project-task-row__content small,
+.notebook-pages nav small,
+.notebook-page__connections p,
+.notebook-page__connections li span,
+.notebook-page__connections .notebook-page__anchor,
+.notebook-selection-actions blockquote,
+.sketch-editor__toolbar output,
+.sketch-editor__settings {
+  color: var(--osa-muted);
+}
+
+.work-view__divider,
+.work-view__create,
+.task-row,
+.assembly-start,
+.assembly-tabs,
+.assembly-step-create,
+.assembly-record-editor,
+.assembly-sources,
+.project-list__divider,
+.project-task-create,
+.project-task-row,
+.notebook-page__connections,
+.notebook-selection-actions,
+.sketch-editor__toolbar,
+.sketch-editor__tool-group + .sketch-editor__tool-group,
+.sketch-editor__fill {
+  border-color: var(--osa-border);
+}
+
+.task-filter input:focus,
+.work-view__create input:focus,
+.task-row input:focus,
+.task-row textarea:focus,
+.task-row select:focus,
+.project-detail input:focus,
+.project-detail select:focus,
+.project-detail textarea:focus,
+.assembly-detail__heading input:focus,
+.assembly-detail__overview:focus,
+.operation-editor input:focus,
+.operation-editor textarea:focus,
+.assembly-table input:focus,
+.assembly-record-editor input:focus,
+.assembly-record-editor textarea:focus,
+.assembly-step-create input:focus,
+.notebook-page__heading > input:focus {
+  box-shadow: inset 0 -1px var(--osa-focus);
+}
+
+.task-row__check,
+.project-task-row > input[type='checkbox'] {
+  accent-color: var(--osa-focus);
+}
+
+.context-link,
+.operation-tools__list button,
+.operation-tools form button,
+.assembly-add-row,
+.assembly-sources button,
+.assembly-record-editor__actions a,
+.notebook-pages__create button,
+.notebook-page__connections button,
+.notebook-selection-actions button {
+  border-color: var(--notebook-sketch-accent);
+}
+
+.assembly-detail__heading input,
+.operation-editor input,
+.operation-editor textarea,
+.assembly-record-editor input,
+.assembly-record-editor textarea,
+.operation-tools > select,
+.notebook-selection-actions select,
+.sketch-editor__settings input[type='number'] {
+  border-color: var(--osa-border);
+  color: var(--osa-text);
+}
+
+.assembly-tabs button:hover,
+.assembly-tabs button.is-active {
+  color: var(--osa-text);
+}
+
+.assembly-table th,
+.assembly-table__cost small,
+.task-row__name,
+.context-link button:last-child,
+.assembly-source-note,
+.notebook-page__connections p,
+.notebook-page__connections li span,
+.notebook-page__connections .notebook-page__anchor,
+.notebook-page__leave-focus {
+  color: var(--osa-muted);
+}
+
+.assembly-table th,
+.assembly-table td {
+  border-color: var(--osa-border-subtle);
+}
+
+.assembly-table tbody tr:hover,
+.assembly-table tbody tr.is-selected {
+  background: var(--osa-hover-surface);
+}
+
+.project-list button:hover,
+.project-list button.is-active {
+  border-left-color: var(--notebook-sketch-accent);
+}
+
+.text-node,
+.node-attributes {
+  border-color: var(--osa-border);
+  background: var(--osa-surface-raised);
+}
+
+.text-node__body textarea,
+.text-node__detail-fields input,
+.text-node__detail-fields select,
+.text-node .markdown-editor__preview,
+.text-node .sketch-pad__tools button,
+.text-node .markdown-editor__preview:hover,
+.text-node .markdown-editor__preview:focus-visible {
+  color: var(--osa-text);
+  background: transparent;
+}
+
+.text-node__details.is-expanded {
+  border-top-color: var(--osa-border);
+}
+
+.markdown-preview pre {
+  background: var(--osa-bg);
+}
+
+.markdown-preview blockquote {
+  border-left-color: var(--osa-border);
+}
+
+.markdown-preview__empty,
+.node-attributes__empty,
+.edge-hover-card__empty {
+  color: var(--osa-muted);
+}
+
+.board-panel,
+.space-canvas-toolbar,
+.properties-panel,
+.graph-table-panel,
+.edge-hover-card {
+  border: 1px solid var(--osa-border);
+}
+
+.board-name-input,
+.board-select,
+.property-row input,
+.properties-panel__instruction-link select,
+.properties-panel__asset-alt input,
+.properties-panel__owned-visual-link {
+  border-color: var(--osa-border);
+  background: var(--osa-input);
+  color: var(--osa-text);
+}
+
+.board-storage-status,
+.board-dock__toggle,
+.inspector-dock__toggle,
+.table-dock__toggle,
+.properties-panel__eyebrow,
+.properties-panel__kind,
+.properties-panel__empty,
+.properties-panel__instruction-link legend,
+.properties-panel__appearance legend,
+.properties-panel__accent-control,
+.properties-panel__accent-control output,
+.properties-panel__asset-image legend,
+.properties-panel__asset-help,
+.properties-panel__asset-preview figcaption,
+.properties-panel__asset-dropzone,
+.properties-panel__asset-alt,
+.properties-panel__owned-visuals legend,
+.properties-panel__managed,
+.properties-panel__managed-data,
+.managed-property-row dt,
+.properties-panel__spaces legend,
+.properties-panel__spaces label,
+.edge-hover-card__anchor,
+.properties-panel__anchor {
+  color: var(--osa-muted);
+}
+
+.board-sign-in {
+  color: var(--osa-link);
+}
+
+.board-button,
+.board-file-button,
+.graph-table-tab,
+.property-row__remove,
+.space-canvas-toolbar button,
+.properties-panel__instruction-link select,
+.properties-panel__asset-alt input,
+.properties-panel__owned-visual-link,
+.sketch-editor__fill button,
+.sketch-editor__fill-control button,
+.sketch-editor__selected-object textarea {
+  border-color: var(--osa-border);
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
+}
+
+.properties-panel__accent-control input[type='color'] {
+  border-color: var(--osa-border);
+  background: var(--osa-input);
+}
+
+.space-canvas-toolbar button:hover,
+.space-canvas-toolbar button:focus-visible,
+.space-canvas-toolbar button[aria-pressed='true'],
+.properties-panel__owned-visual-link:hover:not(:disabled),
+.properties-panel__owned-visual-link:focus-visible:not(:disabled),
+.properties-panel__asset-dropzone:hover,
+.sketch-editor__fill button.is-selected,
+.sketch-editor__fill-control button.is-selected {
+  border-color: var(--osa-focus);
+  background: var(--osa-hover-surface);
+  color: var(--osa-hover-text);
+}
+
+.graph-table-tab--active,
+.graph-table-panel tbody tr:hover,
+.graph-table-panel tbody tr.is-selected {
+  background: var(--osa-hover-surface);
+}
+
+.graph-table-panel th {
+  background: var(--osa-surface-raised);
+  color: var(--osa-muted);
+}
+
+.properties-panel__asset-preview img {
+  border-color: var(--osa-border);
+  background: #fff;
+}
+
+.properties-panel__asset-dropzone,
+.properties-panel__quick-photo,
+.properties-panel__owned-visual-link,
+.properties-panel__owned-visual-remove,
+.properties-panel__managed-data {
+  border-color: var(--osa-border);
+}
+
+.properties-panel__quick-photo {
+  color: var(--osa-muted);
+}
+
+.properties-panel__quick-photo:hover {
+  border-color: var(--osa-focus);
+  background: var(--osa-hover-surface);
+  color: var(--osa-hover-text);
+}
+
+.managed-property-row dd {
+  color: var(--osa-text);
+}
+
+.space-toolbar__control select:focus-visible {
+  outline-color: var(--osa-focus);
+}
+
+.notebook-view.is-page-focused {
+  color: var(--osa-text);
+}
+
+.notebook-page__leave-focus:hover,
+.notebook-page__leave-focus:focus-visible {
+  color: var(--osa-text);
+}
+
+.sketch-editor__viewport {
+  background: var(--osa-bg);
+}
+
+.sketch-editor__settings h3 {
+  color: var(--osa-text);
+}
+
+.sketch-editor__settings input[type='number'],
+.sketch-editor__selected-object textarea {
+  border-color: var(--osa-border);
+  color: var(--osa-text);
+}
+
+.sketch-editor__colors button.is-selected {
+  box-shadow: 0 0 0 2px var(--osa-surface), 0 0 0 3px var(--osa-text);
+}
+
+.canvas-lab-loading {
+  color: var(--osa-muted);
 }

@@ -160,6 +160,87 @@
   gap: 6px 12px;
 }
 
+/* Project-wide meaning belongs beside the Assembly's real inventory. The
+   table only designates data here; individual views choose how to use it. */
+.assembly-semantic-table {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.25fr) minmax(0, 1fr);
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--osa-border-subtle, #e0e0e0);
+  color: var(--osa-muted);
+  font-size: clamp(0.72rem, 1.25vw, 0.95rem);
+}
+
+.assembly-semantic-table table {
+  width: 100%;
+  border-collapse: collapse;
+  color: inherit;
+  font: inherit;
+}
+
+.assembly-semantic-table th,
+.assembly-semantic-table td {
+  padding: 5px 8px 5px 0;
+  border-bottom: 1px solid var(--osa-border-subtle, #ececec);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.assembly-semantic-table th {
+  color: var(--osa-muted);
+  font-size: 0.78em;
+  font-weight: 600;
+  text-transform: lowercase;
+}
+
+.assembly-semantic-table__color-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.assembly-semantic-table__color-control input[type='color'] {
+  width: 22px;
+  height: 22px;
+  padding: 1px;
+  border: 1px solid var(--osa-border, #bdbdbd);
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.assembly-semantic-table__color-control output {
+  min-width: 3.3em;
+  overflow: hidden;
+  color: inherit;
+  font: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assembly-semantic-table__default {
+  padding: 1px 5px;
+  border: 1px solid var(--osa-border, #bdbdbd);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--osa-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.86em;
+  line-height: 1.25;
+}
+
+.assembly-semantic-table__default:hover,
+.assembly-semantic-table__default:focus-visible,
+.assembly-semantic-table__default[aria-pressed='true'] {
+  border-color: var(--osa-text);
+  color: var(--osa-text);
+  outline: 0;
+}
+
 .assembly-index-card__create-actions {
   margin-top: 14px;
 }
@@ -237,6 +318,19 @@
 .assembly-object-link:focus-visible {
   border-bottom-color: currentColor;
   outline: 0;
+}
+
+/* A semantic accent comes from the canonical Part/Tool (or an intentional
+   Visual override). It coordinates labels and visual cards without tinting
+   source pixels or changing a reusable canvas's authored content. */
+.assembly-object-link--accented,
+.assembly-visual-label--accented {
+  color: var(--osa-semantic-accent);
+}
+
+.assembly-card__visual-accent {
+  padding-left: 8px;
+  border-left: 3px solid var(--osa-semantic-accent);
 }
 
 .assembly-card input[readonly],
@@ -669,6 +763,192 @@
     width: 20px;
     height: 20px;
   }
+}
+
+/* The application chrome follows OSA's selected theme. Source slides and
+   image contents stay exactly as authored. */
+.assembly-view .assembly-view__context-label,
+.assembly-view__assembly-picker,
+.assembly-index-card__objects,
+.assembly-card__empty-link-list,
+.assembly-card__canvas-empty,
+.assembly-card__canvas-add-section span {
+  color: var(--osa-muted);
+}
+
+.assembly-view__assembly-picker select,
+.assembly-view__share-status input {
+  border-color: var(--osa-border);
+  background: var(--osa-input);
+  color: var(--osa-text);
+}
+
+.assembly-view__shared-label,
+.assembly-view__share-status,
+.assembly-view__lock-status {
+  border-color: var(--osa-positive-border);
+  background: var(--osa-positive-surface);
+  color: var(--osa-positive-text);
+}
+
+.assembly-card__lock-button {
+  border-color: var(--osa-positive-border);
+  background: var(--osa-surface-raised);
+  color: var(--osa-positive-text);
+}
+
+.assembly-card__lock-button:hover,
+.assembly-card__lock-button:focus-visible,
+.assembly-card__lock-button[aria-pressed='true'] {
+  border-color: var(--osa-positive-border);
+  background: var(--osa-positive-surface);
+}
+
+.assembly-view__empty-state,
+.assembly-card__view,
+.assembly-card__canvas-stack,
+.assembly-card__canvas-section-controls,
+.assembly-card__canvas-add-section {
+  border-color: var(--osa-border);
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
+}
+
+.assembly-index-card__objects,
+.assembly-card__view-header,
+.assembly-card__canvas-section-controls,
+.assembly-card__canvas-add-section {
+  border-color: var(--osa-border-subtle);
+}
+
+.assembly-object-unlink {
+  border-color: var(--osa-border);
+  background: var(--osa-surface-raised);
+  color: var(--osa-muted);
+}
+
+.assembly-object-unlink:hover,
+.assembly-object-unlink:focus-visible {
+  border-color: var(--osa-danger-border);
+  background: var(--osa-danger-surface);
+  color: var(--osa-danger-text);
+}
+
+.assembly-card-board {
+  background:
+    linear-gradient(var(--osa-board-overlay), var(--osa-board-overlay)),
+    var(--osa-surface);
+}
+
+.assembly-card:not(.is-focused):hover,
+.assembly-card:not(.is-focused):focus-visible {
+  box-shadow: 0 12px 28px rgb(0 0 0 / 38%) !important;
+}
+
+.assembly-card input::placeholder,
+.assembly-card textarea::placeholder {
+  color: var(--osa-muted);
+}
+
+.assembly-card__visual-preview {
+  border-color: var(--osa-border);
+}
+
+/* A direct object photo is a projection of that object's asset:image.
+   It is deliberately not an editable canvas and has no canvas owner picker. */
+.assembly-card__direct-photo {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--osa-border-subtle);
+}
+
+.assembly-card__direct-photo-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.assembly-card__direct-photo-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 460px;
+  border: 1px solid var(--osa-border);
+  background: #fff;
+  object-fit: contain;
+}
+
+.assembly-card__photo-unavailable {
+  padding: 10px 0;
+  border-top: 1px solid var(--osa-border-subtle);
+  color: var(--osa-muted);
+  font-size: 0.8rem;
+}
+
+.assembly-card__view-header {
+  border-bottom-color: var(--osa-border);
+  background: var(--osa-surface);
+}
+
+.assembly-card__view-header p {
+  color: var(--osa-muted);
+}
+
+.assembly-card__canvas-divider {
+  background: var(--osa-border);
+}
+
+.assembly-card__canvas-section-surface {
+  border-color: var(--osa-border);
+  background:
+    radial-gradient(circle at 1px 1px, var(--osa-grid-dot) 1px, transparent 0) 0 0 / 14px 14px,
+    var(--osa-bg);
+}
+
+.assembly-card__canvas-section.is-source .assembly-card__canvas-section-surface,
+.assembly-card__canvas-source {
+  background: #fff;
+}
+
+.assembly-card__canvas-section-heading {
+  border-bottom-color: var(--osa-border);
+  background: var(--osa-surface);
+  color: var(--osa-muted);
+}
+
+.assembly-card__canvas-section-heading h3 {
+  color: var(--osa-text);
+}
+
+.assembly-card__canvas-section-heading span {
+  color: var(--osa-muted);
+}
+
+.assembly-card__canvas-object,
+.assembly-card__canvas-object figcaption {
+  border-color: var(--osa-border);
+  background: var(--osa-surface);
+  color: var(--osa-text);
+}
+
+.assembly-card__canvas-object-resize {
+  border-color: var(--osa-focus);
+  background: var(--osa-hover-surface);
+  color: var(--osa-hover-text);
+}
+
+.assembly-card__canvas-object-resize:hover,
+.assembly-card__canvas-object-resize:focus-visible {
+  border-color: var(--osa-focus);
+  background: var(--osa-hover-surface);
+}
+
+.assembly-card__canvas-section-controls select {
+  border-bottom-color: var(--osa-border);
 }
 
 @media print {
