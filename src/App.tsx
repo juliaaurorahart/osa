@@ -35,6 +35,7 @@ import {
   AssemblyView,
   type OperationPartDirection,
 } from './components/AssemblyView'
+import { AssemblyInstructionsView } from './components/AssemblyInstructionsView'
 import {
   createAssemblyViewUiState,
   type AssemblyViewUiState,
@@ -648,6 +649,9 @@ function Flow() {
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>(() => (
     readSharedAssemblyToken() ? 'assembly' : readWorkspaceView()
   ))
+  // Local preview uses the same component as a shared team link, but stays
+  // entirely inside this authoring session until someone explicitly shares it.
+  const [assemblyInstructionsPreview, setAssemblyInstructionsPreview] = useState(false)
   const [workspaceMenuVisible, setWorkspaceMenuVisible] = useState(true)
   const [canvasLabVisible, setCanvasLabVisible] = useState(readCanvasLabRequested)
   // Assembly's focus, lock, drawing, and draft controls are presentation
@@ -908,10 +912,29 @@ function Flow() {
   }, [setNodes])
 
   const onNameChange = useCallback((id: string, name: string) => {
-    setNodes((currentNodes) => currentNodes.map((node) => (
-      node.id === id ? { ...node, data: { ...node.data, name } } : node
-    )))
-  }, [setNodes])
+    const ownedStepVisualIds = new Set(edges
+      .filter((edge) => (
+        edge.source === id
+        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
+      ))
+      .map((edge) => edge.target))
+
+    setNodes((currentNodes) => {
+      const renamedNode = currentNodes.find((node) => node.id === id)
+      const stepOwnsVisuals = renamedNode !== undefined && osaRole(renamedNode) === 'step'
+
+      return currentNodes.map((node) => {
+        if (node.id === id) return { ...node, data: { ...node.data, name } }
+        // A step canvas is named after its step. Keeping the two names in
+        // lockstep makes a later canvas list or shared instruction view
+        // immediately legible without a second manual naming step.
+        if (stepOwnsVisuals && ownedStepVisualIds.has(node.id)) {
+          return { ...node, data: { ...node.data, name } }
+        }
+        return node
+      })
+    })
+  }, [edges, setNodes])
 
   const onSpaceIdsChange = useCallback((id: string, spaceIds: string[]) => {
     setNodes((currentNodes) => {
@@ -1488,6 +1511,221 @@ function Flow() {
     return operationId
   }, [createObjectNode, edges, nodes, operations, setEdges])
 
+  /**
+   * Removes one Assembly card from the instruction sequence without deleting
+   * its parts, tools, Steps, or Visuals. Those are ordinary project objects
+   * and remain available in Space for relinking or recovery later.
+   */
+  const removeAssemblyOperation = useCallback((operationId: string) => {
+    const operation = latestNodes.current.find((node) => node.id === operationId)
+    if (!operation || osaRole(operation) !== 'operation') return
+
+    setEdges((currentEdges) => currentEdges.filter((edge) => (
+      edge.source !== operationId && edge.target !== operationId
+    )))
+    setNodes((currentNodes) => currentNodes.filter((node) => node.id !== operationId))
+    setSelectedItem((current) => (
+      current?.type === 'node' && current.id === operationId ? null : current
+    ))
+    setAssemblyViewState((current) => {
+      const remainingHiddenFilters = Object.fromEntries(
+        Object.entries(current.hiddenVisualOwnerIdsByOperation ?? {})
+          .filter(([cardId]) => cardId !== operationId),
+      )
+      return {
+        ...current,
+        focusedCardId: current.focusedCardId === operationId
+          ? 'assembly-index'
+          : current.focusedCardId,
+        lockedCardId: current.lockedCardId === operationId ? null : current.lockedCardId,
+        editingVisualId: current.editingOperationId === operationId ? null : current.editingVisualId,
+        editingOperationId: current.editingOperationId === operationId
+          ? null
+          : current.editingOperationId,
+        hiddenVisualOwnerIdsByOperation: remainingHiddenFilters,
+      }
+    })
+  }, [setEdges, setNodes])
+
+  /**
+   * A step is an ordinary, durable OSA object—not another line embedded in a
+   * card's text. That lets it carry its own Visual canvas, links, and future
+   * status without inventing a second instruction-only data format.
+   */
+  const createOperationStep = useCallback((operationId: string) => {
+    const operation = nodes.find((node) => node.id === operationId)
+    if (!operation) return ''
+
+    const linkedStepIds = new Set(edges
+      .filter((edge) => (
+        edge.source === operationId
+        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationStep
+      ))
+      .map((edge) => edge.target))
+    const greatestOrder = nodes
+      .filter((node) => linkedStepIds.has(node.id) && osaRole(node) === 'step')
+      .reduce((greatest, step) => {
+        const order = Number(step.data.properties[OSA_PROPERTY.order])
+        return Number.isFinite(order) ? Math.max(greatest, order) : greatest
+      }, 0)
+    const order = Math.floor(greatestOrder) + 1
+    const stepId = createObjectNode(
+      `Step ${order}`,
+      'note',
+      null,
+      '',
+      undefined,
+      {
+        [OSA_PROPERTY.role]: 'step',
+        [OSA_PROPERTY.order]: String(order),
+      },
+      operation.data.spaceIds,
+    )
+    const edgeId = `edge-${nextEdgeId.current}`
+    nextEdgeId.current += 1
+    setEdges((currentEdges) => [...currentEdges, createGraphEdge({
+      id: edgeId,
+      source: operationId,
+      target: stepId,
+      relationship: 'has step',
+      properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.operationStep },
+    })])
+    return stepId
+  }, [createObjectNode, edges, nodes, setEdges])
+
+  /**
+   * A step's order belongs to the step itself. Renumbering the small ordered
+   * set after a move keeps every other view able to render the same sequence.
+   */
+  const reorderOperationStep = useCallback((
+    operationId: string,
+    stepId: string,
+    direction: 'up' | 'down',
+  ) => {
+    const targetIds = latestEdges.current
+      .filter((edge) => (
+        edge.source === operationId
+        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationStep
+      ))
+      .map((edge) => edge.target)
+    const edgePosition = new Map(targetIds.map((id, index) => [id, index]))
+    const orderedSteps = latestNodes.current
+      .filter((node) => targetIds.includes(node.id) && osaRole(node) === 'step')
+      .sort((left, right) => {
+        const leftOrder = Number(left.data.properties[OSA_PROPERTY.order])
+        const rightOrder = Number(right.data.properties[OSA_PROPERTY.order])
+        return (Number.isFinite(leftOrder) ? leftOrder : edgePosition.get(left.id) ?? 0)
+          - (Number.isFinite(rightOrder) ? rightOrder : edgePosition.get(right.id) ?? 0)
+      })
+    const currentIndex = orderedSteps.findIndex((step) => step.id === stepId)
+    const nextIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= orderedSteps.length) return
+
+    const reordered = [...orderedSteps]
+    ;[reordered[currentIndex], reordered[nextIndex]] = [reordered[nextIndex], reordered[currentIndex]]
+    const orderByStepId = new Map(reordered.map((step, index) => [step.id, String(index + 1)]))
+    setNodes((currentNodes) => currentNodes.map((node) => {
+      const order = orderByStepId.get(node.id)
+      if (order === undefined || node.data.properties[OSA_PROPERTY.order] === order) return node
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          properties: { ...node.data.properties, [OSA_PROPERTY.order]: order },
+        },
+      }
+    }))
+  }, [setNodes])
+
+  /**
+   * A step has one directly owned canvas. The ownership edge is the durable
+   * association; keeping its name synchronized happens in `onNameChange`.
+   */
+  const ensureStepCanvas = useCallback((stepId: string) => {
+    const step = latestNodes.current.find((node) => node.id === stepId)
+    if (!step || osaRole(step) !== 'step') return ''
+
+    // A Step belongs to exactly one card. Its canvas is shown on that same
+    // card through a separate display edge, while this ownership edge keeps
+    // the canvas semantically attached to the Step.
+    const operationId = latestEdges.current.find((edge) => (
+      edge.target === stepId
+      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationStep
+    ))?.source
+    const showOnOperation = (currentEdges: GraphEdge[], visualId: string) => {
+      if (!operationId || currentEdges.some((edge) => (
+        edge.source === operationId
+        && edge.target === visualId
+        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationVisual
+      ))) {
+        return currentEdges
+      }
+
+      const operationEdgeId = `edge-${nextEdgeId.current}`
+      nextEdgeId.current += 1
+      return [...currentEdges, createGraphEdge({
+        id: operationEdgeId,
+        source: operationId,
+        target: visualId,
+        relationship: 'shows visual',
+        properties: {
+          [OSA_PROPERTY.relationRole]: OSA_RELATION.operationVisual,
+          [OSA_PROPERTY.operationVisualOrder]: String(
+            nextOperationVisualOrder(operationId, currentEdges),
+          ),
+        },
+      })]
+    }
+
+    const existingVisualId = latestEdges.current
+      .find((edge) => (
+        edge.source === stepId
+        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
+      ))?.target
+    const existingVisual = existingVisualId
+      ? latestNodes.current.find((node) => node.id === existingVisualId)
+      : undefined
+    if (existingVisual && isVisualNode(existingVisual)) {
+      // A canvas selected from the card's right column stays visible there.
+      // This also repairs an older Step canvas that was created before card
+      // placement was added.
+      setEdges((currentEdges) => showOnOperation(currentEdges, existingVisual.id))
+      return existingVisual.id
+    }
+
+    const visualId = createObjectNode(
+      step.data.name.trim() || `#${step.id}`,
+      'visual',
+      null,
+      '',
+      undefined,
+      {
+        [OSA_PROPERTY.role]: 'visual',
+        [OSA_PROPERTY.visualContent]: 'canvas',
+        [OSA_PROPERTY.visualIdentity]: 'untyped',
+      },
+      step.data.spaceIds,
+    )
+    const edgeId = `edge-${nextEdgeId.current}`
+    nextEdgeId.current += 1
+    setEdges((currentEdges) => showOnOperation([
+      // A malformed legacy edge should not let a new Step canvas create a
+      // second ownership relationship for this Step.
+      ...currentEdges.filter((edge) => !(
+        edge.source === stepId
+        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
+      )),
+      createGraphEdge({
+        id: edgeId,
+        source: stepId,
+        target: visualId,
+        relationship: 'owns visual',
+        properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.objectVisual },
+      }),
+    ], visualId))
+    return visualId
+  }, [createObjectNode, setEdges])
+
   const createAssemblyPart = useCallback((assemblyId: string) => {
     const assembly = nodes.find((node) => node.id === assemblyId)
     const partId = createObjectNode(
@@ -1540,6 +1778,36 @@ function Flow() {
     return expenseId
   }, [createObjectNode, nodes, setEdges])
 
+  /**
+   * Detaches a Part from this Assembly's inventory. The Part itself, its
+   * visuals, and its links elsewhere in the project all remain intact.
+   */
+  const unlinkAssemblyPart = useCallback((assemblyId: string, partId: string) => {
+    setEdges((currentEdges) => {
+      const nextEdges = currentEdges.filter((edge) => !(
+        edge.source === assemblyId
+        && edge.target === partId
+        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.assemblyItem
+      ))
+      return nextEdges.length === currentEdges.length ? currentEdges : nextEdges
+    })
+  }, [setEdges])
+
+  /**
+   * Detaches an Expense from this Assembly's inventory without deleting the
+   * Expense object or any of its project information.
+   */
+  const unlinkAssemblyExpense = useCallback((assemblyId: string, expenseId: string) => {
+    setEdges((currentEdges) => {
+      const nextEdges = currentEdges.filter((edge) => !(
+        edge.source === assemblyId
+        && edge.target === expenseId
+        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.assemblyExpense
+      ))
+      return nextEdges.length === currentEdges.length ? currentEdges : nextEdges
+    })
+  }, [setEdges])
+
   const createOperationTool = useCallback((
     operationId: string,
     name: string,
@@ -1572,15 +1840,31 @@ function Flow() {
 
   /**
    * Creates one blank, reusable Visual canvas owned by a real Part, Assembly,
-   * or Tool. Its content is intentionally separate from any Assembly card:
-   * cards later reference this Visual without becoming its owner.
+   * Tool, or instruction Step. Its content is intentionally separate from an
+   * Assembly card: cards later reference this Visual without becoming its owner.
    */
   const createOwnedVisualCanvas = useCallback((ownerId: string) => {
     const owner = nodes.find((node) => node.id === ownerId)
     if (!owner || !canOwnOsaVisual(owner)) return ''
 
+    const ownerIsStep = osaRole(owner) === 'step'
+    if (ownerIsStep) {
+      const existingVisualId = edges.find((edge) => (
+        edge.source === ownerId
+        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
+      ))?.target
+      const existingVisual = existingVisualId
+        ? nodes.find((node) => node.id === existingVisualId)
+        : undefined
+      if (existingVisual && isVisualNode(existingVisual)) {
+        setSelectedItem({ type: 'node', id: existingVisual.id })
+        setInspectorExpanded(true)
+        return existingVisual.id
+      }
+    }
+
     const visualId = createObjectNode(
-      'canvas',
+      ownerIsStep ? owner.data.name.trim() || `#${owner.id}` : 'canvas',
       'visual',
       null,
       '',
@@ -1596,17 +1880,26 @@ function Flow() {
     )
     const edgeId = `edge-${nextEdgeId.current}`
     nextEdgeId.current += 1
-    setEdges((currentEdges) => [...currentEdges, createGraphEdge({
-      id: edgeId,
-      source: ownerId,
-      target: visualId,
-      relationship: 'owns visual',
-      properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.objectVisual },
-    })])
+    setEdges((currentEdges) => [
+      // A Step gets one canvas only. Other owner kinds can intentionally own
+      // many canvases, so only normalize this one special invariant here.
+      ...currentEdges.filter((edge) => !(
+        ownerIsStep
+        && edge.source === ownerId
+        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
+      )),
+      createGraphEdge({
+        id: edgeId,
+        source: ownerId,
+        target: visualId,
+        relationship: 'owns visual',
+        properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.objectVisual },
+      }),
+    ])
     setSelectedItem({ type: 'node', id: visualId })
     setInspectorExpanded(true)
     return visualId
-  }, [createObjectNode, nodes, setEdges])
+  }, [createObjectNode, edges, nodes, setEdges])
 
   /**
    * Detaches a Visual from its owning object without deleting either the
@@ -1637,24 +1930,55 @@ function Flow() {
     )
     if (!visual || !isCanonicalVisual || !owner || !canOwnOsaVisual(owner)) return
 
+    const ownerIsStep = osaRole(owner) === 'step'
+    if (ownerIsStep) {
+      const inheritedName = owner.data.name.trim() || `#${owner.id}`
+      setNodes((currentNodes) => currentNodes.map((node) => {
+        if (node.id !== visualId || node.data.name === inheritedName) return node
+        return { ...node, data: { ...node.data, name: inheritedName } }
+      }))
+    }
+
     setEdges((currentEdges) => {
       const ownershipEdges = currentEdges.filter((edge) => (
         edge.target === visualId
         && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
       ))
 
+      const visualAlreadyOwnedByTarget = ownershipEdges.length === 1
+        && ownershipEdges[0].source === ownerId
+      const targetStepAlreadyOwnsAnotherCanvas = ownerIsStep && currentEdges.some((edge) => (
+        edge.source === ownerId
+        && edge.target !== visualId
+        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
+      ))
+
       // Selecting the current, sole owner should not churn a durable edge ID.
-      if (ownershipEdges.length === 1 && ownershipEdges[0].source === ownerId) {
-        return currentEdges
+      // If it is a Step with a stale second canvas, detach that other canvas
+      // without touching either Visual or its card placement.
+      if (visualAlreadyOwnedByTarget) {
+        if (!targetStepAlreadyOwnsAnotherCanvas) return currentEdges
+        return currentEdges.filter((edge) => !(
+          ownerIsStep
+          && edge.source === ownerId
+          && edge.target !== visualId
+          && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
+        ))
       }
 
       const edgeId = `edge-${nextEdgeId.current}`
       nextEdgeId.current += 1
       return [
-        ...currentEdges.filter((edge) => !(
-          edge.target === visualId
-          && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
-        )),
+        ...currentEdges.filter((edge) => {
+          const isOwnershipEdge = edge.data.properties[OSA_PROPERTY.relationRole]
+            === OSA_RELATION.objectVisual
+          // A Visual has one canonical owner. Moving it removes its old owner.
+          if (isOwnershipEdge && edge.target === visualId) return false
+          // A Step has one canvas. Reassigning a Visual to it releases the
+          // previous Step canvas, but never deletes that Visual or card view.
+          if (ownerIsStep && isOwnershipEdge && edge.source === ownerId) return false
+          return true
+        }),
         createGraphEdge({
           id: edgeId,
           source: ownerId,
@@ -1664,7 +1988,7 @@ function Flow() {
         }),
       ]
     })
-  }, [nodes, setEdges])
+  }, [nodes, setEdges, setNodes])
 
   /**
    * Publishes one editable canvas's direct Visual placements.
@@ -1775,7 +2099,10 @@ function Flow() {
     const owner = ownerId
       ? latestNodes.current.find((node) => node.id === ownerId)
       : undefined
-    if (!owner || !canOwnOsaVisual(owner)) return null
+    // A Step has exactly one owned canvas. A copied canvas would create a
+    // second one, so a Step-owned drawing must be copied only after it is
+    // deliberately reassigned to another project object.
+    if (!owner || !canOwnOsaVisual(owner) || osaRole(owner) === 'step') return null
 
     const id = String(nextId.current)
     nextId.current += 1
@@ -2967,9 +3294,15 @@ function Flow() {
     const link = document.createElement('a')
     link.href = url
     link.download = 'react-flow-board.json'
+    link.style.display = 'none'
+    document.body.append(link)
     link.click()
 
-    URL.revokeObjectURL(url)
+    // Let the browser begin the download before releasing the Blob URL.
+    window.setTimeout(() => {
+      link.remove()
+      URL.revokeObjectURL(url)
+    }, 0)
   }, [nodes, edges])
 
   /**
@@ -3476,7 +3809,10 @@ function Flow() {
               type="button"
               key={view.id}
               aria-current={workspaceView === view.id ? 'page' : undefined}
-              onClick={() => setWorkspaceView(view.id)}
+              onClick={() => {
+                setAssemblyInstructionsPreview(false)
+                setWorkspaceView(view.id)
+              }}
             >
               {view.label}
             </button>
@@ -3575,6 +3911,16 @@ function Flow() {
               onUnlinkTask={(projectId, taskId) => unlinkTaskFromProject(taskId, projectId)}
               onOpenNode={openNodeInSpace}
             />
+          ) : isSharedAssembly || assemblyInstructionsPreview ? (
+            <AssemblyInstructionsView
+              assembly={assemblies.find((assembly) => assembly.id === activeAssemblyId)}
+              nodes={nodes}
+              operations={operations}
+              edges={edges}
+              onBackToAssembly={isSharedAssembly
+                ? undefined
+                : () => setAssemblyInstructionsPreview(false)}
+            />
           ) : (
             <AssemblyView
               assemblies={assemblies}
@@ -3590,8 +3936,14 @@ function Flow() {
               onSelectAssembly={setSelectedAssemblyId}
               onCreateAssembly={createAssembly}
               onCreateOperation={createAssemblyOperation}
+              onRemoveOperation={removeAssemblyOperation}
+              onCreateStep={createOperationStep}
+              onReorderStep={reorderOperationStep}
+              onEnsureStepCanvas={ensureStepCanvas}
               onCreatePart={createAssemblyPart}
               onCreateExpense={createAssemblyExpense}
+              onUnlinkAssemblyPart={unlinkAssemblyPart}
+              onUnlinkAssemblyExpense={unlinkAssemblyExpense}
               onCreateTool={createOperationTool}
               onLinkPart={linkPartToOperation}
               onLinkPartInput={(operationId, partId) => (
@@ -3620,12 +3972,12 @@ function Flow() {
               onTextChange={onTextChange}
               onPropertyChange={onPropertyChange}
               onSketchChange={onSketchChange}
-              onOpenNode={isSharedAssembly ? () => undefined : openNodeInSpace}
-              readOnly={isSharedAssembly}
-              onShare={isSharedAssembly ? undefined : () => void createAssemblyShareLink()}
+              onOpenNode={openNodeInSpace}
+              onShare={() => void createAssemblyShareLink()}
+              onPreviewInstructions={() => setAssemblyInstructionsPreview(true)}
               shareStatus={shareStatus}
               shareUrl={shareUrl}
-              onLoadShakoStarter={isSharedAssembly ? undefined : openShakoLightWrapStarter}
+              onLoadShakoStarter={openShakoLightWrapStarter}
             />
           )}
         </div>

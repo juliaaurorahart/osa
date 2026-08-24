@@ -67,6 +67,10 @@ const ROLE_KINDS: Record<OsaRole, readonly NodeKind[]> = {
   // boards and imports can still be read without a migration.
   assembly: ['part', 'project'],
   operation: ['action'],
+  // Steps are ordinary durable notes. They can hold their own text, links,
+  // and Visual ownership without becoming a separate hidden instruction
+  // storage format.
+  step: ['note'],
   'bom-item': ['part'],
   feature: ['feature'],
   tool: ['tool'],
@@ -105,6 +109,7 @@ const RELATION_ENDPOINT_ROLES: Record<RelationRoles, RelationEndpointRoles> = {
   [OSA_RELATION.assemblyExpense]: [['assembly'], ['expense']],
   [OSA_RELATION.assemblySource]: [['assembly'], ['source']],
   [OSA_RELATION.operationTool]: [['operation'], ['tool']],
+  [OSA_RELATION.operationStep]: [['operation'], ['step']],
   [OSA_RELATION.operationItem]: [['operation'], ['bom-item']],
   [OSA_RELATION.operationInput]: [['operation'], ['bom-item', 'assembly']],
   [OSA_RELATION.operationOutput]: [['operation'], ['bom-item', 'assembly']],
@@ -142,6 +147,7 @@ function canImportNodeOwnVisual(node: OsaImportNode) {
     || role === 'bom-item'
     || role === 'assembly'
     || role === 'tool'
+    || role === 'step'
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -300,8 +306,10 @@ function validateOperationPrimaryOutputs(edges: OsaImportEdge[]) {
  * still allowing unowned Visuals such as imported source slides or a newly
  * created blank canvas.
  */
-function validateObjectVisualOwnership(edges: OsaImportEdge[]) {
+function validateObjectVisualOwnership(nodes: OsaImportNode[], edges: OsaImportEdge[]) {
   const ownersByVisualId = new Map<string, string>()
+  const nodesById = new Map(nodes.map((node) => [node.id, node]))
+  const canvasCountByStepId = new Map<string, number>()
   for (const edge of edges) {
     if (edge.properties[OSA_PROPERTY.relationRole] !== OSA_RELATION.objectVisual) continue
     const existingOwnerId = ownersByVisualId.get(edge.target)
@@ -309,6 +317,14 @@ function validateObjectVisualOwnership(edges: OsaImportEdge[]) {
       throw new Error(`Visual ${edge.target} has more than one owning object.`)
     }
     ownersByVisualId.set(edge.target, edge.source)
+
+    // A Step names one instruction canvas. It can be reassigned later, but it
+    // may never own two independent canvases in one imported graph.
+    if (importNodeRole(nodesById.get(edge.source)!) === 'step') {
+      const count = (canvasCountByStepId.get(edge.source) ?? 0) + 1
+      if (count > 1) throw new Error(`Step ${edge.source} has more than one canvas.`)
+      canvasCountByStepId.set(edge.source, count)
+    }
   }
 }
 
@@ -404,7 +420,7 @@ export function parseOsaImportPackage(value: unknown): OsaImportPackage {
     `edges[${index}].properties`,
   ))
   validateOperationPrimaryOutputs(edges)
-  validateObjectVisualOwnership(edges)
+  validateObjectVisualOwnership(nodes, edges)
 
   return { format: 'osa-import', version: 1, id, name, sources, nodes, edges }
 }

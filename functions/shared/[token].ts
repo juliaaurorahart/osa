@@ -46,13 +46,39 @@ function edgeRelationKind(edge: JsonRecord) {
 
 function isOperationTargetEdge(edge: JsonRecord, nodesById: Map<string, JsonRecord>) {
   const relation = edgeRelation(edge)
-  if (relation === 'operation-item' || relation === 'operation-tool') return true
+  if (
+    relation === 'operation-item'
+    || relation === 'operation-input'
+    || relation === 'operation-output'
+    || relation === 'operation-primary-output'
+    || relation === 'operation-tool'
+    || relation === 'operation-step'
+  ) return true
 
   const target = typeof edge.target === 'string' ? nodesById.get(edge.target) : undefined
   if (!target) return false
 
   const role = nodeProperties(target)?.['osa:role']
   return role === 'bom-item' || role === 'tool' || nodeKind(target) === 'part' || nodeKind(target) === 'tool'
+}
+
+function officialVisualEmbedIds(node: JsonRecord) {
+  const data = node.data
+  if (!isRecord(data) || !isRecord(data.visualVersions)) return []
+
+  const state = data.visualVersions
+  const officialId = state.officialId
+  const records = state.records
+  if (typeof officialId !== 'string' || !Array.isArray(records)) return []
+
+  const official = records.find((record) => (
+    isRecord(record) && record.id === officialId && record.kind === 'official'
+  ))
+  if (!isRecord(official) || !Array.isArray(official.embeds)) return []
+
+  return official.embeds.flatMap((embed) => (
+    isRecord(embed) && typeof embed.visualId === 'string' ? [embed.visualId] : []
+  ))
 }
 
 function isAssemblyTargetEdge(edge: JsonRecord, nodesById: Map<string, JsonRecord>) {
@@ -81,9 +107,9 @@ function isAssemblyTargetEdge(edge: JsonRecord, nodesById: Map<string, JsonRecor
 
 /**
  * Derives the smallest useful assembly packet from a saved board. A public
- * recipient receives the assembly, its direct BOM/expense/source context,
- * its operations and their parts/tools, and visual-node references -- never
- * unrelated board data.
+ * recipient receives the assembly, its direct BOM/expense context, its
+ * operations, and the durable steps/canvases needed to carry them out --
+ * never unrelated board data.
  */
 function createAssemblyScopedBoard(board: unknown, assemblyId: string): JsonRecord | null {
   if (!isRecord(board) || typeof board.id !== 'string' || typeof board.name !== 'string' || typeof board.updatedAt !== 'string') {
@@ -103,8 +129,15 @@ function createAssemblyScopedBoard(board: unknown, assemblyId: string): JsonReco
   const assemblyRole = nodeProperties(assembly)?.['osa:role']
   if (assemblyRole !== 'assembly' && nodeKind(assembly) !== 'project') return null
 
-  const includedNodeIds = new Set([assemblyId])
+  const includedNodeIds = new Set<string>()
+  const pendingNodeIds: string[] = []
+  const includeNode = (nodeId: string) => {
+    if (!nodesById.has(nodeId) || includedNodeIds.has(nodeId)) return
+    includedNodeIds.add(nodeId)
+    pendingNodeIds.push(nodeId)
+  }
   const operationIds = new Set<string>()
+  includeNode(assemblyId)
 
   // Assembly -> operation links have a durable structured relation. Retain a
   // project-task fallback so boards created before that relation existed work.
@@ -113,28 +146,47 @@ function createAssemblyScopedBoard(board: unknown, assemblyId: string): JsonReco
     if (edgeRelation(edge) !== 'assembly-operation' && edgeRelationKind(edge) !== 'project-task') continue
     if (!nodesById.has(edge.target as string)) continue
     const operationId = edge.target as string
-    includedNodeIds.add(operationId)
+    includeNode(operationId)
     operationIds.add(operationId)
   }
 
   for (const edge of edges) {
     if (edge.source !== assemblyId || !isAssemblyTargetEdge(edge, nodesById)) continue
-    if (nodesById.has(edge.target as string)) includedNodeIds.add(edge.target as string)
+    if (nodesById.has(edge.target as string)) includeNode(edge.target as string)
   }
 
   for (const operationId of operationIds) {
     for (const edge of edges) {
       if (edge.source !== operationId || !isOperationTargetEdge(edge, nodesById)) continue
-      if (nodesById.has(edge.target as string)) includedNodeIds.add(edge.target as string)
+      if (nodesById.has(edge.target as string)) includeNode(edge.target as string)
     }
   }
 
-  // Most instruction visuals are asset paths. A visual can instead point at
-  // another graph object; preserve that object only when it is a real node id.
-  for (const includedNodeId of includedNodeIds) {
+  // A shared instruction needs the Visual owned by each included Step, plus
+  // only the Visuals embedded inside those step canvases. This walks that
+  // small dependency tree without exposing every visual attached to a Part.
+  while (pendingNodeIds.length) {
+    const includedNodeId = pendingNodeIds.shift()!
     const includedNode = nodesById.get(includedNodeId)
-    const visual = includedNode ? nodeProperties(includedNode)?.['instruction:visual'] : null
-    if (typeof visual === 'string' && nodesById.has(visual)) includedNodeIds.add(visual)
+    if (!includedNode) continue
+
+    const role = nodeProperties(includedNode)?.['osa:role']
+    if (role === 'step') {
+      for (const edge of edges) {
+        if (edge.source === includedNodeId && edgeRelation(edge) === 'object-visual') {
+          includeNode(edge.target as string)
+        }
+      }
+    }
+
+    if (role === 'visual') {
+      for (const edge of edges) {
+        if (edge.source === includedNodeId && edgeRelation(edge) === 'visual-embed') {
+          includeNode(edge.target as string)
+        }
+      }
+      officialVisualEmbedIds(includedNode).forEach(includeNode)
+    }
   }
 
   return {

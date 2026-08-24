@@ -12,6 +12,9 @@ const server = await createServer({
 
 try {
   const { AssemblyView } = await server.ssrLoadModule('/src/components/AssemblyView.tsx')
+  const { AssemblyInstructionsView } = await server.ssrLoadModule(
+    '/src/components/AssemblyInstructionsView.tsx',
+  )
   const { VisualCanvasEditor } = await server.ssrLoadModule('/src/components/VisualCanvas.tsx')
   const { PropertiesPanel } = await server.ssrLoadModule('/src/components/PropertiesPanel.tsx')
   const { createAssemblyViewUiState } = await server.ssrLoadModule(
@@ -20,6 +23,7 @@ try {
   const { OSA_PROPERTY, OSA_RELATION, osaRole } = await server.ssrLoadModule('/src/graph/osaData.ts')
   const { visualAccentColor, visualEmbedsForCanvas } = await server.ssrLoadModule('/src/graph/visualEmbed.ts')
   const { createGraphEdge } = await server.ssrLoadModule('/src/graph/graphEdge.ts')
+  const { createTextNode } = await server.ssrLoadModule('/src/graph/textNode.ts')
   const { parseOsaImportPackage, planOsaImport } = await server.ssrLoadModule('/src/graph/osaImport.ts')
   const raw = await readFile(new URL('../imports/shako-light-wrap.osa.json', import.meta.url), 'utf8')
   const plan = planOsaImport(parseOsaImportPackage(JSON.parse(raw)))
@@ -246,6 +250,7 @@ try {
     onSketchChange: noop,
     onPropertyChange: noop,
     onOpenNode: noop,
+    onPreviewInstructions: noop,
   }))
 
   const markup = renderAssembly(planWithObjectVisual.edges)
@@ -263,6 +268,7 @@ try {
   for (const label of ['criteria', 'in', 'tools', 'steps']) {
     assert.match(markup, new RegExp(`>${label}<`))
   }
+  assert.match(markup, />preview instructions<\/button>/)
   assert.doesNotMatch(markup, /This card represents/)
   assert.doesNotMatch(markup, /<span>Out<\/span>/)
   assert.match(markup, /<h1 id="assembly-view-title">Assembly<\/h1>/)
@@ -341,7 +347,7 @@ try {
   const accentedMarkup = renderAssembly(accentedEdges, focusedAssemblyUiState, accentedNodes)
   assert.match(
     accentedMarkup,
-    /assembly-object-link--accented[^>]*style="--osa-semantic-accent:#9b59d0"/,
+    /assembly-object-link--accented[^>]*style="--osa-semantic-accent:#9b59d0;color:#9b59d0"/,
     'A Tool accent colors its linked Assembly text through the canonical object property.',
   )
   assert.equal(
@@ -372,6 +378,70 @@ try {
     /appearance:accentColor property value/,
     'Semantic color has a dedicated color-picker rather than a second generic text row.',
   )
+
+  // A public Assembly Instruction projection reads the same operation, step,
+  // and canvas objects, but omits all authoring controls and card-wide visual
+  // clutter. A Step owns the only canvas it contributes to this view.
+  const instructionStep = createTextNode({
+    id: 'assembly-view-check-instruction-step',
+    position: { x: 0, y: 0 },
+    name: 'Drill the 5/16 in side hole',
+    text: 'Use the 5/16 in bit on the marked side.',
+    kind: 'note',
+    properties: {
+      [OSA_PROPERTY.role]: 'step',
+      [OSA_PROPERTY.order]: '0',
+    },
+  })
+  const instructionCanvas = {
+    ...connectorBoxBlankVisual,
+    id: 'assembly-view-check-step-canvas',
+    data: {
+      ...connectorBoxBlankVisual.data,
+      name: 'Drill side hole',
+    },
+  }
+  const instructionNodes = [...nodesWithCanvas, instructionStep, instructionCanvas]
+  const instructionEdges = [
+    ...planWithObjectVisual.edges,
+    createGraphEdge({
+      id: 'assembly-view-check-operation-step',
+      source: connectorBoxDrill.id,
+      target: instructionStep.id,
+      relationship: 'has step',
+      properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.operationStep },
+    }),
+    createGraphEdge({
+      id: 'assembly-view-check-step-canvas',
+      source: instructionStep.id,
+      target: instructionCanvas.id,
+      relationship: 'owns visual',
+      properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.objectVisual },
+    }),
+  ]
+  const instructionsMarkup = renderToStaticMarkup(createElement(AssemblyInstructionsView, {
+    assembly: instructionNodes.find((node) => node.id === plan.assemblyNodeId),
+    nodes: instructionNodes,
+    operations: instructionNodes.filter((node) => node.data.kind === 'action'),
+    edges: instructionEdges,
+  }))
+  assert.match(instructionsMarkup, /<h1 id="assembly-instructions-title">Assembly Instructions<\/h1>/)
+  assert.equal((instructionsMarkup.match(/assembly-operation-card/g) ?? []).length, 6)
+  assert.match(instructionsMarkup, /Connector Box Drill/)
+  assert.match(instructionsMarkup, /Drill the 5\/16 in side hole/)
+  assert.match(instructionsMarkup, /Use the 5\/16 in bit on the marked side\./)
+  assert.equal((instructionsMarkup.match(/<h2>step canvases<\/h2>/g) ?? []).length, 1)
+  assert.doesNotMatch(instructionsMarkup, /new assembly|add card|semantic information|source slide/)
+  assert.doesNotMatch(instructionsMarkup, /back to Assembly/)
+
+  const previewInstructionsMarkup = renderToStaticMarkup(createElement(AssemblyInstructionsView, {
+    assembly: instructionNodes.find((node) => node.id === plan.assemblyNodeId),
+    nodes: instructionNodes,
+    operations: instructionNodes.filter((node) => node.data.kind === 'action'),
+    edges: instructionEdges,
+    onBackToAssembly: noop,
+  }))
+  assert.match(previewInstructionsMarkup, />back to Assembly<\/button>/)
 
   // Legacy card links have no explicit order yet, so their current edge
   // sequence remains visible. Once an order property is present, it becomes
@@ -560,7 +630,8 @@ try {
   )
 
   // A card creates only an untyped record. The first-open picker determines
-  // whether it becomes a protected photo or an OSA drawing canvas.
+  // whether it becomes a protected photo (from the library or camera) or an
+  // OSA drawing canvas.
   const untypedVisual = {
     ...connectorBoxBlankVisual,
     id: 'assembly-view-check-untyped-visual',
@@ -581,7 +652,8 @@ try {
     onPropertyChange: noop,
   }))
   assert.match(canvasTypePickerMarkup, /aria-label="Choose canvas type"/)
-  assert.match(canvasTypePickerMarkup, />photo<\/button>/)
+  assert.match(canvasTypePickerMarkup, />library<\/button>/)
+  assert.match(canvasTypePickerMarkup, />camera<\/button>/)
   assert.match(canvasTypePickerMarkup, />OSA draw<\/button>/)
 
   // Opening a canvas stays within Assembly: it renders an in-place editor

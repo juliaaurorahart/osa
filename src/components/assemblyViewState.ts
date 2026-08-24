@@ -18,6 +18,8 @@ export type AssemblyViewUiState = {
   drawingCardId: string | null
   toolDraft: string
   toolDraftFor: AssemblyToolDraft | null
+  /** Per-card presentation only: hiding a canvas never changes graph data. */
+  hiddenVisualOwnerIdsByOperation: Record<string, string[]>
 }
 
 /** Creates the normal, unlocked Assembly screen state for a new app session. */
@@ -30,5 +32,6 @@ export function createAssemblyViewUiState(): AssemblyViewUiState {
     drawingCardId: null,
     toolDraft: '',
     toolDraftFor: null,
+    hiddenVisualOwnerIdsByOperation: {},
   }
 }

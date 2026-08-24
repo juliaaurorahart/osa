@@ -390,8 +390,11 @@
 .assembly-card__visual-preview {
   display: block;
   width: 100%;
-  height: auto;
-  min-height: 120px;
+  /* Every card canvas gets the same preview slot. The SVG keeps its own
+     aspect ratio inside this viewport instead of making a tall drawing take
+     over the whole card. */
+  height: clamp(180px, 24vw, 260px);
+  min-height: 0;
   border: 1px solid #d8d8d8;
   background: #fff;
 }
@@ -719,6 +722,128 @@
   line-height: 1.35;
 }
 
+/* The shared page deliberately uses the same card vocabulary as Assembly,
+   while presenting the lean, performable instruction sequence only. */
+.assembly-instructions-view__board {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(18px, 3vw, 32px);
+}
+
+.assembly-instructions-view__assembly-title,
+.assembly-instructions-view__card-title,
+.assembly-instructions-view__criteria-title {
+  margin: 0;
+}
+
+.assembly-instructions-view__assembly-title {
+  font-size: clamp(1.5rem, 4vw, 3.1rem);
+  font-weight: 400;
+  line-height: 1.08;
+}
+
+.assembly-instructions-view__overview,
+.assembly-instructions-view__operation-notes,
+.assembly-instructions-view__steps p {
+  margin: 0;
+  color: var(--osa-muted);
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.assembly-instructions-view__index {
+  display: grid;
+  gap: 4px;
+  margin: clamp(18px, 3vw, 30px) 0 0;
+  padding-left: 1.45em;
+  font-size: clamp(0.8rem, 1.8vw, 1.35rem);
+  line-height: 1.45;
+}
+
+.assembly-instructions-view__card-title {
+  margin-bottom: clamp(12px, 2vw, 24px);
+  font-size: clamp(1.15rem, 2.25vw, 2.1rem);
+  font-weight: 400;
+  line-height: 1.05;
+}
+
+/* A card without a step canvas remains a readable full-width instruction,
+   rather than reserving an empty visual column. */
+.assembly-instructions-view__columns--details-only {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.assembly-instructions-view__criteria-title {
+  font-size: clamp(0.76rem, 1.5vw, 1.15rem);
+  font-weight: 500;
+}
+
+.assembly-instructions__object-list {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.assembly-instructions__object {
+  color: var(--osa-text);
+}
+
+.assembly-instructions__empty {
+  color: var(--osa-muted);
+  font-style: italic;
+}
+
+.assembly-instructions-view__steps {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.assembly-instructions-view__steps > strong {
+  font-size: clamp(0.76rem, 1.5vw, 1.15rem);
+  font-weight: 500;
+}
+
+.assembly-instructions-view__steps ol {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding-left: 1.35em;
+}
+
+.assembly-instructions-view__steps li {
+  display: grid;
+  gap: 4px;
+}
+
+.assembly-instructions-view__canvas-list {
+  display: grid;
+  gap: 12px;
+  padding: clamp(10px, 1.5vw, 18px);
+}
+
+.assembly-instructions-view__step-canvas {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  min-width: 0;
+}
+
+.assembly-instructions-view__step-canvas + .assembly-instructions-view__step-canvas {
+  padding-top: 12px;
+  border-top: 1px solid var(--osa-border-subtle);
+}
+
+.assembly-instructions-view__step-canvas figcaption {
+  display: flex;
+  gap: 8px;
+  color: var(--osa-muted);
+  font-size: 0.86rem;
+}
+
+.assembly-instructions-view__step-canvas figcaption strong {
+  color: var(--osa-text);
+}
+
 @media (max-width: 700px) {
   .assembly-view__header {
     align-items: flex-start;
@@ -854,6 +979,43 @@
   border-color: var(--osa-border);
 }
 
+.assembly-card__visual-filter {
+  position: relative;
+  margin-left: auto;
+  font-size: 0.76rem;
+  color: var(--osa-muted);
+}
+
+.assembly-card__visual-filter summary {
+  cursor: pointer;
+  user-select: none;
+}
+
+.assembly-card__visual-filter-options {
+  position: absolute;
+  z-index: 4;
+  top: calc(100% + 4px);
+  right: 0;
+  display: grid;
+  gap: 5px;
+  width: max-content;
+  max-width: min(260px, 72vw);
+  padding: 8px;
+  border: 1px solid var(--osa-border);
+  border-radius: 4px;
+  background: var(--osa-surface);
+  box-shadow: 0 8px 18px rgb(0 0 0 / 24%);
+}
+
+.assembly-card__visual-filter-options label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--osa-text);
+  cursor: pointer;
+}
+
 /* A direct object photo is a projection of that object's asset:image.
    It is deliberately not an editable canvas and has no canvas owner picker. */
 .assembly-card__direct-photo {
@@ -964,7 +1126,7 @@
   .assembly-view > .work-view__header,
   .assembly-view__share-status,
   .assembly-card .text-action,
-  .assembly-card .assembly-object-unlink,
+  .assembly-object-unlink,
   .assembly-card input[type='file'],
   .assembly-card select,
   .assembly-card .sketch-editor {

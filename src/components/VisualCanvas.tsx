@@ -89,6 +89,8 @@ type VisualCanvasEditorProps = {
   /** Removes this canvas from the card that opened the editor, not from its owner. */
   onRemoveFromCard?: () => void
   onNameChange: (id: string, value: string) => void
+  /** Step-owned canvases inherit their durable step name and do not rename alone. */
+  nameReadOnly?: boolean
   onSketchChange: (id: string, sketch: SketchDocument) => void
   /** Persists the parent -> child placement edges for this canvas. */
   onEmbeddedVisualsChange?: (parentVisualId: string, embeds: VisualEmbedInstance[]) => void
@@ -158,6 +160,7 @@ export function VisualCanvasEditor({
   onClose,
   onRemoveFromCard,
   onNameChange,
+  nameReadOnly = false,
   onSketchChange,
   onEmbeddedVisualsChange,
   onPropertyChange,
@@ -347,7 +350,9 @@ export function VisualCanvasEditor({
       onPropertyChange(visual.id, OSA_PROPERTY.visualImmutable, 'true')
       onPropertyChange(visual.id, OSA_PROPERTY.assetImage, imageData)
       onPropertyChange(visual.id, OSA_PROPERTY.assetImageAlt, title)
-      onNameChange(visual.id, title)
+      // A step canvas is named by its step. The photo filename remains useful
+      // as alt/source metadata, but must not break that inherited name.
+      if (!nameReadOnly) onNameChange(visual.id, title)
     })
     reader.readAsDataURL(file)
   }
@@ -435,8 +440,9 @@ export function VisualCanvasEditor({
           <input
             aria-label="Canvas name"
             value={draft.name}
-            readOnly={editingDisabled}
+            readOnly={editingDisabled || nameReadOnly}
             onChange={(event) => {
+              if (nameReadOnly) return
               const name = event.target.value
               onNameChange(visual.id, name)
               setDraft((current) => ({ ...current, name }))

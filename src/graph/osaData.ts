@@ -371,6 +371,8 @@ export function normalizeVisualEmbedPlacement(
 export type OsaRole =
   | 'assembly'
   | 'operation'
+  /** One ordered instruction inside an Assembly operation card. */
+  | 'step'
   | 'bom-item'
   | 'feature'
   | 'tool'
@@ -436,6 +438,8 @@ export const OSA_RELATION = {
   assemblyExpense: 'assembly-expense',
   assemblySource: 'assembly-source',
   operationTool: 'operation-tool',
+  /** An ordered, durable instruction step belonging to one operation card. */
+  operationStep: 'operation-step',
   operationItem: 'operation-item',
   /**
    * A part that must exist before the operation can be performed.
@@ -500,6 +504,7 @@ export function osaRole(node: TextFlowNode): OsaRole | null {
   const role = node.data.properties[OSA_PROPERTY.role]
   return role === 'assembly'
     || role === 'operation'
+    || role === 'step'
     || role === 'bom-item'
     || role === 'feature'
     || role === 'tool'
@@ -539,6 +544,10 @@ export function canOwnOsaVisual(node: TextFlowNode) {
     || role === 'bom-item'
     || role === 'assembly'
     || role === 'tool'
+    // A step is a first-class instruction object. Its canvas belongs to the
+    // step, so a team member can reuse or reference the exact visual that
+    // accompanies that step without making the operation card its owner.
+    || role === 'step'
 }
 
 export function operationOrder(node: TextFlowNode) {

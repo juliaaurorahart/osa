@@ -13,7 +13,6 @@ import {
   canOwnOsaVisual,
   isImmutableVisual,
   isPartLike,
-  operationOrder,
   operationVisualDisplayOrder,
   osaRole,
   type OperationVisualPlacement,
@@ -28,6 +27,13 @@ import {
   type VisualEmbedInstance,
 } from '../graph/visualEmbed'
 import type { AssemblyToolDraft, AssemblyViewUiState } from './assemblyViewState'
+import {
+  canvasOwnedByStep,
+  connectedTargets,
+  nodeTitle,
+  operationsForAssembly,
+  stepsForOperation,
+} from './assemblyProjection'
 import { VisualCanvasEditor, VisualCanvasPreview } from './VisualCanvas'
 import './AssemblyView.css'
 
@@ -51,8 +57,20 @@ type AssemblyViewProps = {
   onSelectAssembly: (assemblyId: string) => void
   onCreateAssembly: (title: string) => string
   onCreateOperation: (assemblyId: string, title: string) => string
+  /** Removes one card from this Assembly without deleting its project objects. */
+  onRemoveOperation: (operationId: string) => void
+  /** Adds one named, ordered durable step beneath an instruction card. */
+  onCreateStep: (operationId: string) => string
+  /** Moves one durable step without rewriting the rest of the card text. */
+  onReorderStep: (operationId: string, stepId: string, direction: 'up' | 'down') => void
+  /** Returns the one canvas owned by a step, creating it only when needed. */
+  onEnsureStepCanvas: (stepId: string) => string
   onCreatePart: (assemblyId: string) => string
   onCreateExpense: (assemblyId: string) => string
+  /** Removes one Part from this Assembly's shared inventory only. */
+  onUnlinkAssemblyPart: (assemblyId: string, partId: string) => void
+  /** Removes one Expense from this Assembly's shared inventory only. */
+  onUnlinkAssemblyExpense: (assemblyId: string, expenseId: string) => void
   onCreateTool: (
     operationId: string,
     name: string,
@@ -133,18 +151,14 @@ type AssemblyViewProps = {
   readOnly?: boolean
   /** Creates/copies a read-only link for the current assembly. */
   onShare?: () => void
+  /** Opens the team-facing instructions projection locally without sharing it. */
+  onPreviewInstructions?: () => void
   /** Brief feedback from the host while a share link is being prepared. */
   shareStatus?: string | null
   /** The last generated read-only link, retained so it can be copied again. */
   shareUrl?: string | null
   /** Opens OSA's bundled Shako Light Wrap starter board. */
   onLoadShakoStarter?: () => void
-}
-
-function nodeTitle(node: TextFlowNode) {
-  return node.data.name.trim()
-    || node.data.text.trim().split(/\r?\n/, 1)[0]
-    || `#${node.id}`
 }
 
 /** An object owns its reusable visual; an instruction only links to it. */
@@ -155,34 +169,6 @@ function objectImageSource(node: TextFlowNode | undefined) {
 function objectImageAlt(node: TextFlowNode | undefined) {
   return node?.data.properties[OSA_PROPERTY.assetImageAlt]?.trim()
     || (node ? nodeTitle(node) : '')
-}
-
-/**
- * Finds ordinary nodes connected from a root node for one Assembly projection.
- *
- * Imported data may carry an optional relation hint. Objects made directly in
- * OSA remain discoverable through their normal edge meaning and node kind.
- */
-function connectedTargets(
-  rootId: string,
-  candidates: TextFlowNode[],
-  edges: GraphEdge[],
-  relationHint: string,
-  relationshipPattern: RegExp,
-  relationKind?: GraphEdge['data']['relationKind'],
-) {
-  const targetIds = edges
-    .filter((edge) => edge.source === rootId && (
-      edge.data.properties[OSA_PROPERTY.relationRole] === relationHint
-      || relationshipPattern.test(edge.data.relationship)
-      || (relationKind !== undefined && edge.data.relationKind === relationKind)
-    ))
-    .map((edge) => edge.target)
-  const order = new Map(targetIds.map((id, index) => [id, index]))
-
-  return candidates
-    .filter((node) => order.has(node.id))
-    .sort((left, right) => (order.get(left.id) ?? 0) - (order.get(right.id) ?? 0))
 }
 
 /**
@@ -224,21 +210,6 @@ function uniqueNodes(...groups: TextFlowNode[][]) {
     if (!unique.has(node.id)) unique.set(node.id, node)
   })
   return [...unique.values()]
-}
-
-function operationsForAssembly(
-  assemblyId: string,
-  operations: TextFlowNode[],
-  edges: GraphEdge[],
-) {
-  return connectedTargets(
-    assemblyId,
-    operations,
-    edges,
-    OSA_RELATION.assemblyOperation,
-    /\b(operation|action|step)\b/i,
-    'project-task',
-  ).sort((left, right) => operationOrder(left) - operationOrder(right))
 }
 
 function cardKeyDown(event: KeyboardEvent<HTMLElement>, onFocus: () => void) {
@@ -393,6 +364,12 @@ function visualCandidatesForOperation(
   nodes: TextFlowNode[],
   edges: GraphEdge[],
 ) {
+  const stepIds = new Set(edges
+    .filter((edge) => (
+      edge.source === operationId
+      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationStep
+    ))
+    .map((edge) => edge.target))
   const contextObjectIds = new Set(edges
     .filter((edge) => {
       if (edge.source === operationId) {
@@ -421,7 +398,7 @@ function visualCandidatesForOperation(
     .map((edge) => edge.target)
   const ownedVisualIds = edges
     .filter((edge) => (
-      contextObjectIds.has(edge.source)
+      (contextObjectIds.has(edge.source) || stepIds.has(edge.source))
       && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
     ))
     .map((edge) => edge.target)
@@ -445,8 +422,14 @@ export function AssemblyView({
   onSelectAssembly,
   onCreateAssembly,
   onCreateOperation,
+  onRemoveOperation,
+  onCreateStep,
+  onReorderStep,
+  onEnsureStepCanvas,
   onCreatePart,
   onCreateExpense,
+  onUnlinkAssemblyPart,
+  onUnlinkAssemblyExpense,
   onCreateTool,
   onLinkPart,
   onLinkPartInput,
@@ -470,6 +453,7 @@ export function AssemblyView({
   onOpenNode,
   readOnly = false,
   onShare,
+  onPreviewInstructions,
   shareStatus,
   shareUrl,
   onLoadShakoStarter,
@@ -488,6 +472,19 @@ export function AssemblyView({
       /\b(part|parts|material|materials|component|components)\b/i,
     )
     : [], [edges, nodes, selectedAssembly])
+  const assemblyExpenses = useMemo(() => selectedAssembly
+    ? connectedTargets(
+      selectedAssembly.id,
+      nodes,
+      edges,
+      OSA_RELATION.assemblyExpense,
+      /\b(expense|expenses|cost|costs)\b/i,
+    )
+    : [], [edges, nodes, selectedAssembly])
+  const assemblyPartIds = useMemo(
+    () => new Set(assemblyParts.map((part) => part.id)),
+    [assemblyParts],
+  )
   const toolInventory = useMemo(() => {
     const candidates = tools?.length ? tools : nodes.filter((node) => (
       node.data.kind === 'tool' || osaRole(node) === 'tool'
@@ -511,6 +508,9 @@ export function AssemblyView({
     editingOperationId,
     toolDraft,
     toolDraftFor,
+    // Older in-memory UI state can survive a hot reload. Treat a missing
+    // filter map as the normal "show everything" state.
+    hiddenVisualOwnerIdsByOperation = {},
   } = uiState
   // These small setters keep the card code readable while routing every
   // presentation change through App. App stays mounted when Assembly is
@@ -540,6 +540,28 @@ export function AssemblyView({
   const setToolDraftFor = (nextDraft: AssemblyToolDraft | null) => {
     onUiStateChange((current) => ({ ...current, toolDraftFor: nextDraft }))
   }
+  /** Hides an owner's canvases from one card without touching the graph. */
+  const setVisualOwnerVisible = (
+    operationId: string,
+    ownerId: string,
+    isVisible: boolean,
+  ) => {
+    onUiStateChange((current) => {
+      const hiddenByOperation = current.hiddenVisualOwnerIdsByOperation ?? {}
+      const hiddenOwnerIds = new Set(hiddenByOperation[operationId] ?? [])
+      if (isVisible) hiddenOwnerIds.delete(ownerId)
+      else hiddenOwnerIds.add(ownerId)
+
+      const nextHiddenByOperation = { ...hiddenByOperation }
+      if (hiddenOwnerIds.size) nextHiddenByOperation[operationId] = [...hiddenOwnerIds]
+      else delete nextHiddenByOperation[operationId]
+
+      return {
+        ...current,
+        hiddenVisualOwnerIdsByOperation: nextHiddenByOperation,
+      }
+    })
+  }
   const activeFocusedCardId = focusedCardId === INDEX_CARD_ID
     || assemblyOperations.some((operation) => operation.id === focusedCardId)
     ? focusedCardId
@@ -562,6 +584,11 @@ export function AssemblyView({
   const editingVisual = isVisualNode(editingVisualCandidate)
     ? editingVisualCandidate
     : undefined
+  const editingVisualOwner = editingVisual
+    ? visualOwnerFor(editingVisual.id, nodes, edges)
+    : undefined
+  const editingVisualNameIsInherited = editingVisualOwner !== undefined
+    && osaRole(editingVisualOwner) === 'step'
   const canRemoveEditingVisualFromCard = editingVisual !== undefined
     && editingOperationId !== null
     && onUnlinkObjectVisual !== undefined
@@ -659,6 +686,11 @@ export function AssemblyView({
                 </button>
               ) : null}
               <button className="text-action" type="button" onClick={addCard}>add card</button>
+              {onPreviewInstructions ? (
+                <button className="text-action" type="button" onClick={onPreviewInstructions}>
+                  preview instructions
+                </button>
+              ) : null}
               {onShare ? <button className="text-action" type="button" onClick={onShare}>share</button> : null}
             </>
           ) : null}
@@ -750,22 +782,64 @@ export function AssemblyView({
             }}
           />
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.3fr) minmax(180px, 0.7fr)', gap: '6%' }}>
-            <ol style={{ margin: 0, paddingLeft: '1.45em', fontSize: 'clamp(0.8rem, 1.8vw, 1.35rem)', lineHeight: 1.55 }}>
-              {assemblyOperations.length ? assemblyOperations.map((operation) => (
-                <li key={operation.id}>
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      setFocusedCardId(operation.id)
-                    }}
-                    style={{ padding: 0, border: 0, background: 'transparent', color: 'inherit', font: 'inherit', textAlign: 'left', cursor: 'pointer' }}
-                  >
-                    {nodeTitle(operation)}
-                  </button>
-                </li>
-              )) : <li style={{ color: 'var(--osa-muted)' }}>add the first instruction card.</li>}
-            </ol>
+            <div style={{ display: 'grid', alignContent: 'start', gap: 8 }}>
+              <ol style={{ margin: 0, paddingLeft: '1.45em', fontSize: 'clamp(0.8rem, 1.8vw, 1.35rem)', lineHeight: 1.55 }}>
+                {assemblyOperations.length ? assemblyOperations.map((operation) => (
+                  <li key={operation.id}>
+                    {readOnly ? (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          setFocusedCardId(operation.id)
+                        }}
+                        style={{ padding: 0, border: 0, background: 'transparent', color: 'inherit', font: 'inherit', textAlign: 'left', cursor: 'pointer' }}
+                      >
+                        {nodeTitle(operation)}
+                      </button>
+                    ) : (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, width: '100%', minWidth: 0 }}>
+                        <input
+                          aria-label={`Card ${nodeTitle(operation)} name`}
+                          value={operation.data.name}
+                          placeholder="card name"
+                          onClick={(event) => event.stopPropagation()}
+                          onFocus={() => setFocusedCardId(operation.id)}
+                          onChange={(event) => onNameChange(operation.id, event.target.value)}
+                          style={{ ...transparentInput, flex: '1 1 auto', minWidth: 0, font: 'inherit' }}
+                        />
+                        <button
+                          className="text-action"
+                          type="button"
+                          aria-label={`remove ${nodeTitle(operation)} card`}
+                          title="Remove card"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            onRemoveOperation(operation.id)
+                          }}
+                          style={{ paddingInline: 4 }}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    )}
+                  </li>
+                )) : <li style={{ color: 'var(--osa-muted)' }}>add the first instruction card.</li>}
+              </ol>
+              {!readOnly ? (
+                <button
+                  className="text-action"
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    addCard()
+                  }}
+                  style={{ justifySelf: 'start' }}
+                >
+                  + card
+                </button>
+              ) : null}
+            </div>
             <textarea
               aria-label="assembly overview"
               placeholder="purpose, assumptions, or notes for this assembly"
@@ -790,20 +864,68 @@ export function AssemblyView({
               <strong>parts &amp; subassemblies</strong>
               <div>
                 {assemblyParts.map((part) => (
-                  <button
-                    type="button"
-                    className={appearanceAccentColor(part)
-                      ? 'assembly-object-link assembly-object-link--accented'
-                      : 'assembly-object-link'}
-                    key={part.id}
-                    style={semanticAccentStyle(part)}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      onOpenNode(part.id)
-                    }}
-                  >
-                    {nodeTitle(part)}
-                  </button>
+                  <span className="assembly-object-chip" key={part.id}>
+                    <button
+                      type="button"
+                      className={appearanceAccentColor(part)
+                        ? 'assembly-object-link assembly-object-link--accented'
+                        : 'assembly-object-link'}
+                      style={semanticAccentStyle(part)}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        onOpenNode(part.id)
+                      }}
+                    >
+                      {nodeTitle(part)}
+                    </button>
+                    {!readOnly ? (
+                      <button
+                        className="assembly-object-unlink"
+                        type="button"
+                        aria-label={`remove ${nodeTitle(part)} from this Assembly`}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onUnlinkAssemblyPart(selectedAssembly.id, part.id)
+                        }}
+                      >
+                        <span aria-hidden="true">×</span> remove
+                      </button>
+                    ) : null}
+                  </span>
+                ))}
+              </div>
+            </section>
+          ) : null}
+          {assemblyExpenses.length ? (
+            <section className="assembly-index-card__objects" aria-label="expenses in this assembly">
+              <strong>expenses</strong>
+              <div>
+                {assemblyExpenses.map((expense) => (
+                  <span className="assembly-object-chip" key={expense.id}>
+                    <button
+                      type="button"
+                      className="assembly-object-link"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        onOpenNode(expense.id)
+                      }}
+                    >
+                      {nodeTitle(expense)}
+                    </button>
+                    {!readOnly ? (
+                      <button
+                        className="assembly-object-unlink"
+                        type="button"
+                        aria-label={`remove ${nodeTitle(expense)} from this Assembly`}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onUnlinkAssemblyExpense(selectedAssembly.id, expense.id)
+                        }}
+                      >
+                        <span aria-hidden="true">×</span> remove
+                      </button>
+                    ) : null}
+                  </span>
                 ))}
               </div>
             </section>
@@ -817,6 +939,7 @@ export function AssemblyView({
                     <th scope="col">item</th>
                     <th scope="col">kind</th>
                     <th scope="col">color</th>
+                    {!readOnly ? <th scope="col">remove</th> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -872,6 +995,23 @@ export function AssemblyView({
                             ) : null}
                           </span>
                         </td>
+                        {!readOnly ? (
+                          <td>
+                            {kind === 'part' && assemblyPartIds.has(node.id) ? (
+                              <button
+                                className="assembly-object-unlink"
+                                type="button"
+                                aria-label={`remove ${nodeTitle(node)} from this Assembly`}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  onUnlinkAssemblyPart(selectedAssembly.id, node.id)
+                                }}
+                              >
+                                <span aria-hidden="true">×</span> remove
+                              </button>
+                            ) : null}
+                          </td>
+                        ) : null}
                       </tr>
                     )
                   })}
@@ -915,6 +1055,7 @@ export function AssemblyView({
             OSA_RELATION.operationTool,
             /\b(tool|tools)\b/i,
           )
+          const steps = stepsForOperation(operation.id, nodes, edges)
           // Older OSA boards used one undirected "operation item" relation.
           // Treat those as inputs so opening an existing board does not make
           // its parts disappear alongside the newer structured in/out edges.
@@ -1022,15 +1163,38 @@ export function AssemblyView({
           // reusable Visual hide that source slide.
           const legacySourceImage = sourceVisualNode ? '' : visualSource
           // Keep ownership choice local to this instruction: the parent
-          // Assembly, its represented/produced parts, its inputs, and tools.
-          // This is a stable data rule, not a visual special case.
-          const canvasOwners = uniqueNodes(
+          // Assembly, its represented/produced parts, its inputs, tools, and
+          // its named Steps. A Step is a real owner, not a hidden UI wrapper.
+          const canvasObjectOwners = uniqueNodes(
             selectedAssembly ? [selectedAssembly] : [],
             primaryOutputParts,
             outputParts,
             inputParts,
             tools,
           ).filter(canOwnOsaVisual)
+          const canvasOwners = uniqueNodes(canvasObjectOwners, steps)
+            .filter(canOwnOsaVisual)
+          const hiddenVisualOwnerIds = new Set(
+            hiddenVisualOwnerIdsByOperation[operation.id] ?? [],
+          )
+          // The source slide is provenance and remains visible. Every other
+          // object-owned canvas/photo can be hidden by its owner without
+          // deleting it or changing a card link.
+          const filterableVisualOwners = uniqueNodes(
+            linkedVisuals
+              .filter((visual) => visual.id !== sourceVisualNode?.id)
+              .map((visual) => visualOwnerFor(visual.id, nodes, edges))
+              .filter((owner): owner is TextFlowNode => owner !== undefined),
+            includedPhotoObjects,
+          )
+          const visibleLinkedVisuals = linkedVisuals.filter((visual) => {
+            if (visual.id === sourceVisualNode?.id) return true
+            const owner = visualOwnerFor(visual.id, nodes, edges)
+            return !owner || !hiddenVisualOwnerIds.has(owner.id)
+          })
+          const visibleIncludedPhotoObjects = includedPhotoObjects.filter((object) => (
+            !hiddenVisualOwnerIds.has(object.id)
+          ))
           const focusCard = () => {
             setFocusedCardId(operation.id)
           }
@@ -1276,26 +1440,147 @@ export function AssemblyView({
                     </div>
                   </div>
 
-                  <label style={{ display: 'grid', gap: 5, minWidth: 0 }}>
+                  <section style={{ display: 'grid', gap: 5, minWidth: 0 }} aria-label={`${nodeTitle(operation)} steps`}>
                     <strong style={{ fontSize: 'clamp(0.76rem, 1.5vw, 1.15rem)', fontWeight: 500 }}>steps</strong>
-                    <textarea
-                      aria-label={`${nodeTitle(operation)} steps`}
-                      placeholder="write the complete instructions here."
-                      rows={focused ? 6 : 3}
-                      value={operation.data.text}
-                      readOnly={readOnly}
-                      onFocus={focusCard}
-                      onChange={(event) => {
-                        if (!readOnly) onTextChange(operation.id, event.target.value)
-                      }}
-                      style={{ ...transparentInput, minHeight: focused ? '7.5em' : '3.9em', resize: 'none', lineHeight: 1.35 }}
-                    />
-                  </label>
+                    {operation.data.text.trim() || steps.length === 0 ? (
+                      <textarea
+                        aria-label={`${nodeTitle(operation)} steps`}
+                        placeholder="write the complete instructions here."
+                        rows={focused ? 6 : 3}
+                        value={operation.data.text}
+                        readOnly={readOnly}
+                        onFocus={focusCard}
+                        onChange={(event) => {
+                          if (!readOnly) onTextChange(operation.id, event.target.value)
+                        }}
+                        style={{ ...transparentInput, minHeight: focused ? '7.5em' : '3.9em', resize: 'none', lineHeight: 1.35 }}
+                      />
+                    ) : null}
+                    {steps.length ? (
+                      <ol style={{ display: 'grid', gap: 8, margin: 0, paddingLeft: '1.35em' }}>
+                        {steps.map((step, stepIndex) => {
+                          const stepCanvas = canvasOwnedByStep(step.id, nodes, edges)
+                          return (
+                            <li key={step.id} style={{ display: 'grid', gap: 4, minWidth: 0 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+                                <input
+                                  aria-label={`Step ${stepIndex + 1} name`}
+                                  value={step.data.name}
+                                  readOnly={readOnly}
+                                  onClick={(event) => event.stopPropagation()}
+                                  onFocus={focusCard}
+                                  onChange={(event) => {
+                                    if (!readOnly) onNameChange(step.id, event.target.value)
+                                  }}
+                                  style={{ ...transparentInput, flex: '1 1 auto', fontWeight: 600 }}
+                                />
+                                {!readOnly ? (
+                                  <span style={{ display: 'inline-flex', gap: 2 }}>
+                                    <button
+                                      className="text-action"
+                                      type="button"
+                                      aria-label={`move ${nodeTitle(step)} up`}
+                                      title="Move up"
+                                      disabled={stepIndex === 0}
+                                      onClick={(event) => {
+                                        event.stopPropagation()
+                                        onReorderStep(operation.id, step.id, 'up')
+                                      }}
+                                    >
+                                      ↑
+                                    </button>
+                                    <button
+                                      className="text-action"
+                                      type="button"
+                                      aria-label={`move ${nodeTitle(step)} down`}
+                                      title="Move down"
+                                      disabled={stepIndex === steps.length - 1}
+                                      onClick={(event) => {
+                                        event.stopPropagation()
+                                        onReorderStep(operation.id, step.id, 'down')
+                                      }}
+                                    >
+                                      ↓
+                                    </button>
+                                  </span>
+                                ) : null}
+                                {!readOnly ? (
+                                  <button
+                                    className="text-action"
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      const visualId = onEnsureStepCanvas(step.id)
+                                      if (visualId) setEditingVisual(visualId, operation.id)
+                                    }}
+                                  >
+                                    {stepCanvas ? 'canvas' : '+ canvas'}
+                                  </button>
+                                ) : null}
+                              </div>
+                              <textarea
+                                aria-label={`${nodeTitle(step)} instructions`}
+                                placeholder="describe this step."
+                                rows={focused ? 3 : 2}
+                                value={step.data.text}
+                                readOnly={readOnly}
+                                onClick={(event) => event.stopPropagation()}
+                                onFocus={focusCard}
+                                onChange={(event) => {
+                                  if (!readOnly) onTextChange(step.id, event.target.value)
+                                }}
+                                style={{ ...transparentInput, minHeight: focused ? '3.9em' : '2.7em', resize: 'none', lineHeight: 1.35 }}
+                              />
+                            </li>
+                          )
+                        })}
+                      </ol>
+                    ) : null}
+                    {focused && !readOnly ? (
+                      <button
+                        className="text-action"
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onCreateStep(operation.id)
+                        }}
+                        style={{ justifySelf: 'start' }}
+                      >
+                        add step
+                      </button>
+                    ) : null}
+                  </section>
                 </div>
 
                 <section className="assembly-card__view" aria-label={`${nodeTitle(operation)} view`}>
                   <header className="assembly-card__view-header">
                     <h2>visuals</h2>
+                    {filterableVisualOwners.length ? (
+                      <details
+                        className="assembly-card__visual-filter"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <summary>filter</summary>
+                        <div className="assembly-card__visual-filter-options">
+                          {filterableVisualOwners.map((owner) => (
+                            <label key={owner.id}>
+                              <input
+                                type="checkbox"
+                                checked={!hiddenVisualOwnerIds.has(owner.id)}
+                                onChange={(event) => {
+                                  setVisualOwnerVisible(
+                                    operation.id,
+                                    owner.id,
+                                    event.currentTarget.checked,
+                                  )
+                                }}
+                              />
+                              {nodeTitle(owner)}
+                            </label>
+                          ))}
+                        </div>
+                      </details>
+                    ) : null}
                   </header>
                   <div style={{ display: 'grid', gap: 12, padding: 'clamp(10px, 1.5vw, 18px)' }}>
                     <section
@@ -1315,7 +1600,7 @@ export function AssemblyView({
                         </article>
                       ) : null}
 
-                      {includedPhotoObjects.map((object) => {
+                      {visibleIncludedPhotoObjects.map((object) => {
                         const image = objectImageSource(object)
                         const label = nodeTitle(object)
                         const accent = appearanceAccentColor(object)
@@ -1371,7 +1656,7 @@ export function AssemblyView({
                         )
                       })}
 
-                      {linkedVisuals.map((visual) => {
+                      {visibleLinkedVisuals.map((visual) => {
                         const label = nodeTitle(visual)
                         const owner = visualOwnerFor(visual.id, nodes, edges)
                         const accent = visualAccentColor(visual, nodes, edges)
@@ -1543,6 +1828,7 @@ export function AssemblyView({
             setEditingVisual(null)
           } : undefined}
           onNameChange={onNameChange}
+          nameReadOnly={editingVisualNameIsInherited}
           onSketchChange={onSketchChange}
           onPropertyChange={onPropertyChange}
           onEmbeddedVisualsChange={onEmbeddedVisualsChange}

@@ -5,6 +5,8 @@
 export const CURRENT_SOURCE_PATHS = [
   "src/App.css",
   "src/App.tsx",
+  "src/components/AssemblyInstructionsView.tsx",
+  "src/components/assemblyProjection.ts",
   "src/components/AssemblyView.css",
   "src/components/AssemblyView.tsx",
   "src/components/assemblyViewState.ts",
