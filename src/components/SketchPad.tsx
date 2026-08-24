@@ -1315,19 +1315,20 @@ export function SketchPad({
 
     const bounds = normalizedBox(selection.startPoint, selection.endPoint)
     // A normal click on empty canvas keeps the familiar behavior: no object is
-    // selected. A real drag selects only shapes fully inside the marquee.
+    // selected. A real drag selects every shape the marquee touches, including
+    // a shape that extends beyond the selection box.
     if (bounds.width < 4 || bounds.height < 4) return true
     const selectedIds = document.layers.flatMap((layer) => (
       layer.visible && !layer.locked
         ? (layer.elements ?? []).flatMap((element) => {
           const elementBox = elementBounds(element)
-          const fullyContained = (
-            elementBox.x >= bounds.x
-            && elementBox.y >= bounds.y
-            && elementBox.x + elementBox.width <= bounds.x + bounds.width
-            && elementBox.y + elementBox.height <= bounds.y + bounds.height
+          const intersectsMarquee = (
+            elementBox.x <= bounds.x + bounds.width
+            && elementBox.x + elementBox.width >= bounds.x
+            && elementBox.y <= bounds.y + bounds.height
+            && elementBox.y + elementBox.height >= bounds.y
           )
-          return fullyContained ? [element.id] : []
+          return intersectsMarquee ? [element.id] : []
         })
         : []
     ))
