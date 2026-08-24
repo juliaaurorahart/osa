@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react'
+import { useState, type CSSProperties } from 'react'
 import type { GraphEdge } from '../graph/graphEdge'
 import {
   appearanceAccentColor,
@@ -28,6 +28,11 @@ type AssemblyInstructionsViewProps = {
   statusMessage?: string
   /** Present only when this is a local author preview rather than a shared link. */
   onBackToAssembly?: () => void
+}
+
+type OpenStepCanvas = {
+  step: TextFlowNode
+  canvas: TextFlowNode
 }
 
 const cardShell: CSSProperties = {
@@ -80,6 +85,52 @@ function ObjectNames({ objects }: { objects: TextFlowNode[] }) {
 }
 
 /**
+ * A team member can enlarge an instruction image without entering the canvas
+ * editor. It deliberately renders the same official canvas as the card's
+ * thumbnail, with no authoring controls or mutable state.
+ */
+export function StepCanvasViewer({
+  step,
+  canvas,
+  nodes,
+  edges,
+  annotationTargets,
+  onClose,
+}: OpenStepCanvas & {
+  nodes: TextFlowNode[]
+  edges: GraphEdge[]
+  annotationTargets: ReturnType<typeof annotationTargetsForNodes>
+  onClose: () => void
+}) {
+  return (
+    <div className="assembly-instructions-view__canvas-viewer-scrim" role="presentation">
+      <section
+        className="assembly-instructions-view__canvas-viewer"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`View ${nodeTitle(step)} canvas`}
+      >
+        <header>
+          <div>
+            <span>step canvas</span>
+            <h2>{nodeTitle(step)}</h2>
+          </div>
+          <button type="button" onClick={onClose}>close</button>
+        </header>
+        <div className="assembly-instructions-view__canvas-viewer-body">
+          <VisualCanvasPreview
+            visual={canvas}
+            embeddedVisuals={visualEmbedsForCanvas(canvas.id, nodes, edges)}
+            annotationTargets={annotationTargets}
+            className="assembly-instructions-view__canvas-viewer-preview"
+          />
+        </div>
+      </section>
+    </div>
+  )
+}
+
+/**
  * The team-facing projection of one Assembly. It reads the same durable
  * objects and edges as the authoring view, but intentionally exposes only
  * the sequence needed to perform the work.
@@ -93,6 +144,7 @@ export function AssemblyInstructionsView({
   onBackToAssembly,
 }: AssemblyInstructionsViewProps) {
   const modeLabel = onBackToAssembly ? 'preview' : 'read-only'
+  const [openedStepCanvas, setOpenedStepCanvas] = useState<OpenStepCanvas | null>(null)
   // The shared instructions render the same live project-backed annotations
   // as Assembly, without copying names or properties into canvas content.
   const annotationTargets = annotationTargetsForNodes(nodes)
@@ -231,12 +283,20 @@ export function AssemblyInstructionsView({
                             <strong>Step {index + 1}</strong>
                             <span>{nodeTitle(step)}</span>
                           </figcaption>
-                          <VisualCanvasPreview
-                            visual={canvas}
-                            embeddedVisuals={visualEmbedsForCanvas(canvas.id, nodes, edges)}
-                            annotationTargets={annotationTargets}
-                            className="assembly-card__visual-preview"
-                          />
+                          <button
+                            className="assembly-instructions-view__open-canvas"
+                            type="button"
+                            aria-label={`Open ${nodeTitle(step)} canvas`}
+                            title="Open canvas"
+                            onClick={() => setOpenedStepCanvas({ step, canvas })}
+                          >
+                            <VisualCanvasPreview
+                              visual={canvas}
+                              embeddedVisuals={visualEmbedsForCanvas(canvas.id, nodes, edges)}
+                              annotationTargets={annotationTargets}
+                              className="assembly-card__visual-preview"
+                            />
+                          </button>
                         </figure>
                       ))}
                     </div>
@@ -247,6 +307,15 @@ export function AssemblyInstructionsView({
           )
         })}
       </div>
+      {openedStepCanvas ? (
+        <StepCanvasViewer
+          {...openedStepCanvas}
+          nodes={nodes}
+          edges={edges}
+          annotationTargets={annotationTargets}
+          onClose={() => setOpenedStepCanvas(null)}
+        />
+      ) : null}
     </section>
   )
 }

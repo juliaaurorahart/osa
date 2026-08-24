@@ -12,7 +12,7 @@ const server = await createServer({
 
 try {
   const { AssemblyView } = await server.ssrLoadModule('/src/components/AssemblyView.tsx')
-  const { AssemblyInstructionsView } = await server.ssrLoadModule(
+  const { AssemblyInstructionsView, StepCanvasViewer } = await server.ssrLoadModule(
     '/src/components/AssemblyInstructionsView.tsx',
   )
   const { VisualCanvasEditor } = await server.ssrLoadModule('/src/components/VisualCanvas.tsx')
@@ -436,8 +436,31 @@ try {
   assert.match(instructionsMarkup, /Drill the 5\/16 in side hole/)
   assert.match(instructionsMarkup, /Use the 5\/16 in bit on the marked side\./)
   assert.equal((instructionsMarkup.match(/<h2>step canvases<\/h2>/g) ?? []).length, 1)
+  assert.match(
+    instructionsMarkup,
+    /aria-label="Open Drill the 5\/16 in side hole canvas"/,
+    'A recipient can open a specific step canvas from the read-only instructions.',
+  )
   assert.doesNotMatch(instructionsMarkup, /new assembly|add card|semantic information|source slide/)
   assert.doesNotMatch(instructionsMarkup, /back to Assembly/)
+
+  const stepCanvasViewerMarkup = renderToStaticMarkup(createElement(StepCanvasViewer, {
+    step: instructionStep,
+    canvas: instructionCanvas,
+    nodes: instructionNodes,
+    edges: instructionEdges,
+    annotationTargets: [],
+    onClose: noop,
+  }))
+  assert.match(stepCanvasViewerMarkup, /role="dialog"/)
+  assert.match(stepCanvasViewerMarkup, /aria-label="View Drill the 5\/16 in side hole canvas"/)
+  assert.match(stepCanvasViewerMarkup, />close<\/button>/)
+  assert.match(stepCanvasViewerMarkup, /<svg[^>]*class="sketch-preview/)
+  assert.doesNotMatch(
+    stepCanvasViewerMarkup,
+    /unlock|save draft|make official|canvas name|remove/,
+    'The enlarged step canvas is a viewer, not the canvas editor.',
+  )
 
   const loadingInstructionsMarkup = renderToStaticMarkup(createElement(AssemblyInstructionsView, {
     assembly: undefined,
