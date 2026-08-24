@@ -203,7 +203,7 @@ function sizedEmbedPlacementUpdate(
   requestedValue: number,
 ): Pick<VisualEmbedPlacement, 'width' | 'height'> {
   const value = Math.max(24, requestedValue)
-  if (!placement.aspectRatioLocked || placement.width <= 0 || placement.height <= 0) {
+  if (placement.aspectRatioLocked === false || placement.width <= 0 || placement.height <= 0) {
     return dimension === 'width'
       ? { width: value, height: placement.height }
       : { width: placement.width, height: value }
@@ -1427,7 +1427,7 @@ export function SketchPad({
       }
       : {
         ...interaction.original,
-        ...((interaction.original.aspectRatioLocked || event.shiftKey)
+        ...((interaction.original.aspectRatioLocked !== false || event.shiftKey)
           ? proportionalDimensions(
             interaction.original,
             interaction.original.width + dx,
@@ -3226,13 +3226,18 @@ export function SketchPad({
                 />
               </label>
               <label>
-                <span>Lock ratio</span>
-                <input
-                  type="checkbox"
-                  aria-label="Lock selected visual aspect ratio"
-                  checked={Boolean(selectedEmbedPlacement.aspectRatioLocked)}
-                  onChange={(event) => updateSelectedEmbedPlacement({ aspectRatioLocked: event.target.checked })}
-                />
+                <span>Ratio</span>
+                <button
+                  type="button"
+                  aria-label={selectedEmbedPlacement.aspectRatioLocked === false
+                    ? 'Lock selected visual aspect ratio'
+                    : 'Unlock selected visual aspect ratio'}
+                  onClick={() => updateSelectedEmbedPlacement({
+                    aspectRatioLocked: selectedEmbedPlacement.aspectRatioLocked === false,
+                  })}
+                >
+                  {selectedEmbedPlacement.aspectRatioLocked === false ? 'lock' : 'unlock'}
+                </button>
               </label>
             </section>
           ) : null}

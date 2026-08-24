@@ -92,12 +92,17 @@ export function isVisualEmbedEdge(edge: GraphEdge, parentId?: string) {
 
 /** Reads safe pixel geometry from an embed edge, including old/missing values. */
 export function visualEmbedPlacementFromEdge(edge: GraphEdge, index: number) {
+  const aspectRatioLocked = edge.data.properties[OSA_PROPERTY.visualEmbedAspectRatioLocked]
   return normalizeVisualEmbedPlacement({
     x: Number(edge.data.properties[OSA_PROPERTY.visualEmbedX]),
     y: Number(edge.data.properties[OSA_PROPERTY.visualEmbedY]),
     width: Number(edge.data.properties[OSA_PROPERTY.visualEmbedWidth]),
     height: Number(edge.data.properties[OSA_PROPERTY.visualEmbedHeight]),
-    aspectRatioLocked: edge.data.properties[OSA_PROPERTY.visualEmbedAspectRatioLocked] === 'true',
+    // Older boards did not have this property. Omitting it lets the current
+    // placement default apply instead of accidentally treating it as unlock.
+    ...((aspectRatioLocked === 'true' || aspectRatioLocked === 'false')
+      ? { aspectRatioLocked: aspectRatioLocked === 'true' }
+      : {}),
   }, defaultVisualEmbedPlacement(index))
 }
 

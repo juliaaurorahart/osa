@@ -148,6 +148,21 @@ try {
     defaultVisualEmbedPlacement(0),
     'the relationship stores the initial image-box geometry rather than image data',
   )
+  const unlockedPlacementEdge = createGraphEdge({
+    id: 'unlocked-image-placement',
+    source: legacyCanvas.id,
+    target: imageAsset.id,
+    relationship: 'includes visual',
+    properties: {
+      ...placementEdge.data.properties,
+      [OSA_PROPERTY.visualEmbedAspectRatioLocked]: 'false',
+    },
+  })
+  assert.equal(
+    visualEmbedPlacementFromEdge(unlockedPlacementEdge, 0).aspectRatioLocked,
+    false,
+    'an author can deliberately unlock one placed Visual without changing its source asset',
+  )
   assert.deepEqual(
     visualEmbedsForCanvas(legacyCanvas.id, migrated.nodes, migrated.edges),
     [{

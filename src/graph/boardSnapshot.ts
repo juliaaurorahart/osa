@@ -455,7 +455,9 @@ function parseVisualVersionState(value: unknown): VisualVersionState | null | un
           y: embed.placement.y,
           width: embed.placement.width,
           height: embed.placement.height,
-          ...(embed.placement.aspectRatioLocked ? { aspectRatioLocked: true } : {}),
+          ...(typeof embed.placement.aspectRatioLocked === 'boolean'
+            ? { aspectRatioLocked: embed.placement.aspectRatioLocked }
+            : {}),
         },
       })
     }

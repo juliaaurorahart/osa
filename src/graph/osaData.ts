@@ -344,6 +344,9 @@ export function defaultVisualEmbedPlacement(index: number): VisualEmbedPlacement
     x: 72 + offset,
     y: 72 + offset,
     ...VISUAL_EMBED_DEFAULT_SIZE,
+    // A photo or reusable Visual is normally scaled, not stretched. An
+    // author can deliberately unlock its parent-side frame in the editor.
+    aspectRatioLocked: true,
   }
 }
 
@@ -357,14 +360,15 @@ export function normalizeVisualEmbedPlacement(
   placement: Partial<VisualEmbedPlacement> | null | undefined,
   fallback: VisualEmbedPlacement = defaultVisualEmbedPlacement(0),
 ): VisualEmbedPlacement {
+  // Preserve an explicit unlock. The absence of a saved choice gets the safe
+  // current default, while `false` remains a deliberate parent-side choice.
+  const aspectRatioLocked = placement?.aspectRatioLocked ?? fallback.aspectRatioLocked ?? true
   return {
     x: normalizeCanvasPixel(placement?.x, fallback.x, 0),
     y: normalizeCanvasPixel(placement?.y, fallback.y, 0),
     width: normalizeCanvasPixel(placement?.width, fallback.width, 1),
     height: normalizeCanvasPixel(placement?.height, fallback.height, 1),
-    ...((placement?.aspectRatioLocked ?? fallback.aspectRatioLocked)
-      ? { aspectRatioLocked: true }
-      : {}),
+    aspectRatioLocked,
   }
 }
 

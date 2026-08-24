@@ -707,8 +707,8 @@ try {
   assert.deepEqual(
     visualDraftEmbedsForCanvas(versionedVisualCanvas.id, [versionedVisualCanvas, photoVisual], [liveEmbed])
       .map((embed) => embed.placement),
-    [{ x: 120, y: 80, width: 360, height: 240 }],
-    'The editor retains the live draft placement while an official version exists.',
+    [{ x: 120, y: 80, width: 360, height: 240, aspectRatioLocked: true }],
+    'The editor retains the live draft placement and applies the current safe ratio default.',
   )
 
   const preVersionsSnapshot = structuredClone(visualCanvasSnapshot)
