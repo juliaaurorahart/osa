@@ -787,6 +787,38 @@ try {
     'A shape whose source has no semantic color preserves its saved manual fill and stroke.',
   )
 
+  // A canvas can be both previewed behind the editor and drawn in the editor.
+  // Arrow marker IDs must therefore stay local to each rendered SVG; otherwise
+  // an arrowhead could borrow an old black marker while its shaft is semantic.
+  const arrowDocument = cloneSketchDocument(annotationCanvas.data.sketch)
+  arrowDocument.layers[0].elements = [{
+    id: 'semantic-arrow-1',
+    kind: 'arrow',
+    x: 100,
+    y: 100,
+    width: 140,
+    height: 60,
+    stroke: '#173b66',
+    fill: 'transparent',
+    strokeWidth: 4,
+    opacity: 1,
+    semanticColors: {
+      stroke: { kind: 'project-semantic-color', targetId: annotatedBit.id },
+    },
+  }]
+  const duplicateArrowPreviewMarkup = renderToStaticMarkup(createElement('div', null,
+    createElement(SketchPreview, { document: arrowDocument, annotationTargets }),
+    createElement(SketchPreview, { document: arrowDocument, annotationTargets }),
+  ))
+  const arrowMarkerIds = [...duplicateArrowPreviewMarkup.matchAll(/<marker id="([^"]+)"/g)]
+    .map((match) => match[1])
+  assert.equal(arrowMarkerIds.length, 2)
+  assert.equal(
+    new Set(arrowMarkerIds).size,
+    2,
+    'Two renderings of one semantic arrow have independent SVG marker IDs.',
+  )
+
   const semanticShapeSnapshot = createBoardSnapshot([annotatedBit, semanticShapeCanvas], [])
   const restoredSemanticShapeSnapshot = parseBoardSnapshot(JSON.parse(JSON.stringify(semanticShapeSnapshot)))
   assert.deepEqual(

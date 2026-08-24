@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
@@ -1061,6 +1062,11 @@ export function SketchPreview({
   ariaLabel?: string
   className?: string
 }) {
+  // Arrowheads use SVG marker IDs. Give every rendered canvas its own prefix
+  // so an editor cannot accidentally reuse a stale marker from its preview
+  // behind the dialog (which made a newly semantic arrowhead stay black).
+  const markerNamespace = useId()
+
   return (
     <svg
       className={className ? `sketch-preview ${className}` : 'sketch-preview'}
@@ -1086,6 +1092,7 @@ export function SketchPreview({
         <SketchLayerElementGraphics
           key={`${layer.id}-elements`}
           layer={layer}
+          markerNamespace={markerNamespace}
           annotationTargets={annotationTargets}
         />,
         ...layer.strokes.map((stroke) => (
@@ -1109,6 +1116,9 @@ export function SketchPad({
   onEmbeddedVisualRemove,
   onEmbeddedVisualMakeIndependent,
 }: SketchPadProps) {
+  // The editor can be open while the same canvas is also visible behind it.
+  // This keeps its arrowhead markers isolated from every preview on the page.
+  const markerNamespace = useId()
   const [tool, setTool] = useState<SketchTool>(initialTool)
   const [color, setColor] = useState<string>(PEN_COLORS[0])
   /** New enclosed shapes use this fill; lines, arrows, text, and pen ignore it. */
@@ -3020,6 +3030,7 @@ export function SketchPad({
               <SketchLayerElementGraphics
                 key={`${layer.id}-elements`}
                 layer={layer}
+                markerNamespace={markerNamespace}
                 interactive={(tool === 'select' || tool === 'eraser') && !layer.locked}
                 selectedElementIds={selectedElementIdsForRender}
                 annotationTargets={annotationTargets}
