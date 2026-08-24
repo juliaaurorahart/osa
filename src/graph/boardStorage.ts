@@ -36,8 +36,8 @@ export class BoardUnavailableError extends Error {
 }
 
 export class SharedAssemblyUnavailableError extends Error {
-  constructor() {
-    super('This shared assembly is unavailable.')
+  constructor(message = 'This shared assembly is unavailable.') {
+    super(message)
     this.name = 'SharedAssemblyUnavailableError'
   }
 }
@@ -148,10 +148,20 @@ export async function fetchSharedAssembly(token: string): Promise<SharedAssembly
   }
 
   if (!response.ok) {
-    if (response.status === 404 || response.status === 400 || response.status === 0 || response.type === 'opaqueredirect') {
-      throw new SharedAssemblyUnavailableError()
+    const body: unknown = await response.json().catch(() => null)
+    const message = isRecord(body) && typeof body.error === 'string'
+      ? body.error
+      : 'This shared assembly is unavailable.'
+    if (
+      response.status === 404
+      || response.status === 400
+      || response.status >= 500
+      || response.status === 0
+      || response.type === 'opaqueredirect'
+    ) {
+      throw new SharedAssemblyUnavailableError(message)
     }
-    throw await responseError(response)
+    throw new Error(message)
   }
 
   const body: unknown = await response.json().catch(() => null)

@@ -6,6 +6,28 @@ type CreateShareBody = {
   assemblyId?: unknown
 }
 
+type OwnedBoard = { content: string }
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+/** Only mint a link for an Assembly that actually exists in this saved board. */
+function boardContainsAssembly(content: string, assemblyId: string) {
+  try {
+    const parsed: unknown = JSON.parse(content)
+    if (!isRecord(parsed) || !isRecord(parsed.snapshot) || !Array.isArray(parsed.snapshot.nodes)) return false
+
+    return parsed.snapshot.nodes.some((node) => {
+      if (!isRecord(node) || node.id !== assemblyId || !isRecord(node.data)) return false
+      const properties = isRecord(node.data.properties) ? node.data.properties : null
+      return properties?.['osa:role'] === 'assembly' || node.data.kind === 'project'
+    })
+  } catch {
+    return false
+  }
+}
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -41,10 +63,13 @@ export const onRequestPost: PagesFunction<Env, string, AccessData> = async ({ re
   // A user may only expose a board that they already own. The public route
   // below never accepts a board id directly, only the opaque token.
   const ownedBoard = await env.OSA_DB
-    .prepare('SELECT id FROM boards WHERE id = ? AND owner_email = ?')
+    .prepare('SELECT content FROM boards WHERE id = ? AND owner_email = ?')
     .bind(boardId, owner)
-    .first<{ id: string }>()
+    .first<OwnedBoard>()
   if (!ownedBoard) return json({ error: 'That saved board was not found.' }, 404)
+  if (!boardContainsAssembly(ownedBoard.content, assemblyId)) {
+    return json({ error: 'Choose an assembly that exists in this saved board.' }, 400)
+  }
 
   const token = createShareToken()
   await env.OSA_DB

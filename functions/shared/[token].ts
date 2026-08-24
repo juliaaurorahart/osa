@@ -1,4 +1,4 @@
-type Env = { OSA_DB: D1Database }
+type Env = { OSA_DB?: D1Database }
 
 type SharedBoardRow = {
   content: string
@@ -209,25 +209,28 @@ function createAssemblyScopedBoard(board: unknown, assemblyId: string): JsonReco
 export const onRequestGet: PagesFunction<Env> = async ({ env, params }) => {
   const token = params.token
   if (!token) return json({ error: 'A share token is required.' }, 400)
-
-  const sharedBoard = await env.OSA_DB
-    .prepare(`
-      SELECT boards.content, board_shares.assembly_id
-      FROM board_shares
-      INNER JOIN boards ON boards.id = board_shares.board_id
-      WHERE board_shares.token = ?
-    `)
-    .bind(token)
-    .first<SharedBoardRow>()
-  if (!sharedBoard) return json({ error: 'This shared assembly is unavailable.' }, 404)
+  if (!env.OSA_DB) {
+    return json({ error: 'Shared assembly service is not configured.' }, 503)
+  }
 
   try {
+    const sharedBoard = await env.OSA_DB
+      .prepare(`
+        SELECT boards.content, board_shares.assembly_id
+        FROM board_shares
+        INNER JOIN boards ON boards.id = board_shares.board_id
+        WHERE board_shares.token = ?
+      `)
+      .bind(token)
+      .first<SharedBoardRow>()
+    if (!sharedBoard) return json({ error: 'This shared assembly is unavailable.' }, 404)
+
     const board = createAssemblyScopedBoard(JSON.parse(sharedBoard.content), sharedBoard.assembly_id)
     if (!board) return json({ error: 'This shared assembly is unavailable.' }, 404)
     return json({ board, assemblyId: sharedBoard.assembly_id })
   } catch {
-    // Corrupt saved content should not expose an implementation error to a
-    // recipient who only has a read-only link.
-    return json({ error: 'This shared assembly is unavailable.' }, 404)
+    // A schema/binding failure belongs to the service, not to the recipient's
+    // link. Returning JSON avoids a raw Cloudflare 1101 page on the phone.
+    return json({ error: 'Shared assembly service is temporarily unavailable.' }, 503)
   }
 }

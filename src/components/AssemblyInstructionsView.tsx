@@ -23,6 +23,8 @@ type AssemblyInstructionsViewProps = {
   nodes: TextFlowNode[]
   operations: TextFlowNode[]
   edges: GraphEdge[]
+  /** A public recipient sees a loading or service message before data exists. */
+  statusMessage?: string
   /** Present only when this is a local author preview rather than a shared link. */
   onBackToAssembly?: () => void
 }
@@ -86,6 +88,7 @@ export function AssemblyInstructionsView({
   nodes,
   operations,
   edges,
+  statusMessage,
   onBackToAssembly,
 }: AssemblyInstructionsViewProps) {
   const modeLabel = onBackToAssembly ? 'preview' : 'read-only'
@@ -102,7 +105,9 @@ export function AssemblyInstructionsView({
             <span className="assembly-view__shared-label">{modeLabel}</span>
           </div>
         </header>
-        <p className="work-view__empty">This assembly is unavailable.</p>
+        <p className="work-view__empty" role="status">
+          {statusMessage ?? 'This assembly is unavailable.'}
+        </p>
       </section>
     )
   }

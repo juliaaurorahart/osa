@@ -137,6 +137,10 @@ import {
   SharedAssemblyUnavailableError,
   type SavedBoard,
 } from './graph/boardStorage'
+import {
+  sharedAssemblyTokenFromLocation,
+  sharedAssemblyUrl,
+} from './graph/sharedAssemblyRoute'
 import shakoLightWrapRaw from '../imports/shako-light-wrap.osa.json?raw'
 import './App.css'
 
@@ -482,8 +486,7 @@ function readOsaTheme(): OsaTheme {
 
 /** A share token is intentionally opaque; it is never a board or user ID. */
 function readSharedAssemblyToken() {
-  const token = new URLSearchParams(window.location.search).get('share')
-  return token?.trim() || null
+  return sharedAssemblyTokenFromLocation(window.location)
 }
 
 /** The editor comparison is a temporary dev-only overlay, never a saved view. */
@@ -693,6 +696,11 @@ function Flow() {
   const [needsSignIn, setNeedsSignIn] = useState(false)
   const [shareStatus, setShareStatus] = useState('')
   const [shareUrl, setShareUrl] = useState('')
+  // A public link starts by loading. This prevents a slow phone from briefly
+  // showing “unavailable” before the public board response arrives.
+  const [sharedAssemblyLoadState, setSharedAssemblyLoadState] = useState<
+    'idle' | 'loading' | 'ready' | 'unavailable'
+  >(() => sharedAssemblyToken ? 'loading' : 'idle')
   const isSharedAssembly = sharedAssemblyToken !== null
   const { screenToFlowPosition, setCenter, fitView } = useReactFlow()
   const nextId = useRef(Math.max(
@@ -1446,7 +1454,13 @@ function Flow() {
   const createAssemblyOperation = useCallback((assemblyId: string, title: string) => {
     const assembly = nodes.find((node) => node.id === assemblyId)
     const linkedActionIds = new Set(edges
-      .filter((edge) => edge.source === assemblyId && edge.data.relationKind === 'project-task')
+      .filter((edge) => (
+        edge.source === assemblyId
+        && (
+          edge.data.relationKind === 'project-task'
+          || edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.assemblyOperation
+        )
+      ))
       .map((edge) => edge.target))
     const greatestOrder = operations
       .filter((operation) => linkedActionIds.has(operation.id))
@@ -1492,7 +1506,9 @@ function Flow() {
     nextEdgeId.current += 1
     setEdges((currentEdges) => [
       ...currentEdges,
-      createProjectTaskEdge(operationEdgeId, assemblyId, operationId),
+      createProjectTaskEdge(operationEdgeId, assemblyId, operationId, {
+        [OSA_PROPERTY.relationRole]: OSA_RELATION.assemblyOperation,
+      }),
       createGraphEdge({
         id: assemblyItemEdgeId,
         source: assemblyId,
@@ -3163,6 +3179,7 @@ function Flow() {
     if (!sharedAssemblyToken) return
 
     let cancelled = false
+    setSharedAssemblyLoadState('loading')
     setShareStatus('Loading shared assembly…')
     void fetchSharedAssembly(sharedAssemblyToken)
       .then(({ board, assemblyId }) => {
@@ -3172,10 +3189,12 @@ function Flow() {
         setBoardName(board.name)
         setSelectedAssemblyId(assemblyId)
         setWorkspaceView('assembly')
+        setSharedAssemblyLoadState('ready')
         setShareStatus('Shared assembly · read-only')
       })
       .catch((error) => {
         if (cancelled) return
+        setSharedAssemblyLoadState('unavailable')
         setShareStatus(error instanceof SharedAssemblyUnavailableError
           ? error.message
           : 'Unable to load this shared assembly.')
@@ -3250,11 +3269,7 @@ function Flow() {
       setBoardName(name)
 
       const token = await createAssemblyShare(savedBoard.id, activeAssemblyId)
-      const url = new URL(window.location.href)
-      url.search = ''
-      url.searchParams.set('view', 'assembly')
-      url.searchParams.set('share', token)
-      const nextShareUrl = url.toString()
+      const nextShareUrl = sharedAssemblyUrl(window.location.origin, token)
       setShareUrl(nextShareUrl)
 
       try {
@@ -3917,6 +3932,9 @@ function Flow() {
               nodes={nodes}
               operations={operations}
               edges={edges}
+              statusMessage={isSharedAssembly && sharedAssemblyLoadState !== 'ready'
+                ? shareStatus || 'Loading shared assembly…'
+                : undefined}
               onBackToAssembly={isSharedAssembly
                 ? undefined
                 : () => setAssemblyInstructionsPreview(false)}

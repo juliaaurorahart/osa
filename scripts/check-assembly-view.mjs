@@ -434,6 +434,16 @@ try {
   assert.doesNotMatch(instructionsMarkup, /new assembly|add card|semantic information|source slide/)
   assert.doesNotMatch(instructionsMarkup, /back to Assembly/)
 
+  const loadingInstructionsMarkup = renderToStaticMarkup(createElement(AssemblyInstructionsView, {
+    assembly: undefined,
+    nodes: [],
+    operations: [],
+    edges: [],
+    statusMessage: 'Loading shared assembly…',
+  }))
+  assert.match(loadingInstructionsMarkup, /Loading shared assembly…/)
+  assert.doesNotMatch(loadingInstructionsMarkup, /This assembly is unavailable/)
+
   const previewInstructionsMarkup = renderToStaticMarkup(createElement(AssemblyInstructionsView, {
     assembly: instructionNodes.find((node) => node.id === plan.assemblyNodeId),
     nodes: instructionNodes,

@@ -30,6 +30,98 @@ try {
   const { visualForOfficialVersion } = await server.ssrLoadModule('/src/graph/visualVersion.ts')
   const { createProjectTaskEdge } = await server.ssrLoadModule('/src/graph/taskProject.ts')
   const { addNodeToSpace } = await server.ssrLoadModule('/src/graph/space.ts')
+  const {
+    sharedAssemblyTokenFromLocation,
+    sharedAssemblyUrl,
+  } = await server.ssrLoadModule('/src/graph/sharedAssemblyRoute.ts')
+  const { onRequestGet: getSharedAssembly } = await server.ssrLoadModule('/functions/shared/[token].ts')
+  const { onRequestPost: createSharedAssembly } = await server.ssrLoadModule('/functions/api/shares.ts')
+
+  const shareToken = 'a'.repeat(64)
+  assert.equal(
+    sharedAssemblyTokenFromLocation({ pathname: `/assembly/${shareToken}`, search: '' }),
+    shareToken,
+    'A recipient can open the clean assembly URL directly.',
+  )
+  assert.equal(
+    sharedAssemblyTokenFromLocation({ pathname: '/', search: `?share=${shareToken}` }),
+    shareToken,
+    'Previously copied query-string share URLs remain valid.',
+  )
+  assert.equal(
+    sharedAssemblyUrl('https://osa.juliaaurorahart.com', shareToken),
+    `https://osa.juliaaurorahart.com/assembly/${shareToken}`,
+    'New links use a paste-friendly public assembly path.',
+  )
+  const unconfiguredShareResponse = await getSharedAssembly({
+    env: {},
+    params: { token: shareToken },
+  })
+  assert.equal(
+    unconfiguredShareResponse.status,
+    503,
+    'A missing production database binding returns JSON instead of a Cloudflare 1101 error.',
+  )
+  assert.deepEqual(
+    await unconfiguredShareResponse.json(),
+    { error: 'Shared assembly service is not configured.' },
+  )
+
+  const inserts = []
+  const shareDatabase = {
+    prepare(query) {
+      if (query.includes('SELECT content')) {
+        return {
+          bind: () => ({
+            first: async () => ({
+              content: JSON.stringify({
+                snapshot: {
+                  nodes: [{
+                    id: 'verified-assembly',
+                    data: {
+                      kind: 'part',
+                      properties: { [OSA_PROPERTY.role]: 'assembly' },
+                    },
+                  }],
+                },
+              }),
+            }),
+          }),
+        }
+      }
+      if (query.includes('INSERT INTO board_shares')) {
+        return {
+          bind: (...values) => ({
+            run: async () => { inserts.push(values) },
+          }),
+        }
+      }
+      throw new Error(`Unexpected query: ${query}`)
+    },
+  }
+  const signedInData = { cloudflareAccess: { JWT: { payload: { email: 'julia@example.com' } } } }
+  const createValidShareResponse = await createSharedAssembly({
+    request: new Request('https://osa.example/api/shares', {
+      method: 'POST',
+      body: JSON.stringify({ boardId: 'board-1', assemblyId: 'verified-assembly' }),
+    }),
+    env: { OSA_DB: shareDatabase },
+    data: signedInData,
+  })
+  assert.equal(createValidShareResponse.status, 200)
+  assert.equal((await createValidShareResponse.json()).token.length, 64)
+  assert.equal(inserts.length, 1, 'A verified Assembly can mint one public capability token.')
+
+  const createBrokenShareResponse = await createSharedAssembly({
+    request: new Request('https://osa.example/api/shares', {
+      method: 'POST',
+      body: JSON.stringify({ boardId: 'board-1', assemblyId: 'not-in-board' }),
+    }),
+    env: { OSA_DB: shareDatabase },
+    data: signedInData,
+  })
+  assert.equal(createBrokenShareResponse.status, 400)
+  assert.equal(inserts.length, 1, 'A link is never minted for an Assembly absent from the saved board.')
 
   const space = createTextNode({
     id: 'space-1',
@@ -126,6 +218,25 @@ try {
       [OSA_PROPERTY.operationCanvasSections]: '[{"id":"section-2","label":"Detail"}]',
     },
   })
+  const assembly = createTextNode({
+    id: 'assembly-1',
+    position: { x: 0, y: 100 },
+    name: 'Assembly',
+    text: '',
+    kind: 'part',
+    properties: { [OSA_PROPERTY.role]: 'assembly' },
+  })
+  const savedAssemblyEdge = createBoardSnapshot(
+    [assembly, action],
+    [createProjectTaskEdge('assembly-operation-1', assembly.id, action.id, {
+      [OSA_PROPERTY.relationRole]: OSA_RELATION.assemblyOperation,
+    })],
+  ).edges[0]
+  assert.equal(
+    savedAssemblyEdge.data.properties[OSA_PROPERTY.relationRole],
+    OSA_RELATION.assemblyOperation,
+    'An Assembly-to-operation relationship stays discoverable after saving.',
+  )
   const legacySnapshot = structuredClone(createBoardSnapshot(
     [project, action],
     [createProjectTaskEdge('edge-1', project.id, action.id)],
