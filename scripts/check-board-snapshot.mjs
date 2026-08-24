@@ -727,6 +727,87 @@ try {
     'A bound text box with no semantic color keeps its own normal text color.',
   )
 
+  // Shapes can also derive their stroke/fill directly from one canonical
+  // project object's semantic color. The sketch stores only the reference,
+  // keeping its saved manual colors as the no-color fallback.
+  const semanticShapeCanvas = structuredClone(annotationCanvas)
+  semanticShapeCanvas.id = 'semantic-shape-canvas-1'
+  semanticShapeCanvas.data.name = 'Semantic shape test canvas'
+  const semanticShape = {
+    id: 'semantic-color-shape-1',
+    kind: 'rounded-rectangle',
+    x: 900,
+    y: 520,
+    width: 180,
+    height: 100,
+    cornerRadius: 20,
+    stroke: '#173b66',
+    fill: '#e5f0ff',
+    strokeWidth: 4,
+    opacity: 1,
+    semanticColors: {
+      stroke: { kind: 'project-semantic-color', targetId: annotatedBit.id },
+      fill: { kind: 'project-semantic-color', targetId: annotatedBit.id },
+    },
+  }
+  semanticShapeCanvas.data.sketch.layers[0].elements.push(semanticShape)
+  const semanticShapeMarkup = renderToStaticMarkup(createElement(SketchPreview, {
+    document: semanticShapeCanvas.data.sketch,
+    annotationTargets,
+  }))
+  assert.match(
+    semanticShapeMarkup,
+    /data-sketch-element-id="semantic-color-shape-1"[\s\S]*?<rect[^>]*fill="#9b59d0"[^>]*stroke="#9b59d0"/,
+    'A shape uses its source object semantic color for both a bound fill and stroke.',
+  )
+  const recoloredSemanticShapeMarkup = renderToStaticMarkup(createElement(SketchPreview, {
+    document: semanticShapeCanvas.data.sketch,
+    annotationTargets: recoloredAnnotationTargets,
+  }))
+  assert.match(
+    recoloredSemanticShapeMarkup,
+    /data-sketch-element-id="semantic-color-shape-1"[\s\S]*?<rect[^>]*fill="#ff8c00"[^>]*stroke="#ff8c00"/,
+    'Changing the source object color updates the bound shape without rewriting its sketch.',
+  )
+  assert.deepEqual(
+    semanticShape.semanticColors,
+    {
+      stroke: { kind: 'project-semantic-color', targetId: annotatedBit.id },
+      fill: { kind: 'project-semantic-color', targetId: annotatedBit.id },
+    },
+    'A bound shape retains only source references, never a copied semantic color.',
+  )
+  const noAccentSemanticShapeMarkup = renderToStaticMarkup(createElement(SketchPreview, {
+    document: semanticShapeCanvas.data.sketch,
+    annotationTargets: noAccentAnnotationTargets,
+  }))
+  assert.match(
+    noAccentSemanticShapeMarkup,
+    /data-sketch-element-id="semantic-color-shape-1"[\s\S]*?<rect[^>]*fill="#e5f0ff"[^>]*stroke="#173b66"/,
+    'A shape whose source has no semantic color preserves its saved manual fill and stroke.',
+  )
+
+  const semanticShapeSnapshot = createBoardSnapshot([annotatedBit, semanticShapeCanvas], [])
+  const restoredSemanticShapeSnapshot = parseBoardSnapshot(JSON.parse(JSON.stringify(semanticShapeSnapshot)))
+  assert.deepEqual(
+    restoredSemanticShapeSnapshot?.nodes
+      .find((node) => node.id === semanticShapeCanvas.id)
+      ?.data.sketch.layers[0].elements
+      .find((element) => element.id === semanticShape.id)
+      ?.semanticColors,
+    semanticShape.semanticColors,
+    'Bound shape semantic-color references survive a board save/load round trip.',
+  )
+  const malformedSemanticShapeSnapshot = structuredClone(semanticShapeSnapshot)
+  malformedSemanticShapeSnapshot.nodes[1].data.sketch.layers[0].elements
+    .find((element) => element.id === semanticShape.id)
+    .semanticColors.stroke.targetId = ''
+  assert.equal(
+    parseBoardSnapshot(malformedSemanticShapeSnapshot),
+    null,
+    'A semantic-color reference without a target ID is rejected at the board boundary.',
+  )
+
   const missingTargetMarkup = renderToStaticMarkup(createElement(SketchPreview, {
     document: annotationCanvas.data.sketch,
     annotationTargets: [],

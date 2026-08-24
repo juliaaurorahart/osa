@@ -1,6 +1,7 @@
 import type {
   SketchAnnotationTarget,
   SketchElement,
+  SketchSemanticColorReference,
   SketchTextAnnotation,
   TextFlowNode,
 } from './textNode'
@@ -94,6 +95,19 @@ export function resolveSketchAnnotationColor(
 ) {
   if (!annotation) return undefined
   return targets.find((candidate) => candidate.id === annotation.targetId)?.accentColor
+}
+
+/**
+ * Resolves one shape's live semantic-color reference without copying a color
+ * into the drawing. If the item is deleted or has no semantic color, callers
+ * keep using the element's saved manual stroke or fill instead.
+ */
+export function resolveSketchSemanticColor(
+  reference: SketchSemanticColorReference | undefined,
+  targets: readonly SketchAnnotationTarget[],
+) {
+  if (!reference) return undefined
+  return targets.find((candidate) => candidate.id === reference.targetId)?.accentColor
 }
 
 /** A text element is literal by default, or a live annotation when one exists. */

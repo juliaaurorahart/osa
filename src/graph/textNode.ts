@@ -52,6 +52,25 @@ export type SketchTextAnnotation = {
   fallback: string
 }
 
+/** A live reference to one canonical object's semantic color. */
+export type SketchSemanticColorReference = {
+  kind: 'project-semantic-color'
+  /** ID of the canonical Part, Tool, or other project object supplying the color. */
+  targetId: string
+}
+
+/**
+ * Optional semantic-color bindings for an individual drawing element.
+ *
+ * Stroke and fill deliberately remain separate references: one shape may use
+ * a Tool's semantic stroke and a Part's semantic fill without copying either
+ * color value into the canvas artwork.
+ */
+export type SketchSemanticColorBindings = {
+  stroke?: SketchSemanticColorReference
+  fill?: SketchSemanticColorReference
+}
+
 /** Minimal read-only project data used to resolve canvas text annotations. */
 export type SketchAnnotationTarget = {
   id: string
@@ -107,6 +126,8 @@ export type SketchElement = {
   compoundParts?: SketchCompoundPart[]
   /** Optional live project value used instead of the literal text below. */
   annotation?: SketchTextAnnotation
+  /** Optional live semantic-color bindings for this individual element. */
+  semanticColors?: SketchSemanticColorBindings
   text?: string
   fontSize?: number
 }
@@ -159,6 +180,16 @@ export function cloneSketchDocument(document: SketchDocument): SketchDocument {
           ? { compoundParts: element.compoundParts.map((part) => ({ ...part })) }
           : {}),
         ...(element.annotation ? { annotation: { ...element.annotation } } : {}),
+        ...(element.semanticColors ? {
+          semanticColors: {
+            ...(element.semanticColors.stroke
+              ? { stroke: { ...element.semanticColors.stroke } }
+              : {}),
+            ...(element.semanticColors.fill
+              ? { fill: { ...element.semanticColors.fill } }
+              : {}),
+          },
+        } : {}),
       })),
       strokes: layer.strokes.map((stroke) => ({
         ...stroke,

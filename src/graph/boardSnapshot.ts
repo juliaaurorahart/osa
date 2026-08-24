@@ -15,6 +15,8 @@ import {
   type SketchDocument,
   type SketchElement,
   type SketchLayer,
+  type SketchSemanticColorBindings,
+  type SketchSemanticColorReference,
   type SketchStroke,
   type SketchTextAnnotation,
   type TaskData,
@@ -282,6 +284,35 @@ function parseSketchTextAnnotation(value: unknown): SketchTextAnnotation | null 
   }
 }
 
+/** Parses one canonical semantic-color reference used by an OSA draw element. */
+function parseSketchSemanticColorReference(value: unknown): SketchSemanticColorReference | null {
+  if (
+    !isRecord(value)
+    || value.kind !== 'project-semantic-color'
+    || typeof value.targetId !== 'string'
+    || value.targetId.trim().length === 0
+    || Object.keys(value).some((key) => key !== 'kind' && key !== 'targetId')
+  ) return null
+  return { kind: 'project-semantic-color', targetId: value.targetId }
+}
+
+/** Parses independent optional stroke/fill semantic-color bindings. */
+function parseSketchSemanticColorBindings(value: unknown): SketchSemanticColorBindings | null {
+  if (!isRecord(value)) return null
+  const hasStroke = Object.prototype.hasOwnProperty.call(value, 'stroke')
+  const hasFill = Object.prototype.hasOwnProperty.call(value, 'fill')
+  if (Object.keys(value).some((key) => key !== 'stroke' && key !== 'fill')) return null
+
+  const stroke = hasStroke ? parseSketchSemanticColorReference(value.stroke) : undefined
+  const fill = hasFill ? parseSketchSemanticColorReference(value.fill) : undefined
+  if ((hasStroke && stroke === null) || (hasFill && fill === null)) return null
+
+  return {
+    ...(stroke ? { stroke } : {}),
+    ...(fill ? { fill } : {}),
+  }
+}
+
 /** Parses the portable shape and text objects on a canvas layer. */
 function parseSketchElements(value: unknown): SketchElement[] | null {
   if (value === undefined) return []
@@ -294,6 +325,9 @@ function parseSketchElements(value: unknown): SketchElement[] | null {
       : undefined
     const annotation = isRecord(element) && element.annotation !== undefined
       ? parseSketchTextAnnotation(element.annotation)
+      : undefined
+    const semanticColors = isRecord(element) && element.semanticColors !== undefined
+      ? parseSketchSemanticColorBindings(element.semanticColors)
       : undefined
     if (
       !isRecord(element)
@@ -346,6 +380,7 @@ function parseSketchElements(value: unknown): SketchElement[] | null {
         compoundParts === null
         || element.cornerRadius !== undefined
         || element.annotation !== undefined
+        || element.semanticColors !== undefined
         || element.text !== undefined
         || element.fontSize !== undefined
       ))
@@ -355,6 +390,7 @@ function parseSketchElements(value: unknown): SketchElement[] | null {
         element.kind !== 'text'
         || annotation === null
       ))
+      || (element.semanticColors !== undefined && semanticColors === null)
       || (element.text !== undefined && typeof element.text !== 'string')
       || (element.fontSize !== undefined && (
         typeof element.fontSize !== 'number'
@@ -381,6 +417,7 @@ function parseSketchElements(value: unknown): SketchElement[] | null {
       ...(typeof element.groupId === 'string' ? { groupId: element.groupId } : {}),
       ...(compoundParts ? { compoundParts } : {}),
       ...(annotation ? { annotation } : {}),
+      ...(semanticColors ? { semanticColors } : {}),
       ...(typeof element.text === 'string' ? { text: element.text } : {}),
       ...(typeof element.fontSize === 'number' ? { fontSize: element.fontSize } : {}),
     })

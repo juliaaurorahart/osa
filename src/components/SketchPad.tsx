@@ -12,6 +12,7 @@ import {
   type SketchElement,
   type SketchLayer,
   type SketchPoint,
+  type SketchSemanticColorBindings,
   type SketchStroke,
   type SketchAnnotationTarget,
   type SketchTextAnnotation,
@@ -20,6 +21,7 @@ import {
   annotationFieldsForTarget,
   annotationTargetLabel,
   resolveSketchAnnotationColor,
+  resolveSketchSemanticColor,
   resolveSketchTextAnnotation,
   resolvedSketchText,
 } from '../graph/sketchAnnotation'
@@ -523,8 +525,12 @@ function SketchElementGraphic({
   // A bound label coordinates with its Part or Tool automatically. Literal
   // text keeps the drawing's manually selected stroke color.
   const annotationColor = resolveSketchAnnotationColor(element.annotation, annotationTargets)
-  const stroke = strokeVisible ? element.stroke : 'transparent'
-  const fill = fillVisible ? element.fill : 'transparent'
+  const semanticStroke = resolveSketchSemanticColor(element.semanticColors?.stroke, annotationTargets)
+  const semanticFill = resolveSketchSemanticColor(element.semanticColors?.fill, annotationTargets)
+  // The saved stroke/fill remain the durable manual fallback if a selected
+  // project item is removed or has no semantic color yet.
+  const stroke = strokeVisible ? semanticStroke ?? element.stroke : 'transparent'
+  const fill = fillVisible ? semanticFill ?? element.fill : 'transparent'
   const arrowMarkerId = `sketch-arrow-head-${markerNamespace ? `${markerNamespace}-` : ''}${element.id}`
     .replace(/[^a-zA-Z0-9_-]/g, '-')
   const compoundFilterId = `sketch-compound-outline-${markerNamespace ? `${markerNamespace}-` : ''}${element.id}`
@@ -765,7 +771,7 @@ function SketchElementGraphic({
           <text
             x={element.x}
             y={element.y}
-            fill={annotationColor ?? stroke}
+            fill={semanticStroke ?? annotationColor ?? stroke}
             fontSize={element.fontSize ?? 26}
             fontFamily="inherit"
             dominantBaseline="hanging"
@@ -2316,6 +2322,34 @@ export function SketchPad({
     })
   }
 
+  /**
+   * Binds one visual channel to an item's live semantic color. Clearing the
+   * picker leaves the ordinary saved color untouched and returns to it.
+   */
+  const setSelectedSemanticColorBinding = (
+    channel: keyof SketchSemanticColorBindings,
+    targetId: string,
+  ) => {
+    if (
+      !selectedElement
+      || selectedElementCount !== 1
+      || selectedElement.layer.locked
+      || selectedElement.element.kind === 'compound'
+    ) return
+
+    const semanticColors: SketchSemanticColorBindings = {
+      ...selectedElement.element.semanticColors,
+    }
+    if (targetId) {
+      semanticColors[channel] = { kind: 'project-semantic-color', targetId }
+    } else {
+      delete semanticColors[channel]
+    }
+    updateSelectedElement({
+      semanticColors: Object.keys(semanticColors).length > 0 ? semanticColors : undefined,
+    })
+  }
+
   /** A locked shape updates both numeric size fields as one durable edit. */
   const updateSelectedShapeDimension = (dimension: 'width' | 'height', value: number) => {
     if (!selectedElement || selectedElementCount !== 1 || !isResizableShape(selectedElement.element.kind)) return
@@ -3351,6 +3385,39 @@ export function SketchPad({
                   }}
                 />
               </label>
+              {annotationTargetOptions.length > 0 && selectedElement.element.kind !== 'compound' ? (
+                <section className="sketch-editor__annotation" aria-label="Semantic color">
+                  <h3>semantic color</h3>
+                  <label>
+                    <span>Line</span>
+                    <select
+                      aria-label="Semantic line color item"
+                      value={selectedElement.element.semanticColors?.stroke?.targetId ?? ''}
+                      onChange={(event) => setSelectedSemanticColorBinding('stroke', event.target.value)}
+                    >
+                      <option value="">manual</option>
+                      {annotationTargetOptions.map((target) => (
+                        <option key={target.id} value={target.id}>{annotationTargetLabel(target)}</option>
+                      ))}
+                    </select>
+                  </label>
+                  {isFillableElement(selectedElement.element.kind) ? (
+                    <label>
+                      <span>Background</span>
+                      <select
+                        aria-label="Semantic background color item"
+                        value={selectedElement.element.semanticColors?.fill?.targetId ?? ''}
+                        onChange={(event) => setSelectedSemanticColorBinding('fill', event.target.value)}
+                      >
+                        <option value="">manual</option>
+                        {annotationTargetOptions.map((target) => (
+                          <option key={target.id} value={target.id}>{annotationTargetLabel(target)}</option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+                </section>
+              ) : null}
               <label>
                 <span>{`Stroke ${Math.round(selectedElement.element.strokeWidth)}`}</span>
                 <input
