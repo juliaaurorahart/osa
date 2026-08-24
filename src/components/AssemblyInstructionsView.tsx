@@ -7,6 +7,7 @@ import {
   osaRole,
 } from '../graph/osaData'
 import type { TextFlowNode } from '../graph/textNode'
+import { annotationTargetsForNodes } from '../graph/sketchAnnotation'
 import { visualEmbedsForCanvas } from '../graph/visualEmbed'
 import { VisualCanvasPreview } from './VisualCanvas'
 import {
@@ -92,6 +93,9 @@ export function AssemblyInstructionsView({
   onBackToAssembly,
 }: AssemblyInstructionsViewProps) {
   const modeLabel = onBackToAssembly ? 'preview' : 'read-only'
+  // The shared instructions render the same live project-backed annotations
+  // as Assembly, without copying names or properties into canvas content.
+  const annotationTargets = annotationTargetsForNodes(nodes)
 
   if (!assembly) {
     return (
@@ -230,6 +234,7 @@ export function AssemblyInstructionsView({
                           <VisualCanvasPreview
                             visual={canvas}
                             embeddedVisuals={visualEmbedsForCanvas(canvas.id, nodes, edges)}
+                            annotationTargets={annotationTargets}
                             className="assembly-card__visual-preview"
                           />
                         </figure>

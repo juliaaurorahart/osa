@@ -16,6 +16,7 @@ import {
   type SketchElement,
   type SketchLayer,
   type SketchStroke,
+  type SketchTextAnnotation,
   type TaskData,
   type TextFlowNode,
   type TextNodeData,
@@ -250,6 +251,37 @@ function parseSketchCompoundParts(value: unknown): SketchCompoundPart[] | null {
   return parts
 }
 
+/** Parses one live project-value reference used by an OSA draw text object. */
+function parseSketchTextAnnotation(value: unknown): SketchTextAnnotation | null {
+  if (!isRecord(value)) return null
+  if (
+    value.kind !== 'project-value'
+    || typeof value.targetId !== 'string'
+    || value.targetId.length === 0
+    || !['name', 'kind', 'text', 'property'].includes(String(value.field))
+    || typeof value.fallback !== 'string'
+  ) return null
+
+  const field = value.field as SketchTextAnnotation['field']
+  if (field === 'property') {
+    if (typeof value.propertyKey !== 'string' || value.propertyKey.length === 0) return null
+    return {
+      kind: 'project-value',
+      targetId: value.targetId,
+      field,
+      propertyKey: value.propertyKey,
+      fallback: value.fallback,
+    }
+  }
+  if (value.propertyKey !== undefined) return null
+  return {
+    kind: 'project-value',
+    targetId: value.targetId,
+    field,
+    fallback: value.fallback,
+  }
+}
+
 /** Parses the portable shape and text objects on a canvas layer. */
 function parseSketchElements(value: unknown): SketchElement[] | null {
   if (value === undefined) return []
@@ -259,6 +291,9 @@ function parseSketchElements(value: unknown): SketchElement[] | null {
   for (const element of value) {
     const compoundParts = isRecord(element) && element.kind === 'compound'
       ? parseSketchCompoundParts(element.compoundParts)
+      : undefined
+    const annotation = isRecord(element) && element.annotation !== undefined
+      ? parseSketchTextAnnotation(element.annotation)
       : undefined
     if (
       !isRecord(element)
@@ -310,11 +345,16 @@ function parseSketchElements(value: unknown): SketchElement[] | null {
       || (element.kind === 'compound' && (
         compoundParts === null
         || element.cornerRadius !== undefined
+        || element.annotation !== undefined
         || element.text !== undefined
         || element.fontSize !== undefined
       ))
       || (element.kind !== 'compound' && element.compoundParts !== undefined)
       || (element.kind === 'text' && typeof element.text !== 'string')
+      || (element.annotation !== undefined && (
+        element.kind !== 'text'
+        || annotation === null
+      ))
       || (element.text !== undefined && typeof element.text !== 'string')
       || (element.fontSize !== undefined && (
         typeof element.fontSize !== 'number'
@@ -340,6 +380,7 @@ function parseSketchElements(value: unknown): SketchElement[] | null {
       ...(typeof element.cornerRadius === 'number' ? { cornerRadius: element.cornerRadius } : {}),
       ...(typeof element.groupId === 'string' ? { groupId: element.groupId } : {}),
       ...(compoundParts ? { compoundParts } : {}),
+      ...(annotation ? { annotation } : {}),
       ...(typeof element.text === 'string' ? { text: element.text } : {}),
       ...(typeof element.fontSize === 'number' ? { fontSize: element.fontSize } : {}),
     })

@@ -3097,6 +3097,38 @@
   color: #171717;
 }
 
+/* A text box can show one live project value without exposing raw template syntax. */
+.sketch-editor__annotation {
+  display: grid;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid #ddd;
+}
+
+.sketch-editor__annotation h3 {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.sketch-editor__annotation select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 4px;
+  border: 1px solid #bbb;
+  border-radius: 3px;
+  background: #fff;
+  color: #171717;
+  font: inherit;
+}
+
+.sketch-editor__annotation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .sketch-preview {
   display: block;
   width: 100%;
@@ -3436,7 +3468,8 @@
 .properties-panel__owned-visual-link,
 .sketch-editor__fill button,
 .sketch-editor__fill-control button,
-.sketch-editor__selected-object textarea {
+.sketch-editor__selected-object textarea,
+.sketch-editor__annotation select {
   border-color: var(--osa-border);
   background: var(--osa-surface-raised);
   color: var(--osa-text);
@@ -3523,6 +3556,10 @@
 .sketch-editor__selected-object textarea {
   border-color: var(--osa-border);
   color: var(--osa-text);
+}
+
+.sketch-editor__annotation {
+  border-color: var(--osa-border);
 }
 
 .sketch-editor__colors button.is-selected {

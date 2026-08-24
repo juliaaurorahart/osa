@@ -17,8 +17,10 @@ import {
   cloneSketchDocument,
   createTextNode,
   type SketchDocument,
+  type SketchAnnotationTarget,
   type TextFlowNode,
 } from '../graph/textNode'
+import { annotationTargetsForNodes } from '../graph/sketchAnnotation'
 import {
   visualForOfficialVersion,
   visualForVersion,
@@ -31,6 +33,8 @@ type VisualCanvasPreviewProps = {
   visual: TextFlowNode
   /** Direct child visuals placed on this canvas. Their content is not copied. */
   embeddedVisuals?: VisualEmbedInstance[]
+  /** Current project values used by bound text annotations in this canvas. */
+  annotationTargets?: readonly SketchAnnotationTarget[]
   className?: string
   /** Cards show the one official snapshot; the editor deliberately shows its draft. */
   projection?: 'official' | 'draft'
@@ -43,6 +47,7 @@ type VisualCanvasPreviewProps = {
 export function VisualCanvasPreview({
   visual,
   embeddedVisuals = [],
+  annotationTargets = [],
   className,
   projection = 'official',
 }: VisualCanvasPreviewProps) {
@@ -72,6 +77,7 @@ export function VisualCanvasPreview({
           : undefined
       }
       embeddedVisuals={embeddedVisuals}
+      annotationTargets={annotationTargets}
       ariaLabel={alt}
       className={className}
     />
@@ -99,6 +105,8 @@ type VisualCanvasEditorProps = {
   /** The editor uses graph context only to preview an older saved canvas record. */
   graphNodes?: TextFlowNode[]
   graphEdges?: GraphEdge[]
+  /** Current project values used by bound text annotations in this canvas. */
+  annotationTargets?: readonly SketchAnnotationTarget[]
   /** Records the current draft without changing what cards display. */
   onSaveDraftVersion?: (visualId: string) => void
   /** Captures the current draft as the one official version cards display. */
@@ -166,6 +174,7 @@ export function VisualCanvasEditor({
   onPropertyChange,
   graphNodes,
   graphEdges,
+  annotationTargets: suppliedAnnotationTargets,
   onSaveDraftVersion,
   onMakeOfficialVersion,
   onRestoreVisualVersion,
@@ -174,6 +183,10 @@ export function VisualCanvasEditor({
   // A canvas opens as a protected preview. Editing is a deliberate, local
   // choice and resets when this editor closes and opens again.
   const identity = visualIdentity(visual)
+  // Assembly supplies the complete board list. Keep a graph-context fallback
+  // so an editor used elsewhere still resolves its bound text live.
+  const annotationTargets = suppliedAnnotationTargets
+    ?? annotationTargetsForNodes(graphNodes ?? [])
   const awaitingIdentity = identity === 'untyped'
   const assetReadOnly = isImmutableVisual(visual)
   const [isLocked, setIsLocked] = useState(true)
@@ -595,18 +608,21 @@ export function VisualCanvasEditor({
             <VisualCanvasPreview
               visual={visualForVersion(visual, viewingVersion)}
               embeddedVisuals={versionEmbeds}
+              annotationTargets={annotationTargets}
               projection="draft"
             />
           ) : editingDisabled ? (
             <VisualCanvasPreview
               visual={draftVisual}
               embeddedVisuals={draftEmbeds}
+              annotationTargets={annotationTargets}
               projection="draft"
             />
           ) : (
             <SketchPad
               document={draft.sketch}
               embeddedVisuals={draftEmbeds}
+              annotationTargets={annotationTargets}
               ariaLabel={`${draft.name || 'Canvas'} editor`}
               initialTool="select"
               onChange={(sketch) => {

@@ -45,6 +45,7 @@ export const CURRENT_SOURCE_PATHS = [
   "src/graph/osaData.ts",
   "src/graph/osaImport.ts",
   "src/graph/sharedAssemblyRoute.ts",
+  "src/graph/sketchAnnotation.ts",
   "src/graph/space.ts",
   "src/graph/taskProject.ts",
   "src/graph/textAnchor.ts",

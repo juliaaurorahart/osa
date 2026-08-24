@@ -96,6 +96,7 @@ export function TextNode({
           <SketchPreview
             document={data.sketch}
             height={data.layout.sketchHeight}
+            annotationTargets={data.annotationTargets}
           />
         ) : data.textExpanded && isEditingMarkdown ? (
           <div className="markdown-editor nodrag nopan" onClick={(event) => event.stopPropagation()}>

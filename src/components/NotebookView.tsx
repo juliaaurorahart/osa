@@ -4,6 +4,7 @@ import type { GraphEdge, TextConnectionAnchor } from '../graph/graphEdge'
 import { nodeTitle } from '../graph/taskProject'
 import { resolveTextAnchor } from '../graph/textAnchor'
 import type { SketchDocument, TextFlowNode } from '../graph/textNode'
+import { annotationTargetsForNodes } from '../graph/sketchAnnotation'
 import { SketchPad } from './SketchPad'
 
 type NotebookViewProps = {
@@ -47,6 +48,7 @@ export function NotebookView({
   } | null>(null)
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null)
   const selectedPage = pages.find((page) => page.id === selectedPageId) ?? pages[0]
+  const annotationTargets = annotationTargetsForNodes(nodes)
   const isPreviewing = previewPageId === selectedPage?.id
   const isPageFocused = focusedPageId === selectedPage?.id
   const activeSelection = textSelection?.pageId === selectedPage?.id ? textSelection.anchor : null
@@ -162,6 +164,7 @@ export function NotebookView({
                 <SketchPad
                   key={selectedPage.id}
                   document={selectedPage.data.sketch}
+                  annotationTargets={annotationTargets}
                   onChange={(sketch) => onSketchChange(selectedPage.id, sketch)}
                 />
               </div>

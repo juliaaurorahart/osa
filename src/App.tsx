@@ -50,6 +50,7 @@ import {
   type TextConnectionAnchor,
 } from './graph/graphEdge'
 import { updateTextAnchorAfterEdit } from './graph/textAnchor'
+import { annotationTargetsForNodes } from './graph/sketchAnnotation'
 import { createCurrentSourceHierarchy } from './graph/currentSourceHierarchy'
 import {
   cloneSketchDocument,
@@ -1254,6 +1255,9 @@ function Flow() {
   const selectedEdge = selectedItem?.type === 'edge'
     ? edges.find((edge) => edge.id === selectedItem.id)
     : undefined
+  // Flow-node previews resolve annotations from the full canonical graph, not
+  // just the Space's currently filtered subset of rendered nodes.
+  const annotationTargets = useMemo(() => annotationTargetsForNodes(nodes), [nodes])
 
   const allSpaces = useMemo(() => spaceNodes(nodes), [nodes])
   const selectedSpaceId = nodeSpaceFilter === NO_SPACE_FILTER
@@ -3435,6 +3439,7 @@ function Flow() {
     ...node,
     data: {
       ...node.data,
+      annotationTargets,
       textExpanded: expandedNode?.id === node.id && expandedNode.text,
       detailsExpanded: expandedNode?.id === node.id && expandedNode.details,
       onNameChange,
@@ -3443,7 +3448,7 @@ function Flow() {
       onLayoutChange,
       onKindChange,
     },
-  })), [expandedNode, visibleNodes, onNameChange, onTextChange, onTextInteractionStart, onLayoutChange, onKindChange])
+  })), [annotationTargets, expandedNode, visibleNodes, onNameChange, onTextChange, onTextInteractionStart, onLayoutChange, onKindChange])
 
   const edgesForFlow = useMemo(() => visibleEdges
     .map((edge) => ({

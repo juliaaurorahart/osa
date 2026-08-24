@@ -14,7 +14,10 @@ const server = await createServer({
 })
 
 try {
-  const { createTextNode } = await server.ssrLoadModule('/src/graph/textNode.ts')
+  const {
+    cloneSketchDocument,
+    createTextNode,
+  } = await server.ssrLoadModule('/src/graph/textNode.ts')
   const {
     createBoardSnapshot,
     parseBoardSnapshot,
@@ -27,6 +30,10 @@ try {
     visualEmbedsForCanvas,
   } = await server.ssrLoadModule('/src/graph/visualEmbed.ts')
   const { SketchPreview } = await server.ssrLoadModule('/src/components/SketchPad.tsx')
+  const {
+    annotationTargetsForNodes,
+    resolvedSketchText,
+  } = await server.ssrLoadModule('/src/graph/sketchAnnotation.ts')
   const { visualForOfficialVersion } = await server.ssrLoadModule('/src/graph/visualVersion.ts')
   const { createProjectTaskEdge } = await server.ssrLoadModule('/src/graph/taskProject.ts')
   const { addNodeToSpace } = await server.ssrLoadModule('/src/graph/space.ts')
@@ -569,6 +576,132 @@ try {
       }],
     },
   })
+
+  // An OSA draw text box can show a live value from a canonical project
+  // object. The drawing retains only a reference and a readable fallback,
+  // never a copied name/property value.
+  const annotatedBit = createTextNode({
+    id: 'annotation-bit-5-16',
+    position: { x: 0, y: 0 },
+    name: '5/16 in bit',
+    text: 'A drill bit for the side cut.',
+    kind: 'tool',
+    properties: { 'spec:diameter': '5/16 in' },
+  })
+  const annotationCanvas = structuredClone(visualCanvas)
+  annotationCanvas.id = 'annotation-canvas-1'
+  annotationCanvas.data.name = 'Annotation test canvas'
+  annotationCanvas.data.sketch.layers[0].elements.push(
+    {
+      id: 'annotation-name-1',
+      kind: 'text',
+      x: 80,
+      y: 520,
+      width: 280,
+      height: 40,
+      stroke: '#151515',
+      fill: 'transparent',
+      strokeWidth: 1,
+      opacity: 1,
+      text: 'drill bit',
+      annotation: {
+        kind: 'project-value',
+        targetId: annotatedBit.id,
+        field: 'name',
+        fallback: 'drill bit',
+      },
+      fontSize: 28,
+    },
+    {
+      id: 'annotation-property-1',
+      kind: 'text',
+      x: 80,
+      y: 575,
+      width: 280,
+      height: 40,
+      stroke: '#151515',
+      fill: 'transparent',
+      strokeWidth: 1,
+      opacity: 1,
+      text: 'diameter',
+      annotation: {
+        kind: 'project-value',
+        targetId: annotatedBit.id,
+        field: 'property',
+        propertyKey: 'spec:diameter',
+        fallback: 'diameter',
+      },
+      fontSize: 28,
+    },
+  )
+  const annotationTargets = annotationTargetsForNodes([annotatedBit])
+  const annotationNameElement = annotationCanvas.data.sketch.layers[0].elements.at(-2)
+  const annotationPropertyElement = annotationCanvas.data.sketch.layers[0].elements.at(-1)
+  assert.equal(resolvedSketchText(annotationNameElement, annotationTargets), '5/16 in bit')
+  assert.equal(resolvedSketchText(annotationPropertyElement, annotationTargets), '5/16 in')
+  const annotationMarkup = renderToStaticMarkup(createElement(SketchPreview, {
+    document: annotationCanvas.data.sketch,
+    annotationTargets,
+  }))
+  assert.match(annotationMarkup, /5\/16 in bit/, 'A bound text box renders the current canonical object name.')
+  assert.match(annotationMarkup, /5\/16 in/, 'A bound text box renders a selected canonical property.')
+  assert.doesNotMatch(annotationMarkup, /annotation-bit-5-16/, 'A drawing never exposes its raw target ID as the visible label.')
+
+  const renamedAnnotationTarget = annotationTargetsForNodes([{
+    ...annotatedBit,
+    data: {
+      ...annotatedBit.data,
+      name: '5/16 in purple bit',
+      properties: { ...annotatedBit.data.properties, 'spec:diameter': '0.3125 in' },
+    },
+  }])
+  const renamedAnnotationMarkup = renderToStaticMarkup(createElement(SketchPreview, {
+    document: annotationCanvas.data.sketch,
+    annotationTargets: renamedAnnotationTarget,
+  }))
+  assert.match(renamedAnnotationMarkup, /5\/16 in purple bit/)
+  assert.match(renamedAnnotationMarkup, /0\.3125 in/)
+  assert.deepEqual(
+    annotationNameElement.annotation,
+    {
+      kind: 'project-value',
+      targetId: annotatedBit.id,
+      field: 'name',
+      fallback: 'drill bit',
+    },
+    'Renaming a project object changes the view, not the drawing reference.',
+  )
+
+  const missingTargetMarkup = renderToStaticMarkup(createElement(SketchPreview, {
+    document: annotationCanvas.data.sketch,
+    annotationTargets: [],
+  }))
+  assert.match(missingTargetMarkup, /drill bit/, 'A missing project object leaves the saved fallback visible.')
+  assert.match(missingTargetMarkup, /diameter/, 'A missing property target also retains its readable fallback.')
+
+  const annotationSnapshot = createBoardSnapshot([annotatedBit, annotationCanvas], [])
+  const restoredAnnotationSnapshot = parseBoardSnapshot(JSON.parse(JSON.stringify(annotationSnapshot)))
+  const restoredAnnotationCanvas = restoredAnnotationSnapshot?.nodes.find((node) => node.id === annotationCanvas.id)
+  assert.deepEqual(
+    restoredAnnotationCanvas?.data.sketch.layers[0].elements.slice(-2).map((element) => element.annotation),
+    annotationCanvas.data.sketch.layers[0].elements.slice(-2).map((element) => element.annotation),
+    'Text annotations survive a board save/load round trip.',
+  )
+  const clonedAnnotationSketch = cloneSketchDocument(annotationCanvas.data.sketch)
+  clonedAnnotationSketch.layers[0].elements.at(-2).annotation.fallback = 'changed only in clone'
+  assert.equal(
+    annotationCanvas.data.sketch.layers[0].elements.at(-2).annotation.fallback,
+    'drill bit',
+    'Cloning a canvas deep-copies a text annotation rather than sharing its reference.',
+  )
+
+  const malformedAnnotationSnapshot = structuredClone(annotationSnapshot)
+  delete malformedAnnotationSnapshot.nodes[1].data.sketch.layers[0].elements.at(-1).annotation.propertyKey
+  assert.equal(
+    parseBoardSnapshot(malformedAnnotationSnapshot),
+    null,
+    'A property annotation without its property key is rejected at the board boundary.',
+  )
   const visualCanvasSnapshot = createBoardSnapshot([visualCanvas], [])
   const restoredVisualCanvasSnapshot = parseBoardSnapshot(
     JSON.parse(JSON.stringify(visualCanvasSnapshot)),

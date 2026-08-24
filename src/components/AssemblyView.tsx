@@ -18,6 +18,7 @@ import {
   type OperationVisualPlacement,
 } from '../graph/osaData'
 import type { SketchDocument, TextFlowNode } from '../graph/textNode'
+import { annotationTargetsForNodes } from '../graph/sketchAnnotation'
 import {
   isVisualNode,
   visualAccentColor,
@@ -465,6 +466,9 @@ export function AssemblyView({
 }: AssemblyViewProps) {
   const selectedAssembly = assemblies.find((assembly) => assembly.id === selectedAssemblyId)
     ?? assemblies[0]
+  // Every card and its open canvas resolve annotation references from the
+  // canonical project graph rather than from just that card's local objects.
+  const annotationTargets = useMemo(() => annotationTargetsForNodes(nodes), [nodes])
   const assemblyOperations = useMemo(() => selectedAssembly
     ? operationsForAssembly(selectedAssembly.id, operations, edges)
     : [], [edges, operations, selectedAssembly])
@@ -1766,6 +1770,7 @@ export function AssemblyView({
                                 <VisualCanvasPreview
                                   visual={visual}
                                   embeddedVisuals={visualEmbeds}
+                                  annotationTargets={annotationTargets}
                                   className="assembly-card__visual-preview"
                                 />
                               </button>
@@ -1773,6 +1778,7 @@ export function AssemblyView({
                               <VisualCanvasPreview
                                 visual={visual}
                                 embeddedVisuals={visualEmbeds}
+                                annotationTargets={annotationTargets}
                                 className="assembly-card__visual-preview"
                               />
                             )}
@@ -1850,6 +1856,7 @@ export function AssemblyView({
           onEmbeddedVisualsChange={onEmbeddedVisualsChange}
           graphNodes={nodes}
           graphEdges={edges}
+          annotationTargets={annotationTargets}
           onSaveDraftVersion={onSaveVisualDraftVersion}
           onMakeOfficialVersion={onMakeVisualOfficialVersion}
           onRestoreVisualVersion={onRestoreVisualVersion}

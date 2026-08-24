@@ -13,7 +13,15 @@ import {
   type SketchLayer,
   type SketchPoint,
   type SketchStroke,
+  type SketchAnnotationTarget,
+  type SketchTextAnnotation,
 } from '../graph/textNode'
+import {
+  annotationFieldsForTarget,
+  annotationTargetLabel,
+  resolveSketchTextAnnotation,
+  resolvedSketchText,
+} from '../graph/sketchAnnotation'
 import {
   isImmutableVisual,
   OSA_PROPERTY,
@@ -65,6 +73,8 @@ type SketchPadProps = {
    * the child Visual; this list only supplies the parent-side placement.
    */
   embeddedVisuals?: VisualEmbedInstance[]
+  /** Current project values that text annotations can show live. */
+  annotationTargets?: readonly SketchAnnotationTarget[]
   /** Updates one parent -> child placement while the canvas is being edited. */
   onEmbeddedVisualPlacementChange?: (id: string, placement: VisualEmbedPlacement) => void
   /** Moves several selected parent-side placements in one durable update. */
@@ -491,6 +501,7 @@ function SketchElementGraphic({
   markerNamespace,
   strokeVisible = true,
   fillVisible = true,
+  annotationTargets = [],
 }: {
   element: SketchElement
   interactive?: boolean
@@ -502,10 +513,12 @@ function SketchElementGraphic({
   strokeVisible?: boolean
   /** An interactive compound overlay needs hit targets, not a second fill. */
   fillVisible?: boolean
+  /** Project data is supplied by the containing view, never copied here. */
+  annotationTargets?: readonly SketchAnnotationTarget[]
 }) {
   const bounds = elementBounds(element)
   const hitStroke = Math.max(16, element.strokeWidth + 10)
-  const text = element.text ?? 'Text'
+  const text = resolvedSketchText(element, annotationTargets) || 'Text'
   const stroke = strokeVisible ? element.stroke : 'transparent'
   const fill = fillVisible ? element.fill : 'transparent'
   const arrowMarkerId = `sketch-arrow-head-${markerNamespace ? `${markerNamespace}-` : ''}${element.id}`
@@ -783,12 +796,14 @@ function SketchLayerElementGraphics({
   selectedElementIds = [],
   onElementPointerDown,
   markerNamespace,
+  annotationTargets = [],
 }: {
   layer: SketchLayer
   interactive?: boolean
   selectedElementIds?: readonly string[]
   onElementPointerDown?: (event: ReactPointerEvent<SVGGElement>, element: SketchElement) => void
   markerNamespace?: string
+  annotationTargets?: readonly SketchAnnotationTarget[]
 }) {
   const elements = layer.elements ?? []
 
@@ -801,6 +816,7 @@ function SketchLayerElementGraphics({
             interactive={interactive}
             selected={selectedElementIds.includes(element.id)}
             markerNamespace={markerNamespace}
+            annotationTargets={annotationTargets}
             onPointerDown={(event) => onElementPointerDown?.(event, element)}
           />
       ))}
@@ -817,11 +833,13 @@ function EmbeddedVisualGraphic({
   interactive = false,
   selected = false,
   onPointerDown,
+  annotationTargets = [],
 }: {
   embed: VisualEmbedInstance
   interactive?: boolean
   selected?: boolean
   onPointerDown?: (event: ReactPointerEvent<SVGGElement>) => void
+  annotationTargets?: readonly SketchAnnotationTarget[]
 }) {
   const { placement, visual } = embed
   const accentColor = embed.accentColor
@@ -874,13 +892,18 @@ function EmbeddedVisualGraphic({
         >
           <rect width={childDocument.width} height={childDocument.height} fill={childDocument.background} />
           {(embed.embeddedVisuals ?? []).map((childEmbed) => (
-            <EmbeddedVisualGraphic key={childEmbed.id} embed={childEmbed} />
+            <EmbeddedVisualGraphic
+              key={childEmbed.id}
+              embed={childEmbed}
+              annotationTargets={annotationTargets}
+            />
           ))}
           {visibleLayers(childDocument).flatMap((layer) => [
             <SketchLayerElementGraphics
               key={`${embed.id}-${layer.id}-elements`}
               layer={layer}
               markerNamespace={embed.id}
+              annotationTargets={annotationTargets}
             />,
             ...layer.strokes.map((stroke) => (
               <Stroke key={`${embed.id}-${stroke.id}`} stroke={stroke} erase={false} />
@@ -1014,6 +1037,7 @@ export function SketchPreview({
   height,
   backgroundImage,
   embeddedVisuals = [],
+  annotationTargets = [],
   ariaLabel = 'Sketch preview',
   className,
 }: {
@@ -1022,6 +1046,8 @@ export function SketchPreview({
   backgroundImage?: string
   /** Direct child Visuals placed in this preview's parent canvas. */
   embeddedVisuals?: VisualEmbedInstance[]
+  /** Live project data used by any bound text annotations in this preview. */
+  annotationTargets?: readonly SketchAnnotationTarget[]
   ariaLabel?: string
   className?: string
 }) {
@@ -1044,10 +1070,14 @@ export function SketchPreview({
         />
       ) : null}
       {embeddedVisuals.map((embed) => (
-        <EmbeddedVisualGraphic key={embed.id} embed={embed} />
+        <EmbeddedVisualGraphic key={embed.id} embed={embed} annotationTargets={annotationTargets} />
       ))}
       {visibleLayers(document).flatMap((layer) => [
-        <SketchLayerElementGraphics key={`${layer.id}-elements`} layer={layer} />,
+        <SketchLayerElementGraphics
+          key={`${layer.id}-elements`}
+          layer={layer}
+          annotationTargets={annotationTargets}
+        />,
         ...layer.strokes.map((stroke) => (
           <Stroke key={stroke.id} stroke={stroke} erase={false} />
         )),
@@ -1063,6 +1093,7 @@ export function SketchPad({
   ariaLabel = 'Drawing page',
   initialTool = 'pen',
   embeddedVisuals = [],
+  annotationTargets = [],
   onEmbeddedVisualPlacementChange,
   onEmbeddedVisualPlacementsChange,
   onEmbeddedVisualRemove,
@@ -1087,6 +1118,11 @@ export function SketchPad({
   /** A marquee can highlight more than one placed Visual at a time. */
   const [selectedEmbedIds, setSelectedEmbedIds] = useState<string[]>([])
   const [activeLayerId, setActiveLayerId] = useState(document.layers.at(-1)?.id ?? '')
+  const [annotationTargetId, setAnnotationTargetId] = useState('')
+  const [annotationField, setAnnotationField] = useState<SketchTextAnnotation['field']>('name')
+  const [annotationPropertyKey, setAnnotationPropertyKey] = useState('')
+  /** The last text box whose picker the user explicitly changed. */
+  const [annotationPickerElementId, setAnnotationPickerElementId] = useState<string | null>(null)
   const [historyState, setHistoryState] = useState({ undo: 0, redo: 0 })
   const undoStack = useRef<SketchDocument[]>([])
   const redoStack = useRef<SketchDocument[]>([])
@@ -1163,6 +1199,29 @@ export function SketchPad({
   const selectedEmbed = selectedEmbedIds.length === 1
     ? embeddedVisuals.find((embed) => embed.id === selectedEmbedIds[0])
     : undefined
+  const selectedTextAnnotation = selectedElementCount === 1 && selectedElement?.element.kind === 'text'
+    ? selectedElement.element.annotation
+    : undefined
+  const selectedTextElementId = selectedElement?.element.kind === 'text'
+    ? selectedElement.element.id
+    : undefined
+  // A saved binding supplies the picker defaults. Once the user changes either
+  // picker, its local choice wins for this one text box without needing an
+  // effect that mirrors props into state.
+  const annotationPickerHasLocalValue = annotationPickerElementId === selectedTextElementId
+  const effectiveAnnotationTargetId = annotationPickerHasLocalValue
+    ? annotationTargetId
+    : selectedTextAnnotation?.targetId ?? ''
+  const effectiveAnnotationField = annotationPickerHasLocalValue
+    ? annotationField
+    : selectedTextAnnotation?.field ?? 'name'
+  const effectiveAnnotationPropertyKey = annotationPickerHasLocalValue
+    ? annotationPropertyKey
+    : selectedTextAnnotation?.propertyKey ?? ''
+  const annotationTargetOptions = [...annotationTargets]
+    .sort((left, right) => annotationTargetLabel(left).localeCompare(annotationTargetLabel(right)))
+  const selectedAnnotationTarget = annotationTargetOptions.find((target) => target.id === effectiveAnnotationTargetId)
+  const selectedAnnotationFields = annotationFieldsForTarget(selectedAnnotationTarget)
 
   useEffect(() => {
     zoomRef.current = zoom
@@ -2211,6 +2270,48 @@ export function SketchPad({
     })))
   }
 
+  /** Bind the selected text box to one current project value. */
+  const bindSelectedTextToProjectValue = () => {
+    if (
+      !selectedElement
+      || selectedElementCount !== 1
+      || selectedElement.element.kind !== 'text'
+      || !selectedAnnotationTarget
+    ) return
+
+    const field = selectedAnnotationFields.find((candidate) => (
+      candidate.field === effectiveAnnotationField
+      && candidate.propertyKey === (
+        effectiveAnnotationField === 'property' ? effectiveAnnotationPropertyKey : undefined
+      )
+    ))
+    if (!field) return
+
+    const annotation: SketchTextAnnotation = {
+      kind: 'project-value',
+      targetId: selectedAnnotationTarget.id,
+      field: field.field,
+      ...(field.field === 'property' ? { propertyKey: field.propertyKey } : {}),
+      // The fallback makes a missing/deleted project object readable instead
+      // of turning a finished drawing into a blank annotation.
+      fallback: selectedElement.element.text || annotationTargetLabel(selectedAnnotationTarget),
+    }
+    const currentValue = resolveSketchTextAnnotation(annotation, annotationTargetOptions)
+    updateSelectedElement({
+      annotation,
+      text: currentValue ?? annotation.fallback,
+    })
+  }
+
+  /** Turns a live annotation into ordinary text at its currently shown value. */
+  const makeSelectedTextLiteral = () => {
+    if (!selectedElement || selectedElementCount !== 1 || selectedElement.element.kind !== 'text') return
+    updateSelectedElement({
+      text: resolvedSketchText(selectedElement.element, annotationTargetOptions),
+      annotation: undefined,
+    })
+  }
+
   /** A locked shape updates both numeric size fields as one durable edit. */
   const updateSelectedShapeDimension = (dimension: 'width' | 'height', value: number) => {
     if (!selectedElement || selectedElementCount !== 1 || !isResizableShape(selectedElement.element.kind)) return
@@ -2860,6 +2961,7 @@ export function SketchPad({
               <EmbeddedVisualGraphic
                 key={embed.id}
                 embed={embed}
+                annotationTargets={annotationTargets}
                 interactive={(
                   (tool === 'select' && Boolean(onEmbeddedVisualPlacementChange))
                   || (tool === 'eraser' && Boolean(onEmbeddedVisualRemove))
@@ -2882,6 +2984,7 @@ export function SketchPad({
                 layer={layer}
                 interactive={(tool === 'select' || tool === 'eraser') && !layer.locked}
                 selectedElementIds={selectedElementIdsForRender}
+                annotationTargets={annotationTargets}
                 onElementPointerDown={(event, element) => {
                   if (tool === 'eraser') {
                     event.stopPropagation()
@@ -3150,14 +3253,86 @@ export function SketchPad({
               {selectedElementCount === 1 ? (
                 <>
               {selectedElement.element.kind === 'text' ? (
-                <label>
-                  <span>Text</span>
-                  <textarea
-                    aria-label="Selected text"
-                    value={selectedElement.element.text ?? ''}
-                    onChange={(event) => updateSelectedElement({ text: event.target.value })}
-                  />
-                </label>
+                <>
+                  <label>
+                    <span>Text</span>
+                    <textarea
+                      aria-label="Selected text"
+                      readOnly={Boolean(selectedTextAnnotation)}
+                      value={selectedTextAnnotation
+                        ? resolvedSketchText(selectedElement.element, annotationTargetOptions)
+                        : selectedElement.element.text ?? ''}
+                      onChange={(event) => updateSelectedElement({ text: event.target.value })}
+                    />
+                  </label>
+                  {annotationTargetOptions.length ? (
+                    <section className="sketch-editor__annotation" aria-label="Text annotation">
+                      <h3>project value</h3>
+                      <label>
+                        <span>Item</span>
+                        <select
+                          aria-label="Annotation project item"
+                          value={effectiveAnnotationTargetId}
+                          onChange={(event) => {
+                            const targetId = event.target.value
+                            const target = annotationTargetOptions.find((candidate) => candidate.id === targetId)
+                            const firstField = annotationFieldsForTarget(target)[0]
+                            setAnnotationPickerElementId(selectedTextElementId ?? null)
+                            setAnnotationTargetId(targetId)
+                            setAnnotationField(firstField?.field ?? 'name')
+                            setAnnotationPropertyKey(firstField?.propertyKey ?? '')
+                          }}
+                        >
+                          <option value="">choose item</option>
+                          {annotationTargetOptions.map((target) => (
+                            <option key={target.id} value={target.id}>{annotationTargetLabel(target)}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        <span>Value</span>
+                        <select
+                          aria-label="Annotation project value"
+                          disabled={!selectedAnnotationTarget}
+                          value={effectiveAnnotationField === 'property'
+                            ? `property:${effectiveAnnotationPropertyKey}`
+                            : effectiveAnnotationField}
+                          onChange={(event) => {
+                            const value = event.target.value
+                            setAnnotationPickerElementId(selectedTextElementId ?? null)
+                            setAnnotationTargetId(effectiveAnnotationTargetId)
+                            if (value.startsWith('property:')) {
+                              setAnnotationField('property')
+                              setAnnotationPropertyKey(value.slice('property:'.length))
+                              return
+                            }
+                            setAnnotationField(value as SketchTextAnnotation['field'])
+                            setAnnotationPropertyKey('')
+                          }}
+                        >
+                          {selectedAnnotationFields.map((field) => {
+                            const value = field.field === 'property'
+                              ? `property:${field.propertyKey}`
+                              : field.field
+                            return <option key={value} value={value}>{field.label}</option>
+                          })}
+                        </select>
+                      </label>
+                      <div className="sketch-editor__annotation-actions">
+                        <button
+                          type="button"
+                          disabled={!selectedAnnotationTarget || selectedAnnotationFields.length === 0}
+                          onClick={bindSelectedTextToProjectValue}
+                        >
+                          use value
+                        </button>
+                        {selectedTextAnnotation ? (
+                          <button type="button" onClick={makeSelectedTextLiteral}>make literal</button>
+                        ) : null}
+                      </div>
+                    </section>
+                  ) : null}
+                </>
               ) : null}
               <label>
                 <span>Color</span>

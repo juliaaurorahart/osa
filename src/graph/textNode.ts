@@ -34,6 +34,34 @@ export type SketchCompoundPart = {
 }
 
 /**
+ * A live project value shown by a text object on an OSA drawing.
+ *
+ * The canvas retains only the reference and a readable fallback. It never
+ * copies the target's current name or property into the drawing, so a rename
+ * or attribute edit propagates to every view that renders the canvas.
+ */
+export type SketchTextAnnotation = {
+  kind: 'project-value'
+  /** ID of the canonical project object whose value is displayed. */
+  targetId: string
+  /** Built-in object facts are kept distinct from user-defined properties. */
+  field: 'name' | 'kind' | 'text' | 'property'
+  /** Required only when {@link field} is `property`. */
+  propertyKey?: string
+  /** What to show if this board later no longer contains the target object. */
+  fallback: string
+}
+
+/** Minimal read-only project data used to resolve canvas text annotations. */
+export type SketchAnnotationTarget = {
+  id: string
+  name: string
+  kind: NodeKind
+  text: string
+  properties: Record<string, string>
+}
+
+/**
  * A movable, editable object on a visual canvas.
  *
  * Strokes capture handwriting. Elements capture the deliberate PowerPoint-
@@ -75,6 +103,8 @@ export type SketchElement = {
   groupId?: string
   /** A real combined shape with geometry held in its reusable component parts. */
   compoundParts?: SketchCompoundPart[]
+  /** Optional live project value used instead of the literal text below. */
+  annotation?: SketchTextAnnotation
   text?: string
   fontSize?: number
 }
@@ -126,6 +156,7 @@ export function cloneSketchDocument(document: SketchDocument): SketchDocument {
         ...(element.compoundParts
           ? { compoundParts: element.compoundParts.map((part) => ({ ...part })) }
           : {}),
+        ...(element.annotation ? { annotation: { ...element.annotation } } : {}),
       })),
       strokes: layer.strokes.map((stroke) => ({
         ...stroke,
@@ -183,6 +214,8 @@ export type TextNodeData = {
    * can grow into typed values such as numbers, dates, links, and references.
    */
   properties: Record<string, string>
+  /** Temporary live data for annotations in a Space sketch preview. */
+  annotationTargets?: SketchAnnotationTarget[]
   // Temporary UI behavior supplied by App.tsx when the node is rendered.
   textExpanded?: boolean
   detailsExpanded?: boolean
