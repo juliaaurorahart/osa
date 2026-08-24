@@ -204,11 +204,13 @@ function createAssemblyScopedBoard(board: unknown, assemblyId: string): JsonReco
 
 /**
  * This route is intentionally outside `/api`, so the private Access middleware
- * does not intercept a recipient opening an opaque, read-only share link.
+ * does not intercept a recipient opening a public, read-only share link.
  */
 export const onRequestGet: PagesFunction<Env> = async ({ env, params }) => {
-  const token = params.token
-  if (!token) return json({ error: 'A share token is required.' }, 400)
+  // The dynamic filename is intentionally retained for old opaque links.
+  // It now also receives a human-friendly public share name.
+  const reference = params.token
+  if (!reference) return json({ error: 'A public assembly link is required.' }, 400)
   if (!env.OSA_DB) {
     return json({ error: 'Shared assembly service is not configured.' }, 503)
   }
@@ -219,9 +221,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, params }) => {
         SELECT boards.content, board_shares.assembly_id
         FROM board_shares
         INNER JOIN boards ON boards.id = board_shares.board_id
-        WHERE board_shares.token = ?
+        WHERE board_shares.slug = ? OR board_shares.token = ?
       `)
-      .bind(token)
+      .bind(reference, reference)
       .first<SharedBoardRow>()
     if (!sharedBoard) return json({ error: 'This shared assembly is unavailable.' }, 404)
 

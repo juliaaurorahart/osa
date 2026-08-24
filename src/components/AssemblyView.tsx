@@ -151,6 +151,9 @@ type AssemblyViewProps = {
   readOnly?: boolean
   /** Creates/copies a read-only link for the current assembly. */
   onShare?: () => void
+  /** The compact public path segment placed beside the Share button. */
+  shareSlug?: string
+  onShareSlugChange?: (slug: string) => void
   /** Opens the team-facing instructions projection locally without sharing it. */
   onPreviewInstructions?: () => void
   /** Brief feedback from the host while a share link is being prepared. */
@@ -453,6 +456,8 @@ export function AssemblyView({
   onOpenNode,
   readOnly = false,
   onShare,
+  shareSlug,
+  onShareSlugChange,
   onPreviewInstructions,
   shareStatus,
   shareUrl,
@@ -691,7 +696,18 @@ export function AssemblyView({
                   preview instructions
                 </button>
               ) : null}
-              {onShare ? <button className="text-action" type="button" onClick={onShare}>share</button> : null}
+              {onShare ? (
+                <>
+                  <input
+                    className="assembly-view__share-slug"
+                    aria-label="Public link name"
+                    value={shareSlug ?? ''}
+                    placeholder="public-link-name"
+                    onChange={(event) => onShareSlugChange?.(event.target.value)}
+                  />
+                  <button className="text-action" type="button" onClick={onShare}>share</button>
+                </>
+              ) : null}
             </>
           ) : null}
           <button className="text-action" type="button" onClick={() => window.print()}>print</button>

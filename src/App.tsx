@@ -124,6 +124,7 @@ import {
 import {
   createProjectTaskEdge,
   hasProjectTaskLink,
+  nodeTitle,
   projectNodes as selectProjectNodes,
   taskNodes as selectTaskNodes,
 } from './graph/taskProject'
@@ -138,8 +139,9 @@ import {
   type SavedBoard,
 } from './graph/boardStorage'
 import {
-  sharedAssemblyTokenFromLocation,
+  sharedAssemblyReferenceFromLocation,
   sharedAssemblyUrl,
+  suggestedAssemblyShareSlug,
 } from './graph/sharedAssemblyRoute'
 import shakoLightWrapRaw from '../imports/shako-light-wrap.osa.json?raw'
 import './App.css'
@@ -484,9 +486,9 @@ function readOsaTheme(): OsaTheme {
   return window.localStorage.getItem(OSA_THEME_KEY) === 'light' ? 'light' : 'dark'
 }
 
-/** A share token is intentionally opaque; it is never a board or user ID. */
-function readSharedAssemblyToken() {
-  return sharedAssemblyTokenFromLocation(window.location)
+/** A public share reference is either a friendly name or an old opaque token. */
+function readSharedAssemblyReference() {
+  return sharedAssemblyReferenceFromLocation(window.location)
 }
 
 /** The editor comparison is a temporary dev-only overlay, never a saved view. */
@@ -624,7 +626,7 @@ function nextOperationVisualOrder(operationId: string, edges: GraphEdge[]) {
 /** Owns the live React Flow node/edge state and responds to user actions. */
 function Flow() {
   const [startupDraft] = useState(readLocalDraft)
-  const [sharedAssemblyToken] = useState(readSharedAssemblyToken)
+  const [sharedAssemblyReference] = useState(readSharedAssemblyReference)
   const [theme, setTheme] = useState<OsaTheme>(readOsaTheme)
   const bundledShakoImportPlan = useMemo(
     () => planOsaImport(parseOsaImportPackage(JSON.parse(shakoLightWrapRaw) as unknown)),
@@ -650,7 +652,7 @@ function Flow() {
     details: boolean
   } | null>(null)
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>(() => (
-    readSharedAssemblyToken() ? 'assembly' : readWorkspaceView()
+    readSharedAssemblyReference() ? 'assembly' : readWorkspaceView()
   ))
   // Local preview uses the same component as a shared team link, but stays
   // entirely inside this authoring session until someone explicitly shares it.
@@ -696,12 +698,14 @@ function Flow() {
   const [needsSignIn, setNeedsSignIn] = useState(false)
   const [shareStatus, setShareStatus] = useState('')
   const [shareUrl, setShareUrl] = useState('')
+  const [shareSlug, setShareSlug] = useState('')
+  const shareSlugAssemblyId = useRef<string | null>(null)
   // A public link starts by loading. This prevents a slow phone from briefly
   // showing “unavailable” before the public board response arrives.
   const [sharedAssemblyLoadState, setSharedAssemblyLoadState] = useState<
     'idle' | 'loading' | 'ready' | 'unavailable'
-  >(() => sharedAssemblyToken ? 'loading' : 'idle')
-  const isSharedAssembly = sharedAssemblyToken !== null
+  >(() => sharedAssemblyReference ? 'loading' : 'idle')
+  const isSharedAssembly = sharedAssemblyReference !== null
   const { screenToFlowPosition, setCenter, fitView } = useReactFlow()
   const nextId = useRef(Math.max(
     1,
@@ -1304,6 +1308,7 @@ function Flow() {
     && assemblies.some((assembly) => assembly.id === selectedAssemblyId)
     ? selectedAssemblyId
     : (assemblies[0]?.id ?? null)
+  const activeAssembly = assemblies.find((assembly) => assembly.id === activeAssemblyId) ?? null
 
   useEffect(() => {
     if (activeAssemblyId) {
@@ -1312,6 +1317,17 @@ function Flow() {
       window.localStorage.removeItem(SELECTED_ASSEMBLY_KEY)
     }
   }, [activeAssemblyId])
+
+  // Each Assembly begins with a readable link name derived from its title.
+  // Switching Assemblies must not carry the previous card's public name over.
+  useEffect(() => {
+    if (isSharedAssembly) return
+    if (shareSlugAssemblyId.current === activeAssemblyId) return
+    shareSlugAssemblyId.current = activeAssemblyId
+    setShareSlug(activeAssembly ? suggestedAssemblyShareSlug(nodeTitle(activeAssembly)) : '')
+    setShareStatus('')
+    setShareUrl('')
+  }, [activeAssembly, activeAssemblyId, isSharedAssembly])
 
   const activeNotebookPageId = selectedNotebookPageId
     && notebookPages.some((page) => page.id === selectedNotebookPageId)
@@ -3176,12 +3192,12 @@ function Flow() {
    * written into the recipient's local draft or private board list.
    */
   useEffect(() => {
-    if (!sharedAssemblyToken) return
+    if (!sharedAssemblyReference) return
 
     let cancelled = false
     setSharedAssemblyLoadState('loading')
     setShareStatus('Loading shared assembly…')
-    void fetchSharedAssembly(sharedAssemblyToken)
+    void fetchSharedAssembly(sharedAssemblyReference)
       .then(({ board, assemblyId }) => {
         if (cancelled) return
         applyBoardSnapshot(board.snapshot)
@@ -3203,7 +3219,7 @@ function Flow() {
     return () => {
       cancelled = true
     }
-  }, [applyBoardSnapshot, sharedAssemblyToken])
+  }, [applyBoardSnapshot, sharedAssemblyReference])
 
   const saveBoardToDatabase = useCallback(async () => {
     const name = boardName.trim()
@@ -3239,7 +3255,7 @@ function Flow() {
     }
   }, [boardId, boardName, edges, nodes, savedBoards])
 
-  /** Saves first, then creates an opaque, read-only link to the selected assembly. */
+  /** Saves first, then creates a public, read-only link to the selected assembly. */
   const createAssemblyShareLink = useCallback(async () => {
     if (!activeAssemblyId) {
       setShareStatus('Choose an assembly before making a share link.')
@@ -3249,6 +3265,12 @@ function Flow() {
     const name = boardName.trim()
     if (!name) {
       setShareStatus('Give this board a name before making a share link.')
+      return
+    }
+
+    const requestedSlug = shareSlug.trim()
+    if (!requestedSlug) {
+      setShareStatus('Give this public link a name before sharing it.')
       return
     }
 
@@ -3268,8 +3290,9 @@ function Flow() {
       setSelectedBoardId(savedBoard.id)
       setBoardName(name)
 
-      const token = await createAssemblyShare(savedBoard.id, activeAssemblyId)
-      const nextShareUrl = sharedAssemblyUrl(window.location.origin, token)
+      const share = await createAssemblyShare(savedBoard.id, activeAssemblyId, requestedSlug)
+      const nextShareUrl = sharedAssemblyUrl(window.location.origin, share.slug || share.token)
+      setShareSlug(share.slug || requestedSlug)
       setShareUrl(nextShareUrl)
 
       try {
@@ -3284,7 +3307,7 @@ function Flow() {
         ? 'Online board storage is unavailable here.'
         : error instanceof Error ? error.message : 'Unable to create a share link.')
     }
-  }, [activeAssemblyId, boardId, boardName, edges, nodes, savedBoards])
+  }, [activeAssemblyId, boardId, boardName, edges, nodes, savedBoards, shareSlug])
 
   const loadSelectedBoard = useCallback(() => {
     const savedBoard = savedBoards.find((board) => board.id === selectedBoardId)
@@ -3992,6 +4015,8 @@ function Flow() {
               onSketchChange={onSketchChange}
               onOpenNode={openNodeInSpace}
               onShare={() => void createAssemblyShareLink()}
+              shareSlug={shareSlug}
+              onShareSlugChange={setShareSlug}
               onPreviewInstructions={() => setAssemblyInstructionsPreview(true)}
               shareStatus={shareStatus}
               shareUrl={shareUrl}

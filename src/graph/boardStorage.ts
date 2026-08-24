@@ -19,7 +19,10 @@ type BoardsResponse = {
 
 type CreateShareResponse = {
   token: string
+  slug: string | null
 }
+
+export type AssemblyShare = CreateShareResponse
 
 export class BoardAccessError extends Error {
   constructor() {
@@ -117,27 +120,36 @@ export async function saveBoard(board: SavedBoard): Promise<void> {
   if (!response.ok) throw await responseError(response)
 }
 
-/** Creates an opaque, read-only link to one assembly on a saved private board. */
-export async function createAssemblyShare(boardId: string, assemblyId: string): Promise<string> {
+/** Creates a public, read-only link to one assembly on a saved private board. */
+export async function createAssemblyShare(
+  boardId: string,
+  assemblyId: string,
+  slug: string,
+): Promise<AssemblyShare> {
   const response = await boardRequest('/api/shares', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ boardId, assemblyId }),
+    body: JSON.stringify({ boardId, assemblyId, slug }),
   })
   if (!response.ok) throw await responseError(response)
 
   const body: unknown = await response.json()
-  if (!isRecord(body) || typeof body.token !== 'string' || !body.token) {
+  if (
+    !isRecord(body)
+    || typeof body.token !== 'string'
+    || !body.token
+    || (body.slug !== null && typeof body.slug !== 'string')
+  ) {
     throw new Error('The board service returned an invalid share link.')
   }
-  return (body as CreateShareResponse).token
+  return body as AssemblyShare
 }
 
 /** Loads the saved board and assembly selected by a public, read-only share link. */
-export async function fetchSharedAssembly(token: string): Promise<SharedAssembly> {
+export async function fetchSharedAssembly(reference: string): Promise<SharedAssembly> {
   let response: Response
   try {
-    response = await fetch(`/shared/${encodeURIComponent(token)}`, {
+    response = await fetch(`/shared/${encodeURIComponent(reference)}`, {
       headers: { accept: 'application/json' },
       cache: 'no-store',
       redirect: 'manual',

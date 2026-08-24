@@ -4,9 +4,13 @@ type AccessData = { cloudflareAccess?: { JWT?: { payload?: { email?: string } } 
 type CreateShareBody = {
   boardId?: unknown
   assemblyId?: unknown
+  slug?: unknown
 }
 
 type OwnedBoard = { content: string }
+type ExistingShare = { token: string }
+
+const MAX_SHARE_SLUG_LENGTH = 80
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -48,6 +52,35 @@ function createShareToken() {
   return `${crypto.randomUUID().replaceAll('-', '')}${crypto.randomUUID().replaceAll('-', '')}`
 }
 
+/**
+ * Public names intentionally stay simple: lower-case letters, numbers, and
+ * hyphens. Normalizing lets an author type a natural title such as
+ * "Shako Hat Assembly" while the link remains a predictable URL segment.
+ */
+function normalizeShareSlug(value: unknown) {
+  if (typeof value !== 'string') return null
+
+  const slug = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+
+  if (
+    !slug
+    || slug.length > MAX_SHARE_SLUG_LENGTH
+    || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)
+    // Do not let a human-readable name impersonate an old opaque token.
+    || /^[a-f0-9]{64}$/.test(slug)
+  ) return null
+
+  return slug
+}
+
+function isDuplicateSlugError(error: unknown) {
+  return error instanceof Error && /UNIQUE constraint failed: board_shares\.slug/i.test(error.message)
+}
+
 /** Creates a public, read-only link for an assembly on one of the owner's saved boards. */
 export const onRequestPost: PagesFunction<Env, string, AccessData> = async ({ request, env, data }) => {
   const owner = ownerEmail(data)
@@ -56,8 +89,16 @@ export const onRequestPost: PagesFunction<Env, string, AccessData> = async ({ re
   const body = await request.json().catch(() => null) as CreateShareBody | null
   const boardId = body?.boardId
   const assemblyId = body?.assemblyId
+  const requestedSlug = body?.slug
   if (typeof boardId !== 'string' || !boardId || typeof assemblyId !== 'string' || !assemblyId) {
     return json({ error: 'A saved board and assembly are required to create a share link.' }, 400)
+  }
+
+  // Old browser tabs may not send a slug. Keep their token-only share flow
+  // working while every current authoring screen sends a friendly name.
+  const slug = requestedSlug === undefined ? null : normalizeShareSlug(requestedSlug)
+  if (requestedSlug !== undefined && !slug) {
+    return json({ error: 'Use a public link name with letters, numbers, and hyphens.' }, 400)
   }
 
   // A user may only expose a board that they already own. The public route
@@ -71,11 +112,41 @@ export const onRequestPost: PagesFunction<Env, string, AccessData> = async ({ re
     return json({ error: 'Choose an assembly that exists in this saved board.' }, 400)
   }
 
-  const token = createShareToken()
-  await env.OSA_DB
-    .prepare('INSERT INTO board_shares (token, board_id, assembly_id) VALUES (?, ?, ?)')
-    .bind(token, boardId, assemblyId)
-    .run()
+  try {
+    if (slug) {
+      // One current friendly name is enough for an Assembly. Updating the
+      // latest row retains its long token, so existing pasted links survive.
+      const existing = await env.OSA_DB
+        .prepare(`
+          SELECT token
+          FROM board_shares
+          WHERE board_id = ? AND assembly_id = ?
+          ORDER BY created_at DESC
+          LIMIT 1
+        `)
+        .bind(boardId, assemblyId)
+        .first<ExistingShare>()
 
-  return json({ token })
+      if (existing) {
+        await env.OSA_DB
+          .prepare('UPDATE board_shares SET slug = ? WHERE token = ?')
+          .bind(slug, existing.token)
+          .run()
+        return json({ token: existing.token, slug })
+      }
+    }
+
+    const token = createShareToken()
+    await env.OSA_DB
+      .prepare('INSERT INTO board_shares (token, board_id, assembly_id, slug) VALUES (?, ?, ?, ?)')
+      .bind(token, boardId, assemblyId, slug)
+      .run()
+
+    return json({ token, slug })
+  } catch (error) {
+    if (isDuplicateSlugError(error)) {
+      return json({ error: 'That public link name is already in use.' }, 409)
+    }
+    return json({ error: 'Unable to save this public link.' }, 500)
+  }
 }

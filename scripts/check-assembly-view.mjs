@@ -250,6 +250,9 @@ try {
     onSketchChange: noop,
     onPropertyChange: noop,
     onOpenNode: noop,
+    onShare: noop,
+    shareSlug: 'shako-hat-assembly',
+    onShareSlugChange: noop,
     onPreviewInstructions: noop,
   }))
 
@@ -272,6 +275,8 @@ try {
   assert.doesNotMatch(markup, /This card represents/)
   assert.doesNotMatch(markup, /<span>Out<\/span>/)
   assert.match(markup, /<h1 id="assembly-view-title">Assembly<\/h1>/)
+  assert.match(markup, /aria-label="Public link name"/)
+  assert.match(markup, /value="shako-hat-assembly"/)
   assert.doesNotMatch(markup, /assembly instructions/)
   assert.match(markup, />visuals</)
   assert.match(markup, /aria-label="Connector Box Drilled — Assembly Picture name"/)

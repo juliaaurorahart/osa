@@ -31,28 +31,36 @@ try {
   const { createProjectTaskEdge } = await server.ssrLoadModule('/src/graph/taskProject.ts')
   const { addNodeToSpace } = await server.ssrLoadModule('/src/graph/space.ts')
   const {
-    sharedAssemblyTokenFromLocation,
+    sharedAssemblyReferenceFromLocation,
     sharedAssemblyUrl,
+    suggestedAssemblyShareSlug,
   } = await server.ssrLoadModule('/src/graph/sharedAssemblyRoute.ts')
   const { onRequestGet: getSharedAssembly } = await server.ssrLoadModule('/functions/shared/[token].ts')
   const { onRequestPost: createSharedAssembly } = await server.ssrLoadModule('/functions/api/shares.ts')
 
   const shareToken = 'a'.repeat(64)
+  const shareSlug = 'shako-hat-assembly'
   assert.equal(
-    sharedAssemblyTokenFromLocation({ pathname: `/assembly/${shareToken}`, search: '' }),
+    sharedAssemblyReferenceFromLocation({ pathname: `/assembly/${shareToken}`, search: '' }),
     shareToken,
-    'A recipient can open the clean assembly URL directly.',
+    'A recipient can still open an old opaque assembly URL directly.',
   )
   assert.equal(
-    sharedAssemblyTokenFromLocation({ pathname: '/', search: `?share=${shareToken}` }),
+    sharedAssemblyReferenceFromLocation({ pathname: `/assembly/${shareSlug}`, search: '' }),
+    shareSlug,
+    'A recipient can open a readable assembly URL directly.',
+  )
+  assert.equal(
+    sharedAssemblyReferenceFromLocation({ pathname: '/', search: `?share=${shareToken}` }),
     shareToken,
     'Previously copied query-string share URLs remain valid.',
   )
   assert.equal(
-    sharedAssemblyUrl('https://osa.juliaaurorahart.com', shareToken),
-    `https://osa.juliaaurorahart.com/assembly/${shareToken}`,
-    'New links use a paste-friendly public assembly path.',
+    sharedAssemblyUrl('https://osa.juliaaurorahart.com', shareSlug),
+    `https://osa.juliaaurorahart.com/assembly/${shareSlug}`,
+    'New links use a human-readable public assembly path.',
   )
+  assert.equal(suggestedAssemblyShareSlug('Shako Hat Assembly!'), shareSlug)
   const unconfiguredShareResponse = await getSharedAssembly({
     env: {},
     params: { token: shareToken },
@@ -67,10 +75,52 @@ try {
     { error: 'Shared assembly service is not configured.' },
   )
 
+  const publicLookups = []
+  const publicShareResponse = await getSharedAssembly({
+    env: {
+      OSA_DB: {
+        prepare(query) {
+          assert.match(query, /board_shares\.slug = \? OR board_shares\.token = \?/)
+          return {
+            bind: (...references) => ({
+              first: async () => {
+                publicLookups.push(references)
+                return {
+                  content: JSON.stringify({
+                    id: 'shared-board',
+                    name: 'Shared board',
+                    updatedAt: '2026-08-24T00:00:00.000Z',
+                    snapshot: {
+                      nodes: [{
+                        id: 'verified-assembly',
+                        data: {
+                          kind: 'part',
+                          properties: { [OSA_PROPERTY.role]: 'assembly' },
+                        },
+                      }],
+                      edges: [],
+                    },
+                  }),
+                  assembly_id: 'verified-assembly',
+                }
+              },
+            }),
+          }
+        },
+      },
+    },
+    params: { token: shareSlug },
+  })
+  assert.equal(publicShareResponse.status, 200)
+  assert.equal((await publicShareResponse.json()).assemblyId, 'verified-assembly')
+  assert.deepEqual(publicLookups, [[shareSlug, shareSlug]])
+
   const inserts = []
+  const updates = []
+  const shareRows = []
   const shareDatabase = {
     prepare(query) {
-      if (query.includes('SELECT content')) {
+      if (query.includes('SELECT content FROM boards')) {
         return {
           bind: () => ({
             first: async () => ({
@@ -82,6 +132,12 @@ try {
                       kind: 'part',
                       properties: { [OSA_PROPERTY.role]: 'assembly' },
                     },
+                  }, {
+                    id: 'other-assembly',
+                    data: {
+                      kind: 'part',
+                      properties: { [OSA_PROPERTY.role]: 'assembly' },
+                    },
                   }],
                 },
               }),
@@ -89,10 +145,40 @@ try {
           }),
         }
       }
+      if (query.includes('SELECT token') && query.includes('FROM board_shares')) {
+        return {
+          bind: (boardId, assemblyId) => ({
+            first: async () => shareRows.find((row) => (
+              row.boardId === boardId && row.assemblyId === assemblyId
+            )) ?? null,
+          }),
+        }
+      }
+      if (query.includes('UPDATE board_shares SET slug')) {
+        return {
+          bind: (slug, token) => ({
+            run: async () => {
+              const row = shareRows.find((share) => share.token === token)
+              if (shareRows.some((share) => share.slug === slug && share.token !== token)) {
+                throw new Error('UNIQUE constraint failed: board_shares.slug')
+              }
+              row.slug = slug
+              updates.push([slug, token])
+            },
+          }),
+        }
+      }
       if (query.includes('INSERT INTO board_shares')) {
         return {
           bind: (...values) => ({
-            run: async () => { inserts.push(values) },
+            run: async () => {
+              const [token, boardId, assemblyId, slug] = values
+              if (shareRows.some((share) => share.slug === slug)) {
+                throw new Error('UNIQUE constraint failed: board_shares.slug')
+              }
+              shareRows.push({ token, boardId, assemblyId, slug })
+              inserts.push(values)
+            },
           }),
         }
       }
@@ -103,19 +189,64 @@ try {
   const createValidShareResponse = await createSharedAssembly({
     request: new Request('https://osa.example/api/shares', {
       method: 'POST',
-      body: JSON.stringify({ boardId: 'board-1', assemblyId: 'verified-assembly' }),
+      body: JSON.stringify({
+        boardId: 'board-1',
+        assemblyId: 'verified-assembly',
+        slug: 'Shako Hat Assembly',
+      }),
     }),
     env: { OSA_DB: shareDatabase },
     data: signedInData,
   })
   assert.equal(createValidShareResponse.status, 200)
-  assert.equal((await createValidShareResponse.json()).token.length, 64)
-  assert.equal(inserts.length, 1, 'A verified Assembly can mint one public capability token.')
+  const createdShare = await createValidShareResponse.json()
+  assert.equal(createdShare.token.length, 64)
+  assert.equal(createdShare.slug, shareSlug)
+  assert.equal(inserts.length, 1, 'A verified Assembly can mint one public link.')
+
+  const renameShareResponse = await createSharedAssembly({
+    request: new Request('https://osa.example/api/shares', {
+      method: 'POST',
+      body: JSON.stringify({
+        boardId: 'board-1',
+        assemblyId: 'verified-assembly',
+        slug: 'Shako Hat Instructions',
+      }),
+    }),
+    env: { OSA_DB: shareDatabase },
+    data: signedInData,
+  })
+  const renamedShare = await renameShareResponse.json()
+  assert.equal(renameShareResponse.status, 200)
+  assert.equal(renamedShare.token, createdShare.token, 'Renaming keeps the legacy link alive.')
+  assert.equal(renamedShare.slug, 'shako-hat-instructions')
+  assert.equal(updates.length, 1, 'Renaming changes one existing share record.')
+
+  const duplicateShareResponse = await createSharedAssembly({
+    request: new Request('https://osa.example/api/shares', {
+      method: 'POST',
+      body: JSON.stringify({
+        boardId: 'board-1',
+        assemblyId: 'other-assembly',
+        slug: 'Shako Hat Instructions',
+      }),
+    }),
+    env: { OSA_DB: shareDatabase },
+    data: signedInData,
+  })
+  assert.equal(duplicateShareResponse.status, 409)
+  assert.deepEqual(await duplicateShareResponse.json(), {
+    error: 'That public link name is already in use.',
+  })
 
   const createBrokenShareResponse = await createSharedAssembly({
     request: new Request('https://osa.example/api/shares', {
       method: 'POST',
-      body: JSON.stringify({ boardId: 'board-1', assemblyId: 'not-in-board' }),
+      body: JSON.stringify({
+        boardId: 'board-1',
+        assemblyId: 'not-in-board',
+        slug: 'missing-assembly',
+      }),
     }),
     env: { OSA_DB: shareDatabase },
     data: signedInData,

@@ -41,6 +41,20 @@
   font: inherit;
 }
 
+/* The author chooses the human-readable portion of /assembly/<name>. */
+.assembly-view__share-slug {
+  box-sizing: border-box;
+  width: min(21ch, 40vw);
+  min-width: 11ch;
+  padding: 3px 6px;
+  border: 1px solid var(--osa-border);
+  border-radius: 4px;
+  background: var(--osa-input);
+  color: var(--osa-text);
+  font: inherit;
+  font-size: 0.84rem;
+}
+
 .assembly-view__shared-label {
   display: inline-flex;
   align-items: center;
