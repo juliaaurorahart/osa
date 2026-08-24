@@ -116,6 +116,9 @@ type ActiveRegionSelection = {
   toggleSelection: boolean
 }
 
+/** The Select toolbar lets a person choose precise or forgiving marquee picks. */
+type MarqueeSelectionMode = 'inside' | 'touching'
+
 /** A canvas-local copy buffer remembers each selected shape and its layer. */
 type ShapeClipboardItem = {
   layerId: string
@@ -370,6 +373,34 @@ function normalizedBox(start: SketchPoint, end: SketchPoint): ElementBounds {
     width: Math.abs(end.x - start.x),
     height: Math.abs(end.y - start.y),
   }
+}
+
+/**
+ * Decide whether a drawing or placed Visual belongs in the current marquee.
+ * `inside` is deliberately the default: an item must fit completely inside
+ * the rectangle. `touching` includes every item whose drawing box overlaps
+ * or touches the marquee boundary.
+ */
+function marqueeMatchesBounds(
+  marquee: ElementBounds,
+  item: ElementBounds,
+  mode: MarqueeSelectionMode,
+) {
+  if (mode === 'inside') {
+    return (
+      item.x >= marquee.x
+      && item.y >= marquee.y
+      && item.x + item.width <= marquee.x + marquee.width
+      && item.y + item.height <= marquee.y + marquee.height
+    )
+  }
+
+  return (
+    item.x <= marquee.x + marquee.width
+    && item.x + item.width >= marquee.x
+    && item.y <= marquee.y + marquee.height
+    && item.y + item.height >= marquee.y
+  )
 }
 
 /** Keep a line or move on the dominant horizontal/vertical axis while Shift is held. */
@@ -1024,10 +1055,12 @@ export function SketchPad({
   const [activeStrokeLayerId, setActiveStrokeLayerId] = useState<string | null>(null)
   const [activeElement, setActiveElement] = useState<ActiveElementInteraction | null>(null)
   const [activeRegionSelection, setActiveRegionSelection] = useState<ActiveRegionSelection | null>(null)
+  const [marqueeSelectionMode, setMarqueeSelectionMode] = useState<MarqueeSelectionMode>('inside')
   const [selectedElementIds, setSelectedElementIds] = useState<string[]>([])
   const [clipboardCount, setClipboardCount] = useState(0)
   const [activeEmbed, setActiveEmbed] = useState<ActiveEmbedInteraction | null>(null)
-  const [selectedEmbedId, setSelectedEmbedId] = useState<string | null>(null)
+  /** A marquee can highlight more than one placed Visual at a time. */
+  const [selectedEmbedIds, setSelectedEmbedIds] = useState<string[]>([])
   const [activeLayerId, setActiveLayerId] = useState(document.layers.at(-1)?.id ?? '')
   const [historyState, setHistoryState] = useState({ undo: 0, redo: 0 })
   const undoStack = useRef<SketchDocument[]>([])
@@ -1100,7 +1133,10 @@ export function SketchPad({
     && selectedElement.element.kind === 'compound'
     && selectedElement.element.compoundParts?.length,
   )
-  const selectedEmbed = embeddedVisuals.find((embed) => embed.id === selectedEmbedId)
+  /** The detailed editor remains intentionally one-Visual-at-a-time. */
+  const selectedEmbed = selectedEmbedIds.length === 1
+    ? embeddedVisuals.find((embed) => embed.id === selectedEmbedIds[0])
+    : undefined
 
   useEffect(() => {
     zoomRef.current = zoom
@@ -1315,24 +1351,37 @@ export function SketchPad({
 
     const bounds = normalizedBox(selection.startPoint, selection.endPoint)
     // A normal click on empty canvas keeps the familiar behavior: no object is
-    // selected. A real drag selects every shape the marquee touches, including
-    // a shape that extends beyond the selection box.
+    // selected. A real drag uses the selected marquee mode for both drawing
+    // shapes and placed Visual boxes.
     if (bounds.width < 4 || bounds.height < 4) return true
     const selectedIds = document.layers.flatMap((layer) => (
-      layer.visible && !layer.locked
-        ? (layer.elements ?? []).flatMap((element) => {
-          const elementBox = elementBounds(element)
-          const intersectsMarquee = (
-            elementBox.x <= bounds.x + bounds.width
-            && elementBox.x + elementBox.width >= bounds.x
-            && elementBox.y <= bounds.y + bounds.height
-            && elementBox.y + elementBox.height >= bounds.y
-          )
-          return intersectsMarquee ? [element.id] : []
-        })
-        : []
+      !layer.visible || layer.locked
+        ? []
+        : (() => {
+          const elements = layer.elements ?? []
+          // A group is selected as one thing. In Inside mode, every member
+          // must fit; in Touching mode, any overlap of its full group bounds
+          // is enough to select the complete group.
+          const groupBounds = new Map<string, ElementBounds>()
+          for (const element of elements) {
+            if (!element.groupId || groupBounds.has(element.groupId)) continue
+            const members = elements.filter((candidate) => candidate.groupId === element.groupId)
+            groupBounds.set(element.groupId, combinedElementBounds(members))
+          }
+          return elements.flatMap((element) => {
+            const itemBounds = element.groupId
+              ? groupBounds.get(element.groupId) ?? elementBounds(element)
+              : elementBounds(element)
+            return marqueeMatchesBounds(bounds, itemBounds, marqueeSelectionMode)
+              ? [element.id]
+              : []
+          })
+        })()
     ))
-    const regionIds = selectedIdsIncludingLayerGroups(document, selectedIds)
+    const regionIds = selectedIds
+    const regionEmbedIds = embeddedVisuals.flatMap((embed) => (
+      marqueeMatchesBounds(bounds, embed.placement, marqueeSelectionMode) ? [embed.id] : []
+    ))
     if (selection.toggleSelection) {
       setSelectedElementIds((currentIds) => {
         const currentIdSet = new Set(currentIds)
@@ -1346,8 +1395,19 @@ export function SketchPad({
           (layer.elements ?? []).flatMap((element) => currentIdSet.has(element.id) ? [element.id] : [])
         ))
       })
+      setSelectedEmbedIds((currentIds) => {
+        const currentIdSet = new Set(currentIds)
+        const regionAlreadySelected = regionEmbedIds.length > 0
+          && regionEmbedIds.every((id) => currentIdSet.has(id))
+        for (const id of regionEmbedIds) {
+          if (regionAlreadySelected) currentIdSet.delete(id)
+          else currentIdSet.add(id)
+        }
+        return embeddedVisuals.flatMap((embed) => currentIdSet.has(embed.id) ? [embed.id] : [])
+      })
     } else {
       setSelectedElementIds(regionIds)
+      setSelectedEmbedIds(regionEmbedIds)
     }
     return true
   }
@@ -1410,7 +1470,7 @@ export function SketchPad({
     }
     activeEmbedRef.current = interaction
     setActiveEmbed(interaction)
-    setSelectedEmbedId(embed.id)
+    setSelectedEmbedIds([embed.id])
     setSelectedElementIds([])
   }
 
@@ -1534,7 +1594,7 @@ export function SketchPad({
           ))
         ))
       })
-      setSelectedEmbedId(null)
+      setSelectedEmbedIds([])
       return
     }
     if (!surface.hasPointerCapture(event.pointerId)) surface.setPointerCapture(event.pointerId)
@@ -1568,7 +1628,7 @@ export function SketchPad({
         ? selectedIdsIncludingLayerGroups(document, groupMembers.map((member) => member.id))
         : selectedIdsIncludingLayerGroups(document, [element.id]),
     )
-    setSelectedEmbedId(null)
+    setSelectedEmbedIds([])
   }
 
   const beginInteraction = (event: ReactPointerEvent<SVGSVGElement>) => {
@@ -1612,8 +1672,10 @@ export function SketchPad({
       }
       activeRegionSelectionRef.current = selection
       setActiveRegionSelection(selection)
-      if (!selection.toggleSelection) setSelectedElementIds([])
-      setSelectedEmbedId(null)
+      if (!selection.toggleSelection) {
+        setSelectedElementIds([])
+        setSelectedEmbedIds([])
+      }
       return
     }
 
@@ -1640,7 +1702,7 @@ export function SketchPad({
         elements: [...(layer.elements ?? []), element],
       })))
       setSelectedElementIds([element.id])
-      setSelectedEmbedId(null)
+      setSelectedEmbedIds([])
       setTool('select')
       return
     }
@@ -1661,7 +1723,7 @@ export function SketchPad({
       activeElementRef.current = interaction
       setActiveElement(interaction)
       setSelectedElementIds([element.id])
-      setSelectedEmbedId(null)
+      setSelectedEmbedIds([])
       return
     }
 
@@ -2092,7 +2154,7 @@ export function SketchPad({
       }),
     })))
     setSelectedElementIds([compound.id])
-    setSelectedEmbedId(null)
+    setSelectedEmbedIds([])
   }
 
   /** Restore a compound shape's saved primitive parts as independent shapes. */
@@ -2260,7 +2322,7 @@ export function SketchPad({
     pasteOffsetRef.current += 1
     commit(nextDocument)
     setSelectedElementIds(pastedIds)
-    setSelectedEmbedId(null)
+    setSelectedEmbedIds([])
   }, [commit, document])
 
   /**
@@ -2284,8 +2346,8 @@ export function SketchPad({
   /** Removes only this canvas's placement edge; the child Visual survives. */
   const removeEmbed = useCallback((embedId: string) => {
     onEmbeddedVisualRemove?.(embedId)
-    if (selectedEmbedId === embedId) setSelectedEmbedId(null)
-  }, [onEmbeddedVisualRemove, selectedEmbedId])
+    setSelectedEmbedIds((currentIds) => currentIds.filter((id) => id !== embedId))
+  }, [onEmbeddedVisualRemove])
 
   useEffect(() => {
     const handleCanvasShortcut = (event: KeyboardEvent) => {
@@ -2342,19 +2404,17 @@ export function SketchPad({
         return
       }
       if (event.key !== 'Backspace' && event.key !== 'Delete') return
-      if (selectedEmbed) {
-        event.preventDefault()
-        removeEmbed(selectedEmbed.id)
-        return
-      }
-      if (selectedElementCount === 0) return
+      if (selectedEmbedIds.length === 0 && selectedElementCount === 0) return
       event.preventDefault()
-      deleteSelectedElements()
+      // Embedded Visuals are placements, so Delete only removes their parent
+      // placement—not the child Visual that can be used elsewhere.
+      for (const embedId of selectedEmbedIds) removeEmbed(embedId)
+      if (selectedElementCount > 0) deleteSelectedElements()
     }
 
     window.addEventListener('keydown', handleCanvasShortcut)
     return () => window.removeEventListener('keydown', handleCanvasShortcut)
-  }, [clipboardCount, copySelectedElements, deleteSelectedElements, nudgeSelectedElements, pasteCopiedElements, redo, removeEmbed, selectedElementCount, selectedEmbed, undo])
+  }, [clipboardCount, copySelectedElements, deleteSelectedElements, nudgeSelectedElements, pasteCopiedElements, redo, removeEmbed, selectedElementCount, selectedEmbedIds, undo])
 
   const activeElementsById = new Map(
     activeElement?.groupElements?.map((element) => [element.id, element])
@@ -2390,7 +2450,9 @@ export function SketchPad({
       ? { ...embed, placement: { ...activeEmbed.placement } }
       : embed
   ))
-  const selectedEmbedForRender = renderedEmbeds.find((embed) => embed.id === selectedEmbedId)
+  const selectedEmbedForRender = selectedEmbedIds.length === 1
+    ? renderedEmbeds.find((embed) => embed.id === selectedEmbedIds[0])
+    : undefined
   const selectedEmbedPlacement = selectedEmbedForRender?.placement ?? selectedEmbed?.placement
   /** Update the parent-side image box only; the referenced Visual is unchanged. */
   const updateSelectedEmbedPlacement = (update: Partial<VisualEmbedPlacement>) => {
@@ -2446,6 +2508,28 @@ export function SketchPad({
             </button>
           ))}
         </div>
+        {tool === 'select' ? (
+          <div className="sketch-editor__tool-group" aria-label="Marquee selection mode">
+            <button
+              type="button"
+              className={marqueeSelectionMode === 'inside' ? 'is-selected' : undefined}
+              aria-pressed={marqueeSelectionMode === 'inside'}
+              title="Select items fully inside the marquee"
+              onClick={() => setMarqueeSelectionMode('inside')}
+            >
+              inside
+            </button>
+            <button
+              type="button"
+              className={marqueeSelectionMode === 'touching' ? 'is-selected' : undefined}
+              aria-pressed={marqueeSelectionMode === 'touching'}
+              title="Select items the marquee touches"
+              onClick={() => setMarqueeSelectionMode('touching')}
+            >
+              touching
+            </button>
+          </div>
+        ) : null}
         <div className="sketch-editor__tool-group" aria-label="Add shapes">
           {([
             ['rectangle', 'box'],
@@ -2589,7 +2673,7 @@ export function SketchPad({
                   (tool === 'select' && Boolean(onEmbeddedVisualPlacementChange))
                   || (tool === 'eraser' && Boolean(onEmbeddedVisualRemove))
                 )}
-                selected={tool === 'select' && embed.id === selectedEmbedId}
+                selected={tool === 'select' && selectedEmbedIds.includes(embed.id)}
                 onPointerDown={(event) => {
                   if (tool === 'eraser') {
                     event.stopPropagation()
