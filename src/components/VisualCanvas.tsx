@@ -407,6 +407,19 @@ export function VisualCanvasEditor({
     if (didUpdate) persistEmbeds(nextEmbeds)
   }
 
+  /** Persist a marquee move as one edge-list update rather than one update per box. */
+  const updateEmbedPlacements = (updates: ReadonlyMap<string, VisualEmbedPlacement>) => {
+    if (editingDisabled || updates.size === 0) return
+    let didUpdate = false
+    const nextEmbeds = draftEmbedsRef.current.map((embed) => {
+      const placement = updates.get(embed.id)
+      if (!placement) return embed
+      didUpdate = true
+      return { ...embed, placement: { ...placement } }
+    })
+    if (didUpdate) persistEmbeds(nextEmbeds)
+  }
+
   const removeEmbed = (id: string) => {
     if (editingDisabled) return
     const nextEmbeds = draftEmbedsRef.current.filter((embed) => embed.id !== id)
@@ -602,6 +615,7 @@ export function VisualCanvasEditor({
                 setDraft((current) => ({ ...current, sketch: nextSketch }))
               }}
               onEmbeddedVisualPlacementChange={updateEmbedPlacement}
+              onEmbeddedVisualPlacementsChange={updateEmbedPlacements}
               onEmbeddedVisualRemove={removeEmbed}
               onEmbeddedVisualMakeIndependent={onCreateIndependentVisualCopy
                 ? makeEmbeddedVisualIndependent

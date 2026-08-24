@@ -67,6 +67,8 @@ type SketchPadProps = {
   embeddedVisuals?: VisualEmbedInstance[]
   /** Updates one parent -> child placement while the canvas is being edited. */
   onEmbeddedVisualPlacementChange?: (id: string, placement: VisualEmbedPlacement) => void
+  /** Moves several selected parent-side placements in one durable update. */
+  onEmbeddedVisualPlacementsChange?: (updates: ReadonlyMap<string, VisualEmbedPlacement>) => void
   /** Removes only the placement edge, never the child Visual itself. */
   onEmbeddedVisualRemove?: (id: string) => void
   /**
@@ -133,6 +135,22 @@ type ActiveEmbedInteraction = {
   placement: VisualEmbedPlacement
   startPoint: SketchPoint
   mode: 'move' | 'resize'
+}
+
+/** A marquee-selected mix of drawing objects and placed Visuals moving together. */
+type ActiveSelectionMove = {
+  pointerId: number
+  startPoint: SketchPoint
+  elements: Array<{
+    layerId: string
+    original: SketchElement
+    element: SketchElement
+  }>
+  embeds: Array<{
+    id: string
+    original: VisualEmbedPlacement
+    placement: VisualEmbedPlacement
+  }>
 }
 
 type ElementBounds = { x: number; y: number; width: number; height: number }
@@ -816,6 +834,12 @@ function EmbeddedVisualGraphic({
   const image = isImmutableVisual(visual) || hasLegacyBackground
     ? directImage
     : ''
+  // The placement is the Visual itself, not a separate container. A locked
+  // placement keeps its source proportions; unlocking deliberately lets the
+  // photo/drawing fill the independently chosen width and height.
+  const preserveAspectRatio = placement.aspectRatioLocked === false
+    ? 'none'
+    : 'xMidYMid meet'
 
   return (
     <g
@@ -827,15 +851,14 @@ function EmbeddedVisualGraphic({
       {image ? (
         // A photo is an image asset, not a 1000 × 700 OSA drawing page. Draw
         // it directly in this parent-side placement so no blank paper or
-        // permanent frame travels with the photo. `meet` keeps the source
-        // aspect ratio without stretching or unexpectedly cropping it.
+        // permanent frame travels with the photo.
         <image
           href={image}
           x={placement.x}
           y={placement.y}
           width={placement.width}
           height={placement.height}
-          preserveAspectRatio="xMidYMid meet"
+          preserveAspectRatio={preserveAspectRatio}
           pointerEvents="none"
         />
       ) : (
@@ -845,7 +868,7 @@ function EmbeddedVisualGraphic({
           width={placement.width}
           height={placement.height}
           viewBox={`0 0 ${childDocument.width} ${childDocument.height}`}
-          preserveAspectRatio="xMidYMid meet"
+          preserveAspectRatio={preserveAspectRatio}
           overflow="hidden"
           pointerEvents="none"
         >
@@ -1041,6 +1064,7 @@ export function SketchPad({
   initialTool = 'pen',
   embeddedVisuals = [],
   onEmbeddedVisualPlacementChange,
+  onEmbeddedVisualPlacementsChange,
   onEmbeddedVisualRemove,
   onEmbeddedVisualMakeIndependent,
 }: SketchPadProps) {
@@ -1059,6 +1083,7 @@ export function SketchPad({
   const [selectedElementIds, setSelectedElementIds] = useState<string[]>([])
   const [clipboardCount, setClipboardCount] = useState(0)
   const [activeEmbed, setActiveEmbed] = useState<ActiveEmbedInteraction | null>(null)
+  const [activeSelectionMove, setActiveSelectionMove] = useState<ActiveSelectionMove | null>(null)
   /** A marquee can highlight more than one placed Visual at a time. */
   const [selectedEmbedIds, setSelectedEmbedIds] = useState<string[]>([])
   const [activeLayerId, setActiveLayerId] = useState(document.layers.at(-1)?.id ?? '')
@@ -1076,6 +1101,7 @@ export function SketchPad({
   const shapeClipboardRef = useRef<ShapeClipboardItem[]>([])
   const pasteOffsetRef = useRef(0)
   const activeEmbedRef = useRef<ActiveEmbedInteraction | null>(null)
+  const activeSelectionMoveRef = useRef<ActiveSelectionMove | null>(null)
   const activePenPointerIdRef = useRef<number | null>(null)
   const ignoreTouchUntilRef = useRef(0)
   const touchPointersRef = useRef(new Map<number, TouchPoint>())
@@ -1412,6 +1438,100 @@ export function SketchPad({
     return true
   }
 
+  /**
+   * Start moving the exact mixed selection made by a marquee. Its source
+   * content is never copied or changed: only drawing coordinates and the
+   * parent-side placement of each Visual move together.
+   */
+  const startSelectedItemsMove = (event: ReactPointerEvent<SVGGElement>) => {
+    const surface = surfaceRef.current
+    if (!surface) return false
+
+    const selectedElementIdSet = new Set(selectedElementIds)
+    const elements = document.layers.flatMap((layer) => (
+      !layer.visible || layer.locked
+        ? []
+        : (layer.elements ?? []).flatMap((element) => (
+          selectedElementIdSet.has(element.id)
+            ? [{
+              layerId: layer.id,
+              original: cloneSketchElement(element),
+              element: cloneSketchElement(element),
+            }]
+            : []
+        ))
+    ))
+    const selectedEmbedIdSet = new Set(selectedEmbedIds)
+    const embeds = embeddedVisuals.flatMap((embed) => (
+      selectedEmbedIdSet.has(embed.id)
+        ? [{
+          id: embed.id,
+          original: { ...embed.placement },
+          placement: { ...embed.placement },
+        }]
+        : []
+    ))
+    if (elements.length + embeds.length < 2) return false
+
+    event.stopPropagation()
+    clearPenTouchConflict(event)
+    if (!surface.hasPointerCapture(event.pointerId)) surface.setPointerCapture(event.pointerId)
+    const interaction: ActiveSelectionMove = {
+      pointerId: event.pointerId,
+      startPoint: pointFromPointer(event.nativeEvent, surface.getBoundingClientRect()),
+      elements,
+      embeds,
+    }
+    activeSelectionMoveRef.current = interaction
+    setActiveSelectionMove(interaction)
+    return true
+  }
+
+  const updateActiveSelectionMove = (event: ReactPointerEvent<SVGSVGElement>) => {
+    const interaction = activeSelectionMoveRef.current
+    if (!interaction || interaction.pointerId !== event.pointerId) return false
+
+    const point = pointFromPointer(event.nativeEvent, event.currentTarget.getBoundingClientRect())
+    const rawDx = point.x - interaction.startPoint.x
+    const rawDy = point.y - interaction.startPoint.y
+    const moveHorizontally = Math.abs(rawDx) >= Math.abs(rawDy)
+    const dx = event.shiftKey && !moveHorizontally ? 0 : rawDx
+    const dy = event.shiftKey && moveHorizontally ? 0 : rawDy
+    const next: ActiveSelectionMove = {
+      ...interaction,
+      elements: interaction.elements.map((member) => ({
+        ...member,
+        element: {
+          ...member.original,
+          x: member.original.x + dx,
+          y: member.original.y + dy,
+        },
+      })),
+      embeds: interaction.embeds.map((embed) => ({
+        ...embed,
+        placement: {
+          ...embed.original,
+          x: embed.original.x + dx,
+          y: embed.original.y + dy,
+        },
+      })),
+    }
+    activeSelectionMoveRef.current = next
+    setActiveSelectionMove(next)
+
+    if (next.embeds.length > 0) {
+      const placements = new Map(next.embeds.map((embed) => [embed.id, embed.placement]))
+      if (onEmbeddedVisualPlacementsChange) {
+        onEmbeddedVisualPlacementsChange(placements)
+      } else {
+        for (const [id, placement] of placements) {
+          onEmbeddedVisualPlacementChange?.(id, placement)
+        }
+      }
+    }
+    return true
+  }
+
   const updateActiveEmbed = (event: ReactPointerEvent<SVGSVGElement>) => {
     const interaction = activeEmbedRef.current
     if (!interaction || interaction.pointerId !== event.pointerId) return false
@@ -1458,6 +1578,9 @@ export function SketchPad({
     if (!surface) return
 
     clearPenTouchConflict(event)
+    // Clicking one already-selected Visual moves the entire marquee set;
+    // clicking an unselected Visual retains the familiar single-selection.
+    if (mode === 'move' && selectedEmbedIds.includes(embed.id) && startSelectedItemsMove(event)) return
     if (!surface.hasPointerCapture(event.pointerId)) surface.setPointerCapture(event.pointerId)
     const point = pointFromPointer(event.nativeEvent, surface.getBoundingClientRect())
     const interaction: ActiveEmbedInteraction = {
@@ -1597,6 +1720,10 @@ export function SketchPad({
       setSelectedEmbedIds([])
       return
     }
+    // A selected drawing object can be the drag handle for a mixed marquee
+    // selection. This includes shapes in other editable layers and placed
+    // photo/canvas Visuals.
+    if (mode === 'move' && isAlreadySelected && startSelectedItemsMove(event)) return
     if (!surface.hasPointerCapture(event.pointerId)) surface.setPointerCapture(event.pointerId)
     const point = pointFromPointer(event.nativeEvent, surface.getBoundingClientRect())
     const selectedMembers = isAlreadySelected
@@ -1754,6 +1881,7 @@ export function SketchPad({
     }
 
     if (updateActiveRegionSelection(event)) return
+    if (updateActiveSelectionMove(event)) return
     if (updateActiveEmbed(event)) return
     if (updateActiveElement(event)) return
 
@@ -1826,6 +1954,51 @@ export function SketchPad({
     return true
   }
 
+  const finishActiveSelectionMove = (
+    event: ReactPointerEvent<SVGSVGElement>,
+    cancelled: boolean,
+  ) => {
+    const interaction = activeSelectionMoveRef.current
+    if (!interaction || interaction.pointerId !== event.pointerId) return false
+    activeSelectionMoveRef.current = null
+    setActiveSelectionMove(null)
+    if (cancelled) return true
+
+    // All selected drawing objects commit as one document change, so Undo
+    // restores the whole marquee move rather than one object at a time.
+    if (interaction.elements.length > 0) {
+      const movedByLayer = new Map<string, Map<string, SketchElement>>()
+      for (const member of interaction.elements) {
+        const elements = movedByLayer.get(member.layerId) ?? new Map<string, SketchElement>()
+        elements.set(member.element.id, member.element)
+        movedByLayer.set(member.layerId, elements)
+      }
+      commit({
+        ...document,
+        layers: document.layers.map((layer) => {
+          const movedElements = movedByLayer.get(layer.id)
+          if (!movedElements) return layer
+          return {
+            ...layer,
+            elements: (layer.elements ?? []).map((element) => movedElements.get(element.id) ?? element),
+          }
+        }),
+      })
+    }
+
+    if (interaction.embeds.length > 0) {
+      const placements = new Map(interaction.embeds.map((embed) => [embed.id, embed.placement]))
+      if (onEmbeddedVisualPlacementsChange) {
+        onEmbeddedVisualPlacementsChange(placements)
+      } else {
+        for (const [id, placement] of placements) {
+          onEmbeddedVisualPlacementChange?.(id, placement)
+        }
+      }
+    }
+    return true
+  }
+
   const finishActiveEmbed = (
     event: ReactPointerEvent<SVGSVGElement>,
     cancelled: boolean,
@@ -1861,6 +2034,13 @@ export function SketchPad({
         activePenPointerIdRef.current = null
         ignoreTouchUntilRef.current = event.timeStamp + 300
       }
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      }
+      return
+    }
+
+    if (finishActiveSelectionMove(event, cancelled)) {
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
         event.currentTarget.releasePointerCapture(event.pointerId)
       }
@@ -1931,6 +2111,7 @@ export function SketchPad({
       }
       return
     }
+    if (finishActiveSelectionMove(event, true)) return
     if (finishActiveEmbed(event, true)) {
       if (activePenPointerIdRef.current === event.pointerId) {
         activePenPointerIdRef.current = null
@@ -2420,11 +2601,16 @@ export function SketchPad({
     activeElement?.groupElements?.map((element) => [element.id, element])
       ?? (activeElement && activeElement.mode !== 'create' ? [[activeElement.element.id, activeElement.element]] : []),
   )
+  const activeSelectionElementsById = new Map(
+    activeSelectionMove?.elements.map((member) => [member.element.id, member.element]) ?? [],
+  )
   const renderedLayers = document.layers.map((layer) => ({
     ...layer,
     elements: activeElement?.mode === 'create' && layer.id === activeElement.layerId
       ? [...(layer.elements ?? []), activeElement.element]
-      : (layer.elements ?? []).map((element) => activeElementsById.get(element.id) ?? element),
+      : (layer.elements ?? []).map((element) => (
+        activeSelectionElementsById.get(element.id) ?? activeElementsById.get(element.id) ?? element
+      )),
     strokes: activeStroke && layer.id === activeStrokeLayerId
       ? [...layer.strokes, activeStroke]
       : layer.strokes,
@@ -2445,11 +2631,16 @@ export function SketchPad({
   const selectedElementForRender = selectedElement && selectedElementCount === 1 && activeElement?.element.id === selectedElement.element.id
     ? { ...selectedElement, element: activeElement.element }
     : selectedElementCount === 1 ? selectedElement : undefined
-  const renderedEmbeds = embeddedVisuals.map((embed) => (
-    activeEmbed?.embedId === embed.id
+  const activeSelectionEmbedsById = new Map(
+    activeSelectionMove?.embeds.map((embed) => [embed.id, embed.placement]) ?? [],
+  )
+  const renderedEmbeds = embeddedVisuals.map((embed) => {
+    const movedPlacement = activeSelectionEmbedsById.get(embed.id)
+    if (movedPlacement) return { ...embed, placement: { ...movedPlacement } }
+    return activeEmbed?.embedId === embed.id
       ? { ...embed, placement: { ...activeEmbed.placement } }
       : embed
-  ))
+  })
   const selectedEmbedForRender = selectedEmbedIds.length === 1
     ? renderedEmbeds.find((embed) => embed.id === selectedEmbedIds[0])
     : undefined

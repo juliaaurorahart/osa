@@ -685,6 +685,25 @@ try {
     /#7b8794/,
     'An unselected immutable photo has no visible frame.',
   )
+  const stretchedPhotoMarkup = renderToStaticMarkup(createElement(SketchPreview, {
+    document: visualCanvas.data.sketch,
+    embeddedVisuals: [{
+      id: 'photo-render-embed-unlocked',
+      visual: immutablePhotoVisual,
+      placement: {
+        x: 120,
+        y: 80,
+        width: 360,
+        height: 240,
+        aspectRatioLocked: false,
+      },
+    }],
+  }))
+  assert.match(
+    stretchedPhotoMarkup,
+    /<image href="data:image\/svg\+xml;base64,PHN2Zy8\+" x="120" y="80" width="360" height="240" preserveAspectRatio="none"/,
+    'An unlocked photo fills its selected width and height rather than fitting inside an empty frame.',
+  )
   const liveEmbed = createGraphEdge({
     id: 'visual-embed-live-1',
     source: versionedVisualCanvas.id,
