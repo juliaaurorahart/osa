@@ -273,6 +273,30 @@ function sizedEmbedPlacementUpdate(
   return { width: height * ratio, height }
 }
 
+/** Recover the full-source frame from a cropped parent-side placement. */
+function uncroppedEmbedFrame(
+  placement: VisualEmbedPlacement,
+): Pick<VisualEmbedPlacement, 'x' | 'y' | 'width' | 'height'> {
+  const crop = placement.crop
+  if (!crop) {
+    return {
+      x: placement.x,
+      y: placement.y,
+      width: placement.width,
+      height: placement.height,
+    }
+  }
+
+  const width = placement.width / crop.width
+  const height = placement.height / crop.height
+  return {
+    x: placement.x - crop.x * width,
+    y: placement.y - crop.y * height,
+    width,
+    height,
+  }
+}
+
 function isCompoundPartKind(kind: SketchElement['kind']): kind is SketchCompoundPart['kind'] {
   return ['rectangle', 'rounded-rectangle', 'ellipse', 'diamond', 'triangle'].includes(kind)
 }
@@ -2937,11 +2961,33 @@ export function SketchPad({
     width: 1,
     height: 1,
   }
-  /** Crop is local to this image/canvas placement, never its source Visual. */
+  /**
+   * Crop is local to this image/canvas placement, never its source Visual.
+   * The visible frame follows the crop, so blank source-canvas space does not
+   * leave a large, hard-to-select rectangle around the useful artwork.
+   */
   const updateSelectedEmbedCrop = (update: Partial<VisualEmbedCrop>) => {
     if (!selectedEmbedPlacement) return
+    const sourceFrame = uncroppedEmbedFrame(selectedEmbedPlacement)
+    const crop = normalizeVisualEmbedCrop({ ...selectedEmbedCrop, ...update })
+    if (!crop) {
+      updateSelectedEmbedPlacement({ ...sourceFrame, crop: undefined })
+      return
+    }
     updateSelectedEmbedPlacement({
-      crop: normalizeVisualEmbedCrop({ ...selectedEmbedCrop, ...update }),
+      x: sourceFrame.x + crop.x * sourceFrame.width,
+      y: sourceFrame.y + crop.y * sourceFrame.height,
+      width: sourceFrame.width * crop.width,
+      height: sourceFrame.height * crop.height,
+      crop,
+    })
+  }
+  /** Restore the full source and its original parent-side placement frame. */
+  const resetSelectedEmbedCrop = () => {
+    if (!selectedEmbedPlacement) return
+    updateSelectedEmbedPlacement({
+      ...uncroppedEmbedFrame(selectedEmbedPlacement),
+      crop: undefined,
     })
   }
   const onSelectedElementResizePointerDown = (event: ReactPointerEvent<SVGGElement>) => {
@@ -3864,12 +3910,15 @@ export function SketchPad({
                 <div className="sketch-editor__section-heading">
                   <h3>crop</h3>
                   {selectedEmbedPlacement.crop ? (
-                    <button type="button" onClick={() => updateSelectedEmbedPlacement({ crop: undefined })}>reset</button>
+                    <button type="button" onClick={resetSelectedEmbedCrop}>reset</button>
                   ) : (
                     <button
                       type="button"
-                      onClick={() => updateSelectedEmbedPlacement({
-                        crop: { x: 0.1, y: 0.1, width: 0.8, height: 0.8 },
+                      onClick={() => updateSelectedEmbedCrop({
+                        x: 0.1,
+                        y: 0.1,
+                        width: 0.8,
+                        height: 0.8,
                       })}
                     >
                       start crop
