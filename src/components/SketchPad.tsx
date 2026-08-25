@@ -85,6 +85,12 @@ type SketchPadProps = {
   /** Moves several selected parent-side placements in one durable update. */
   onEmbeddedVisualPlacementsChange?: (updates: ReadonlyMap<string, VisualEmbedPlacement>) => void
   /**
+   * Replaces this canvas's complete placement list. SketchPad uses this for
+   * one undo/redo history that restores drawing marks and placed Visuals
+   * together, including crop and size changes.
+   */
+  onEmbeddedVisualsReplace?: (embeds: VisualEmbedInstance[]) => void
+  /**
    * Adds copied parent-side placements. Each copy keeps the same canonical
    * child Visual; only the local canvas relationship and geometry are new.
    */
@@ -161,6 +167,12 @@ type MixedSelection = {
   embedIds: string[]
 }
 
+/** Everything that can change locally in one editable Visual canvas. */
+type CanvasHistorySnapshot = {
+  document: SketchDocument
+  embeds: VisualEmbedInstance[]
+}
+
 /** A parent canvas can move/resize an embed without changing its child Visual. */
 type ActiveEmbedInteraction = {
   pointerId: number
@@ -169,12 +181,29 @@ type ActiveEmbedInteraction = {
   placement: VisualEmbedPlacement
   startPoint: SketchPoint
   mode: 'move' | 'resize'
+  history: CanvasHistorySnapshot
+}
+
+type EmbedCropHandle = 'move' | 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
+
+/** A temporary crop edit changes only this parent-side placement window. */
+type ActiveEmbedCropInteraction = {
+  pointerId: number
+  embedId: string
+  sourceFrame: Pick<VisualEmbedPlacement, 'x' | 'y' | 'width' | 'height'>
+  original: VisualEmbedPlacement
+  originalCrop: VisualEmbedCrop
+  placement: VisualEmbedPlacement
+  handle: EmbedCropHandle
+  startPoint: SketchPoint
+  history: CanvasHistorySnapshot
 }
 
 /** A marquee-selected mix of drawing objects and placed Visuals moving together. */
 type ActiveSelectionMove = {
   pointerId: number
   startPoint: SketchPoint
+  history: CanvasHistorySnapshot
   elements: Array<{
     layerId: string
     original: SketchElement
@@ -297,6 +326,31 @@ function uncroppedEmbedFrame(
   }
 }
 
+function clamp(value: number, minimum: number, maximum: number) {
+  return Math.min(maximum, Math.max(minimum, value))
+}
+
+/** Resolve one normalized crop into the visible parent-canvas placement. */
+function placementForEmbedCrop(
+  original: VisualEmbedPlacement,
+  sourceFrame: Pick<VisualEmbedPlacement, 'x' | 'y' | 'width' | 'height'>,
+  crop: VisualEmbedCrop | undefined,
+): VisualEmbedPlacement {
+  if (!crop) {
+    const placement = { ...original, ...sourceFrame }
+    delete placement.crop
+    return placement
+  }
+  return {
+    ...original,
+    x: sourceFrame.x + crop.x * sourceFrame.width,
+    y: sourceFrame.y + crop.y * sourceFrame.height,
+    width: sourceFrame.width * crop.width,
+    height: sourceFrame.height * crop.height,
+    crop,
+  }
+}
+
 function isCompoundPartKind(kind: SketchElement['kind']): kind is SketchCompoundPart['kind'] {
   return ['rectangle', 'rounded-rectangle', 'ellipse', 'diamond', 'triangle'].includes(kind)
 }
@@ -308,6 +362,41 @@ function cloneSketchElement(element: SketchElement): SketchElement {
       ? { compoundParts: element.compoundParts.map((part) => ({ ...part })) }
       : {}),
   }
+}
+
+/** A history record copies only mutable placement data; source Visuals stay canonical. */
+function cloneVisualEmbed(embed: VisualEmbedInstance): VisualEmbedInstance {
+  return {
+    ...embed,
+    placement: { ...embed.placement },
+    ...(embed.embeddedVisuals?.length
+      ? { embeddedVisuals: embed.embeddedVisuals.map(cloneVisualEmbed) }
+      : {}),
+  }
+}
+
+function withEmbedPlacement(
+  embeds: readonly VisualEmbedInstance[],
+  id: string,
+  placement: VisualEmbedPlacement,
+) {
+  return embeds.map((embed) => (
+    embed.id === id
+      ? { ...cloneVisualEmbed(embed), placement: { ...placement } }
+      : cloneVisualEmbed(embed)
+  ))
+}
+
+function withEmbedPlacements(
+  embeds: readonly VisualEmbedInstance[],
+  placements: ReadonlyMap<string, VisualEmbedPlacement>,
+) {
+  return embeds.map((embed) => {
+    const placement = placements.get(embed.id)
+    return placement
+      ? { ...cloneVisualEmbed(embed), placement: { ...placement } }
+      : cloneVisualEmbed(embed)
+  })
 }
 
 /** Resize a compound's local geometry so its exterior remains a true shape. */
@@ -1120,6 +1209,7 @@ export function SketchPad({
   annotationTargets = [],
   onEmbeddedVisualPlacementChange,
   onEmbeddedVisualPlacementsChange,
+  onEmbeddedVisualsReplace,
   onEmbeddedVisualCopiesCreate,
   onEmbeddedVisualRemove,
   onEmbeddedVisualMakeIndependent,
@@ -1144,9 +1234,12 @@ export function SketchPad({
   const [selectedElementIds, setSelectedElementIds] = useState<string[]>([])
   const [clipboardCount, setClipboardCount] = useState(0)
   const [activeEmbed, setActiveEmbed] = useState<ActiveEmbedInteraction | null>(null)
+  const [activeEmbedCrop, setActiveEmbedCrop] = useState<ActiveEmbedCropInteraction | null>(null)
   const [activeSelectionMove, setActiveSelectionMove] = useState<ActiveSelectionMove | null>(null)
   /** A marquee can highlight more than one placed Visual at a time. */
   const [selectedEmbedIds, setSelectedEmbedIds] = useState<string[]>([])
+  /** Full-source crop guides are visible only while intentionally editing a crop. */
+  const [cropEditEmbedId, setCropEditEmbedId] = useState<string | null>(null)
   const [activeLayerId, setActiveLayerId] = useState(document.layers.at(-1)?.id ?? '')
   const [annotationTargetId, setAnnotationTargetId] = useState('')
   const [annotationField, setAnnotationField] = useState<SketchTextAnnotation['field']>('name')
@@ -1154,8 +1247,8 @@ export function SketchPad({
   /** The last text box whose picker the user explicitly changed. */
   const [annotationPickerElementId, setAnnotationPickerElementId] = useState<string | null>(null)
   const [historyState, setHistoryState] = useState({ undo: 0, redo: 0 })
-  const undoStack = useRef<SketchDocument[]>([])
-  const redoStack = useRef<SketchDocument[]>([])
+  const undoStack = useRef<CanvasHistorySnapshot[]>([])
+  const redoStack = useRef<CanvasHistorySnapshot[]>([])
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const surfaceRef = useRef<SVGSVGElement | null>(null)
   const panState = useRef<PanState>(null)
@@ -1167,6 +1260,7 @@ export function SketchPad({
   const canvasClipboardRef = useRef<CanvasClipboard>({ shapes: [], embeds: [] })
   const pasteOffsetRef = useRef(0)
   const activeEmbedRef = useRef<ActiveEmbedInteraction | null>(null)
+  const activeEmbedCropRef = useRef<ActiveEmbedCropInteraction | null>(null)
   const activeSelectionMoveRef = useRef<ActiveSelectionMove | null>(null)
   const activePenPointerIdRef = useRef<number | null>(null)
   const ignoreTouchUntilRef = useRef(0)
@@ -1321,28 +1415,76 @@ export function SketchPad({
     }
   }, [])
 
-  const commit = useCallback((nextDocument: SketchDocument) => {
-    undoStack.current.push(cloneSketchDocument(document))
+  /** Capture drawing marks and placement edges as one atomic canvas state. */
+  const snapshotCanvas = useCallback((
+    sourceDocument: SketchDocument = document,
+    sourceEmbeds: readonly VisualEmbedInstance[] = embeddedVisualsRef.current,
+  ): CanvasHistorySnapshot => ({
+    document: cloneSketchDocument(sourceDocument),
+    embeds: sourceEmbeds.map(cloneVisualEmbed),
+  }), [document])
+
+  /**
+   * VisualCanvas owns the durable edge list. A complete replacement lets Undo
+   * restore visual moves, crop windows, copies, and removals—not merely their
+   * individual X/Y fields.
+   */
+  const publishEmbeddedVisuals = useCallback((nextEmbeds: VisualEmbedInstance[]) => {
+    const copies = nextEmbeds.map(cloneVisualEmbed)
+    // Keep keyboard Undo/Redo and a rapid series of inspector edits in sync
+    // before React has time to deliver the parent-owned props again.
+    embeddedVisualsRef.current = copies
+    if (onEmbeddedVisualsReplace) {
+      onEmbeddedVisualsReplace(copies)
+      return
+    }
+
+    // Notebook sketches do not normally have embedded Visuals. Keep this
+    // narrow fallback for older callers that can only update placements.
+    const placements = new Map(copies.map((embed) => [embed.id, embed.placement]))
+    if (onEmbeddedVisualPlacementsChange) {
+      onEmbeddedVisualPlacementsChange(placements)
+    } else {
+      for (const [id, placement] of placements) {
+        onEmbeddedVisualPlacementChange?.(id, placement)
+      }
+    }
+  }, [onEmbeddedVisualPlacementChange, onEmbeddedVisualPlacementsChange, onEmbeddedVisualsReplace])
+
+  /** Publish one history entry, optionally changing the drawing, placements, or both. */
+  const commitCanvas = useCallback((
+    nextDocument: SketchDocument | undefined,
+    nextEmbeds: VisualEmbedInstance[] | undefined,
+    previous = snapshotCanvas(),
+  ) => {
+    undoStack.current.push(previous)
     redoStack.current = []
-    onChange(cloneSketchDocument(nextDocument))
+    if (nextDocument) onChange(cloneSketchDocument(nextDocument))
+    if (nextEmbeds) publishEmbeddedVisuals(nextEmbeds)
     setHistoryState({ undo: undoStack.current.length, redo: 0 })
-  }, [document, onChange])
+  }, [onChange, publishEmbeddedVisuals, snapshotCanvas])
+
+  const commit = useCallback((nextDocument: SketchDocument) => {
+    commitCanvas(nextDocument, undefined)
+  }, [commitCanvas])
 
   const undo = useCallback(() => {
     const previous = undoStack.current.pop()
     if (!previous) return
-    redoStack.current.push(cloneSketchDocument(document))
-    onChange(previous)
+    redoStack.current.push(snapshotCanvas())
+    onChange(cloneSketchDocument(previous.document))
+    publishEmbeddedVisuals(previous.embeds)
     setHistoryState({ undo: undoStack.current.length, redo: redoStack.current.length })
-  }, [document, onChange])
+  }, [onChange, publishEmbeddedVisuals, snapshotCanvas])
 
   const redo = useCallback(() => {
     const next = redoStack.current.pop()
     if (!next) return
-    undoStack.current.push(cloneSketchDocument(document))
-    onChange(next)
+    undoStack.current.push(snapshotCanvas())
+    onChange(cloneSketchDocument(next.document))
+    publishEmbeddedVisuals(next.embeds)
     setHistoryState({ undo: undoStack.current.length, redo: redoStack.current.length })
-  }, [document, onChange])
+  }, [onChange, publishEmbeddedVisuals, snapshotCanvas])
 
   const pointFromPointer = (
     pointer: globalThis.PointerEvent,
@@ -1640,6 +1782,7 @@ export function SketchPad({
     const interaction: ActiveSelectionMove = {
       pointerId: event.pointerId,
       startPoint: pointFromPointer(event.nativeEvent, surface.getBoundingClientRect()),
+      history: snapshotCanvas(),
       elements,
       embeds,
     }
@@ -1728,6 +1871,83 @@ export function SketchPad({
     return true
   }
 
+  /** Begin an on-canvas crop adjustment without changing the child Visual. */
+  const startEmbedCropInteraction = (
+    event: ReactPointerEvent<SVGGElement>,
+    embed: VisualEmbedInstance,
+    handle: EmbedCropHandle,
+  ) => {
+    if (tool !== 'select' || !onEmbeddedVisualPlacementChange) return
+    event.stopPropagation()
+    const surface = surfaceRef.current
+    if (!surface) return
+    clearPenTouchConflict(event)
+    if (!surface.hasPointerCapture(event.pointerId)) surface.setPointerCapture(event.pointerId)
+    const sourceFrame = uncroppedEmbedFrame(embed.placement)
+    const interaction: ActiveEmbedCropInteraction = {
+      pointerId: event.pointerId,
+      embedId: embed.id,
+      sourceFrame,
+      original: { ...embed.placement },
+      originalCrop: embed.placement.crop ?? { x: 0, y: 0, width: 1, height: 1 },
+      placement: { ...embed.placement },
+      handle,
+      startPoint: pointFromPointer(event.nativeEvent, surface.getBoundingClientRect()),
+      history: snapshotCanvas(),
+    }
+    activeEmbedCropRef.current = interaction
+    setActiveEmbedCrop(interaction)
+  }
+
+  /** Drag the crop window or one of its handles inside the fixed source frame. */
+  const updateActiveEmbedCrop = (event: ReactPointerEvent<SVGSVGElement>) => {
+    const interaction = activeEmbedCropRef.current
+    if (!interaction || interaction.pointerId !== event.pointerId) return false
+    const point = pointFromPointer(event.nativeEvent, event.currentTarget.getBoundingClientRect())
+    const source = interaction.sourceFrame
+    if (source.width <= 0 || source.height <= 0) return true
+
+    const minimumWidth = Math.min(source.width, Math.max(12, source.width * 0.02))
+    const minimumHeight = Math.min(source.height, Math.max(12, source.height * 0.02))
+    const sourceRight = source.x + source.width
+    const sourceBottom = source.y + source.height
+    const originalLeft = source.x + interaction.originalCrop.x * source.width
+    const originalTop = source.y + interaction.originalCrop.y * source.height
+    const originalRight = originalLeft + interaction.originalCrop.width * source.width
+    const originalBottom = originalTop + interaction.originalCrop.height * source.height
+    let left = originalLeft
+    let top = originalTop
+    let right = originalRight
+    let bottom = originalBottom
+
+    if (interaction.handle === 'move') {
+      const dx = point.x - interaction.startPoint.x
+      const dy = point.y - interaction.startPoint.y
+      left = clamp(originalLeft + dx, source.x, sourceRight - (originalRight - originalLeft))
+      top = clamp(originalTop + dy, source.y, sourceBottom - (originalBottom - originalTop))
+      right = left + (originalRight - originalLeft)
+      bottom = top + (originalBottom - originalTop)
+    } else {
+      if (interaction.handle.includes('w')) left = clamp(point.x, source.x, right - minimumWidth)
+      if (interaction.handle.includes('e')) right = clamp(point.x, left + minimumWidth, sourceRight)
+      if (interaction.handle.includes('n')) top = clamp(point.y, source.y, bottom - minimumHeight)
+      if (interaction.handle.includes('s')) bottom = clamp(point.y, top + minimumHeight, sourceBottom)
+    }
+
+    const crop = normalizeVisualEmbedCrop({
+      x: (left - source.x) / source.width,
+      y: (top - source.y) / source.height,
+      width: (right - left) / source.width,
+      height: (bottom - top) / source.height,
+    })
+    const placement = placementForEmbedCrop(interaction.original, source, crop)
+    const next = { ...interaction, placement }
+    activeEmbedCropRef.current = next
+    setActiveEmbedCrop(next)
+    onEmbeddedVisualPlacementChange?.(interaction.embedId, placement)
+    return true
+  }
+
   /** Replace the current selection, expanding any durable mixed group. */
   const selectItems = (requested: MixedSelection) => {
     const selection = expandSelectionToGroups(requested)
@@ -1781,7 +2001,12 @@ export function SketchPad({
       toggleItemsInSelection(requestedSelection)
       return
     }
-    const selected = selectItems(requestedSelection)
+    // A second click on one member of a marquee selection starts a move for
+    // that whole selection. It must not silently collapse to just the Visual
+    // under the pointer before the mixed-move handler gets a chance to run.
+    const selected = isAlreadySelected
+      ? expandSelectionToGroups({ elementIds: selectedElementIds, embedIds: selectedEmbedIds })
+      : selectItems(requestedSelection)
     // A selected drawing object or Visual can move the full temporary or saved
     // mixed selection. It never changes the canonical child Visual itself.
     if (mode === 'move' && selected.elementIds.length + selected.embedIds.length > 1) {
@@ -1797,6 +2022,7 @@ export function SketchPad({
       placement: { ...embed.placement },
       startPoint: point,
       mode,
+      history: snapshotCanvas(),
     }
     activeEmbedRef.current = interaction
     setActiveEmbed(interaction)
@@ -1892,7 +2118,11 @@ export function SketchPad({
       toggleItemsInSelection(requestedSelection)
       return
     }
-    const selected = selectItems(requestedSelection)
+    // Match the Visual path: drag an already-selected shape without dropping
+    // the other selected shapes or Visuals first.
+    const selected = isAlreadySelected
+      ? expandSelectionToGroups({ elementIds: selectedElementIds, embedIds: selectedEmbedIds })
+      : selectItems(requestedSelection)
     // Any member can be the drag handle for a mixed temporary or durable
     // selection, including parent-side photo/canvas placements.
     if (mode === 'move' && selected.elementIds.length + selected.embedIds.length > 1) {
@@ -2037,6 +2267,7 @@ export function SketchPad({
 
     if (updateActiveRegionSelection(event)) return
     if (updateActiveSelectionMove(event)) return
+    if (updateActiveEmbedCrop(event)) return
     if (updateActiveEmbed(event)) return
     if (updateActiveElement(event)) return
 
@@ -2103,10 +2334,21 @@ export function SketchPad({
     if (!interaction || interaction.pointerId !== event.pointerId) return false
     activeSelectionMoveRef.current = null
     setActiveSelectionMove(null)
-    if (cancelled) return true
+    if (cancelled) {
+      if (interaction.embeds.length > 0) publishEmbeddedVisuals(interaction.history.embeds)
+      return true
+    }
 
-    // All selected drawing objects commit as one document change, so Undo
-    // restores the whole marquee move rather than one object at a time.
+    const didMove = interaction.elements.some((member) => (
+      member.element.x !== member.original.x || member.element.y !== member.original.y
+    )) || interaction.embeds.some((embed) => (
+      embed.placement.x !== embed.original.x || embed.placement.y !== embed.original.y
+    ))
+    if (!didMove) return true
+
+    // All selected drawing objects and Visual placements commit as one canvas
+    // history entry, so Undo restores the whole marquee move together.
+    let nextDocument: SketchDocument | undefined
     if (interaction.elements.length > 0) {
       const movedByLayer = new Map<string, Map<string, SketchElement>>()
       for (const member of interaction.elements) {
@@ -2114,7 +2356,7 @@ export function SketchPad({
         elements.set(member.element.id, member.element)
         movedByLayer.set(member.layerId, elements)
       }
-      commit({
+      nextDocument = {
         ...document,
         layers: document.layers.map((layer) => {
           const movedElements = movedByLayer.get(layer.id)
@@ -2124,19 +2366,15 @@ export function SketchPad({
             elements: (layer.elements ?? []).map((element) => movedElements.get(element.id) ?? element),
           }
         }),
-      })
-    }
-
-    if (interaction.embeds.length > 0) {
-      const placements = new Map(interaction.embeds.map((embed) => [embed.id, embed.placement]))
-      if (onEmbeddedVisualPlacementsChange) {
-        onEmbeddedVisualPlacementsChange(placements)
-      } else {
-        for (const [id, placement] of placements) {
-          onEmbeddedVisualPlacementChange?.(id, placement)
-        }
       }
     }
+
+    let nextEmbeds: VisualEmbedInstance[] | undefined
+    if (interaction.embeds.length > 0) {
+      const placements = new Map(interaction.embeds.map((embed) => [embed.id, embed.placement]))
+      nextEmbeds = withEmbedPlacements(interaction.history.embeds, placements)
+    }
+    commitCanvas(nextDocument, nextEmbeds, interaction.history)
     return true
   }
 
@@ -2148,12 +2386,52 @@ export function SketchPad({
     if (!interaction || interaction.pointerId !== event.pointerId) return false
     activeEmbedRef.current = null
     setActiveEmbed(null)
-    if (cancelled) return true
+    if (cancelled) {
+      publishEmbeddedVisuals(interaction.history.embeds)
+      return true
+    }
 
-    // Most moves have already streamed their draft placement through the
-    // callback. Send the final value as well so a click/release sequence is
-    // always deterministic for the parent canvas draft.
-    onEmbeddedVisualPlacementChange?.(interaction.embedId, interaction.placement)
+    const didChange = interaction.original.x !== interaction.placement.x
+      || interaction.original.y !== interaction.placement.y
+      || interaction.original.width !== interaction.placement.width
+      || interaction.original.height !== interaction.placement.height
+    if (!didChange) return true
+
+    // Pointer moves stream a draft placement for responsive drawing. Commit
+    // once here so Ctrl/Cmd-Z reverses the finished visual edit as one step.
+    commitCanvas(
+      undefined,
+      withEmbedPlacement(interaction.history.embeds, interaction.embedId, interaction.placement),
+      interaction.history,
+    )
+    return true
+  }
+
+  const finishActiveEmbedCrop = (
+    event: ReactPointerEvent<SVGSVGElement>,
+    cancelled: boolean,
+  ) => {
+    const interaction = activeEmbedCropRef.current
+    if (!interaction || interaction.pointerId !== event.pointerId) return false
+    activeEmbedCropRef.current = null
+    setActiveEmbedCrop(null)
+    if (cancelled) {
+      // A cancelled pointer gesture must not leave a half-moved crop window.
+      publishEmbeddedVisuals(interaction.history.embeds)
+      return true
+    }
+
+    const didChange = interaction.original.x !== interaction.placement.x
+      || interaction.original.y !== interaction.placement.y
+      || interaction.original.width !== interaction.placement.width
+      || interaction.original.height !== interaction.placement.height
+      || JSON.stringify(interaction.original.crop) !== JSON.stringify(interaction.placement.crop)
+    if (!didChange) return true
+    commitCanvas(
+      undefined,
+      withEmbedPlacement(interaction.history.embeds, interaction.embedId, interaction.placement),
+      interaction.history,
+    )
     return true
   }
 
@@ -2182,6 +2460,13 @@ export function SketchPad({
     }
 
     if (finishActiveSelectionMove(event, cancelled)) {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      }
+      return
+    }
+
+    if (finishActiveEmbedCrop(event, cancelled)) {
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
         event.currentTarget.releasePointerCapture(event.pointerId)
       }
@@ -2253,6 +2538,7 @@ export function SketchPad({
       return
     }
     if (finishActiveSelectionMove(event, true)) return
+    if (finishActiveEmbedCrop(event, true)) return
     if (finishActiveEmbed(event, true)) {
       if (activePenPointerIdRef.current === event.pointerId) {
         activePenPointerIdRef.current = null
@@ -2435,8 +2721,9 @@ export function SketchPad({
     const deltaY = dimension === 'y' ? value - selectedGroupBounds.y : 0
     if (deltaX === 0 && deltaY === 0) return
     const memberIds = new Set(selectedGroup.members.elementIds)
+    let nextDocument: SketchDocument | undefined
     if (memberIds.size > 0) {
-      commit({
+      nextDocument = {
         ...document,
         layers: document.layers.map((layer) => ({
           ...layer,
@@ -2446,7 +2733,7 @@ export function SketchPad({
               : element
           )),
         })),
-      })
+      }
     }
     const embedIds = new Set(selectedGroup.members.embedIds)
     const placements = new Map(embeddedVisualsRef.current.flatMap((embed) => (
@@ -2454,10 +2741,10 @@ export function SketchPad({
         ? [[embed.id, { ...embed.placement, x: embed.placement.x + deltaX, y: embed.placement.y + deltaY }] as const]
         : []
     )))
-    if (placements.size > 0) {
-      if (onEmbeddedVisualPlacementsChange) onEmbeddedVisualPlacementsChange(placements)
-      else for (const [id, placement] of placements) onEmbeddedVisualPlacementChange?.(id, placement)
-    }
+    const nextEmbeds = placements.size > 0
+      ? withEmbedPlacements(embeddedVisualsRef.current, placements)
+      : undefined
+    if (nextDocument || nextEmbeds) commitCanvas(nextDocument, nextEmbeds)
   }
 
   /** Give selected shapes and Visual placements one durable canvas-local group ID. */
@@ -2465,8 +2752,9 @@ export function SketchPad({
     if (!canGroupSelectedItems) return
     const groupId = crypto.randomUUID()
     const selectedIds = new Set(selectedElementIds)
+    let nextDocument: SketchDocument | undefined
     if (selectedIds.size > 0) {
-      commit({
+      nextDocument = {
         ...document,
         layers: document.layers.map((layer) => (
           layer.locked
@@ -2478,26 +2766,27 @@ export function SketchPad({
               )),
             }
         )),
-      })
+      }
     }
     const selectedEmbedIdSet = new Set(selectedEmbedIds)
-    const placements = new Map(embeddedVisuals.flatMap((embed) => (
+    const placements = new Map(embeddedVisualsRef.current.flatMap((embed) => (
       selectedEmbedIdSet.has(embed.id)
         ? [[embed.id, { ...embed.placement, groupId }] as const]
         : []
     )))
-    if (placements.size > 0) {
-      if (onEmbeddedVisualPlacementsChange) onEmbeddedVisualPlacementsChange(placements)
-      else for (const [id, placement] of placements) onEmbeddedVisualPlacementChange?.(id, placement)
-    }
+    const nextEmbeds = placements.size > 0
+      ? withEmbedPlacements(embeddedVisualsRef.current, placements)
+      : undefined
+    commitCanvas(nextDocument, nextEmbeds)
   }
 
   /** Remove group membership without moving, resizing, or copying any object. */
   const ungroupSelectedItems = () => {
     if (!canUngroupSelectedItems) return
     const groupIds = new Set(selectedGroupIds)
+    let nextDocument: SketchDocument | undefined
     if (selectedElementCount > 0) {
-      commit({
+      nextDocument = {
         ...document,
         layers: document.layers.map((layer) => ({
           ...layer,
@@ -2508,18 +2797,18 @@ export function SketchPad({
             return ungroupedElement
           }),
         })),
-      })
+      }
     }
-    const placements = new Map(embeddedVisuals.flatMap((embed) => {
+    const placements = new Map(embeddedVisualsRef.current.flatMap((embed) => {
       if (!embed.placement.groupId || !groupIds.has(embed.placement.groupId)) return []
       const placement = { ...embed.placement }
       delete placement.groupId
       return [[embed.id, placement] as const]
     }))
-    if (placements.size > 0) {
-      if (onEmbeddedVisualPlacementsChange) onEmbeddedVisualPlacementsChange(placements)
-      else for (const [id, placement] of placements) onEmbeddedVisualPlacementChange?.(id, placement)
-    }
+    const nextEmbeds = placements.size > 0
+      ? withEmbedPlacements(embeddedVisualsRef.current, placements)
+      : undefined
+    commitCanvas(nextDocument, nextEmbeds)
   }
 
   /**
@@ -2642,8 +2931,8 @@ export function SketchPad({
     const canMove = document.layers.some((layer) => (
       !layer.locked && (layer.elements ?? []).some((element) => selectedIds.has(element.id))
     ))
-    if (canMove) {
-      commit({
+    const nextDocument = canMove
+      ? {
         ...document,
         layers: document.layers.map((layer) => (
           layer.locked
@@ -2657,23 +2946,21 @@ export function SketchPad({
               )),
             }
         )),
-      })
-    }
+      }
+      : undefined
     const selectedEmbedIdSet = new Set(selectedEmbedIds)
     const placements = new Map(embeddedVisualsRef.current.flatMap((embed) => (
       selectedEmbedIdSet.has(embed.id)
         ? [[embed.id, { ...embed.placement, x: embed.placement.x + dx, y: embed.placement.y + dy }] as const]
         : []
     )))
-    if (placements.size > 0) {
-      if (onEmbeddedVisualPlacementsChange) onEmbeddedVisualPlacementsChange(placements)
-      else for (const [id, placement] of placements) onEmbeddedVisualPlacementChange?.(id, placement)
-    }
+    const nextEmbeds = placements.size > 0
+      ? withEmbedPlacements(embeddedVisualsRef.current, placements)
+      : undefined
+    if (nextDocument || nextEmbeds) commitCanvas(nextDocument, nextEmbeds)
   }, [
-    commit,
+    commitCanvas,
     document,
-    onEmbeddedVisualPlacementChange,
-    onEmbeddedVisualPlacementsChange,
     selectedElementIds,
     selectedEmbedIds,
     selectedItemCount,
@@ -2771,7 +3058,7 @@ export function SketchPad({
     }
     // A canvas that cannot persist placement edges can still paste its local
     // drawings, but must never leave a phantom selected Visual behind.
-    const pastedEmbeds = onEmbeddedVisualCopiesCreate ? copiedEmbeds.map((embed) => {
+    const pastedEmbeds = (onEmbeddedVisualsReplace || onEmbeddedVisualCopiesCreate) ? copiedEmbeds.map((embed) => {
       const groupId = copiedGroupId(embed.placement.groupId)
       const id = `draft-embed:${crypto.randomUUID()}`
       pastedEmbedIds.push(id)
@@ -2788,11 +3075,20 @@ export function SketchPad({
     }) : []
     if (pastedIds.length === 0 && pastedEmbeds.length === 0) return
     pasteOffsetRef.current += 1
-    if (pastedIds.length > 0) commit(nextDocument)
-    if (pastedEmbeds.length > 0) onEmbeddedVisualCopiesCreate?.(pastedEmbeds)
+    if (onEmbeddedVisualsReplace) {
+      commitCanvas(
+        pastedIds.length > 0 ? nextDocument : undefined,
+        pastedEmbeds.length > 0
+          ? [...embeddedVisualsRef.current.map(cloneVisualEmbed), ...pastedEmbeds.map(cloneVisualEmbed)]
+          : undefined,
+      )
+    } else {
+      if (pastedIds.length > 0) commit(nextDocument)
+      if (pastedEmbeds.length > 0) onEmbeddedVisualCopiesCreate?.(pastedEmbeds)
+    }
     setSelectedElementIds(pastedIds)
     setSelectedEmbedIds(pastedEmbedIds)
-  }, [commit, document, onEmbeddedVisualCopiesCreate])
+  }, [commit, commitCanvas, document, onEmbeddedVisualCopiesCreate, onEmbeddedVisualsReplace])
 
   /**
    * `elements` are rendered in array order. Moving one object here changes
@@ -2814,9 +3110,15 @@ export function SketchPad({
 
   /** Removes only this canvas's placement edge; the child Visual survives. */
   const removeEmbed = useCallback((embedId: string) => {
-    onEmbeddedVisualRemove?.(embedId)
+    const nextEmbeds = embeddedVisualsRef.current.filter((embed) => embed.id !== embedId)
+    if (nextEmbeds.length === embeddedVisualsRef.current.length) return
+    if (onEmbeddedVisualsReplace) {
+      commitCanvas(undefined, nextEmbeds)
+    } else {
+      onEmbeddedVisualRemove?.(embedId)
+    }
     setSelectedEmbedIds((currentIds) => currentIds.filter((id) => id !== embedId))
-  }, [onEmbeddedVisualRemove])
+  }, [commitCanvas, onEmbeddedVisualRemove, onEmbeddedVisualsReplace])
 
   /** Delete the selected drawing objects and/or parent-side Visual placements. */
   const deleteSelectedItems = useCallback(() => {
@@ -2915,6 +3217,9 @@ export function SketchPad({
   const renderedEmbeds = embeddedVisuals.map((embed) => {
     const movedPlacement = activeSelectionEmbedsById.get(embed.id)
     if (movedPlacement) return { ...embed, placement: { ...movedPlacement } }
+    if (activeEmbedCrop?.embedId === embed.id) {
+      return { ...embed, placement: { ...activeEmbedCrop.placement } }
+    }
     return activeEmbed?.embedId === embed.id
       ? { ...embed, placement: { ...activeEmbed.placement } }
       : embed
@@ -2945,10 +3250,14 @@ export function SketchPad({
   /** Update the parent-side image box only; the referenced Visual is unchanged. */
   const updateSelectedEmbedPlacement = (update: Partial<VisualEmbedPlacement>) => {
     if (!selectedEmbedForRender || !onEmbeddedVisualPlacementChange) return
-    onEmbeddedVisualPlacementChange(selectedEmbedForRender.id, {
+    const placement: VisualEmbedPlacement = {
       ...selectedEmbedForRender.placement,
       ...update,
-    })
+    }
+    commitCanvas(
+      undefined,
+      withEmbedPlacement(embeddedVisualsRef.current, selectedEmbedForRender.id, placement),
+    )
   }
   /** A locked photo/Visual box updates both dimensions as one placement edit. */
   const updateSelectedEmbedDimension = (dimension: 'width' | 'height', value: number) => {
@@ -3297,7 +3606,74 @@ export function SketchPad({
                 </g>
               )
             })() : null}
-            {tool === 'select' && selectedEmbedForRender && onEmbeddedVisualPlacementChange ? (
+            {tool === 'select'
+            && selectedEmbedForRender
+            && cropEditEmbedId === selectedEmbedForRender.id
+            && onEmbeddedVisualPlacementChange ? (() => {
+              const placement = selectedEmbedForRender.placement
+              const source = uncroppedEmbedFrame(placement)
+              const handleSize = 14
+              const handles: Array<[EmbedCropHandle, number, number]> = [
+                ['nw', placement.x, placement.y],
+                ['n', placement.x + placement.width / 2, placement.y],
+                ['ne', placement.x + placement.width, placement.y],
+                ['e', placement.x + placement.width, placement.y + placement.height / 2],
+                ['se', placement.x + placement.width, placement.y + placement.height],
+                ['s', placement.x + placement.width / 2, placement.y + placement.height],
+                ['sw', placement.x, placement.y + placement.height],
+                ['w', placement.x, placement.y + placement.height / 2],
+              ]
+              return (
+                <g className="sketch-visual-embed__crop-guides">
+                  <rect
+                    x={source.x}
+                    y={source.y}
+                    width={source.width}
+                    height={source.height}
+                    fill="none"
+                    stroke="#7d8790"
+                    strokeWidth={1.5}
+                    strokeDasharray="5 4"
+                    pointerEvents="none"
+                  />
+                  <g onPointerDown={(event) => startEmbedCropInteraction(event, selectedEmbedForRender, 'move')}>
+                    <rect
+                      x={placement.x}
+                      y={placement.y}
+                      width={placement.width}
+                      height={placement.height}
+                      fill="transparent"
+                      stroke="#9b59d0"
+                      strokeWidth={2.5}
+                      strokeDasharray="6 3"
+                      pointerEvents="all"
+                    />
+                  </g>
+                  {handles.map(([handle, x, y]) => (
+                    <g
+                      key={handle}
+                      onPointerDown={(event) => startEmbedCropInteraction(event, selectedEmbedForRender, handle)}
+                    >
+                      <rect
+                        x={x - handleSize / 2}
+                        y={y - handleSize / 2}
+                        width={handleSize}
+                        height={handleSize}
+                        fill="#f4e9ff"
+                        stroke="#9b59d0"
+                        strokeWidth={2}
+                        rx={2}
+                        pointerEvents="all"
+                      />
+                    </g>
+                  ))}
+                </g>
+              )
+            })() : null}
+            {tool === 'select'
+            && selectedEmbedForRender
+            && cropEditEmbedId !== selectedEmbedForRender.id
+            && onEmbeddedVisualPlacementChange ? (
               <g
                 className="sketch-visual-embed__resize-handle"
                 onPointerDown={onSelectedEmbedResizePointerDown}
@@ -3910,16 +4286,37 @@ export function SketchPad({
                 <div className="sketch-editor__section-heading">
                   <h3>crop</h3>
                   {selectedEmbedPlacement.crop ? (
-                    <button type="button" onClick={resetSelectedEmbedCrop}>reset</button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setCropEditEmbedId((currentId) => (
+                          currentId === selectedEmbed.id ? null : selectedEmbed.id
+                        ))}
+                      >
+                        {cropEditEmbedId === selectedEmbed.id ? 'done' : 'edit'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          resetSelectedEmbedCrop()
+                          setCropEditEmbedId(null)
+                        }}
+                      >
+                        reset
+                      </button>
+                    </>
                   ) : (
                     <button
                       type="button"
-                      onClick={() => updateSelectedEmbedCrop({
-                        x: 0.1,
-                        y: 0.1,
-                        width: 0.8,
-                        height: 0.8,
-                      })}
+                      onClick={() => {
+                        updateSelectedEmbedCrop({
+                          x: 0.1,
+                          y: 0.1,
+                          width: 0.8,
+                          height: 0.8,
+                        })
+                        setCropEditEmbedId(selectedEmbed.id)
+                      }}
                     >
                       start crop
                     </button>

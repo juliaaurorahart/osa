@@ -647,6 +647,7 @@ export function VisualCanvasEditor({
               }}
               onEmbeddedVisualPlacementChange={updateEmbedPlacement}
               onEmbeddedVisualPlacementsChange={updateEmbedPlacements}
+              onEmbeddedVisualsReplace={persistEmbeds}
               onEmbeddedVisualCopiesCreate={addEmbeddedVisualCopies}
               onEmbeddedVisualRemove={removeEmbed}
               onEmbeddedVisualMakeIndependent={onCreateIndependentVisualCopy
