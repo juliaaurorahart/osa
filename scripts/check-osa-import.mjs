@@ -669,6 +669,8 @@ try {
     [OSA_PROPERTY.visualEmbedY]: '0',
     [OSA_PROPERTY.visualEmbedWidth]: '360',
     [OSA_PROPERTY.visualEmbedHeight]: '250',
+    [OSA_PROPERTY.visualEmbedGroupId]: 'connector-box-callout',
+    [OSA_PROPERTY.visualEmbedCrop]: JSON.stringify({ x: 0.1, y: 0.2, width: 0.75, height: 0.6 }),
   }
   const visualEmbedPackage = parseOsaImportPackage({
     format: 'osa-import',
@@ -740,6 +742,19 @@ try {
       label: 'zero height',
       properties: { ...visualEmbedProperties, [OSA_PROPERTY.visualEmbedHeight]: '0' },
       expected: /visual-embed:height must be a finite positive decimal/,
+    },
+    {
+      label: 'blank canvas-local group',
+      properties: { ...visualEmbedProperties, [OSA_PROPERTY.visualEmbedGroupId]: '   ' },
+      expected: /visual-embed:group-id must be non-empty text when present/,
+    },
+    {
+      label: 'crop outside source image',
+      properties: {
+        ...visualEmbedProperties,
+        [OSA_PROPERTY.visualEmbedCrop]: JSON.stringify({ x: 0.8, y: 0.2, width: 0.3, height: 0.5 }),
+      },
+      expected: /visual-embed:crop must stay inside the source image/,
     },
   ]
   for (const invalidGeometry of invalidVisualEmbedGeometry) {

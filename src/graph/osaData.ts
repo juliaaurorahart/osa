@@ -69,6 +69,10 @@ export const OSA_PROPERTY = {
   visualEmbedHeight: 'visual-embed:height',
   /** Whether one placed Visual keeps its current proportions while resizing. */
   visualEmbedAspectRatioLocked: 'visual-embed:aspect-ratio-locked',
+  /** Optional canvas-local group shared by drawing elements and placed Visuals. */
+  visualEmbedGroupId: 'visual-embed:group-id',
+  /** Optional non-destructive crop box for one Visual placement. */
+  visualEmbedCrop: 'visual-embed:crop',
   /** Normalized horizontal placement of one linked object visual in an operation View. */
   operationVisualX: 'operation-visual:x',
   /** Normalized vertical placement of one linked object visual in an operation View. */
@@ -166,6 +170,25 @@ export type VisualEmbedPlacement = {
   height: number
   /** A parent-side setting; it never changes the reusable child Visual itself. */
   aspectRatioLocked?: boolean
+  /**
+   * Optional parent-canvas group membership. The Visual remains an ordinary
+   * reusable project object; this only lets its placement move with other
+   * shapes or placed Visuals in this one canvas.
+   */
+  groupId?: string
+  /**
+   * A normalized source window. This belongs to this one placement, so crop
+   * never changes the reusable photo or child canvas used somewhere else.
+   */
+  crop?: VisualEmbedCrop
+}
+
+/** One non-destructive crop window expressed as fractions of the source. */
+export type VisualEmbedCrop = {
+  x: number
+  y: number
+  width: number
+  height: number
 }
 
 function normalizeOperationCanvasSections(
@@ -355,6 +378,34 @@ function normalizeCanvasPixel(value: unknown, fallback: number, minimum: number)
   return Math.min(20_000, Math.max(minimum, Math.round(value * 1000) / 1000))
 }
 
+const MIN_VISUAL_EMBED_CROP_SIZE = 0.02
+
+function normalizeCropFraction(value: unknown, fallback: number) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
+  return Math.round(Math.min(1, Math.max(0, value)) * 10_000) / 10_000
+}
+
+/**
+ * Keeps a crop window inside its source. An untouched/full-source crop is
+ * omitted so older placements retain their exact previous rendering.
+ */
+export function normalizeVisualEmbedCrop(value: unknown): VisualEmbedCrop | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const candidate = value as Partial<VisualEmbedCrop>
+  const x = normalizeCropFraction(candidate.x, 0)
+  const y = normalizeCropFraction(candidate.y, 0)
+  const width = Math.min(
+    1 - x,
+    Math.max(MIN_VISUAL_EMBED_CROP_SIZE, normalizeCropFraction(candidate.width, 1 - x)),
+  )
+  const height = Math.min(
+    1 - y,
+    Math.max(MIN_VISUAL_EMBED_CROP_SIZE, normalizeCropFraction(candidate.height, 1 - y)),
+  )
+  if (x === 0 && y === 0 && width === 1 && height === 1) return undefined
+  return { x, y, width, height }
+}
+
 /** Keeps a nested Visual placement finite and drawable without imposing a view size. */
 export function normalizeVisualEmbedPlacement(
   placement: Partial<VisualEmbedPlacement> | null | undefined,
@@ -363,12 +414,18 @@ export function normalizeVisualEmbedPlacement(
   // Preserve an explicit unlock. The absence of a saved choice gets the safe
   // current default, while `false` remains a deliberate parent-side choice.
   const aspectRatioLocked = placement?.aspectRatioLocked ?? fallback.aspectRatioLocked ?? true
+  const groupId = typeof placement?.groupId === 'string' && placement.groupId.trim()
+    ? placement.groupId.trim()
+    : undefined
+  const crop = normalizeVisualEmbedCrop(placement?.crop)
   return {
     x: normalizeCanvasPixel(placement?.x, fallback.x, 0),
     y: normalizeCanvasPixel(placement?.y, fallback.y, 0),
     width: normalizeCanvasPixel(placement?.width, fallback.width, 1),
     height: normalizeCanvasPixel(placement?.height, fallback.height, 1),
     aspectRatioLocked,
+    ...(groupId ? { groupId } : {}),
+    ...(crop ? { crop } : {}),
   }
 }
 

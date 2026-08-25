@@ -365,6 +365,7 @@ function parseSketchElements(value: unknown): SketchElement[] | null {
       || element.strokeWidth <= 0
       || element.opacity < 0
       || element.opacity > 1
+      || (element.strokeStyle !== undefined && !['solid', 'dashed', 'dotted'].includes(String(element.strokeStyle)))
       || (element.aspectRatioLocked !== undefined && typeof element.aspectRatioLocked !== 'boolean')
       || (element.cornerRadius !== undefined && (
         element.kind !== 'rounded-rectangle'
@@ -409,6 +410,9 @@ function parseSketchElements(value: unknown): SketchElement[] | null {
       stroke: element.stroke,
       fill: element.fill,
       strokeWidth: element.strokeWidth,
+      ...(element.strokeStyle === 'solid' || element.strokeStyle === 'dashed' || element.strokeStyle === 'dotted'
+        ? { strokeStyle: element.strokeStyle }
+        : {}),
       opacity: element.opacity,
       ...(typeof element.aspectRatioLocked === 'boolean'
         ? { aspectRatioLocked: element.aspectRatioLocked }
@@ -483,6 +487,28 @@ function parseSketchDocument(value: unknown): SketchDocument | null {
   }
 }
 
+/** Parses one saved non-destructive crop window on a parent-side Visual placement. */
+function parseVisualEmbedCrop(value: unknown) {
+  if (!isRecord(value)) return null
+  if (
+    typeof value.x !== 'number'
+    || typeof value.y !== 'number'
+    || typeof value.width !== 'number'
+    || typeof value.height !== 'number'
+    || !Number.isFinite(value.x)
+    || !Number.isFinite(value.y)
+    || !Number.isFinite(value.width)
+    || !Number.isFinite(value.height)
+    || value.x < 0
+    || value.y < 0
+    || value.width <= 0
+    || value.height <= 0
+    || value.x + value.width > 1
+    || value.y + value.height > 1
+  ) return null
+  return { x: value.x, y: value.y, width: value.width, height: value.height }
+}
+
 /** Parses the compact visual draft/official/history record stored on a Visual. */
 function parseVisualVersionState(value: unknown): VisualVersionState | null | undefined {
   // Boards saved before canvas versions simply have no history yet.
@@ -507,6 +533,9 @@ function parseVisualVersionState(value: unknown): VisualVersionState | null | un
 
     const embeds: VisualVersionEmbed[] = []
     for (const embed of candidate.embeds) {
+      const crop = isRecord(embed) && isRecord(embed.placement) && embed.placement.crop !== undefined
+        ? parseVisualEmbedCrop(embed.placement.crop)
+        : undefined
       if (
         !isRecord(embed)
         || typeof embed.id !== 'string'
@@ -524,6 +553,11 @@ function parseVisualVersionState(value: unknown): VisualVersionState | null | un
         || embed.placement.height <= 0
         || (embed.placement.aspectRatioLocked !== undefined
           && typeof embed.placement.aspectRatioLocked !== 'boolean')
+        || (embed.placement.groupId !== undefined && (
+          typeof embed.placement.groupId !== 'string'
+          || embed.placement.groupId.trim().length === 0
+        ))
+        || (embed.placement.crop !== undefined && crop === null)
       ) return undefined
       embeds.push({
         id: embed.id,
@@ -536,6 +570,10 @@ function parseVisualVersionState(value: unknown): VisualVersionState | null | un
           ...(typeof embed.placement.aspectRatioLocked === 'boolean'
             ? { aspectRatioLocked: embed.placement.aspectRatioLocked }
             : {}),
+          ...(typeof embed.placement.groupId === 'string'
+            ? { groupId: embed.placement.groupId.trim() }
+            : {}),
+          ...(crop ? { crop } : {}),
         },
       })
     }

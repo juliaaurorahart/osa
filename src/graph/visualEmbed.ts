@@ -2,6 +2,7 @@ import type { GraphEdge } from './graphEdge'
 import {
   appearanceAccentColor,
   defaultVisualEmbedPlacement,
+  normalizeVisualEmbedCrop,
   normalizeVisualEmbedPlacement,
   OSA_PROPERTY,
   OSA_RELATION,
@@ -93,6 +94,17 @@ export function isVisualEmbedEdge(edge: GraphEdge, parentId?: string) {
 /** Reads safe pixel geometry from an embed edge, including old/missing values. */
 export function visualEmbedPlacementFromEdge(edge: GraphEdge, index: number) {
   const aspectRatioLocked = edge.data.properties[OSA_PROPERTY.visualEmbedAspectRatioLocked]
+  const groupId = edge.data.properties[OSA_PROPERTY.visualEmbedGroupId]?.trim()
+  const cropValue = edge.data.properties[OSA_PROPERTY.visualEmbedCrop]
+  let rawCrop: unknown
+  if (cropValue) {
+    try {
+      rawCrop = JSON.parse(cropValue)
+    } catch {
+      rawCrop = undefined
+    }
+  }
+  const crop = normalizeVisualEmbedCrop(rawCrop)
   return normalizeVisualEmbedPlacement({
     x: Number(edge.data.properties[OSA_PROPERTY.visualEmbedX]),
     y: Number(edge.data.properties[OSA_PROPERTY.visualEmbedY]),
@@ -103,6 +115,8 @@ export function visualEmbedPlacementFromEdge(edge: GraphEdge, index: number) {
     ...((aspectRatioLocked === 'true' || aspectRatioLocked === 'false')
       ? { aspectRatioLocked: aspectRatioLocked === 'true' }
       : {}),
+    ...(groupId ? { groupId } : {}),
+    ...(crop ? { crop } : {}),
   }, defaultVisualEmbedPlacement(index))
 }
 

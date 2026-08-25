@@ -2077,32 +2077,52 @@ function Flow() {
       // placements. Cycle checking ignores those old outgoing edges, then
       // follows every other already-durable Visual relationship.
       const retainedEdges = currentEdges.filter((edge) => !isVisualEmbedEdge(edge, parentVisualId))
+      const usedEdgeIds = new Set(retainedEdges.map((edge) => edge.id))
       const acceptedEmbeds = requestedPlacements.filter((embed) => (
         !visualEmbedWouldCreateCycle(parentVisualId, embed.visual.id, retainedEdges)
       ))
 
       const nextEdges = acceptedEmbeds.map((embed, index) => {
         const existing = oldByPlacementId.get(embed.id)
+        // Keep a freshly pasted placement id durable. This means the editor
+        // can keep it selected after React re-renders, while a rare collision
+        // still falls back to an ordinary fresh edge id.
+        const edgeId = existing?.id
+          ?? (usedEdgeIds.has(embed.id) ? `edge-${nextEdgeId.current++}` : embed.id)
+        usedEdgeIds.add(edgeId)
         const placement = normalizeVisualEmbedPlacement(
           embed.placement,
           defaultVisualEmbedPlacement(index),
         )
+        const properties: Record<string, string> = {
+          ...(existing?.data.properties ?? {}),
+          [OSA_PROPERTY.relationRole]: OSA_RELATION.visualEmbed,
+          [OSA_PROPERTY.visualEmbedX]: String(placement.x),
+          [OSA_PROPERTY.visualEmbedY]: String(placement.y),
+          [OSA_PROPERTY.visualEmbedWidth]: String(placement.width),
+          [OSA_PROPERTY.visualEmbedHeight]: String(placement.height),
+          [OSA_PROPERTY.visualEmbedAspectRatioLocked]: String(Boolean(placement.aspectRatioLocked)),
+        }
+        if (placement.groupId) {
+          properties[OSA_PROPERTY.visualEmbedGroupId] = placement.groupId
+        } else {
+          // A placement update can ungroup a Visual. Do not leave an old edge
+          // property behind after the UI intentionally clears it.
+          delete properties[OSA_PROPERTY.visualEmbedGroupId]
+        }
+        if (placement.crop) {
+          properties[OSA_PROPERTY.visualEmbedCrop] = JSON.stringify(placement.crop)
+        } else {
+          delete properties[OSA_PROPERTY.visualEmbedCrop]
+        }
         return createGraphEdge({
-          id: existing?.id ?? `edge-${nextEdgeId.current++}`,
+          id: edgeId,
           source: parentVisualId,
           target: embed.visual.id,
           relationship: 'includes visual',
           relationKind: existing?.data.relationKind ?? 'related',
           sourceAnchor: existing?.data.sourceAnchor ?? null,
-          properties: {
-            ...(existing?.data.properties ?? {}),
-            [OSA_PROPERTY.relationRole]: OSA_RELATION.visualEmbed,
-            [OSA_PROPERTY.visualEmbedX]: String(placement.x),
-            [OSA_PROPERTY.visualEmbedY]: String(placement.y),
-            [OSA_PROPERTY.visualEmbedWidth]: String(placement.width),
-            [OSA_PROPERTY.visualEmbedHeight]: String(placement.height),
-            [OSA_PROPERTY.visualEmbedAspectRatioLocked]: String(Boolean(placement.aspectRatioLocked)),
-          },
+          properties,
         })
       })
       return [...retainedEdges, ...nextEdges]
@@ -2199,6 +2219,25 @@ function Flow() {
           embed.placement,
           defaultVisualEmbedPlacement(index),
         )
+        const properties: Record<string, string> = {
+          ...(sourceEdge?.data.properties ?? {}),
+          [OSA_PROPERTY.relationRole]: OSA_RELATION.visualEmbed,
+          [OSA_PROPERTY.visualEmbedX]: String(placement.x),
+          [OSA_PROPERTY.visualEmbedY]: String(placement.y),
+          [OSA_PROPERTY.visualEmbedWidth]: String(placement.width),
+          [OSA_PROPERTY.visualEmbedHeight]: String(placement.height),
+          [OSA_PROPERTY.visualEmbedAspectRatioLocked]: String(Boolean(placement.aspectRatioLocked)),
+        }
+        if (placement.groupId) {
+          properties[OSA_PROPERTY.visualEmbedGroupId] = placement.groupId
+        } else {
+          delete properties[OSA_PROPERTY.visualEmbedGroupId]
+        }
+        if (placement.crop) {
+          properties[OSA_PROPERTY.visualEmbedCrop] = JSON.stringify(placement.crop)
+        } else {
+          delete properties[OSA_PROPERTY.visualEmbedCrop]
+        }
         return createGraphEdge({
           id: `edge-${nextEdgeId.current++}`,
           source: copy.id,
@@ -2206,15 +2245,7 @@ function Flow() {
           relationship: sourceEdge?.data.relationship ?? 'includes visual',
           relationKind: sourceEdge?.data.relationKind ?? 'related',
           sourceAnchor: sourceEdge?.data.sourceAnchor ?? null,
-          properties: {
-            ...(sourceEdge?.data.properties ?? {}),
-            [OSA_PROPERTY.relationRole]: OSA_RELATION.visualEmbed,
-            [OSA_PROPERTY.visualEmbedX]: String(placement.x),
-            [OSA_PROPERTY.visualEmbedY]: String(placement.y),
-            [OSA_PROPERTY.visualEmbedWidth]: String(placement.width),
-            [OSA_PROPERTY.visualEmbedHeight]: String(placement.height),
-            [OSA_PROPERTY.visualEmbedAspectRatioLocked]: String(Boolean(placement.aspectRatioLocked)),
-          },
+          properties,
         })
       })
       return [...currentEdges, ownershipEdge, ...copiedEmbedEdges]

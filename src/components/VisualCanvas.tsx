@@ -433,6 +433,21 @@ export function VisualCanvasEditor({
     if (didUpdate) persistEmbeds(nextEmbeds)
   }
 
+  /**
+   * A paste creates fresh parent-side placement ids while deliberately keeping
+   * each source Visual, photo, and nested canvas shared.
+   */
+  const addEmbeddedVisualCopies = (copies: VisualEmbedInstance[]) => {
+    if (editingDisabled || copies.length === 0) return
+    const currentEmbeds = draftEmbedsRef.current
+    const knownIds = new Set(currentEmbeds.map((embed) => embed.id))
+    const acceptedCopies = copies.filter((copy) => (
+      copy.visual.id !== visual.id && !knownIds.has(copy.id)
+    ))
+    if (acceptedCopies.length === 0) return
+    persistEmbeds([...currentEmbeds, ...acceptedCopies.map(cloneEmbed)])
+  }
+
   const removeEmbed = (id: string) => {
     if (editingDisabled) return
     const nextEmbeds = draftEmbedsRef.current.filter((embed) => embed.id !== id)
@@ -632,6 +647,7 @@ export function VisualCanvasEditor({
               }}
               onEmbeddedVisualPlacementChange={updateEmbedPlacement}
               onEmbeddedVisualPlacementsChange={updateEmbedPlacements}
+              onEmbeddedVisualCopiesCreate={addEmbeddedVisualCopies}
               onEmbeddedVisualRemove={removeEmbed}
               onEmbeddedVisualMakeIndependent={onCreateIndependentVisualCopy
                 ? makeEmbeddedVisualIndependent

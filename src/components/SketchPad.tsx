@@ -15,6 +15,7 @@ import {
   type SketchPoint,
   type SketchSemanticColorBindings,
   type SketchStroke,
+  type SketchStrokeStyle,
   type SketchAnnotationTarget,
   type SketchTextAnnotation,
 } from '../graph/textNode'
@@ -28,8 +29,10 @@ import {
 } from '../graph/sketchAnnotation'
 import {
   isImmutableVisual,
+  normalizeVisualEmbedCrop,
   OSA_PROPERTY,
   visualIdentity,
+  type VisualEmbedCrop,
   type VisualEmbedPlacement,
 } from '../graph/osaData'
 import type { VisualEmbedInstance } from '../graph/visualEmbed'
@@ -39,8 +42,6 @@ const MIN_PAGE_SIZE = 100
 const MAX_PAGE_SIZE = 20_000
 const MIN_ZOOM = 0.1
 const MAX_ZOOM = 8
-/** Keep a group usable even when its resize handle is dragged almost closed. */
-const MIN_GROUP_DIMENSION = 1
 
 /**
  * The canvas uses a deliberately small set of portable SVG primitives. They
@@ -83,6 +84,11 @@ type SketchPadProps = {
   onEmbeddedVisualPlacementChange?: (id: string, placement: VisualEmbedPlacement) => void
   /** Moves several selected parent-side placements in one durable update. */
   onEmbeddedVisualPlacementsChange?: (updates: ReadonlyMap<string, VisualEmbedPlacement>) => void
+  /**
+   * Adds copied parent-side placements. Each copy keeps the same canonical
+   * child Visual; only the local canvas relationship and geometry are new.
+   */
+  onEmbeddedVisualCopiesCreate?: (copies: VisualEmbedInstance[]) => void
   /** Removes only the placement edge, never the child Visual itself. */
   onEmbeddedVisualRemove?: (id: string) => void
   /**
@@ -115,10 +121,6 @@ type ActiveElementInteraction = {
   layerId: string
   element: SketchElement
   original: SketchElement | null
-  /** Original members of a same-layer group, captured before a drag begins. */
-  groupMembers?: SketchElement[]
-  /** Temporary moved members shown during the current drag only. */
-  groupElements?: SketchElement[]
   startPoint: SketchPoint
   mode: 'create' | 'move' | 'resize'
 }
@@ -139,6 +141,24 @@ type MarqueeSelectionMode = 'inside' | 'touching'
 type ShapeClipboardItem = {
   layerId: string
   element: SketchElement
+}
+
+/**
+ * A copied Visual is a new placement of the same canonical source—not a
+ * duplicate photo, duplicate drawing, or duplicate project object.
+ */
+type VisualEmbedClipboardItem = Omit<VisualEmbedInstance, 'id' | 'placement'> & {
+  placement: VisualEmbedPlacement
+}
+
+type CanvasClipboard = {
+  shapes: ShapeClipboardItem[]
+  embeds: VisualEmbedClipboardItem[]
+}
+
+type MixedSelection = {
+  elementIds: string[]
+  embedIds: string[]
 }
 
 /** A parent canvas can move/resize an embed without changing its child Visual. */
@@ -339,7 +359,11 @@ function elementBounds(element: SketchElement): ElementBounds {
 
 /** The smallest canvas box that contains every supplied shape. */
 function combinedElementBounds(elements: readonly SketchElement[]): ElementBounds {
-  const bounds = elements.map(elementBounds)
+  return combinedBounds(elements.map(elementBounds))
+}
+
+/** Tight bounding box for any mixture of shapes and placed Visuals. */
+function combinedBounds(bounds: readonly ElementBounds[]): ElementBounds {
   const left = Math.min(...bounds.map((box) => box.x))
   const top = Math.min(...bounds.map((box) => box.y))
   const right = Math.max(...bounds.map((box) => box.x + box.width))
@@ -349,52 +373,6 @@ function combinedElementBounds(elements: readonly SketchElement[]): ElementBound
     y: top,
     width: right - left,
     height: bottom - top,
-  }
-}
-
-/**
- * Scale one member from a group's original bounding box. Lines retain their
- * signed vectors, so an arrow that pointed up-left continues to do so after
- * its group is resized. Compound elements resize their saved local geometry
- * through the same path as an individually resized compound.
- */
-function scaleElementFromGroupBounds(
-  element: SketchElement,
-  groupBounds: ElementBounds,
-  scaleX: number,
-  scaleY: number,
-): SketchElement {
-  const x = groupBounds.x + (element.x - groupBounds.x) * scaleX
-  const y = groupBounds.y + (element.y - groupBounds.y) * scaleY
-
-  if (isLineElement(element.kind)) {
-    return {
-      ...element,
-      x,
-      y,
-      width: element.width * scaleX,
-      height: element.height * scaleY,
-    }
-  }
-
-  const radiusScale = Math.min(Math.abs(scaleX), Math.abs(scaleY))
-  const resized = resizeCompoundElement(element, {
-    x,
-    y,
-    width: element.width * scaleX,
-    height: element.height * scaleY,
-  })
-  return {
-    ...resized,
-    ...(element.kind === 'rounded-rectangle' && typeof element.cornerRadius === 'number'
-      ? { cornerRadius: Math.max(0, element.cornerRadius * radiusScale) }
-      : {}),
-    // Text has a drawing box too, but its visible glyphs are controlled by
-    // fontSize. Scale it with the smallest axis so it remains readable rather
-    // than becoming artificially stretched on a non-uniform group resize.
-    ...(element.kind === 'text' && typeof element.fontSize === 'number'
-      ? { fontSize: Math.max(1, element.fontSize * radiusScale) }
-      : {}),
   }
 }
 
@@ -444,30 +422,6 @@ function axisLockedPoint(start: SketchPoint, end: SketchPoint): SketchPoint {
     : { ...end, x: start.x }
 }
 
-/**
- * A group is a canvas-local relationship, so it is intentionally scoped to
- * its layer. That keeps a locked/hidden layer from being silently moved by a
- * group drag on another layer.
- */
-function selectedIdsIncludingLayerGroups(document: SketchDocument, selectedIds: readonly string[]) {
-  const selectedIdSet = new Set(selectedIds)
-  const selectedGroupKeys = new Set<string>()
-  for (const layer of document.layers) {
-    for (const element of layer.elements ?? []) {
-      if (selectedIdSet.has(element.id) && element.groupId) {
-        selectedGroupKeys.add(`${layer.id}:${element.groupId}`)
-      }
-    }
-  }
-  return document.layers.flatMap((layer) => (
-    (layer.elements ?? []).flatMap((element) => (
-      selectedIdSet.has(element.id) || (element.groupId && selectedGroupKeys.has(`${layer.id}:${element.groupId}`))
-        ? [element.id]
-        : []
-    ))
-  ))
-}
-
 function createElement(
   kind: Exclude<SketchElement['kind'], 'text'>,
   start: SketchPoint,
@@ -476,6 +430,7 @@ function createElement(
   fill: string,
   strokeWidth: number,
   opacity: number,
+  strokeStyle: SketchStrokeStyle = 'solid',
 ): SketchElement {
   const box = normalizedBox(start, end)
   return {
@@ -490,11 +445,18 @@ function createElement(
     stroke: color,
     fill,
     strokeWidth,
+    ...(strokeStyle !== 'solid' ? { strokeStyle } : {}),
     opacity,
     ...(kind === 'rounded-rectangle'
       ? { cornerRadius: Math.min(24, box.width / 5, box.height / 5) }
       : {}),
   }
+}
+
+function strokeDasharray(style: SketchStrokeStyle | undefined) {
+  if (style === 'dashed') return '12 8'
+  if (style === 'dotted') return '2 7'
+  return undefined
 }
 
 function SketchElementGraphic({
@@ -542,6 +504,8 @@ function SketchElementGraphic({
       className={selected ? 'sketch-element is-selected' : 'sketch-element'}
       data-sketch-element-id={element.id}
       opacity={element.opacity}
+      strokeDasharray={strokeDasharray(element.strokeStyle)}
+      strokeLinecap={element.strokeStyle === 'dotted' ? 'round' : undefined}
       pointerEvents={interactive ? 'all' : 'none'}
       onPointerDown={onPointerDown}
     >
@@ -869,6 +833,10 @@ function EmbeddedVisualGraphic({
   const preserveAspectRatio = placement.aspectRatioLocked === false
     ? 'none'
     : 'xMidYMid meet'
+  const crop = placement.crop
+  const childViewBox = crop
+    ? `${crop.x * childDocument.width} ${crop.y * childDocument.height} ${crop.width * childDocument.width} ${crop.height * childDocument.height}`
+    : `0 0 ${childDocument.width} ${childDocument.height}`
 
   return (
     <g
@@ -877,7 +845,22 @@ function EmbeddedVisualGraphic({
       pointerEvents={interactive ? 'all' : 'none'}
       onPointerDown={onPointerDown}
     >
-      {image ? (
+      {image && crop ? (
+        // The crop window is resolved in source fractions, then scaled into
+        // this one parent-side placement. The original photo stays unchanged.
+        <svg
+          x={placement.x}
+          y={placement.y}
+          width={placement.width}
+          height={placement.height}
+          viewBox={`${crop.x} ${crop.y} ${crop.width} ${crop.height}`}
+          preserveAspectRatio={preserveAspectRatio}
+          overflow="hidden"
+          pointerEvents="none"
+        >
+          <image href={image} x={0} y={0} width={1} height={1} preserveAspectRatio="none" />
+        </svg>
+      ) : image ? (
         // A photo is an image asset, not a 1000 × 700 OSA drawing page. Draw
         // it directly in this parent-side placement so no blank paper or
         // permanent frame travels with the photo.
@@ -896,7 +879,7 @@ function EmbeddedVisualGraphic({
           y={placement.y}
           width={placement.width}
           height={placement.height}
-          viewBox={`0 0 ${childDocument.width} ${childDocument.height}`}
+          viewBox={childViewBox}
           preserveAspectRatio={preserveAspectRatio}
           overflow="hidden"
           pointerEvents="none"
@@ -1113,6 +1096,7 @@ export function SketchPad({
   annotationTargets = [],
   onEmbeddedVisualPlacementChange,
   onEmbeddedVisualPlacementsChange,
+  onEmbeddedVisualCopiesCreate,
   onEmbeddedVisualRemove,
   onEmbeddedVisualMakeIndependent,
 }: SketchPadProps) {
@@ -1121,6 +1105,8 @@ export function SketchPad({
   const markerNamespace = useId()
   const [tool, setTool] = useState<SketchTool>(initialTool)
   const [color, setColor] = useState<string>(PEN_COLORS[0])
+  /** Applies to newly created shapes, lines, and arrows. */
+  const [strokeStyle, setStrokeStyle] = useState<SketchStrokeStyle>('solid')
   /** New enclosed shapes use this fill; lines, arrows, text, and pen ignore it. */
   const [fillColor, setFillColor] = useState<string>('transparent')
   const [brushWidth, setBrushWidth] = useState(4)
@@ -1154,7 +1140,7 @@ export function SketchPad({
   const activeStrokeLayerIdRef = useRef<string | null>(null)
   const activeElementRef = useRef<ActiveElementInteraction | null>(null)
   const activeRegionSelectionRef = useRef<ActiveRegionSelection | null>(null)
-  const shapeClipboardRef = useRef<ShapeClipboardItem[]>([])
+  const canvasClipboardRef = useRef<CanvasClipboard>({ shapes: [], embeds: [] })
   const pasteOffsetRef = useRef(0)
   const activeEmbedRef = useRef<ActiveEmbedInteraction | null>(null)
   const activeSelectionMoveRef = useRef<ActiveSelectionMove | null>(null)
@@ -1164,39 +1150,97 @@ export function SketchPad({
   const pinchStateRef = useRef<PinchState | null>(null)
   const pinchFrameRef = useRef<number | null>(null)
   const zoomRef = useRef(zoom)
+  // Keyboard commands use the latest placed Visuals without making their
+  // callbacks depend on a parent-owned array that may be replaced in-place.
+  const embeddedVisualsRef = useRef(embeddedVisuals)
+  useEffect(() => {
+    embeddedVisualsRef.current = embeddedVisuals
+  }, [embeddedVisuals])
   const activeLayer = document.layers.find((layer) => layer.id === activeLayerId)
     ?? document.layers.at(-1)
+  /** Return every direct canvas item that shares one durable group token. */
+  const selectionForGroup = (groupId: string | undefined): MixedSelection => {
+    if (!groupId) return { elementIds: [], embedIds: [] }
+    return {
+      elementIds: document.layers.flatMap((layer) => (
+        (layer.elements ?? []).flatMap((element) => element.groupId === groupId ? [element.id] : [])
+      )),
+      embedIds: embeddedVisuals.flatMap((embed) => (
+        embed.placement.groupId === groupId ? [embed.id] : []
+      )),
+    }
+  }
+  /** Keep a selection whole when it includes any member of a durable group. */
+  const expandSelectionToGroups = (selection: MixedSelection): MixedSelection => {
+    const elementIdSet = new Set(selection.elementIds)
+    const embedIdSet = new Set(selection.embedIds)
+    const groupIds = new Set<string>()
+    document.layers.forEach((layer) => {
+      ;(layer.elements ?? []).forEach((element) => {
+        if (elementIdSet.has(element.id) && element.groupId) groupIds.add(element.groupId)
+      })
+    })
+    embeddedVisuals.forEach((embed) => {
+      if (embedIdSet.has(embed.id) && embed.placement.groupId) groupIds.add(embed.placement.groupId)
+    })
+    groupIds.forEach((groupId) => {
+      const members = selectionForGroup(groupId)
+      members.elementIds.forEach((id) => elementIdSet.add(id))
+      members.embedIds.forEach((id) => embedIdSet.add(id))
+    })
+    return {
+      elementIds: document.layers.flatMap((layer) => (
+        (layer.elements ?? []).flatMap((element) => elementIdSet.has(element.id) ? [element.id] : [])
+      )),
+      embedIds: embeddedVisuals.flatMap((embed) => embedIdSet.has(embed.id) ? [embed.id] : []),
+    }
+  }
   const selectedElements = document.layers
     .flatMap((layer) => (layer.elements ?? []).map((element) => ({ layer, element })))
     .filter(({ element }) => selectedElementIds.includes(element.id))
   const selectedElement = selectedElements[0]
   const selectedElementCount = selectedElements.length
+  const selectedEmbeds = embeddedVisuals.filter((embed) => selectedEmbedIds.includes(embed.id))
+  const selectedItemCount = selectedElementCount + selectedEmbeds.length
   const selectedGroupIds = [...new Set(
-    selectedElements.flatMap(({ element }) => element.groupId ? [element.groupId] : []),
+    [
+      ...selectedElements.flatMap(({ element }) => element.groupId ? [element.groupId] : []),
+      ...selectedEmbeds.flatMap((embed) => embed.placement.groupId ? [embed.placement.groupId] : []),
+    ],
   )]
   const selectedElementsShareEditableLayer = selectedElements.length > 0
     && selectedElements.every(({ layer }) => (
       !layer.locked && layer.id === selectedElements[0]?.layer.id
     ))
-  const selectedElementsAreOneGroup = selectedElementCount > 1
+  const selectedItemsAreOneGroup = selectedItemCount > 1
     && selectedGroupIds.length === 1
     && selectedElements.every(({ element }) => element.groupId === selectedGroupIds[0])
-  const canGroupSelectedElements = selectedElementCount > 1
-    && selectedElementsShareEditableLayer
-    && !selectedElementsAreOneGroup
-  const canUngroupSelectedElements = selectedGroupIds.length > 0 && selectedElementsShareEditableLayer
-  /** A durable group is selected as one object, including every member. */
-  const selectedGroup = selectedElementsAreOneGroup && selectedElementsShareEditableLayer && selectedElement
+    && selectedEmbeds.every((embed) => embed.placement.groupId === selectedGroupIds[0])
+  const selectedElementsAreEditable = selectedElements.every(({ layer }) => !layer.locked && layer.visible)
+  const canGroupSelectedItems = selectedItemCount > 1
+    && selectedElementsAreEditable
+    && (selectedEmbeds.length === 0 || Boolean(onEmbeddedVisualPlacementChange))
+    && !selectedItemsAreOneGroup
+  const canUngroupSelectedItems = selectedGroupIds.length > 0
+    && selectedElementsAreEditable
+    && (selectedEmbeds.length === 0 || Boolean(onEmbeddedVisualPlacementChange))
+  /** A durable group can contain shapes, placed Visuals, or both. */
+  const selectedGroup = selectedItemsAreOneGroup
     ? {
-      layer: selectedElement.layer,
       id: selectedGroupIds[0],
-      members: (selectedElement.layer.elements ?? []).filter((element) => (
-        element.groupId === selectedGroupIds[0]
-      )),
+      members: selectionForGroup(selectedGroupIds[0]),
     }
     : null
-  const selectedGroupBounds = selectedGroup && selectedGroup.members.length > 0
-    ? combinedElementBounds(selectedGroup.members)
+  const selectedGroupBounds = selectedGroup
+    && selectedGroup.members.elementIds.length + selectedGroup.members.embedIds.length > 0
+    ? combinedBounds([
+      ...selectedElements
+        .filter(({ element }) => selectedGroup.members.elementIds.includes(element.id))
+        .map(({ element }) => elementBounds(element)),
+      ...embeddedVisuals
+        .filter((embed) => selectedGroup.members.embedIds.includes(embed.id))
+        .map((embed) => embed.placement),
+    ])
     : null
   /**
    * Combine makes one new geometric object. It intentionally accepts only
@@ -1216,7 +1260,7 @@ export function SketchPad({
     && selectedElement.element.compoundParts?.length,
   )
   /** The detailed editor remains intentionally one-Visual-at-a-time. */
-  const selectedEmbed = selectedEmbedIds.length === 1
+  const selectedEmbed = selectedElementCount === 0 && selectedEmbedIds.length === 1
     ? embeddedVisuals.find((embed) => embed.id === selectedEmbedIds[0])
     : undefined
   const selectedTextAnnotation = selectedElementCount === 1 && selectedElement?.element.kind === 'text'
@@ -1483,10 +1527,17 @@ export function SketchPad({
           })
         })()
     ))
-    const regionIds = selectedIds
     const regionEmbedIds = embeddedVisuals.flatMap((embed) => (
       marqueeMatchesBounds(bounds, embed.placement, marqueeSelectionMode) ? [embed.id] : []
     ))
+    // A marquee touching any member of a saved mixed group selects the whole
+    // group, even when that group includes photos/canvases as well as shapes.
+    const expandedRegion = expandSelectionToGroups({
+      elementIds: selectedIds,
+      embedIds: regionEmbedIds,
+    })
+    const regionIds = expandedRegion.elementIds
+    const expandedRegionEmbedIds = expandedRegion.embedIds
     if (selection.toggleSelection) {
       setSelectedElementIds((currentIds) => {
         const currentIdSet = new Set(currentIds)
@@ -1502,9 +1553,9 @@ export function SketchPad({
       })
       setSelectedEmbedIds((currentIds) => {
         const currentIdSet = new Set(currentIds)
-        const regionAlreadySelected = regionEmbedIds.length > 0
-          && regionEmbedIds.every((id) => currentIdSet.has(id))
-        for (const id of regionEmbedIds) {
+        const regionAlreadySelected = expandedRegionEmbedIds.length > 0
+          && expandedRegionEmbedIds.every((id) => currentIdSet.has(id))
+        for (const id of expandedRegionEmbedIds) {
           if (regionAlreadySelected) currentIdSet.delete(id)
           else currentIdSet.add(id)
         }
@@ -1512,7 +1563,7 @@ export function SketchPad({
       })
     } else {
       setSelectedElementIds(regionIds)
-      setSelectedEmbedIds(regionEmbedIds)
+      setSelectedEmbedIds(expandedRegionEmbedIds)
     }
     return true
   }
@@ -1522,11 +1573,18 @@ export function SketchPad({
    * content is never copied or changed: only drawing coordinates and the
    * parent-side placement of each Visual move together.
    */
-  const startSelectedItemsMove = (event: ReactPointerEvent<SVGGElement>) => {
+  const startSelectedItemsMove = (
+    event: ReactPointerEvent<SVGGElement>,
+    requestedSelection?: MixedSelection,
+  ) => {
     const surface = surfaceRef.current
     if (!surface) return false
 
-    const selectedElementIdSet = new Set(selectedElementIds)
+    const selection = expandSelectionToGroups(requestedSelection ?? {
+      elementIds: selectedElementIds,
+      embedIds: selectedEmbedIds,
+    })
+    const selectedElementIdSet = new Set(selection.elementIds)
     const elements = document.layers.flatMap((layer) => (
       !layer.visible || layer.locked
         ? []
@@ -1540,7 +1598,7 @@ export function SketchPad({
             : []
         ))
     ))
-    const selectedEmbedIdSet = new Set(selectedEmbedIds)
+    const selectedEmbedIdSet = new Set(selection.embedIds)
     const embeds = embeddedVisuals.flatMap((embed) => (
       selectedEmbedIdSet.has(embed.id)
         ? [{
@@ -1646,6 +1704,36 @@ export function SketchPad({
     return true
   }
 
+  /** Replace the current selection, expanding any durable mixed group. */
+  const selectItems = (requested: MixedSelection) => {
+    const selection = expandSelectionToGroups(requested)
+    setSelectedElementIds(selection.elementIds)
+    setSelectedEmbedIds(selection.embedIds)
+    return selection
+  }
+
+  /** Add or remove a whole group without discarding the other kind of object. */
+  const toggleItemsInSelection = (requested: MixedSelection) => {
+    const selection = expandSelectionToGroups(requested)
+    const isFullySelected = selection.elementIds.every((id) => selectedElementIds.includes(id))
+      && selection.embedIds.every((id) => selectedEmbedIds.includes(id))
+    const selectedElementIdSet = new Set(selectedElementIds)
+    const selectedEmbedIdSet = new Set(selectedEmbedIds)
+    for (const id of selection.elementIds) {
+      if (isFullySelected) selectedElementIdSet.delete(id)
+      else selectedElementIdSet.add(id)
+    }
+    for (const id of selection.embedIds) {
+      if (isFullySelected) selectedEmbedIdSet.delete(id)
+      else selectedEmbedIdSet.add(id)
+    }
+    setSelectedElementIds(document.layers.flatMap((layer) => (
+      (layer.elements ?? []).flatMap((element) => selectedElementIdSet.has(element.id) ? [element.id] : [])
+    )))
+    setSelectedEmbedIds(embeddedVisuals.flatMap((embed) => selectedEmbedIdSet.has(embed.id) ? [embed.id] : []))
+    return selection
+  }
+
   const startEmbedInteraction = (
     event: ReactPointerEvent<SVGGElement>,
     embed: VisualEmbedInstance,
@@ -1657,9 +1745,25 @@ export function SketchPad({
     if (!surface) return
 
     clearPenTouchConflict(event)
-    // Clicking one already-selected Visual moves the entire marquee set;
-    // clicking an unselected Visual retains the familiar single-selection.
-    if (mode === 'move' && selectedEmbedIds.includes(embed.id) && startSelectedItemsMove(event)) return
+    const isAlreadySelected = selectedEmbedIds.includes(embed.id)
+    // Shift adds an unselected Visual to the current mixed selection. Cmd/Ctrl
+    // toggles it. In both cases a saved group is kept whole.
+    const selectionModifier = event.metaKey || event.ctrlKey || (event.shiftKey && !isAlreadySelected)
+    const members = selectionForGroup(embed.placement.groupId)
+    const requestedSelection = members.embedIds.length + members.elementIds.length > 0
+      ? members
+      : { elementIds: [], embedIds: [embed.id] }
+    if (selectionModifier) {
+      toggleItemsInSelection(requestedSelection)
+      return
+    }
+    const selected = selectItems(requestedSelection)
+    // A selected drawing object or Visual can move the full temporary or saved
+    // mixed selection. It never changes the canonical child Visual itself.
+    if (mode === 'move' && selected.elementIds.length + selected.embedIds.length > 1) {
+      startSelectedItemsMove(event, selected)
+      return
+    }
     if (!surface.hasPointerCapture(event.pointerId)) surface.setPointerCapture(event.pointerId)
     const point = pointFromPointer(event.nativeEvent, surface.getBoundingClientRect())
     const interaction: ActiveEmbedInteraction = {
@@ -1672,8 +1776,6 @@ export function SketchPad({
     }
     activeEmbedRef.current = interaction
     setActiveEmbed(interaction)
-    setSelectedEmbedIds([embed.id])
-    setSelectedElementIds([])
   }
 
   const updateActiveElement = (event: ReactPointerEvent<SVGSVGElement>) => {
@@ -1682,7 +1784,6 @@ export function SketchPad({
     const rawPoint = pointFromPointer(event.nativeEvent, event.currentTarget.getBoundingClientRect())
     const original = interaction.original
     let element = interaction.element
-    let groupElements = interaction.groupElements
 
     if (interaction.mode === 'create') {
       const point = event.shiftKey && isLineElement(interaction.element.kind)
@@ -1696,6 +1797,7 @@ export function SketchPad({
         interaction.element.fill,
         interaction.element.strokeWidth,
         interaction.element.opacity,
+        interaction.element.strokeStyle,
       )
       // Preserve the temporary ID while the person drags; it becomes durable
       // only on pointer-up.
@@ -1706,32 +1808,9 @@ export function SketchPad({
       const moveHorizontally = Math.abs(rawDx) >= Math.abs(rawDy)
       const dx = event.shiftKey && !moveHorizontally ? 0 : rawDx
       const dy = event.shiftKey && moveHorizontally ? 0 : rawDy
-      groupElements = interaction.groupMembers?.map((member) => ({
-        ...member,
-        x: member.x + dx,
-        y: member.y + dy,
-      }))
-      element = groupElements?.find((member) => member.id === original.id)
-        ?? { ...original, x: original.x + dx, y: original.y + dy }
+      element = { ...original, x: original.x + dx, y: original.y + dy }
     } else if (original && interaction.mode === 'resize') {
-      if (interaction.groupMembers && interaction.groupMembers.length > 1) {
-        const groupBounds = combinedElementBounds(interaction.groupMembers)
-        const requestedWidth = Math.max(MIN_GROUP_DIMENSION, rawPoint.x - groupBounds.x)
-        const requestedHeight = Math.max(MIN_GROUP_DIMENSION, rawPoint.y - groupBounds.y)
-        // A multi-selection has no durable object of its own to store a lock
-        // on, but holding Shift keeps the group proportional for this resize.
-        const lockedSize = event.shiftKey
-          ? proportionalDimensions(groupBounds, requestedWidth, requestedHeight)
-          : { width: requestedWidth, height: requestedHeight }
-        const width = Math.max(MIN_GROUP_DIMENSION, lockedSize.width)
-        const height = Math.max(MIN_GROUP_DIMENSION, lockedSize.height)
-        const scaleX = groupBounds.width === 0 ? 1 : width / groupBounds.width
-        const scaleY = groupBounds.height === 0 ? 1 : height / groupBounds.height
-        groupElements = interaction.groupMembers.map((member) => (
-          scaleElementFromGroupBounds(member, groupBounds, scaleX, scaleY)
-        ))
-        element = groupElements.find((member) => member.id === original.id) ?? original
-      } else if (isLineElement(original.kind)) {
+      if (isLineElement(original.kind)) {
         const point = event.shiftKey
           ? axisLockedPoint({ x: original.x, y: original.y }, rawPoint)
           : rawPoint
@@ -1759,7 +1838,7 @@ export function SketchPad({
       }
     }
 
-    const next = { ...interaction, element, ...(groupElements ? { groupElements } : {}) }
+    const next = { ...interaction, element }
     activeElementRef.current = next
     setActiveElement(next)
     return true
@@ -1777,64 +1856,37 @@ export function SketchPad({
     if (!surface) return
     clearPenTouchConflict(event)
     const isAlreadySelected = selectedElementIds.includes(element.id)
-    // Shift-click adds a new item to a selection. Once an item is already in
-    // the selection, Shift remains available for the promised axis-locked
-    // drag. Cmd/Ctrl-click remains the explicit toggle/remove gesture.
+    // Shift adds an unselected shape to the current selection. Cmd/Ctrl
+    // toggles it. Unlike the former shape-only path, this deliberately keeps
+    // placed Visuals selected too.
     const selectionModifier = event.metaKey || event.ctrlKey || (event.shiftKey && !isAlreadySelected)
+    const members = selectionForGroup(element.groupId)
+    const requestedSelection = members.elementIds.length + members.embedIds.length > 0
+      ? members
+      : { elementIds: [element.id], embedIds: [] }
     if (selectionModifier) {
-      const groupIds = selectedIdsIncludingLayerGroups(document, [element.id])
-      setSelectedElementIds((currentIds) => {
-        const currentIdSet = new Set(currentIds)
-        const groupAlreadySelected = groupIds.every((id) => currentIdSet.has(id))
-        for (const id of groupIds) {
-          if (groupAlreadySelected) currentIdSet.delete(id)
-          else currentIdSet.add(id)
-        }
-        return document.layers.flatMap((candidateLayer) => (
-          (candidateLayer.elements ?? []).flatMap((candidate) => (
-            currentIdSet.has(candidate.id) ? [candidate.id] : []
-          ))
-        ))
-      })
-      setSelectedEmbedIds([])
+      toggleItemsInSelection(requestedSelection)
       return
     }
-    // A selected drawing object can be the drag handle for a mixed marquee
-    // selection. This includes shapes in other editable layers and placed
-    // photo/canvas Visuals.
-    if (mode === 'move' && isAlreadySelected && startSelectedItemsMove(event)) return
+    const selected = selectItems(requestedSelection)
+    // Any member can be the drag handle for a mixed temporary or durable
+    // selection, including parent-side photo/canvas placements.
+    if (mode === 'move' && selected.elementIds.length + selected.embedIds.length > 1) {
+      startSelectedItemsMove(event, selected)
+      return
+    }
     if (!surface.hasPointerCapture(event.pointerId)) surface.setPointerCapture(event.pointerId)
     const point = pointFromPointer(event.nativeEvent, surface.getBoundingClientRect())
-    const selectedMembers = isAlreadySelected
-      ? (layer.elements ?? []).filter((candidate) => selectedElementIds.includes(candidate.id))
-      : []
-    // A temporary multi-selection moves together even before the person
-    // decides it deserves a durable `groupId`. A saved group uses the same
-    // movement path, but remains a relationship after selection changes.
-    const groupMembers = selectedMembers.length > 1
-      ? selectedMembers.map(cloneSketchElement)
-      : element.groupId
-      ? (layer.elements ?? [])
-        .filter((candidate) => candidate.groupId === element.groupId)
-        .map(cloneSketchElement)
-      : []
     const interaction: ActiveElementInteraction = {
       pointerId: event.pointerId,
       layerId: layer.id,
       element: cloneSketchElement(element),
       original: cloneSketchElement(element),
-      ...(groupMembers.length > 1 ? { groupMembers } : {}),
       startPoint: point,
       mode,
     }
     activeElementRef.current = interaction
     setActiveElement(interaction)
-    setSelectedElementIds(
-      groupMembers.length > 1
-        ? selectedIdsIncludingLayerGroups(document, groupMembers.map((member) => member.id))
-        : selectedIdsIncludingLayerGroups(document, [element.id]),
-    )
-    setSelectedEmbedIds([])
   }
 
   const beginInteraction = (event: ReactPointerEvent<SVGSVGElement>) => {
@@ -1917,7 +1969,7 @@ export function SketchPad({
       if (!event.currentTarget.hasPointerCapture(event.pointerId)) {
         event.currentTarget.setPointerCapture(event.pointerId)
       }
-      const element = createElement(tool, point, point, color, fillColor, brushWidth, opacity)
+      const element = createElement(tool, point, point, color, fillColor, brushWidth, opacity, strokeStyle)
       const interaction: ActiveElementInteraction = {
         pointerId: event.pointerId,
         layerId: activeLayer.id,
@@ -2008,20 +2060,6 @@ export function SketchPad({
       : element.width >= 4 && element.height >= 4
     if (interaction.mode === 'create' && !hasUsefulSize) {
       setSelectedElementIds([])
-      return true
-    }
-    if (
-      (interaction.mode === 'move' || interaction.mode === 'resize')
-      && interaction.groupElements
-      && interaction.groupElements.length > 1
-    ) {
-      const groupElementsById = new Map(interaction.groupElements.map((member) => [member.id, member]))
-      commit(replaceLayer(document, interaction.layerId, (layer) => ({
-        ...layer,
-        elements: (layer.elements ?? []).map((candidate) => (
-          groupElementsById.get(candidate.id) ?? candidate
-        )),
-      })))
       return true
     }
     commit(replaceLayer(document, interaction.layerId, (layer) => ({
@@ -2366,73 +2404,98 @@ export function SketchPad({
     updateSelectedElement(sizedElementUpdate(selectedElement.element, dimension, value))
   }
 
-  /** Resize the selected durable group from its top-left group boundary. */
-  const updateSelectedGroupSize = (dimension: 'width' | 'height', value: number) => {
-    if (!selectedGroup || !selectedGroupBounds || !Number.isFinite(value)) return
-    const nextDimension = Math.max(MIN_GROUP_DIMENSION, value)
-    const scaleX = dimension === 'width'
-      ? (selectedGroupBounds.width === 0 ? 1 : nextDimension / selectedGroupBounds.width)
-      : 1
-    const scaleY = dimension === 'height'
-      ? (selectedGroupBounds.height === 0 ? 1 : nextDimension / selectedGroupBounds.height)
-      : 1
-    const membersById = new Map(selectedGroup.members.map((member) => [member.id, member]))
-
-    commit(replaceLayer(document, selectedGroup.layer.id, (layer) => ({
-      ...layer,
-      elements: (layer.elements ?? []).map((element) => {
-        const member = membersById.get(element.id)
-        return member
-          ? scaleElementFromGroupBounds(member, selectedGroupBounds, scaleX, scaleY)
-          : element
-      }),
-    })))
-  }
-
   /** Move the selected durable group without changing any member's geometry. */
   const updateSelectedGroupPosition = (dimension: 'x' | 'y', value: number) => {
     if (!selectedGroup || !selectedGroupBounds || !Number.isFinite(value)) return
     const deltaX = dimension === 'x' ? value - selectedGroupBounds.x : 0
     const deltaY = dimension === 'y' ? value - selectedGroupBounds.y : 0
     if (deltaX === 0 && deltaY === 0) return
-    const memberIds = new Set(selectedGroup.members.map((member) => member.id))
-
-    commit(replaceLayer(document, selectedGroup.layer.id, (layer) => ({
-      ...layer,
-      elements: (layer.elements ?? []).map((element) => (
-        memberIds.has(element.id)
-          ? { ...element, x: element.x + deltaX, y: element.y + deltaY }
-          : element
-      )),
-    })))
+    const memberIds = new Set(selectedGroup.members.elementIds)
+    if (memberIds.size > 0) {
+      commit({
+        ...document,
+        layers: document.layers.map((layer) => ({
+          ...layer,
+          elements: (layer.elements ?? []).map((element) => (
+            memberIds.has(element.id)
+              ? { ...element, x: element.x + deltaX, y: element.y + deltaY }
+              : element
+          )),
+        })),
+      })
+    }
+    const embedIds = new Set(selectedGroup.members.embedIds)
+    const placements = new Map(embeddedVisualsRef.current.flatMap((embed) => (
+      embedIds.has(embed.id)
+        ? [[embed.id, { ...embed.placement, x: embed.placement.x + deltaX, y: embed.placement.y + deltaY }] as const]
+        : []
+    )))
+    if (placements.size > 0) {
+      if (onEmbeddedVisualPlacementsChange) onEmbeddedVisualPlacementsChange(placements)
+      else for (const [id, placement] of placements) onEmbeddedVisualPlacementChange?.(id, placement)
+    }
   }
 
-  /** Give the selected same-layer shapes one durable canvas-local group ID. */
-  const groupSelectedElements = () => {
-    if (!canGroupSelectedElements || !selectedElement) return
+  /** Give selected shapes and Visual placements one durable canvas-local group ID. */
+  const groupSelectedItems = () => {
+    if (!canGroupSelectedItems) return
     const groupId = crypto.randomUUID()
     const selectedIds = new Set(selectedElementIds)
-    commit(replaceLayer(document, selectedElement.layer.id, (layer) => ({
-      ...layer,
-      elements: (layer.elements ?? []).map((element) => (
-        selectedIds.has(element.id) ? { ...element, groupId } : element
-      )),
-    })))
+    if (selectedIds.size > 0) {
+      commit({
+        ...document,
+        layers: document.layers.map((layer) => (
+          layer.locked
+            ? layer
+            : {
+              ...layer,
+              elements: (layer.elements ?? []).map((element) => (
+                selectedIds.has(element.id) ? { ...element, groupId } : element
+              )),
+            }
+        )),
+      })
+    }
+    const selectedEmbedIdSet = new Set(selectedEmbedIds)
+    const placements = new Map(embeddedVisuals.flatMap((embed) => (
+      selectedEmbedIdSet.has(embed.id)
+        ? [[embed.id, { ...embed.placement, groupId }] as const]
+        : []
+    )))
+    if (placements.size > 0) {
+      if (onEmbeddedVisualPlacementsChange) onEmbeddedVisualPlacementsChange(placements)
+      else for (const [id, placement] of placements) onEmbeddedVisualPlacementChange?.(id, placement)
+    }
   }
 
-  /** Remove the grouping relationship without changing any underlying shape. */
-  const ungroupSelectedElements = () => {
-    if (!canUngroupSelectedElements || !selectedElement) return
+  /** Remove group membership without moving, resizing, or copying any object. */
+  const ungroupSelectedItems = () => {
+    if (!canUngroupSelectedItems) return
     const groupIds = new Set(selectedGroupIds)
-    commit(replaceLayer(document, selectedElement.layer.id, (layer) => ({
-      ...layer,
-      elements: (layer.elements ?? []).map((element) => {
-        if (!element.groupId || !groupIds.has(element.groupId)) return element
-        const ungroupedElement = { ...element }
-        delete ungroupedElement.groupId
-        return ungroupedElement
-      }),
-    })))
+    if (selectedElementCount > 0) {
+      commit({
+        ...document,
+        layers: document.layers.map((layer) => ({
+          ...layer,
+          elements: (layer.elements ?? []).map((element) => {
+            if (!element.groupId || !groupIds.has(element.groupId)) return element
+            const ungroupedElement = { ...element }
+            delete ungroupedElement.groupId
+            return ungroupedElement
+          }),
+        })),
+      })
+    }
+    const placements = new Map(embeddedVisuals.flatMap((embed) => {
+      if (!embed.placement.groupId || !groupIds.has(embed.placement.groupId)) return []
+      const placement = { ...embed.placement }
+      delete placement.groupId
+      return [[embed.id, placement] as const]
+    }))
+    if (placements.size > 0) {
+      if (onEmbeddedVisualPlacementsChange) onEmbeddedVisualPlacementsChange(placements)
+      else for (const [id, placement] of placements) onEmbeddedVisualPlacementChange?.(id, placement)
+    }
   }
 
   /**
@@ -2548,30 +2611,49 @@ export function SketchPad({
     })
   }, [commit, document, selectedElementIds])
 
-  /** Nudge every selected shape without changing its dimensions or direction. */
-  const nudgeSelectedElements = useCallback((dx: number, dy: number) => {
-    if (selectedElementIds.length === 0) return
+  /** Nudge every selected shape and placed Visual without changing its size. */
+  const nudgeSelectedItems = useCallback((dx: number, dy: number) => {
+    if (selectedItemCount === 0) return
     const selectedIds = new Set(selectedElementIds)
     const canMove = document.layers.some((layer) => (
       !layer.locked && (layer.elements ?? []).some((element) => selectedIds.has(element.id))
     ))
-    if (!canMove) return
-    commit({
-      ...document,
-      layers: document.layers.map((layer) => (
-        layer.locked
-          ? layer
-          : {
-            ...layer,
-            elements: (layer.elements ?? []).map((element) => (
-              selectedIds.has(element.id)
-                ? { ...element, x: element.x + dx, y: element.y + dy }
-                : element
-            )),
-          }
-      )),
-    })
-  }, [commit, document, selectedElementIds])
+    if (canMove) {
+      commit({
+        ...document,
+        layers: document.layers.map((layer) => (
+          layer.locked
+            ? layer
+            : {
+              ...layer,
+              elements: (layer.elements ?? []).map((element) => (
+                selectedIds.has(element.id)
+                  ? { ...element, x: element.x + dx, y: element.y + dy }
+                  : element
+              )),
+            }
+        )),
+      })
+    }
+    const selectedEmbedIdSet = new Set(selectedEmbedIds)
+    const placements = new Map(embeddedVisualsRef.current.flatMap((embed) => (
+      selectedEmbedIdSet.has(embed.id)
+        ? [[embed.id, { ...embed.placement, x: embed.placement.x + dx, y: embed.placement.y + dy }] as const]
+        : []
+    )))
+    if (placements.size > 0) {
+      if (onEmbeddedVisualPlacementsChange) onEmbeddedVisualPlacementsChange(placements)
+      else for (const [id, placement] of placements) onEmbeddedVisualPlacementChange?.(id, placement)
+    }
+  }, [
+    commit,
+    document,
+    onEmbeddedVisualPlacementChange,
+    onEmbeddedVisualPlacementsChange,
+    selectedElementIds,
+    selectedEmbedIds,
+    selectedItemCount,
+  ])
 
   const deleteSelectedElements = useCallback(() => {
     if (selectedElementIds.length === 0) return
@@ -2591,9 +2673,9 @@ export function SketchPad({
     setSelectedElementIds([])
   }, [commit, document, selectedElementIds])
 
-  /** Copy selected shapes into this canvas's local clipboard without changing the drawing. */
-  const copySelectedElements = useCallback(() => {
-    if (selectedElementIds.length === 0) return
+  /** Copy selected local objects without altering their canonical sources. */
+  const copySelectedItems = useCallback(() => {
+    if (selectedItemCount === 0) return
     const ids = new Set(selectedElementIds)
     const copiedShapes = document.layers.flatMap((layer) => (
       layer.locked
@@ -2602,23 +2684,44 @@ export function SketchPad({
           .filter((element) => ids.has(element.id))
           .map((element) => ({ layerId: layer.id, element: cloneSketchElement(element) }))
     ))
-    shapeClipboardRef.current = copiedShapes
+    const selectedEmbedIdSet = new Set(selectedEmbedIds)
+    const copiedEmbeds = embeddedVisualsRef.current.flatMap((embed) => (
+      selectedEmbedIdSet.has(embed.id)
+        ? [{
+          visual: embed.visual,
+          placement: { ...embed.placement },
+          ...(embed.accentColor ? { accentColor: embed.accentColor } : {}),
+          ...(embed.embeddedVisuals?.length ? { embeddedVisuals: embed.embeddedVisuals } : {}),
+        }]
+        : []
+    ))
+    canvasClipboardRef.current = { shapes: copiedShapes, embeds: copiedEmbeds }
     pasteOffsetRef.current = 0
-    setClipboardCount(copiedShapes.length)
-  }, [document, selectedElementIds])
+    setClipboardCount(copiedShapes.length + copiedEmbeds.length)
+  }, [document, selectedElementIds, selectedEmbedIds, selectedItemCount])
 
   /**
    * Paste a new copy each time. The increasing offset makes repeated pastes
    * visible instead of placing identical shapes directly on top of each other.
    */
-  const pasteCopiedElements = useCallback(() => {
-    const copiedShapes = shapeClipboardRef.current
-    if (copiedShapes.length === 0) return
+  const pasteCopiedItems = useCallback(() => {
+    const { shapes: copiedShapes, embeds: copiedEmbeds } = canvasClipboardRef.current
+    if (copiedShapes.length === 0 && copiedEmbeds.length === 0) return
     const offset = 24 * (pasteOffsetRef.current + 1)
     const pastedIds: string[] = []
+    const pastedEmbedIds: string[] = []
     // A copied group remains grouped internally, but becomes a distinct group
     // so moving the pasted version never moves its source shapes.
     const copiedGroupIds = new Map<string, string>()
+    const copiedGroupId = (groupId: string | undefined) => (
+      groupId
+        ? (copiedGroupIds.get(groupId) ?? (() => {
+          const nextGroupId = crypto.randomUUID()
+          copiedGroupIds.set(groupId, nextGroupId)
+          return nextGroupId
+        })())
+        : undefined
+    )
     const nextDocument: SketchDocument = {
       ...document,
       layers: document.layers.map((layer) => {
@@ -2628,13 +2731,7 @@ export function SketchPad({
           .map(({ element }) => {
             const id = crypto.randomUUID()
             pastedIds.push(id)
-            const groupId = element.groupId
-              ? (copiedGroupIds.get(element.groupId) ?? (() => {
-                const nextGroupId = crypto.randomUUID()
-                copiedGroupIds.set(element.groupId as string, nextGroupId)
-                return nextGroupId
-              })())
-              : undefined
+            const groupId = copiedGroupId(element.groupId)
             return {
               ...cloneSketchElement(element),
               id,
@@ -2648,12 +2745,30 @@ export function SketchPad({
           : { ...layer, elements: [...(layer.elements ?? []), ...pastedShapes] }
       }),
     }
-    if (pastedIds.length === 0) return
+    // A canvas that cannot persist placement edges can still paste its local
+    // drawings, but must never leave a phantom selected Visual behind.
+    const pastedEmbeds = onEmbeddedVisualCopiesCreate ? copiedEmbeds.map((embed) => {
+      const groupId = copiedGroupId(embed.placement.groupId)
+      const id = `draft-embed:${crypto.randomUUID()}`
+      pastedEmbedIds.push(id)
+      return {
+        ...embed,
+        id,
+        placement: {
+          ...embed.placement,
+          x: embed.placement.x + offset,
+          y: embed.placement.y + offset,
+          ...(groupId ? { groupId } : {}),
+        },
+      }
+    }) : []
+    if (pastedIds.length === 0 && pastedEmbeds.length === 0) return
     pasteOffsetRef.current += 1
-    commit(nextDocument)
+    if (pastedIds.length > 0) commit(nextDocument)
+    if (pastedEmbeds.length > 0) onEmbeddedVisualCopiesCreate?.(pastedEmbeds)
     setSelectedElementIds(pastedIds)
-    setSelectedEmbedIds([])
-  }, [commit, document])
+    setSelectedEmbedIds(pastedEmbedIds)
+  }, [commit, document, onEmbeddedVisualCopiesCreate])
 
   /**
    * `elements` are rendered in array order. Moving one object here changes
@@ -2678,6 +2793,12 @@ export function SketchPad({
     onEmbeddedVisualRemove?.(embedId)
     setSelectedEmbedIds((currentIds) => currentIds.filter((id) => id !== embedId))
   }, [onEmbeddedVisualRemove])
+
+  /** Delete the selected drawing objects and/or parent-side Visual placements. */
+  const deleteSelectedItems = useCallback(() => {
+    for (const embedId of selectedEmbedIds) removeEmbed(embedId)
+    deleteSelectedElements()
+  }, [deleteSelectedElements, removeEmbed, selectedEmbedIds])
 
   useEffect(() => {
     const handleCanvasShortcut = (event: KeyboardEvent) => {
@@ -2708,15 +2829,15 @@ export function SketchPad({
         return
       }
       if (commandOrControl && event.key.toLowerCase() === 'c') {
-        if (selectedElementCount === 0) return
+        if (selectedItemCount === 0) return
         event.preventDefault()
-        copySelectedElements()
+        copySelectedItems()
         return
       }
       if (commandOrControl && event.key.toLowerCase() === 'v') {
         if (clipboardCount === 0) return
         event.preventDefault()
-        pasteCopiedElements()
+        pasteCopiedItems()
         return
       }
       const nudgeDirections: Record<string, [number, number]> = {
@@ -2727,10 +2848,10 @@ export function SketchPad({
       }
       const nudgeDirection = nudgeDirections[event.key]
       if (nudgeDirection) {
-        if (selectedElementCount === 0) return
+        if (selectedItemCount === 0) return
         event.preventDefault()
         const distance = event.shiftKey ? 10 : 1
-        nudgeSelectedElements(nudgeDirection[0] * distance, nudgeDirection[1] * distance)
+        nudgeSelectedItems(nudgeDirection[0] * distance, nudgeDirection[1] * distance)
         return
       }
       if (event.key !== 'Backspace' && event.key !== 'Delete') return
@@ -2738,17 +2859,17 @@ export function SketchPad({
       event.preventDefault()
       // Embedded Visuals are placements, so Delete only removes their parent
       // placement—not the child Visual that can be used elsewhere.
-      for (const embedId of selectedEmbedIds) removeEmbed(embedId)
-      if (selectedElementCount > 0) deleteSelectedElements()
+      deleteSelectedItems()
     }
 
     window.addEventListener('keydown', handleCanvasShortcut)
     return () => window.removeEventListener('keydown', handleCanvasShortcut)
-  }, [clipboardCount, copySelectedElements, deleteSelectedElements, nudgeSelectedElements, pasteCopiedElements, redo, removeEmbed, selectedElementCount, selectedEmbedIds, undo])
+  }, [clipboardCount, copySelectedItems, deleteSelectedItems, nudgeSelectedItems, pasteCopiedItems, redo, selectedElementCount, selectedItemCount, selectedEmbedIds, undo])
 
   const activeElementsById = new Map(
-    activeElement?.groupElements?.map((element) => [element.id, element])
-      ?? (activeElement && activeElement.mode !== 'create' ? [[activeElement.element.id, activeElement.element]] : []),
+    activeElement && activeElement.mode !== 'create'
+      ? [[activeElement.element.id, activeElement.element]]
+      : [],
   )
   const activeSelectionElementsById = new Map(
     activeSelectionMove?.elements.map((member) => [member.element.id, member.element]) ?? [],
@@ -2764,22 +2885,6 @@ export function SketchPad({
       ? [...layer.strokes, activeStroke]
       : layer.strokes,
   }))
-  const selectedGroupForRender = selectedGroup
-    ? renderedLayers.find((layer) => layer.id === selectedGroup.layer.id)
-    : undefined
-  const selectedGroupMembersForRender = selectedGroupForRender && selectedGroup
-    ? (selectedGroupForRender.elements ?? []).filter((element) => element.groupId === selectedGroup.id)
-    : []
-  const selectedGroupBoundsForRender = selectedGroupMembersForRender.length > 0
-    ? combinedElementBounds(selectedGroupMembersForRender)
-    : null
-  // A durable group gets one tight frame rather than a dashed rectangle around
-  // every member. Individual and temporary multi-selections keep their normal
-  // per-shape feedback.
-  const selectedElementIdsForRender = selectedGroup ? [] : selectedElementIds
-  const selectedElementForRender = selectedElement && selectedElementCount === 1 && activeElement?.element.id === selectedElement.element.id
-    ? { ...selectedElement, element: activeElement.element }
-    : selectedElementCount === 1 ? selectedElement : undefined
   const activeSelectionEmbedsById = new Map(
     activeSelectionMove?.embeds.map((embed) => [embed.id, embed.placement]) ?? [],
   )
@@ -2790,7 +2895,26 @@ export function SketchPad({
       ? { ...embed, placement: { ...activeEmbed.placement } }
       : embed
   })
-  const selectedEmbedForRender = selectedEmbedIds.length === 1
+  const selectedGroupBoundsForRender = selectedGroup
+    ? combinedBounds([
+      ...renderedLayers.flatMap((layer) => (
+        (layer.elements ?? [])
+          .filter((element) => selectedGroup.members.elementIds.includes(element.id))
+          .map(elementBounds)
+      )),
+      ...renderedEmbeds
+        .filter((embed) => selectedGroup.members.embedIds.includes(embed.id))
+        .map((embed) => embed.placement),
+    ])
+    : null
+  // A durable group gets one tight frame rather than a dashed rectangle around
+  // every member. Its frame is informational: resizing it never scales its
+  // contents. Resize individual objects when that is what is intended.
+  const selectedElementIdsForRender = selectedGroup ? [] : selectedElementIds
+  const selectedElementForRender = selectedElement && selectedItemCount === 1 && activeElement?.element.id === selectedElement.element.id
+    ? { ...selectedElement, element: activeElement.element }
+    : selectedItemCount === 1 && selectedElementCount === 1 ? selectedElement : undefined
+  const selectedEmbedForRender = selectedElementCount === 0 && selectedEmbedIds.length === 1
     ? renderedEmbeds.find((embed) => embed.id === selectedEmbedIds[0])
     : undefined
   const selectedEmbedPlacement = selectedEmbedForRender?.placement ?? selectedEmbed?.placement
@@ -2807,21 +2931,25 @@ export function SketchPad({
     if (!selectedEmbedPlacement) return
     updateSelectedEmbedPlacement(sizedEmbedPlacementUpdate(selectedEmbedPlacement, dimension, value))
   }
+  const selectedEmbedCrop: VisualEmbedCrop = selectedEmbedPlacement?.crop ?? {
+    x: 0,
+    y: 0,
+    width: 1,
+    height: 1,
+  }
+  /** Crop is local to this image/canvas placement, never its source Visual. */
+  const updateSelectedEmbedCrop = (update: Partial<VisualEmbedCrop>) => {
+    if (!selectedEmbedPlacement) return
+    updateSelectedEmbedPlacement({
+      crop: normalizeVisualEmbedCrop({ ...selectedEmbedCrop, ...update }),
+    })
+  }
   const onSelectedElementResizePointerDown = (event: ReactPointerEvent<SVGGElement>) => {
     if (!selectedElementForRender) return
     startElementInteraction(
       event,
       selectedElementForRender.layer,
       selectedElementForRender.element,
-      'resize',
-    )
-  }
-  const onSelectedGroupResizePointerDown = (event: ReactPointerEvent<SVGGElement>) => {
-    if (!selectedGroup || selectedGroup.members.length === 0) return
-    startElementInteraction(
-      event,
-      selectedGroup.layer,
-      selectedGroup.members[0],
       'resize',
     )
   }
@@ -2950,6 +3078,18 @@ export function SketchPad({
           />
         </div>
         <label>
+          <span>Line</span>
+          <select
+            aria-label="New shape line style"
+            value={strokeStyle}
+            onChange={(event) => setStrokeStyle(event.target.value as SketchStrokeStyle)}
+          >
+            <option value="solid">solid</option>
+            <option value="dashed">dashed</option>
+            <option value="dotted">dotted</option>
+          </select>
+        </label>
+        <label>
           <span>Size</span>
           <input
             type="range"
@@ -3014,7 +3154,7 @@ export function SketchPad({
                   (tool === 'select' && Boolean(onEmbeddedVisualPlacementChange))
                   || (tool === 'eraser' && Boolean(onEmbeddedVisualRemove))
                 )}
-                selected={tool === 'select' && selectedEmbedIds.includes(embed.id)}
+                selected={tool === 'select' && !selectedGroup && selectedEmbedIds.includes(embed.id)}
                 onPointerDown={(event) => {
                   if (tool === 'eraser') {
                     event.stopPropagation()
@@ -3088,21 +3228,6 @@ export function SketchPad({
                     strokeDasharray="7 5"
                     pointerEvents="none"
                   />
-                  <g
-                    className="sketch-element__resize-handle"
-                    onPointerDown={onSelectedGroupResizePointerDown}
-                  >
-                    <rect
-                      x={bounds.x + bounds.width - 7}
-                      y={bounds.y + bounds.height - 7}
-                      width={14}
-                      height={14}
-                      fill="#eaf6fb"
-                      stroke="#26799b"
-                      strokeWidth={2}
-                      rx={2}
-                    />
-                  </g>
                 </>
               )
             })() : null}
@@ -3155,27 +3280,75 @@ export function SketchPad({
               <button type="button" onClick={() => setZoom((value) => Math.min(MAX_ZOOM, value + 0.25))}>+</button>
             </div>
           </section>
-          {selectedElement ? (
+          {selectedItemCount > 1 && selectedEmbedIds.length > 0 ? (
+            <section className="sketch-editor__selected-object">
+              <div className="sketch-editor__section-heading">
+                <h3>{`${selectedItemCount} objects`}</h3>
+                <div className="sketch-editor__object-actions">
+                  <button type="button" onClick={copySelectedItems}>copy</button>
+                  <button type="button" disabled={clipboardCount === 0} onClick={pasteCopiedItems}>paste</button>
+                  {canGroupSelectedItems ? <button type="button" onClick={groupSelectedItems}>group</button> : null}
+                  {canUngroupSelectedItems ? <button type="button" onClick={ungroupSelectedItems}>ungroup</button> : null}
+                  <button type="button" onClick={deleteSelectedItems}>delete</button>
+                </div>
+              </div>
+              {selectedGroupBounds ? (
+                <>
+                  <label>
+                    <span>Group X</span>
+                    <input
+                      type="number"
+                      aria-label="Selected group horizontal position"
+                      min="-20000"
+                      max="20000"
+                      step="1"
+                      value={Math.round(selectedGroupBounds.x)}
+                      onChange={(event) => {
+                        const x = Number(event.target.value)
+                        if (Number.isFinite(x)) updateSelectedGroupPosition('x', x)
+                      }}
+                    />
+                  </label>
+                  <label>
+                    <span>Group Y</span>
+                    <input
+                      type="number"
+                      aria-label="Selected group vertical position"
+                      min="-20000"
+                      max="20000"
+                      step="1"
+                      value={Math.round(selectedGroupBounds.y)}
+                      onChange={(event) => {
+                        const y = Number(event.target.value)
+                        if (Number.isFinite(y)) updateSelectedGroupPosition('y', y)
+                      }}
+                    />
+                  </label>
+                </>
+              ) : null}
+            </section>
+          ) : null}
+          {selectedElement && selectedEmbedIds.length === 0 ? (
             <section className="sketch-editor__selected-object">
               <div className="sketch-editor__section-heading">
                 <h3>{selectedElementCount === 1 ? selectedElement.element.kind : `${selectedElementCount} shapes`}</h3>
                 <div className="sketch-editor__object-actions">
-                  <button type="button" onClick={copySelectedElements}>copy</button>
+                  <button type="button" onClick={copySelectedItems}>copy</button>
                   <button
                     type="button"
                     disabled={clipboardCount === 0}
-                    onClick={pasteCopiedElements}
+                    onClick={pasteCopiedItems}
                   >
                     paste
                   </button>
                   {canCombineSelectedElements ? (
                     <button type="button" onClick={combineSelectedElements}>combine</button>
                   ) : null}
-                  {canGroupSelectedElements ? (
-                    <button type="button" onClick={groupSelectedElements}>group</button>
+                  {canGroupSelectedItems ? (
+                    <button type="button" onClick={groupSelectedItems}>group</button>
                   ) : null}
-                  {canUngroupSelectedElements ? (
-                    <button type="button" onClick={ungroupSelectedElements}>ungroup</button>
+                  {canUngroupSelectedItems ? (
+                    <button type="button" onClick={ungroupSelectedItems}>ungroup</button>
                   ) : null}
                   {canBreakApartSelectedElement ? (
                     <button type="button" onClick={breakApartSelectedElement}>break apart</button>
@@ -3186,7 +3359,7 @@ export function SketchPad({
                       <button type="button" onClick={() => moveSelectedElement('forward')}>forward</button>
                     </>
                   ) : null}
-                  <button type="button" onClick={deleteSelectedElements}>delete</button>
+                  <button type="button" onClick={deleteSelectedItems}>delete</button>
                 </div>
               </div>
               {selectedElementCount > 1 ? (
@@ -3223,40 +3396,6 @@ export function SketchPad({
                           }}
                         />
                       </label>
-                      <label>
-                        <span>Group width</span>
-                        <input
-                          type="number"
-                          aria-label="Selected group width"
-                          min={MIN_GROUP_DIMENSION}
-                          max="20000"
-                          step="1"
-                          value={Math.round(selectedGroupBounds.width)}
-                          onChange={(event) => {
-                            const width = Number(event.target.value)
-                            if (Number.isFinite(width) && width >= MIN_GROUP_DIMENSION) {
-                              updateSelectedGroupSize('width', width)
-                            }
-                          }}
-                        />
-                      </label>
-                      <label>
-                        <span>Group height</span>
-                        <input
-                          type="number"
-                          aria-label="Selected group height"
-                          min={MIN_GROUP_DIMENSION}
-                          max="20000"
-                          step="1"
-                          value={Math.round(selectedGroupBounds.height)}
-                          onChange={(event) => {
-                            const height = Number(event.target.value)
-                            if (Number.isFinite(height) && height >= MIN_GROUP_DIMENSION) {
-                              updateSelectedGroupSize('height', height)
-                            }
-                          }}
-                        />
-                      </label>
                     </>
                   ) : null}
                   <label>
@@ -3272,6 +3411,22 @@ export function SketchPad({
                         setColor(stroke)
                       }}
                     />
+                  </label>
+                  <label>
+                    <span>Line</span>
+                    <select
+                      aria-label="Selected shapes shared line style"
+                      value={selectedElement.element.strokeStyle ?? 'solid'}
+                      onChange={(event) => {
+                        const nextStyle = event.target.value as SketchStrokeStyle
+                        updateSelectedElements({ strokeStyle: nextStyle })
+                        setStrokeStyle(nextStyle)
+                      }}
+                    >
+                      <option value="solid">solid</option>
+                      <option value="dashed">dashed</option>
+                      <option value="dotted">dotted</option>
+                    </select>
                   </label>
                   <label>
                     <span>Fill</span>
@@ -3429,6 +3584,22 @@ export function SketchPad({
                   ) : null}
                 </section>
               ) : null}
+              <label>
+                <span>Line</span>
+                <select
+                  aria-label="Selected object line style"
+                  value={selectedElement.element.strokeStyle ?? 'solid'}
+                  onChange={(event) => {
+                    const nextStyle = event.target.value as SketchStrokeStyle
+                    updateSelectedElement({ strokeStyle: nextStyle })
+                    setStrokeStyle(nextStyle)
+                  }}
+                >
+                  <option value="solid">solid</option>
+                  <option value="dashed">dashed</option>
+                  <option value="dotted">dotted</option>
+                </select>
+              </label>
               <label>
                 <span>{`Stroke ${Math.round(selectedElement.element.strokeWidth)}`}</span>
                 <input
@@ -3597,6 +3768,8 @@ export function SketchPad({
             <section className="sketch-editor__selected-object">
               <div className="sketch-editor__section-heading">
                 <h3>{selectedEmbed.visual.data.name || 'visual'}</h3>
+                <button type="button" onClick={copySelectedItems}>copy</button>
+                <button type="button" disabled={clipboardCount === 0} onClick={pasteCopiedItems}>paste</button>
                 {onEmbeddedVisualMakeIndependent
                   && !isImmutableVisual(selectedEmbed.visual)
                   && visualIdentity(selectedEmbed.visual) === 'osa-draw' ? (
@@ -3687,6 +3860,75 @@ export function SketchPad({
                   {selectedEmbedPlacement.aspectRatioLocked === false ? 'lock' : 'unlock'}
                 </button>
               </label>
+              <section className="sketch-editor__annotation" aria-label="Visual crop">
+                <div className="sketch-editor__section-heading">
+                  <h3>crop</h3>
+                  {selectedEmbedPlacement.crop ? (
+                    <button type="button" onClick={() => updateSelectedEmbedPlacement({ crop: undefined })}>reset</button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => updateSelectedEmbedPlacement({
+                        crop: { x: 0.1, y: 0.1, width: 0.8, height: 0.8 },
+                      })}
+                    >
+                      start crop
+                    </button>
+                  )}
+                </div>
+                {selectedEmbedPlacement.crop ? (
+                  <>
+                    <label>
+                      <span>Left</span>
+                      <input
+                        type="number"
+                        aria-label="Selected visual crop left percent"
+                        min="0"
+                        max="98"
+                        step="1"
+                        value={Math.round(selectedEmbedCrop.x * 100)}
+                        onChange={(event) => updateSelectedEmbedCrop({ x: Number(event.target.value) / 100 })}
+                      />
+                    </label>
+                    <label>
+                      <span>Top</span>
+                      <input
+                        type="number"
+                        aria-label="Selected visual crop top percent"
+                        min="0"
+                        max="98"
+                        step="1"
+                        value={Math.round(selectedEmbedCrop.y * 100)}
+                        onChange={(event) => updateSelectedEmbedCrop({ y: Number(event.target.value) / 100 })}
+                      />
+                    </label>
+                    <label>
+                      <span>Width</span>
+                      <input
+                        type="number"
+                        aria-label="Selected visual crop width percent"
+                        min="2"
+                        max="100"
+                        step="1"
+                        value={Math.round(selectedEmbedCrop.width * 100)}
+                        onChange={(event) => updateSelectedEmbedCrop({ width: Number(event.target.value) / 100 })}
+                      />
+                    </label>
+                    <label>
+                      <span>Height</span>
+                      <input
+                        type="number"
+                        aria-label="Selected visual crop height percent"
+                        min="2"
+                        max="100"
+                        step="1"
+                        value={Math.round(selectedEmbedCrop.height * 100)}
+                        onChange={(event) => updateSelectedEmbedCrop({ height: Number(event.target.value) / 100 })}
+                      />
+                    </label>
+                  </>
+                ) : null}
+              </section>
             </section>
           ) : null}
           <section>

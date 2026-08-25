@@ -902,7 +902,14 @@ try {
         embeds: [{
           id: 'visual-embed-draft-1',
           visualId: 'photo-1',
-          placement: { x: 120, y: 80, width: 360, height: 240 },
+          placement: {
+            x: 120,
+            y: 80,
+            width: 360,
+            height: 240,
+            groupId: 'connector-box-callout',
+            crop: { x: 0.125, y: 0.2, width: 0.5, height: 0.6 },
+          },
         }],
       },
       {
@@ -914,7 +921,14 @@ try {
         embeds: [{
           id: 'visual-embed-official-1',
           visualId: 'photo-1',
-          placement: { x: 24, y: 36, width: 480, height: 300 },
+          placement: {
+            x: 24,
+            y: 36,
+            width: 480,
+            height: 300,
+            groupId: 'connector-box-callout',
+            crop: { x: 0.1, y: 0.2, width: 0.75, height: 0.6 },
+          },
         }],
       },
     ],
@@ -935,6 +949,16 @@ try {
     visualForOfficialVersion(versionedVisualCanvas).data.sketch.background,
     visualCanvas.data.sketch.background,
     'The official Visual projection ignores a later live-draft drawing change.',
+  )
+  assert.equal(
+    restoredVersionedVisualSnapshot?.nodes[0].data.visualVersions?.records[1]?.embeds[0]?.placement.groupId,
+    'connector-box-callout',
+    'A Visual placement retains its canvas-local group alongside its saved geometry.',
+  )
+  assert.deepEqual(
+    restoredVersionedVisualSnapshot?.nodes[0].data.visualVersions?.records[1]?.embeds[0]?.placement.crop,
+    { x: 0.1, y: 0.2, width: 0.75, height: 0.6 },
+    'A saved Visual version retains its non-destructive crop window.',
   )
 
   const photoVisual = createTextNode({
@@ -1016,18 +1040,35 @@ try {
       [OSA_PROPERTY.visualEmbedY]: '80',
       [OSA_PROPERTY.visualEmbedWidth]: '360',
       [OSA_PROPERTY.visualEmbedHeight]: '240',
+      [OSA_PROPERTY.visualEmbedGroupId]: 'connector-box-callout',
+      [OSA_PROPERTY.visualEmbedCrop]: JSON.stringify({ x: 0.125, y: 0.2, width: 0.5, height: 0.6 }),
     },
   })
   assert.deepEqual(
     visualEmbedsForCanvas(versionedVisualCanvas.id, [versionedVisualCanvas, photoVisual], [liveEmbed])
       .map((embed) => embed.placement),
-    [{ x: 24, y: 36, width: 480, height: 300 }],
+    [{
+      x: 24,
+      y: 36,
+      width: 480,
+      height: 300,
+      groupId: 'connector-box-callout',
+      crop: { x: 0.1, y: 0.2, width: 0.75, height: 0.6 },
+    }],
     'Card projections use the official Visual placement rather than the live draft edge.',
   )
   assert.deepEqual(
     visualDraftEmbedsForCanvas(versionedVisualCanvas.id, [versionedVisualCanvas, photoVisual], [liveEmbed])
       .map((embed) => embed.placement),
-    [{ x: 120, y: 80, width: 360, height: 240, aspectRatioLocked: true }],
+    [{
+      x: 120,
+      y: 80,
+      width: 360,
+      height: 240,
+      aspectRatioLocked: true,
+      groupId: 'connector-box-callout',
+      crop: { x: 0.125, y: 0.2, width: 0.5, height: 0.6 },
+    }],
     'The editor retains the live draft placement and applies the current safe ratio default.',
   )
 
@@ -1046,6 +1087,27 @@ try {
     parseBoardSnapshot(malformedVisualVersionSnapshot),
     null,
     'A saved Visual version rejects an invalid embedded-Visual placement.',
+  )
+
+  const malformedVisualEmbedGroupSnapshot = structuredClone(versionedVisualSnapshot)
+  malformedVisualEmbedGroupSnapshot.nodes[0].data.visualVersions.records[0].embeds[0].placement.groupId = '   '
+  assert.equal(
+    parseBoardSnapshot(malformedVisualEmbedGroupSnapshot),
+    null,
+    'A saved Visual version rejects an empty embedded-Visual group ID.',
+  )
+
+  const malformedVisualEmbedCropSnapshot = structuredClone(versionedVisualSnapshot)
+  malformedVisualEmbedCropSnapshot.nodes[0].data.visualVersions.records[0].embeds[0].placement.crop = {
+    x: 0.8,
+    y: 0.2,
+    width: 0.3,
+    height: 0.5,
+  }
+  assert.equal(
+    parseBoardSnapshot(malformedVisualEmbedCropSnapshot),
+    null,
+    'A saved Visual version rejects a crop that extends outside its source.',
   )
 
   // Boards saved before visual elements existed are still valid: their

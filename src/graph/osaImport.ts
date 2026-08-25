@@ -206,6 +206,35 @@ function validateVisualEmbedGeometry(properties: Record<string, string>, path: s
   if (aspectRatioLocked !== undefined && aspectRatioLocked !== 'true' && aspectRatioLocked !== 'false') {
     throw new Error(`${path}.${OSA_PROPERTY.visualEmbedAspectRatioLocked} must be true or false.`)
   }
+
+  const groupId = properties[OSA_PROPERTY.visualEmbedGroupId]
+  if (groupId !== undefined && groupId.trim() === '') {
+    throw new Error(`${path}.${OSA_PROPERTY.visualEmbedGroupId} must be non-empty text when present.`)
+  }
+
+  const crop = properties[OSA_PROPERTY.visualEmbedCrop]
+  if (crop !== undefined) {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(crop)
+    } catch {
+      throw new Error(`${path}.${OSA_PROPERTY.visualEmbedCrop} must be crop JSON when present.`)
+    }
+    if (!isRecord(parsed)) {
+      throw new Error(`${path}.${OSA_PROPERTY.visualEmbedCrop} must be crop JSON when present.`)
+    }
+    const { x, y, width, height } = parsed
+    if (
+      typeof x !== 'number' || typeof y !== 'number'
+      || typeof width !== 'number' || typeof height !== 'number'
+      || !Number.isFinite(x) || !Number.isFinite(y)
+      || !Number.isFinite(width) || !Number.isFinite(height)
+      || x < 0 || y < 0 || width <= 0 || height <= 0
+      || x + width > 1 || y + height > 1
+    ) {
+      throw new Error(`${path}.${OSA_PROPERTY.visualEmbedCrop} must stay inside the source image.`)
+    }
+  }
 }
 
 function validateManagedNodeProperties(

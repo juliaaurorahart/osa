@@ -197,6 +197,8 @@ try {
       [OSA_PROPERTY.visualEmbedY]: '90',
       [OSA_PROPERTY.visualEmbedWidth]: '360',
       [OSA_PROPERTY.visualEmbedHeight]: '250',
+      [OSA_PROPERTY.visualEmbedGroupId]: ' drill-callout ',
+      [OSA_PROPERTY.visualEmbedCrop]: JSON.stringify({ x: 0.1, y: 0.25, width: 0.7, height: 0.5 }),
     },
   })
   const repeatedProjection = visualEmbedsForCanvas(
@@ -206,6 +208,21 @@ try {
   )
   assert.equal(repeatedProjection.length, 2, 'the same Visual can have two placements')
   assert.notEqual(repeatedProjection[0].id, repeatedProjection[1].id)
+  assert.strictEqual(
+    repeatedProjection[0].visual,
+    repeatedProjection[1].visual,
+    'Copying a placed Visual creates another placement, not another canonical Visual asset.',
+  )
+  assert.equal(
+    repeatedProjection[1].placement.groupId,
+    'drill-callout',
+    'A copied placement retains its own normalized canvas-local group membership.',
+  )
+  assert.deepEqual(
+    repeatedProjection[1].placement.crop,
+    { x: 0.1, y: 0.25, width: 0.7, height: 0.5 },
+    'A parent-side placement retains its crop without changing the canonical image asset.',
+  )
   assert.notDeepEqual(repeatedProjection[0].placement, repeatedProjection[1].placement)
 
   // A canvas inside another canvas must bring its own placed image with it.

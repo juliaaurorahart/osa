@@ -71,6 +71,9 @@ export type SketchSemanticColorBindings = {
   fill?: SketchSemanticColorReference
 }
 
+/** Portable line treatment for shapes, lines, and arrows. */
+export type SketchStrokeStyle = 'solid' | 'dashed' | 'dotted'
+
 /** Minimal read-only project data used to resolve canvas text annotations. */
 export type SketchAnnotationTarget = {
   id: string
@@ -104,6 +107,8 @@ export type SketchElement = {
   stroke: string
   fill: string
   strokeWidth: number
+  /** Omitted means the original solid line treatment. */
+  strokeStyle?: SketchStrokeStyle
   opacity: number
   /**
    * Keeps width and height proportional while this object is resized. This is
