@@ -3765,7 +3765,7 @@ export function SketchPad({
             </section>
           ) : null}
           {selectedEmbed && selectedEmbedPlacement ? (
-            <section className="sketch-editor__selected-object">
+            <section className="sketch-editor__selected-object sketch-editor__selected-visual">
               <div className="sketch-editor__section-heading">
                 <h3>{selectedEmbed.visual.data.name || 'visual'}</h3>
                 <button type="button" onClick={copySelectedItems}>copy</button>
@@ -3860,7 +3860,7 @@ export function SketchPad({
                   {selectedEmbedPlacement.aspectRatioLocked === false ? 'lock' : 'unlock'}
                 </button>
               </label>
-              <section className="sketch-editor__annotation" aria-label="Visual crop">
+              <section className="sketch-editor__annotation sketch-editor__visual-crop" aria-label="Visual crop">
                 <div className="sketch-editor__section-heading">
                   <h3>crop</h3>
                   {selectedEmbedPlacement.crop ? (

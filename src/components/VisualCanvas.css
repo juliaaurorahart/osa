@@ -185,6 +185,28 @@
   min-height: 360px;
 }
 
+/* Keep the selected Visual's crop action in the immediately visible part of
+   its inspector. Longer controls can scroll without hiding the canvas itself. */
+.visual-canvas-editor .sketch-editor__settings {
+  align-self: start;
+  max-height: min(68vh, 820px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 5px;
+}
+
+.sketch-editor__selected-visual > .sketch-editor__section-heading {
+  order: 0;
+}
+
+.sketch-editor__selected-visual > .sketch-editor__visual-crop {
+  order: 1;
+}
+
+.sketch-editor__selected-visual > label {
+  order: 2;
+}
+
 .visual-canvas-editor .sketch-editor__surface {
   background: #fff;
 }
