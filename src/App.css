@@ -2935,7 +2935,10 @@
 
 .sketch-editor__workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 160px;
+  /* The inspector has real controls, not just labels. Give it enough room
+     for its action row and numeric fields instead of squeezing them off both
+     sides of a narrow 160px column. */
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 300px);
   gap: 20px;
   align-items: start;
 }
@@ -2984,6 +2987,7 @@
 
 .sketch-editor__settings {
   display: grid;
+  min-width: 0;
   gap: 24px;
   color: #444;
   font-size: 0.78rem;
