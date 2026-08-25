@@ -930,7 +930,9 @@ function EmbeddedVisualGraphic({
   annotationTargets?: readonly SketchAnnotationTarget[]
 }) {
   const { placement, visual } = embed
-  const accentColor = embed.accentColor
+  // A semantic shade is a parent-side presentation choice. The canonical
+  // drawing/photo and its owner color remain unchanged for every other use.
+  const semanticShadeColor = placement.semanticShade ? embed.accentColor : undefined
   const childDocument = visual.data.sketch
   const directImage = visual.data.properties[OSA_PROPERTY.assetImage]?.trim() ?? ''
   // Pre-Visual boards can keep an image directly on an otherwise editable
@@ -1018,17 +1020,17 @@ function EmbeddedVisualGraphic({
           ])}
         </svg>
       )}
-      {accentColor ? (
-        // Shade the placed rendering without changing its canonical source.
-        // Light areas take on the owner's semantic color while the actual
-        // drawing or photo remains visible underneath.
+      {semanticShadeColor ? (
+        // An opted-in shade tints this one placement without changing its
+        // canonical source. Light areas take on the owner's semantic color
+        // while the actual drawing or photo remains visible underneath.
         <rect
           className="sketch-visual-embed__accent"
           x={placement.x}
           y={placement.y}
           width={placement.width}
           height={placement.height}
-          fill={accentColor}
+          fill={semanticShadeColor}
           fillOpacity={0.22}
           pointerEvents="none"
         />
@@ -4281,6 +4283,21 @@ export function SketchPad({
                 >
                   {selectedEmbedPlacement.aspectRatioLocked === false ? 'lock' : 'unlock'}
                 </button>
+              </label>
+              <label>
+                <span>Shade</span>
+                <select
+                  aria-label="Selected visual shade"
+                  value={selectedEmbedPlacement.semanticShade ? 'semantic' : 'none'}
+                  onChange={(event) => updateSelectedEmbedPlacement({
+                    semanticShade: event.target.value === 'semantic' ? true : undefined,
+                  })}
+                >
+                  <option value="none">none</option>
+                  <option value="semantic" disabled={!selectedEmbed.accentColor}>
+                    {selectedEmbed.accentColor ? 'semantic color' : 'no semantic color set'}
+                  </option>
+                </select>
               </label>
               <section className="sketch-editor__annotation sketch-editor__visual-crop" aria-label="Visual crop">
                 <div className="sketch-editor__section-heading">

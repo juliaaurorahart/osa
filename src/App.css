@@ -179,8 +179,26 @@
   top: 18px;
   right: 18px;
   z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 7px;
   color: #777;
   font-size: 0.72rem;
+}
+
+.local-draft-status__actions {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.local-draft-status__actions button {
+  padding: 2px 5px;
+  border: 1px solid currentcolor;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
 }
 
 .osa-sign-in-reveal {
@@ -1759,6 +1777,14 @@
 .board-panel__storage {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+/* The archive is intentionally a short, separate row: active boards remain
+   the normal picker, while recovery actions stay close without adding a pane. */
+.board-panel__archive-actions {
+  display: flex;
+  grid-column: 1 / -1;
   gap: 8px;
 }
 

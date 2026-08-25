@@ -5,6 +5,10 @@ export type SavedBoard = {
   name: string
   updatedAt: string
   snapshot: BoardSnapshot
+  /** Present on boards read from D1; omitted by unsaved local board drafts. */
+  archived?: boolean
+  /** D1 increments this on every cloud change so stale devices cannot overwrite newer work. */
+  revision?: number
 }
 
 /** A public, read-only board response addressed by an opaque share token. */
@@ -38,6 +42,17 @@ export class BoardUnavailableError extends Error {
   }
 }
 
+/** The board changed on another device while this browser still had an older version. */
+export class BoardConflictError extends Error {
+  readonly board: SavedBoard
+
+  constructor(board: SavedBoard) {
+    super('This board changed on another device.')
+    this.name = 'BoardConflictError'
+    this.board = board
+  }
+}
+
 export class SharedAssemblyUnavailableError extends Error {
   constructor(message = 'This shared assembly is unavailable.') {
     super(message)
@@ -63,6 +78,12 @@ function parseSavedBoard(value: unknown): SavedBoard | null {
     name: value.name,
     updatedAt: value.updatedAt,
     snapshot,
+    archived: typeof value.archived === 'boolean' ? value.archived : false,
+    revision: typeof value.revision === 'number'
+      && Number.isInteger(value.revision)
+      && value.revision > 0
+      ? value.revision
+      : undefined,
   }
 }
 
@@ -71,6 +92,10 @@ async function responseError(response: Response): Promise<Error> {
   if (response.status === 404) return new BoardUnavailableError()
 
   const body: unknown = await response.json().catch(() => null)
+  if (response.status === 409 && isRecord(body)) {
+    const conflictingBoard = parseSavedBoard(body.board)
+    if (conflictingBoard) return new BoardConflictError(conflictingBoard)
+  }
   const message = isRecord(body) && typeof body.error === 'string'
     ? body.error
     : `Board request failed (${response.status}).`
@@ -88,13 +113,23 @@ async function boardRequest(input: RequestInfo | URL, init?: RequestInit): Promi
     return response
   } catch (error) {
     if (error instanceof BoardAccessError) throw error
-    if (error instanceof TypeError) throw new BoardAccessError()
+    // A normal browser network failure also arrives as TypeError. It is not
+    // proof that the person needs to sign in, and cloud autosave must keep
+    // the local recovery draft instead of suggesting the wrong fix.
+    if (error instanceof TypeError) throw new BoardUnavailableError()
     throw error
   }
 }
 
-export async function fetchBoards(): Promise<SavedBoard[]> {
-  const response = await boardRequest('/api/boards', {
+export type BoardListOptions = {
+  /** Default false. Archived boards are opt-in so normal board screens stay uncluttered. */
+  archived?: boolean
+}
+
+/** Loads normal boards by default, or archived boards with `{ archived: true }`. */
+export async function fetchBoards(options: BoardListOptions = {}): Promise<SavedBoard[]> {
+  const query = options.archived ? '?archived=true' : ''
+  const response = await boardRequest(`/api/boards${query}`, {
     headers: { accept: 'application/json' },
   })
   if (!response.ok) throw await responseError(response)
@@ -110,14 +145,68 @@ export async function fetchBoards(): Promise<SavedBoard[]> {
   return boards as BoardsResponse['boards']
 }
 
-/** Saves one board without allowing a stale tab to replace somebody's list. */
-export async function saveBoard(board: SavedBoard): Promise<void> {
+/** Convenience helper for an Archive screen without changing the normal list API. */
+export async function fetchArchivedBoards(): Promise<SavedBoard[]> {
+  return fetchBoards({ archived: true })
+}
+
+/** Loads one current board for cross-device refresh and conflict recovery. */
+export async function fetchBoard(boardId: string): Promise<SavedBoard | null> {
+  const response = await boardRequest(`/api/boards?id=${encodeURIComponent(boardId)}`, {
+    headers: { accept: 'application/json' },
+  })
+  if (response.status === 404) return null
+  if (!response.ok) throw await responseError(response)
+
+  const body: unknown = await response.json()
+  const board = isRecord(body) ? parseSavedBoard(body.board) : null
+  if (!board) throw new Error('The board service returned invalid data.')
+  return board
+}
+
+/**
+ * Saves a board against the revision this browser last loaded. `null` creates
+ * a new cloud board; a number means “only if it is still this version.”
+ */
+export async function saveBoard(
+  board: SavedBoard,
+  baseRevision: number | null | undefined = undefined,
+): Promise<SavedBoard> {
   const response = await boardRequest('/api/boards', {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ board }),
+    body: JSON.stringify({ board, baseRevision }),
   })
   if (!response.ok) throw await responseError(response)
+
+  const body: unknown = await response.json()
+  const savedBoard = isRecord(body) ? parseSavedBoard(body.board) : null
+  if (!savedBoard) throw new Error('The board service returned invalid data.')
+  return savedBoard
+}
+
+/** Moves a board into the archive, preserving its data and public share links. */
+export async function archiveBoard(boardId: string): Promise<SavedBoard> {
+  return setBoardArchived(boardId, true)
+}
+
+/** Returns an archived board to the normal saved-board list. */
+export async function restoreBoard(boardId: string): Promise<SavedBoard> {
+  return setBoardArchived(boardId, false)
+}
+
+async function setBoardArchived(boardId: string, archived: boolean): Promise<SavedBoard> {
+  const response = await boardRequest('/api/boards', {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ boardId, archived }),
+  })
+  if (!response.ok) throw await responseError(response)
+
+  const body: unknown = await response.json().catch(() => null)
+  const board = isRecord(body) ? parseSavedBoard(body.board) : null
+  if (!board) throw new Error('The board service returned invalid data.')
+  return board
 }
 
 /** Creates a public, read-only link to one assembly on a saved private board. */

@@ -558,6 +558,8 @@ function parseVisualVersionState(value: unknown): VisualVersionState | null | un
           || embed.placement.groupId.trim().length === 0
         ))
         || (embed.placement.crop !== undefined && crop === null)
+        || (embed.placement.semanticShade !== undefined
+          && typeof embed.placement.semanticShade !== 'boolean')
       ) return undefined
       embeds.push({
         id: embed.id,
@@ -574,6 +576,7 @@ function parseVisualVersionState(value: unknown): VisualVersionState | null | un
             ? { groupId: embed.placement.groupId.trim() }
             : {}),
           ...(crop ? { crop } : {}),
+          ...(embed.placement.semanticShade === true ? { semanticShade: true } : {}),
         },
       })
     }

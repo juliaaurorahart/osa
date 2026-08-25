@@ -7,7 +7,7 @@ type CreateShareBody = {
   slug?: unknown
 }
 
-type OwnedBoard = { content: string }
+type OwnedBoard = { content: string; archived: number }
 type ExistingShare = { token: string }
 
 const MAX_SHARE_SLUG_LENGTH = 80
@@ -104,10 +104,15 @@ export const onRequestPost: PagesFunction<Env, string, AccessData> = async ({ re
   // A user may only expose a board that they already own. The public route
   // below never accepts a board id directly, only the opaque token.
   const ownedBoard = await env.OSA_DB
-    .prepare('SELECT content FROM boards WHERE id = ? AND owner_email = ?')
+    .prepare('SELECT content, archived FROM boards WHERE id = ? AND owner_email = ?')
     .bind(boardId, owner)
     .first<OwnedBoard>()
   if (!ownedBoard) return json({ error: 'That saved board was not found.' }, 404)
+  // Archive stops new authoring actions while leaving existing capability
+  // links alive for the people who already received them.
+  if (ownedBoard.archived === 1) {
+    return json({ error: 'Restore this board before making a new share link.' }, 409)
+  }
   if (!boardContainsAssembly(ownedBoard.content, assemblyId)) {
     return json({ error: 'Choose an assembly that exists in this saved board.' }, 400)
   }

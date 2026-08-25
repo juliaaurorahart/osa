@@ -73,6 +73,8 @@ export const OSA_PROPERTY = {
   visualEmbedGroupId: 'visual-embed:group-id',
   /** Optional non-destructive crop box for one Visual placement. */
   visualEmbedCrop: 'visual-embed:crop',
+  /** Whether this one Visual placement overlays its source owner's semantic color. */
+  visualEmbedSemanticShade: 'visual-embed:semantic-shade',
   /** Normalized horizontal placement of one linked object visual in an operation View. */
   operationVisualX: 'operation-visual:x',
   /** Normalized vertical placement of one linked object visual in an operation View. */
@@ -181,6 +183,13 @@ export type VisualEmbedPlacement = {
    * never changes the reusable photo or child canvas used somewhere else.
    */
   crop?: VisualEmbedCrop
+  /**
+   * An opt-in tint local to this parent placement. When enabled, the
+   * rendering uses this Visual's already-derived owner semantic color.
+   * Omitting it deliberately means no shade, so the same Visual can remain
+   * unshaded in one canvas and shaded in another.
+   */
+  semanticShade?: boolean
 }
 
 /** One non-destructive crop window expressed as fractions of the source. */
@@ -418,6 +427,9 @@ export function normalizeVisualEmbedPlacement(
     ? placement.groupId.trim()
     : undefined
   const crop = normalizeVisualEmbedCrop(placement?.crop)
+  // No shade is the durable default. Keep the record compact and preserve
+  // older placements by writing an opt-in only when it is explicitly enabled.
+  const semanticShade = placement?.semanticShade === true
   return {
     x: normalizeCanvasPixel(placement?.x, fallback.x, 0),
     y: normalizeCanvasPixel(placement?.y, fallback.y, 0),
@@ -426,6 +438,7 @@ export function normalizeVisualEmbedPlacement(
     aspectRatioLocked,
     ...(groupId ? { groupId } : {}),
     ...(crop ? { crop } : {}),
+    ...(semanticShade ? { semanticShade: true } : {}),
   }
 }
 

@@ -671,6 +671,7 @@ try {
     [OSA_PROPERTY.visualEmbedHeight]: '250',
     [OSA_PROPERTY.visualEmbedGroupId]: 'connector-box-callout',
     [OSA_PROPERTY.visualEmbedCrop]: JSON.stringify({ x: 0.1, y: 0.2, width: 0.75, height: 0.6 }),
+    [OSA_PROPERTY.visualEmbedSemanticShade]: 'true',
   }
   const visualEmbedPackage = parseOsaImportPackage({
     format: 'osa-import',
@@ -747,6 +748,11 @@ try {
       label: 'blank canvas-local group',
       properties: { ...visualEmbedProperties, [OSA_PROPERTY.visualEmbedGroupId]: '   ' },
       expected: /visual-embed:group-id must be non-empty text when present/,
+    },
+    {
+      label: 'invalid semantic shade choice',
+      properties: { ...visualEmbedProperties, [OSA_PROPERTY.visualEmbedSemanticShade]: 'purple' },
+      expected: /visual-embed:semantic-shade must be true or false/,
     },
     {
       label: 'crop outside source image',

@@ -207,6 +207,11 @@ function validateVisualEmbedGeometry(properties: Record<string, string>, path: s
     throw new Error(`${path}.${OSA_PROPERTY.visualEmbedAspectRatioLocked} must be true or false.`)
   }
 
+  const semanticShade = properties[OSA_PROPERTY.visualEmbedSemanticShade]
+  if (semanticShade !== undefined && semanticShade !== 'true' && semanticShade !== 'false') {
+    throw new Error(`${path}.${OSA_PROPERTY.visualEmbedSemanticShade} must be true or false.`)
+  }
+
   const groupId = properties[OSA_PROPERTY.visualEmbedGroupId]
   if (groupId !== undefined && groupId.trim() === '') {
     throw new Error(`${path}.${OSA_PROPERTY.visualEmbedGroupId} must be non-empty text when present.`)

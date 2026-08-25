@@ -31,8 +31,8 @@ export type VisualEmbedInstance = {
   placement: VisualEmbedPlacement
   /**
    * A derived, non-persistent cue from this Visual or its canonical owner.
-   * Canvas artwork stays unchanged; views may render a compact frame/tag to
-   * connect a placed visual to the Part or Tool it represents.
+   * Canvas artwork stays unchanged. A parent placement may opt in to use this
+   * cue as a semantic shade without changing the reusable source Visual.
    */
   accentColor?: string
   /**
@@ -96,6 +96,7 @@ export function visualEmbedPlacementFromEdge(edge: GraphEdge, index: number) {
   const aspectRatioLocked = edge.data.properties[OSA_PROPERTY.visualEmbedAspectRatioLocked]
   const groupId = edge.data.properties[OSA_PROPERTY.visualEmbedGroupId]?.trim()
   const cropValue = edge.data.properties[OSA_PROPERTY.visualEmbedCrop]
+  const semanticShade = edge.data.properties[OSA_PROPERTY.visualEmbedSemanticShade]
   let rawCrop: unknown
   if (cropValue) {
     try {
@@ -117,6 +118,7 @@ export function visualEmbedPlacementFromEdge(edge: GraphEdge, index: number) {
       : {}),
     ...(groupId ? { groupId } : {}),
     ...(crop ? { crop } : {}),
+    ...(semanticShade === 'true' ? { semanticShade: true } : {}),
   }, defaultVisualEmbedPlacement(index))
 }
 

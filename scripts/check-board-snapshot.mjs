@@ -42,6 +42,11 @@ try {
     sharedAssemblyUrl,
     suggestedAssemblyShareSlug,
   } = await server.ssrLoadModule('/src/graph/sharedAssemblyRoute.ts')
+  const {
+    onRequestGet: getSavedBoard,
+    onRequestPatch: patchSavedBoard,
+    onRequestPut: putSavedBoard,
+  } = await server.ssrLoadModule('/functions/api/boards.ts')
   const { onRequestGet: getSharedAssembly } = await server.ssrLoadModule('/functions/shared/[token].ts')
   const { onRequestPost: createSharedAssembly } = await server.ssrLoadModule('/functions/api/shares.ts')
 
@@ -125,9 +130,10 @@ try {
   const inserts = []
   const updates = []
   const shareRows = []
+  let shareBoardArchived = false
   const shareDatabase = {
     prepare(query) {
-      if (query.includes('SELECT content FROM boards')) {
+      if (query.includes('SELECT content, archived FROM boards')) {
         return {
           bind: () => ({
             first: async () => ({
@@ -148,6 +154,7 @@ try {
                   }],
                 },
               }),
+              archived: shareBoardArchived ? 1 : 0,
             }),
           }),
         }
@@ -193,6 +200,159 @@ try {
     },
   }
   const signedInData = { cloudflareAccess: { JWT: { payload: { email: 'julia@example.com' } } } }
+
+  // This focused in-memory D1 model exercises the real Pages Function's
+  // revision predicates. It deliberately exposes only the SQL shapes used by
+  // the current single-board cloud-sync API.
+  const revisionRows = new Map()
+  const revisionDatabase = {
+    prepare(query) {
+      return {
+        bind: (...values) => ({
+          first: async () => {
+            assert.match(query, /SELECT content, archived, revision FROM boards/)
+            const [boardId, owner] = values
+            const row = revisionRows.get(boardId)
+            return row && row.owner === owner
+              ? { content: row.content, archived: row.archived, revision: row.revision }
+              : null
+          },
+          run: async () => {
+            if (query.includes('ON CONFLICT(id) DO NOTHING')) {
+              const [boardId, owner, name, content, updatedAt] = values
+              if (revisionRows.has(boardId)) return { meta: { changes: 0 } }
+              revisionRows.set(boardId, {
+                owner,
+                name,
+                content,
+                updatedAt,
+                archived: 0,
+                revision: 1,
+              })
+              return { meta: { changes: 1 } }
+            }
+
+            if (query.includes('AND revision = ?')) {
+              const [name, content, updatedAt, boardId, owner, baseRevision] = values
+              const row = revisionRows.get(boardId)
+              if (!row || row.owner !== owner || row.archived || row.revision !== baseRevision) {
+                return { meta: { changes: 0 } }
+              }
+              Object.assign(row, {
+                name,
+                content,
+                updatedAt,
+                revision: row.revision + 1,
+              })
+              return { meta: { changes: 1 } }
+            }
+
+            if (query.includes('UPDATE boards SET archived = ?')) {
+              const [archived, boardId, owner] = values
+              const row = revisionRows.get(boardId)
+              if (!row || row.owner !== owner) return { meta: { changes: 0 } }
+              row.archived = archived
+              row.revision += 1
+              return { meta: { changes: 1 } }
+            }
+
+            throw new Error(`Unexpected revision test update: ${query}`)
+          },
+        }),
+      }
+    },
+  }
+  const revisionBoard = (marker) => ({
+    id: 'revision-board',
+    name: 'Revision board',
+    updatedAt: '2026-08-25T00:00:00.000Z',
+    snapshot: { version: 7, nodes: [], edges: [] },
+    marker,
+  })
+  const putRevisionBoard = (board, baseRevision) => putSavedBoard({
+    request: new Request('https://osa.example/api/boards', {
+      method: 'PUT',
+      body: JSON.stringify({ board, baseRevision }),
+    }),
+    env: { OSA_DB: revisionDatabase },
+    data: signedInData,
+  })
+
+  const createdRevisionResponse = await putRevisionBoard(revisionBoard('created'), null)
+  assert.equal(createdRevisionResponse.status, 200)
+  assert.equal(
+    (await createdRevisionResponse.json()).board.revision,
+    1,
+    'A new cloud board starts at revision 1.',
+  )
+
+  const matchingRevisionResponse = await putRevisionBoard(revisionBoard('matching update'), 1)
+  assert.equal(matchingRevisionResponse.status, 200)
+  assert.equal(
+    (await matchingRevisionResponse.json()).board.revision,
+    2,
+    'A matching base revision advances the saved board exactly once.',
+  )
+
+  const staleRevisionResponse = await putRevisionBoard(revisionBoard('stale update'), 1)
+  assert.equal(staleRevisionResponse.status, 409)
+  const staleRevision = await staleRevisionResponse.json()
+  assert.equal(staleRevision.code, 'stale')
+  assert.equal(staleRevision.board.revision, 2)
+  assert.equal(
+    staleRevision.board.marker,
+    'matching update',
+    'A stale conflict returns the current remote board rather than the rejected draft.',
+  )
+
+  const archivedRevisionResponse = await patchSavedBoard({
+    request: new Request('https://osa.example/api/boards', {
+      method: 'PATCH',
+      body: JSON.stringify({ boardId: 'revision-board', archived: true }),
+    }),
+    env: { OSA_DB: revisionDatabase },
+    data: signedInData,
+  })
+  assert.equal(archivedRevisionResponse.status, 200)
+  assert.equal(
+    (await archivedRevisionResponse.json()).board.revision,
+    3,
+    'Archiving advances the revision so an already-open device becomes stale.',
+  )
+
+  const archivedWriteResponse = await putRevisionBoard(revisionBoard('write after archive'), 2)
+  assert.equal(archivedWriteResponse.status, 409)
+  assert.equal((await archivedWriteResponse.json()).code, 'archived')
+
+  const restoredRevisionResponse = await patchSavedBoard({
+    request: new Request('https://osa.example/api/boards', {
+      method: 'PATCH',
+      body: JSON.stringify({ boardId: 'revision-board', archived: false }),
+    }),
+    env: { OSA_DB: revisionDatabase },
+    data: signedInData,
+  })
+  assert.equal(restoredRevisionResponse.status, 200)
+  assert.equal(
+    (await restoredRevisionResponse.json()).board.revision,
+    4,
+    'Restoring also advances the revision; it cannot revive an old writer.',
+  )
+
+  const staleAfterRestoreResponse = await putRevisionBoard(revisionBoard('still stale'), 2)
+  assert.equal(staleAfterRestoreResponse.status, 409)
+  assert.equal((await staleAfterRestoreResponse.json()).board.revision, 4)
+
+  const currentRevisionResponse = await getSavedBoard({
+    request: new Request('https://osa.example/api/boards?id=revision-board'),
+    env: { OSA_DB: revisionDatabase },
+    data: signedInData,
+  })
+  assert.equal(currentRevisionResponse.status, 200)
+  const currentRevision = await currentRevisionResponse.json()
+  assert.equal(currentRevision.board.revision, 4)
+  assert.equal(currentRevision.board.archived, false)
+
   const createValidShareResponse = await createSharedAssembly({
     request: new Request('https://osa.example/api/shares', {
       method: 'POST',
@@ -210,6 +370,25 @@ try {
   assert.equal(createdShare.token.length, 64)
   assert.equal(createdShare.slug, shareSlug)
   assert.equal(inserts.length, 1, 'A verified Assembly can mint one public link.')
+
+  shareBoardArchived = true
+  const archivedShareResponse = await createSharedAssembly({
+    request: new Request('https://osa.example/api/shares', {
+      method: 'POST',
+      body: JSON.stringify({
+        boardId: 'board-1',
+        assemblyId: 'verified-assembly',
+        slug: 'Archived Board Link',
+      }),
+    }),
+    env: { OSA_DB: shareDatabase },
+    data: signedInData,
+  })
+  assert.equal(archivedShareResponse.status, 409)
+  assert.deepEqual(await archivedShareResponse.json(), {
+    error: 'Restore this board before making a new share link.',
+  })
+  shareBoardArchived = false
 
   const renameShareResponse = await createSharedAssembly({
     request: new Request('https://osa.example/api/shares', {
@@ -928,6 +1107,7 @@ try {
             height: 300,
             groupId: 'connector-box-callout',
             crop: { x: 0.1, y: 0.2, width: 0.75, height: 0.6 },
+            semanticShade: true,
           },
         }],
       },
@@ -959,6 +1139,11 @@ try {
     restoredVersionedVisualSnapshot?.nodes[0].data.visualVersions?.records[1]?.embeds[0]?.placement.crop,
     { x: 0.1, y: 0.2, width: 0.75, height: 0.6 },
     'A saved Visual version retains its non-destructive crop window.',
+  )
+  assert.equal(
+    restoredVersionedVisualSnapshot?.nodes[0].data.visualVersions?.records[1]?.embeds[0]?.placement.semanticShade,
+    true,
+    'A saved Visual version retains its parent-side semantic shade choice.',
   )
 
   const photoVisual = createTextNode({
@@ -1029,6 +1214,34 @@ try {
     /<image href="data:image\/svg\+xml;base64,PHN2Zy8\+" x="120" y="80" width="360" height="240" preserveAspectRatio="none"/,
     'An unlocked photo fills its selected width and height rather than fitting inside an empty frame.',
   )
+  const unshadedSemanticVisualMarkup = renderToStaticMarkup(createElement(SketchPreview, {
+    document: visualCanvas.data.sketch,
+    embeddedVisuals: [{
+      id: 'photo-render-embed-unshaded-semantic',
+      visual: immutablePhotoVisual,
+      placement: { x: 120, y: 80, width: 360, height: 240 },
+      accentColor: '#9b59d0',
+    }],
+  }))
+  assert.doesNotMatch(
+    unshadedSemanticVisualMarkup,
+    /sketch-visual-embed__accent/,
+    'An owner semantic color does not shade a Visual placement until that placement opts in.',
+  )
+  const shadedSemanticVisualMarkup = renderToStaticMarkup(createElement(SketchPreview, {
+    document: visualCanvas.data.sketch,
+    embeddedVisuals: [{
+      id: 'photo-render-embed-shaded-semantic',
+      visual: immutablePhotoVisual,
+      placement: { x: 120, y: 80, width: 360, height: 240, semanticShade: true },
+      accentColor: '#9b59d0',
+    }],
+  }))
+  assert.match(
+    shadedSemanticVisualMarkup,
+    /class="sketch-visual-embed__accent"[^>]*fill="#9b59d0"[^>]*fill-opacity="0.22"/,
+    'One parent placement can opt into its owner semantic color without tinting the reusable source Visual.',
+  )
   const liveEmbed = createGraphEdge({
     id: 'visual-embed-live-1',
     source: versionedVisualCanvas.id,
@@ -1042,6 +1255,7 @@ try {
       [OSA_PROPERTY.visualEmbedHeight]: '240',
       [OSA_PROPERTY.visualEmbedGroupId]: 'connector-box-callout',
       [OSA_PROPERTY.visualEmbedCrop]: JSON.stringify({ x: 0.125, y: 0.2, width: 0.5, height: 0.6 }),
+      [OSA_PROPERTY.visualEmbedSemanticShade]: 'true',
     },
   })
   assert.deepEqual(
@@ -1054,6 +1268,7 @@ try {
       height: 300,
       groupId: 'connector-box-callout',
       crop: { x: 0.1, y: 0.2, width: 0.75, height: 0.6 },
+      semanticShade: true,
     }],
     'Card projections use the official Visual placement rather than the live draft edge.',
   )
@@ -1068,6 +1283,7 @@ try {
       aspectRatioLocked: true,
       groupId: 'connector-box-callout',
       crop: { x: 0.125, y: 0.2, width: 0.5, height: 0.6 },
+      semanticShade: true,
     }],
     'The editor retains the live draft placement and applies the current safe ratio default.',
   )
@@ -1108,6 +1324,14 @@ try {
     parseBoardSnapshot(malformedVisualEmbedCropSnapshot),
     null,
     'A saved Visual version rejects a crop that extends outside its source.',
+  )
+
+  const malformedVisualEmbedShadeSnapshot = structuredClone(versionedVisualSnapshot)
+  malformedVisualEmbedShadeSnapshot.nodes[0].data.visualVersions.records[0].embeds[0].placement.semanticShade = 'purple'
+  assert.equal(
+    parseBoardSnapshot(malformedVisualEmbedShadeSnapshot),
+    null,
+    'A saved Visual version rejects a non-boolean semantic shade choice.',
   )
 
   // Boards saved before visual elements existed are still valid: their

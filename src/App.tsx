@@ -131,10 +131,15 @@ import {
 } from './graph/taskProject'
 import {
   BoardAccessError,
+  BoardConflictError,
   BoardUnavailableError,
+  archiveBoard,
   createAssemblyShare,
+  fetchArchivedBoards,
+  fetchBoard,
   fetchBoards,
   fetchSharedAssembly,
+  restoreBoard,
   saveBoard,
   SharedAssemblyUnavailableError,
   type SavedBoard,
@@ -171,6 +176,34 @@ const initialNodes: TextFlowNode[] = [
 const initialEdges: GraphEdge[] = []
 
 const LEGACY_SHAKO_VISUAL = /^\/import-assets\/shako-light-wrap\/operation-\d+\.png$/
+
+/** Saved board names are unique within the active list so a person can tell
+ * exactly which board they will load. Archive names may safely overlap. */
+function boardNameAlreadyInUse(boards: readonly SavedBoard[], boardId: string, name: string) {
+  const normalizedName = name.trim().toLocaleLowerCase()
+  return boards.some((board) => (
+    board.id !== boardId
+    && board.name.trim().toLocaleLowerCase() === normalizedName
+  ))
+}
+
+/** One deliberately saved cloud board is refreshed in the background while open. */
+const CLOUD_AUTOSAVE_DELAY_MS = 1_500
+const CLOUD_REFRESH_INTERVAL_MS = 15_000
+
+/** Local recovery data also remembers whether it contains unsynced cloud edits. */
+type LocalDraft = SavedBoard & {
+  cloudDirty?: boolean
+}
+
+/**
+ * A cloud revision acknowledges one exact document, not merely one moment in
+ * time. Keeping that baseline lets development StrictMode and remote loads
+ * distinguish an incoming document from a real local edit.
+ */
+function boardDocumentFingerprint(name: string, snapshot: BoardSnapshot) {
+  return JSON.stringify({ name: name.trim(), snapshot })
+}
 
 /**
  * The first bundled Shako import treated the three drilling bits as one Tool.
@@ -529,7 +562,7 @@ function readSelectedAssemblyId() {
   return window.localStorage.getItem(SELECTED_ASSEMBLY_KEY)
 }
 
-function readLocalDraft(): SavedBoard | null {
+function readLocalDraft(): LocalDraft | null {
   try {
     const rawDraft = window.localStorage.getItem(LOCAL_DRAFT_KEY)
     if (!rawDraft) return null
@@ -547,18 +580,19 @@ function readLocalDraft(): SavedBoard | null {
       name: candidate.name,
       updatedAt: candidate.updatedAt,
       snapshot,
+      revision: typeof candidate.revision === 'number'
+        && Number.isInteger(candidate.revision)
+        && candidate.revision > 0
+        ? candidate.revision
+        : undefined,
+      cloudDirty: candidate.cloudDirty === true,
     } : null
   } catch {
     return null
   }
 }
 
-function writeLocalDraft(draft: {
-  id: string
-  name: string
-  updatedAt: string
-  snapshot: BoardSnapshot
-}) {
+function writeLocalDraft(draft: LocalDraft) {
   window.localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify(draft))
 }
 
@@ -689,6 +723,10 @@ function Flow() {
     y: number
   } | null>(null)
   const [savedBoards, setSavedBoards] = useState<SavedBoard[]>([])
+  // Archived boards stay separate from the normal picker. They are only
+  // shown when someone deliberately opens the archive, and can be restored.
+  const [archivedBoards, setArchivedBoards] = useState<SavedBoard[]>([])
+  const [showingArchivedBoards, setShowingArchivedBoards] = useState(false)
   const [boardId, setBoardId] = useState<string>(() => startupDraft?.id ?? crypto.randomUUID())
   const [boardName, setBoardName] = useState(startupDraft?.name ?? 'Untitled board')
   const [selectedBoardId, setSelectedBoardId] = useState('')
@@ -696,6 +734,31 @@ function Flow() {
   const [draftStatus, setDraftStatus] = useState(
     startupDraft ? 'Local draft restored' : '',
   )
+  // A revision exists only after a board has been deliberately saved to D1 or
+  // loaded from D1. Fresh/imported boards remain local until that first Save.
+  const [cloudRevision, setCloudRevision] = useState<number | null>(() => startupDraft?.revision ?? null)
+  const cloudRevisionRef = useRef<number | null>(cloudRevision)
+  cloudRevisionRef.current = cloudRevision
+  const [cloudDirty, setCloudDirty] = useState(() => startupDraft?.cloudDirty ?? false)
+  const cloudDirtyRef = useRef(cloudDirty)
+  cloudDirtyRef.current = cloudDirty
+  // This is the last exact board document acknowledged by D1. It deliberately
+  // includes the board name because renaming is also a cloud edit.
+  const cloudBaselineRef = useRef<string | null>(
+    startupDraft?.revision
+      ? boardDocumentFingerprint(startupDraft.name, startupDraft.snapshot)
+      : null,
+  )
+  const [cloudSyncStatus, setCloudSyncStatus] = useState(() => (
+    startupDraft?.revision
+      ? startupDraft.cloudDirty ? 'Saved locally' : 'Synced'
+      : ''
+  ))
+  const [cloudConflictBoard, setCloudConflictBoard] = useState<SavedBoard | null>(null)
+  const cloudConflictRef = useRef<SavedBoard | null>(cloudConflictBoard)
+  cloudConflictRef.current = cloudConflictBoard
+  const cloudSaveInFlight = useRef(false)
+  const [cloudSaveCycle, setCloudSaveCycle] = useState(0)
   const [needsSignIn, setNeedsSignIn] = useState(false)
   const [shareStatus, setShareStatus] = useState('')
   const [shareUrl, setShareUrl] = useState('')
@@ -707,6 +770,10 @@ function Flow() {
     'idle' | 'loading' | 'ready' | 'unavailable'
   >(() => sharedAssemblyReference ? 'loading' : 'idle')
   const isSharedAssembly = sharedAssemblyReference !== null
+  const latestBoardId = useRef(boardId)
+  latestBoardId.current = boardId
+  const latestBoardName = useRef(boardName)
+  latestBoardName.current = boardName
   const { screenToFlowPosition, setCenter, fitView } = useReactFlow()
   const nextId = useRef(Math.max(
     1,
@@ -801,6 +868,8 @@ function Flow() {
           name: boardName,
           updatedAt: new Date().toISOString(),
           snapshot: createBoardSnapshot(nodes, edges),
+          ...(cloudRevision === null ? {} : { revision: cloudRevision }),
+          cloudDirty,
         })
         setDraftStatus(`Draft saved ${new Date().toLocaleTimeString([], {
           hour: 'numeric',
@@ -812,7 +881,7 @@ function Flow() {
       }
     }, 900)
     return () => window.clearTimeout(saveTimer)
-  }, [boardId, boardName, edges, isSharedAssembly, nodes])
+  }, [boardId, boardName, cloudDirty, cloudRevision, edges, isSharedAssembly, nodes])
 
   // The ordinary autosave is debounced so drawing stays responsive. When the
   // page is about to disappear, however, save the most recent graph
@@ -828,6 +897,8 @@ function Flow() {
           name: boardName,
           updatedAt: new Date().toISOString(),
           snapshot: createBoardSnapshot(nodes, edges),
+          ...(cloudRevisionRef.current === null ? {} : { revision: cloudRevisionRef.current }),
+          cloudDirty: cloudDirtyRef.current,
         })
       } catch {
         // The normal autosave status is where we report storage failures.
@@ -844,6 +915,33 @@ function Flow() {
       window.removeEventListener('pagehide', flushLocalDraft)
       document.removeEventListener('visibilitychange', flushWhenHidden)
     }
+  }, [boardId, boardName, edges, isSharedAssembly, nodes])
+
+  // React Flow and the Assembly editor both edit the same node/edge state.
+  // Compare it with the last D1 acknowledgement rather than treating an
+  // effect run as an edit. React StrictMode intentionally runs mount effects
+  // twice in development, and a remote load should remain clean on both runs.
+  useEffect(() => {
+    if (isSharedAssembly) return
+    if (cloudRevisionRef.current === null) return
+
+    const currentDocument = boardDocumentFingerprint(
+      boardName,
+      createBoardSnapshot(nodes, edges),
+    )
+    const baseline = cloudBaselineRef.current
+    // Old local drafts have a revision but no fingerprint. Their restored
+    // document is the baseline until a later cloud read tells us otherwise.
+    if (baseline === null) {
+      cloudBaselineRef.current = currentDocument
+      return
+    }
+
+    const changed = currentDocument !== baseline
+    if (cloudDirtyRef.current === changed) return
+    cloudDirtyRef.current = changed
+    setCloudDirty(changed)
+    setCloudSyncStatus(changed ? 'Saved locally' : 'Synced')
   }, [boardId, boardName, edges, isSharedAssembly, nodes])
 
   const suppressPaneCollapseUntil = useRef(0)
@@ -866,6 +964,42 @@ function Flow() {
         : error instanceof Error ? error.message : 'Unable to load saved boards.')
     }
   }, [])
+
+  /** Opens the separate recoverable archive; it never mingles with active boards. */
+  const showArchivedBoardList = useCallback(async () => {
+    setStorageStatus('Loading archive…')
+    try {
+      const boards = await fetchArchivedBoards()
+      setNeedsSignIn(false)
+      setArchivedBoards(boards)
+      setShowingArchivedBoards(true)
+      setSelectedBoardId((currentId) => (
+        boards.some((board) => board.id === currentId)
+          ? currentId
+          : (boards[0]?.id ?? '')
+      ))
+      setStorageStatus(boards.length
+        ? `${boards.length} archived board${boards.length === 1 ? '' : 's'}`
+        : 'Archive is empty')
+    } catch (error) {
+      setNeedsSignIn(error instanceof BoardAccessError)
+      setStorageStatus(error instanceof BoardUnavailableError
+        ? ''
+        : error instanceof Error ? error.message : 'Unable to load the archive.')
+    }
+  }, [])
+
+  const showActiveBoardList = useCallback(() => {
+    setShowingArchivedBoards(false)
+    setSelectedBoardId((currentId) => (
+      savedBoards.some((board) => board.id === currentId)
+        ? currentId
+        : (savedBoards[0]?.id ?? '')
+    ))
+    setStorageStatus(savedBoards.length
+      ? `${savedBoards.length} saved board${savedBoards.length === 1 ? '' : 's'}`
+      : 'No saved boards yet')
+  }, [savedBoards])
 
   useEffect(() => {
     if (isSharedAssembly) {
@@ -2115,6 +2249,14 @@ function Flow() {
         } else {
           delete properties[OSA_PROPERTY.visualEmbedCrop]
         }
+        if (placement.semanticShade) {
+          properties[OSA_PROPERTY.visualEmbedSemanticShade] = 'true'
+        } else {
+          // Semantic shading belongs to this parent-side placement. Clearing
+          // it must remove an inherited/stale edge property rather than tint
+          // another occurrence of the same reusable Visual.
+          delete properties[OSA_PROPERTY.visualEmbedSemanticShade]
+        }
         return createGraphEdge({
           id: edgeId,
           source: parentVisualId,
@@ -2237,6 +2379,11 @@ function Flow() {
           properties[OSA_PROPERTY.visualEmbedCrop] = JSON.stringify(placement.crop)
         } else {
           delete properties[OSA_PROPERTY.visualEmbedCrop]
+        }
+        if (placement.semanticShade) {
+          properties[OSA_PROPERTY.visualEmbedSemanticShade] = 'true'
+        } else {
+          delete properties[OSA_PROPERTY.visualEmbedSemanticShade]
         }
         return createGraphEdge({
           id: `edge-${nextEdgeId.current++}`,
@@ -3221,6 +3368,30 @@ function Flow() {
     nextEdgeId.current = Math.max(0, ...numericEdgeIds) + 1
   }, [setEdges, setNodes])
 
+  /** Applies a newer D1 board without treating that incoming change as a local edit. */
+  const applyCloudBoard = useCallback((savedBoard: SavedBoard, status = 'Synced') => {
+    cloudBaselineRef.current = boardDocumentFingerprint(
+      savedBoard.name,
+      savedBoard.snapshot,
+    )
+    applyBoardSnapshot(savedBoard.snapshot)
+    setBoardId(savedBoard.id)
+    setBoardName(savedBoard.name)
+    const revision = savedBoard.revision ?? null
+    cloudRevisionRef.current = revision
+    setCloudRevision(revision)
+    cloudDirtyRef.current = false
+    setCloudDirty(false)
+    setCloudConflictBoard(null)
+    setCloudSyncStatus(status)
+    setSavedBoards((currentBoards) => [
+      savedBoard,
+      ...currentBoards.filter((board) => board.id !== savedBoard.id),
+    ])
+    setSelectedBoardId(savedBoard.id)
+    setShowingArchivedBoards(false)
+  }, [applyBoardSnapshot])
+
   /**
    * A recipient's link restores an assembly snapshot into the normal graph,
    * then keeps the app on the printable Assembly view. The snapshot is never
@@ -3256,50 +3427,184 @@ function Flow() {
     }
   }, [applyBoardSnapshot, sharedAssemblyReference])
 
-  const saveBoardToDatabase = useCallback(async () => {
-    const name = boardName.trim()
+  /**
+   * The one cloud-write path: manual Save, share creation, and background
+   * saving all go through the same revision guard.
+   */
+  const saveCurrentBoard = useCallback(async (
+    mode: 'manual' | 'auto' = 'manual',
+  ): Promise<SavedBoard | null> => {
+    const id = latestBoardId.current
+    const name = latestBoardName.current.trim()
     if (!name) {
-      setStorageStatus('Enter a board name before saving.')
+      if (mode === 'manual') setStorageStatus('Enter a board name before saving.')
+      return null
+    }
+
+    if (archivedBoards.some((board) => board.id === id)) {
+      const message = 'Restore this board before saving changes.'
+      setCloudSyncStatus(message)
+      if (mode === 'manual') setStorageStatus(message)
+      return null
+    }
+
+    if (boardNameAlreadyInUse(savedBoards, id, name)) {
+      const message = 'That board name is already in use.'
+      setCloudSyncStatus(message)
+      if (mode === 'manual') setStorageStatus(message)
+      return null
+    }
+
+    const baseRevision = cloudRevisionRef.current
+    // Only an explicitly saved/loaded board may start background cloud saves.
+    if (mode === 'auto' && (baseRevision === null || cloudConflictRef.current)) return null
+    if (cloudSaveInFlight.current) return null
+
+    const nodesAtSave = latestNodes.current
+    const edgesAtSave = latestEdges.current
+    const boardToSave: SavedBoard = {
+      id,
+      name,
+      updatedAt: new Date().toISOString(),
+      snapshot: createBoardSnapshot(nodesAtSave, edgesAtSave),
+    }
+
+    cloudSaveInFlight.current = true
+    if (mode === 'auto') {
+      setCloudSyncStatus('Syncing…')
+    } else {
+      setStorageStatus('Saving…')
+    }
+
+    try {
+      const savedBoard = await saveBoard(boardToSave, baseRevision)
+      setNeedsSignIn(false)
+      setSavedBoards((currentBoards) => [
+        savedBoard,
+        ...currentBoards.filter((board) => board.id !== savedBoard.id),
+      ])
+
+      if (latestBoardId.current === savedBoard.id) {
+        cloudRevisionRef.current = savedBoard.revision ?? null
+        setCloudRevision(savedBoard.revision ?? null)
+        setSelectedBoardId(savedBoard.id)
+        setShowingArchivedBoards(false)
+        setBoardName(savedBoard.name)
+        const savedDocument = boardDocumentFingerprint(
+          savedBoard.name,
+          savedBoard.snapshot,
+        )
+        cloudBaselineRef.current = savedDocument
+        const changedDuringSave = boardDocumentFingerprint(
+          latestBoardName.current,
+          createBoardSnapshot(latestNodes.current, latestEdges.current),
+        ) !== savedDocument
+        cloudDirtyRef.current = changedDuringSave
+        setCloudDirty(changedDuringSave)
+        setCloudConflictBoard(null)
+        setCloudSyncStatus(changedDuringSave ? 'Saved locally' : 'Synced')
+      }
+
+      if (mode === 'manual') setStorageStatus(`Saved “${savedBoard.name}”`)
+      return savedBoard
+    } catch (error) {
+      if (error instanceof BoardConflictError) {
+        if (latestBoardId.current === id) {
+          setCloudConflictBoard(error.board)
+          setCloudSyncStatus(error.board.archived ? 'Archived elsewhere' : 'Changed elsewhere')
+          if (error.board.archived) {
+            setSavedBoards((currentBoards) => currentBoards.filter((board) => board.id !== error.board.id))
+            setArchivedBoards((currentBoards) => [
+              error.board,
+              ...currentBoards.filter((board) => board.id !== error.board.id),
+            ])
+          }
+        }
+        if (mode === 'manual') {
+          setStorageStatus(error.board.archived
+            ? 'Restore this board before saving changes.'
+            : 'Changed elsewhere — reload or save a copy.')
+        }
+      } else {
+        setNeedsSignIn(error instanceof BoardAccessError)
+        const message = error instanceof BoardUnavailableError
+          ? 'Offline — saved locally'
+          : error instanceof BoardAccessError
+            ? 'Sign in — saved locally'
+            : error instanceof Error ? error.message : 'Unable to save this board.'
+        setCloudSyncStatus(message)
+        if (mode === 'manual') setStorageStatus(message)
+      }
+      return null
+    } finally {
+      cloudSaveInFlight.current = false
+      setCloudSaveCycle((current) => current + 1)
+    }
+  }, [archivedBoards, savedBoards])
+
+  const saveBoardToDatabase = useCallback(async () => {
+    await saveCurrentBoard('manual')
+  }, [saveCurrentBoard])
+
+  /** Moves the board currently open for editing into the recoverable archive. */
+  const archiveCurrentBoard = useCallback(async () => {
+    const board = savedBoards.find((savedBoard) => savedBoard.id === boardId)
+    if (!board) {
+      setStorageStatus('Save this board before archiving it.')
       return
     }
 
-    const savedBoard: SavedBoard = {
-      id: boardId,
-      name,
-      updatedAt: new Date().toISOString(),
-      snapshot: createBoardSnapshot(nodes, edges),
-    }
-    const nextBoards = [
-      savedBoard,
-      ...savedBoards.filter((board) => board.id !== savedBoard.id),
-    ]
-
-    setStorageStatus('Saving…')
+    setStorageStatus('Archiving…')
     try {
-      await saveBoard(savedBoard)
+      const archivedBoard = await archiveBoard(board.id)
       setNeedsSignIn(false)
-      setSavedBoards(nextBoards)
-      setSelectedBoardId(savedBoard.id)
-      setBoardName(name)
-      setStorageStatus(`Saved “${name}”`)
+      setSavedBoards((currentBoards) => currentBoards.filter((savedBoard) => savedBoard.id !== board.id))
+      setArchivedBoards((currentBoards) => [
+        archivedBoard,
+        ...currentBoards.filter((savedBoard) => savedBoard.id !== board.id),
+      ])
+      // Keep the board on screen as a safety measure, but prevent a stale
+      // working copy from silently writing over the archived version.
+      cloudRevisionRef.current = archivedBoard.revision ?? null
+      setCloudRevision(archivedBoard.revision ?? null)
+      setShowingArchivedBoards(true)
+      setSelectedBoardId(board.id)
+      setStorageStatus(`Archived “${board.name}”`)
     } catch (error) {
       setNeedsSignIn(error instanceof BoardAccessError)
       setStorageStatus(error instanceof BoardUnavailableError
         ? ''
-        : error instanceof Error ? error.message : 'Unable to save this board.')
+        : error instanceof Error ? error.message : 'Unable to archive this board.')
     }
-  }, [boardId, boardName, edges, nodes, savedBoards])
+  }, [boardId, savedBoards])
+
+  /** Restores and opens the selected archived board in one deliberate action. */
+  const restoreSelectedBoard = useCallback(async () => {
+    const board = archivedBoards.find((savedBoard) => savedBoard.id === selectedBoardId)
+    if (!board) {
+      setStorageStatus('Choose an archived board to restore.')
+      return
+    }
+
+    setStorageStatus('Restoring…')
+    try {
+      const restoredBoard = await restoreBoard(board.id)
+      setNeedsSignIn(false)
+      setArchivedBoards((currentBoards) => currentBoards.filter((savedBoard) => savedBoard.id !== board.id))
+      applyCloudBoard(restoredBoard)
+      setStorageStatus(`Restored “${restoredBoard.name}”`)
+    } catch (error) {
+      setNeedsSignIn(error instanceof BoardAccessError)
+      setStorageStatus(error instanceof BoardUnavailableError
+        ? ''
+        : error instanceof Error ? error.message : 'Unable to restore this board.')
+    }
+  }, [applyCloudBoard, archivedBoards, selectedBoardId])
 
   /** Saves first, then creates a public, read-only link to the selected assembly. */
   const createAssemblyShareLink = useCallback(async () => {
     if (!activeAssemblyId) {
       setShareStatus('Choose an assembly before making a share link.')
-      return
-    }
-
-    const name = boardName.trim()
-    if (!name) {
-      setShareStatus('Give this board a name before making a share link.')
       return
     }
 
@@ -3309,21 +3614,15 @@ function Flow() {
       return
     }
 
-    const savedBoard: SavedBoard = {
-      id: boardId,
-      name,
-      updatedAt: new Date().toISOString(),
-      snapshot: createBoardSnapshot(nodes, edges),
-    }
-    const nextBoards = [savedBoard, ...savedBoards.filter((board) => board.id !== savedBoard.id)]
-
     setShareStatus('Saving the current assembly…')
     try {
-      await saveBoard(savedBoard)
-      setNeedsSignIn(false)
-      setSavedBoards(nextBoards)
-      setSelectedBoardId(savedBoard.id)
-      setBoardName(name)
+      const savedBoard = await saveCurrentBoard('manual')
+      if (!savedBoard) {
+        setShareStatus(cloudConflictRef.current
+          ? 'Changed elsewhere — reload or save a copy.'
+          : 'Save the current board before making a share link.')
+        return
+      }
 
       const share = await createAssemblyShare(savedBoard.id, activeAssemblyId, requestedSlug)
       const nextShareUrl = sharedAssemblyUrl(window.location.origin, share.slug || share.token)
@@ -3342,7 +3641,7 @@ function Flow() {
         ? 'Online board storage is unavailable here.'
         : error instanceof Error ? error.message : 'Unable to create a share link.')
     }
-  }, [activeAssemblyId, boardId, boardName, edges, nodes, savedBoards, shareSlug])
+  }, [activeAssemblyId, saveCurrentBoard, shareSlug])
 
   const loadSelectedBoard = useCallback(() => {
     const savedBoard = savedBoards.find((board) => board.id === selectedBoardId)
@@ -3351,11 +3650,209 @@ function Flow() {
       return
     }
 
-    applyBoardSnapshot(savedBoard.snapshot)
-    setBoardId(savedBoard.id)
-    setBoardName(savedBoard.name)
+    applyCloudBoard(savedBoard)
     setStorageStatus(`Loaded “${savedBoard.name}”`)
-  }, [applyBoardSnapshot, savedBoards, selectedBoardId])
+  }, [applyCloudBoard, savedBoards, selectedBoardId])
+
+  /** A compact conflict escape hatch: keep this device's work as a new board. */
+  const saveCurrentBoardAsCopy = useCallback(async () => {
+    if (cloudSaveInFlight.current) return
+
+    const sourceId = latestBoardId.current
+    const sourceName = latestBoardName.current.trim() || 'Untitled board'
+    let name = `${sourceName} copy`
+    let copyNumber = 2
+    while (boardNameAlreadyInUse(savedBoards, '', name)) {
+      name = `${sourceName} copy ${copyNumber}`
+      copyNumber += 1
+    }
+
+    const sourceSnapshot = createBoardSnapshot(latestNodes.current, latestEdges.current)
+    const sourceDocument = boardDocumentFingerprint(sourceName, sourceSnapshot)
+    const copy: SavedBoard = {
+      id: crypto.randomUUID(),
+      name,
+      updatedAt: new Date().toISOString(),
+      snapshot: sourceSnapshot,
+    }
+    setCloudSyncStatus('Saving copy…')
+    cloudSaveInFlight.current = true
+    try {
+      const savedCopy = await saveBoard(copy, null)
+      setNeedsSignIn(false)
+      setSavedBoards((currentBoards) => [
+        savedCopy,
+        ...currentBoards.filter((board) => board.id !== savedCopy.id),
+      ])
+
+      // Do not let an awaited request rewind a drawing made while it was
+      // saving. The new copy adopts the live document and its first guarded
+      // autosave carries those newer edits forward.
+      if (latestBoardId.current === sourceId) {
+        const liveName = latestBoardName.current.trim() || sourceName
+        const liveSnapshot = createBoardSnapshot(latestNodes.current, latestEdges.current)
+        const changedDuringSave = boardDocumentFingerprint(liveName, liveSnapshot) !== sourceDocument
+        if (changedDuringSave) {
+          const nextName = liveName === sourceName ? savedCopy.name : liveName
+          cloudBaselineRef.current = boardDocumentFingerprint(savedCopy.name, savedCopy.snapshot)
+          setBoardId(savedCopy.id)
+          setBoardName(nextName)
+          cloudRevisionRef.current = savedCopy.revision ?? null
+          setCloudRevision(savedCopy.revision ?? null)
+          cloudDirtyRef.current = true
+          setCloudDirty(true)
+          setCloudConflictBoard(null)
+          setCloudSyncStatus('Saved locally')
+          setSelectedBoardId(savedCopy.id)
+          setShowingArchivedBoards(false)
+        } else {
+          applyCloudBoard(savedCopy, 'Synced')
+        }
+      }
+      setStorageStatus(`Saved “${savedCopy.name}”`)
+    } catch (error) {
+      setNeedsSignIn(error instanceof BoardAccessError)
+      setCloudSyncStatus(error instanceof BoardUnavailableError
+        ? 'Offline — saved locally'
+        : error instanceof BoardAccessError
+          ? 'Sign in — saved locally'
+          : error instanceof Error ? error.message : 'Unable to save a copy.')
+    } finally {
+      cloudSaveInFlight.current = false
+      setCloudSaveCycle((current) => current + 1)
+    }
+  }, [applyCloudBoard, savedBoards])
+
+  /** Replaces the open document only when the author explicitly chooses the newer cloud copy. */
+  const reloadCloudBoard = useCallback(() => {
+    const remoteBoard = cloudConflictRef.current
+    if (!remoteBoard || remoteBoard.archived) return
+    applyCloudBoard(remoteBoard, 'Synced')
+    setStorageStatus(`Loaded “${remoteBoard.name}”`)
+  }, [applyCloudBoard])
+
+  // After the first deliberate Save/Load, background changes go to the same
+  // D1 board. A fresh/imported Untitled board is intentionally local-only.
+  useEffect(() => {
+    if (
+      isSharedAssembly
+      || cloudRevision === null
+      || !cloudDirty
+      || cloudConflictBoard
+    ) return
+
+    const timer = window.setTimeout(() => {
+      void saveCurrentBoard('auto')
+    }, CLOUD_AUTOSAVE_DELAY_MS)
+    return () => window.clearTimeout(timer)
+  }, [
+    boardId,
+    boardName,
+    cloudConflictBoard,
+    cloudDirty,
+    cloudRevision,
+    cloudSaveCycle,
+    edges,
+    isSharedAssembly,
+    nodes,
+    saveCurrentBoard,
+  ])
+
+  /** Pulls one current board, never the entire potentially image-heavy board list. */
+  const refreshCurrentCloudBoard = useCallback(async () => {
+    const revision = cloudRevisionRef.current
+    const id = latestBoardId.current
+    if (isSharedAssembly || revision === null || cloudConflictRef.current || cloudSaveInFlight.current) return
+
+    try {
+      const remoteBoard = await fetchBoard(id)
+      // A slow request for the board we just left must not switch the editor
+      // back to it after a person loads another board.
+      if (latestBoardId.current !== id) return
+      if (!remoteBoard) {
+        setCloudSyncStatus('Cloud board is unavailable')
+        return
+      }
+      if (remoteBoard.archived) {
+        setSavedBoards((currentBoards) => currentBoards.filter((board) => board.id !== remoteBoard.id))
+        setArchivedBoards((currentBoards) => [
+          remoteBoard,
+          ...currentBoards.filter((board) => board.id !== remoteBoard.id),
+        ])
+        setCloudConflictBoard(remoteBoard)
+        setCloudSyncStatus('Archived elsewhere')
+        return
+      }
+      const currentRevision = cloudRevisionRef.current
+      // Re-read the revision after the await. A response from before this
+      // browser's own successful save is older information, not a conflict.
+      if (
+        currentRevision === null
+        || remoteBoard.revision === undefined
+        || remoteBoard.revision <= currentRevision
+      ) return
+
+      // A clean viewer follows the latest cloud board automatically. An editor
+      // with unsaved work keeps that work and gets an explicit choice instead.
+      if (cloudDirtyRef.current) {
+        setCloudConflictBoard(remoteBoard)
+        setCloudSyncStatus('Changed elsewhere')
+        return
+      }
+      applyCloudBoard(remoteBoard, 'Synced')
+    } catch (error) {
+      setNeedsSignIn(error instanceof BoardAccessError)
+      if (error instanceof BoardAccessError) {
+        setCloudSyncStatus('Sign in — saved locally')
+      } else if (error instanceof BoardUnavailableError) {
+        setCloudSyncStatus('Offline — saved locally')
+      }
+    }
+  }, [applyCloudBoard, isSharedAssembly])
+
+  useEffect(() => {
+    if (isSharedAssembly || cloudRevision === null) return
+
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void refreshCurrentCloudBoard()
+    }
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refreshCurrentCloudBoard()
+    }, CLOUD_REFRESH_INTERVAL_MS)
+    window.addEventListener('focus', refreshWhenVisible)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('focus', refreshWhenVisible)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+    }
+  }, [cloudRevision, isSharedAssembly, refreshCurrentCloudBoard])
+
+  // A recovered local draft may already know which cloud revision it came
+  // from. On startup, accept a newer remote board only if that draft is clean.
+  const reconciledStartupCloud = useRef(false)
+  useEffect(() => {
+    if (
+      reconciledStartupCloud.current
+      || isSharedAssembly
+      || !startupDraft
+      || cloudRevisionRef.current === null
+    ) return
+    const remoteBoard = savedBoards.find((board) => board.id === latestBoardId.current)
+    if (!remoteBoard) return
+
+    reconciledStartupCloud.current = true
+    if (
+      remoteBoard.revision === undefined
+      || remoteBoard.revision <= cloudRevisionRef.current
+    ) return
+    if (cloudDirtyRef.current) {
+      setCloudConflictBoard(remoteBoard)
+      setCloudSyncStatus('Changed elsewhere')
+      return
+    }
+    applyCloudBoard(remoteBoard, 'Synced')
+  }, [applyCloudBoard, isSharedAssembly, savedBoards, startupDraft])
 
   const saveBoardAsJson = useCallback(() => {
     const board = createBoardSnapshot(nodes, edges)
@@ -3392,6 +3889,13 @@ function Flow() {
       if (!snapshot) throw new Error('This is not a valid OSA board file.')
 
       applyBoardSnapshot(snapshot)
+      cloudBaselineRef.current = null
+      cloudRevisionRef.current = null
+      setCloudRevision(null)
+      cloudDirtyRef.current = false
+      setCloudDirty(false)
+      setCloudConflictBoard(null)
+      setCloudSyncStatus('')
       setBoardId(crypto.randomUUID())
       setBoardName(file.name.replace(/\.json$/i, '') || 'Imported board')
       setStorageStatus('Imported JSON; save to keep it in the database.')
@@ -3714,28 +4218,65 @@ function Flow() {
         <div className="board-panel__storage">
           <input
             className="board-name-input"
-            aria-label="Current board name"
+            aria-label="Board name"
+            placeholder="board name"
             value={boardName}
             onChange={(event) => setBoardName(event.target.value)}
           />
           <button className="board-button" onClick={() => void saveBoardToDatabase()}>
-            Save board
+            Save
           </button>
           <select
             className="board-select"
-            aria-label="Saved boards"
+            aria-label={showingArchivedBoards ? 'Archived boards' : 'Saved boards'}
             value={selectedBoardId}
             onChange={(event) => setSelectedBoardId(event.target.value)}
-            disabled={!savedBoards.length}
+            disabled={showingArchivedBoards ? !archivedBoards.length : !savedBoards.length}
           >
-            {!savedBoards.length && <option value="">No saved boards</option>}
-            {savedBoards.map((board) => (
+            {showingArchivedBoards
+              ? !archivedBoards.length && <option value="">Archive is empty</option>
+              : !savedBoards.length && <option value="">No saved boards</option>}
+            {(showingArchivedBoards ? archivedBoards : savedBoards).map((board) => (
               <option key={board.id} value={board.id}>{board.name}</option>
             ))}
           </select>
-          <button className="board-button" onClick={loadSelectedBoard} disabled={!selectedBoardId}>
-            Load board
+          <button
+            className="board-button"
+            onClick={showingArchivedBoards
+              ? () => void restoreSelectedBoard()
+              : loadSelectedBoard}
+            disabled={!selectedBoardId}
+          >
+            {showingArchivedBoards ? 'Restore' : 'Load'}
           </button>
+          <div className="board-panel__archive-actions">
+            <button
+              className="board-button"
+              type="button"
+              aria-label={showingArchivedBoards ? 'Show saved boards' : 'Show archived boards'}
+              aria-pressed={showingArchivedBoards}
+              onClick={() => {
+                if (showingArchivedBoards) {
+                  showActiveBoardList()
+                } else {
+                  void showArchivedBoardList()
+                }
+              }}
+            >
+              {showingArchivedBoards ? 'Saved' : 'Archived'}
+            </button>
+            {!showingArchivedBoards && (
+              <button
+                className="board-button"
+                type="button"
+                aria-label="Archive current board"
+                onClick={() => void archiveCurrentBoard()}
+                disabled={!savedBoards.some((board) => board.id === boardId)}
+              >
+                Archive
+              </button>
+            )}
+          </div>
         </div>
         <div className="board-panel__actions">
           <button className="board-button" onClick={addNode}>Add Node</button>
@@ -3930,7 +4471,17 @@ function Flow() {
       ) : (
         null
       )}
-      {!canvasLabVisible && !isSharedAssembly ? <span className="local-draft-status" role="status">{draftStatus}</span> : null}
+      {!canvasLabVisible && !isSharedAssembly ? (
+        <div className="local-draft-status" role="status">
+          <span>{cloudSyncStatus || draftStatus}</span>
+          {cloudConflictBoard && !cloudConflictBoard.archived && (
+            <span className="local-draft-status__actions">
+              <button type="button" onClick={reloadCloudBoard}>Reload</button>
+              <button type="button" onClick={() => void saveCurrentBoardAsCopy()}>Save copy</button>
+            </span>
+          )}
+        </div>
+      ) : null}
       {!canvasLabVisible && !isSharedAssembly && needsSignIn && workspaceView !== 'nodes' ? (
         <a
           className="osa-sign-in-reveal"
