@@ -1685,10 +1685,10 @@ export function AssemblyView({
                         const reorderIndex = reorderableCardVisuals.findIndex((candidate) => (
                           candidate.id === visual.id
                         ))
-                        // Source-slide provenance remains a static first item.
-                        // Every Visual explicitly linked to this card opens in
-                        // the same canvas dialog, including a photo canvas.
-                        const canOpenVisual = reorderIndex >= 0
+                        // The source slide is fixed at the top for provenance,
+                        // but it is still a real Visual and must open like every
+                        // other canvas. Opening and reordering are independent.
+                        const canOpenVisual = isVisualNode(visual)
                         const canMoveUp = reorderIndex > 0
                         const canMoveDown = reorderIndex >= 0
                           && reorderIndex < reorderableCardVisuals.length - 1

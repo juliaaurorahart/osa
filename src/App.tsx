@@ -3554,6 +3554,10 @@ function Flow() {
     ])
   }, [makeEdge, nodeSpaceFilter, screenToFlowPosition, setEdges, setNodes])
 
+  // The canvas editor is a modal over an Assembly card. Raise its host above
+  // the persistent workspace menu so no global controls cover its own toolbar.
+  const visualCanvasEditorOpen = Boolean(assemblyViewState.editingVisualId)
+
   return (
     <div
       className={`osa-workspace${workspaceMenuVisible ? '' : ' workspace-menu-hidden'}`}
@@ -3948,7 +3952,7 @@ function Flow() {
         />
       ) : null}
       {!canvasLabVisible && workspaceView !== 'nodes' ? (
-        <div className="work-view-shell">
+        <div className={`work-view-shell${visualCanvasEditorOpen ? ' is-modal-open' : ''}`}>
           {workspaceView === 'notebook' ? (
             <NotebookView
               pages={notebookPages}
