@@ -11,10 +11,7 @@ import {
   appearanceAccentColor,
   OSA_PROPERTY,
   OSA_RELATION,
-  canOwnOsaVisual,
-  isImmutableVisual,
   isPartLike,
-  operationVisualDisplayOrder,
   osaRole,
   type OperationVisualPlacement,
 } from '../graph/osaData'
@@ -22,7 +19,6 @@ import type { SketchDocument, TextFlowNode } from '../graph/textNode'
 import { annotationTargetsForNodes } from '../graph/sketchAnnotation'
 import {
   isVisualNode,
-  visualAccentColor,
   visualOwnerFor,
   visualDraftEmbedsForCanvas,
   visualEmbedsForCanvas,
@@ -176,48 +172,6 @@ type AssemblyViewProps = {
   onAddCollaborator?: (email: string, role: 'editor' | 'viewer') => void
   onRemoveCollaborator?: (email: string) => void
   collaborationStatus?: string
-}
-
-/** An object owns its reusable visual; an instruction only links to it. */
-function objectImageSource(node: TextFlowNode | undefined) {
-  return node?.data.properties[OSA_PROPERTY.assetImage]?.trim() ?? ''
-}
-
-function objectImageAlt(node: TextFlowNode | undefined) {
-  return node?.data.properties[OSA_PROPERTY.assetImageAlt]?.trim()
-    || (node ? nodeTitle(node) : '')
-}
-
-/**
- * Card-linked Visuals have an explicit relationship order once a person
- * changes it. Older boards have no order value, so their existing edge order
- * remains their visible order until then.
- */
-function orderedOperationVisualTargets(
-  operationId: string,
-  candidates: TextFlowNode[],
-  edges: GraphEdge[],
-) {
-  const nodesById = new Map(candidates.map((node) => [node.id, node]))
-  return edges
-    .map((edge, edgeIndex) => ({ edge, edgeIndex }))
-    .filter(({ edge }) => (
-      edge.source === operationId
-      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationVisual
-      && nodesById.has(edge.target)
-    ))
-    .sort((left, right) => (
-      operationVisualDisplayOrder(
-        left.edge.data.properties[OSA_PROPERTY.operationVisualOrder],
-        left.edgeIndex,
-      )
-      - operationVisualDisplayOrder(
-        right.edge.data.properties[OSA_PROPERTY.operationVisualOrder],
-        right.edgeIndex,
-      )
-      || left.edgeIndex - right.edgeIndex
-    ))
-    .map(({ edge }) => nodesById.get(edge.target)!)
 }
 
 /** Preserves the first relationship order while avoiding duplicate chips. */
@@ -455,10 +409,6 @@ export function AssemblyView({
   onCreatePartForOperation,
   onLinkTool,
   onUnlinkTool,
-  onUnlinkObjectVisual,
-  onReorderOperationVisual,
-  onCreateOwnedVisualForOperation,
-  onChangeVisualOwner,
   onEmbeddedVisualsChange,
   onSaveVisualDraftVersion,
   onMakeVisualOfficialVersion,
@@ -553,9 +503,6 @@ export function AssemblyView({
     editingOperationId,
     toolDraft,
     toolDraftFor,
-    // Older in-memory UI state can survive a hot reload. Treat a missing
-    // filter map as the normal "show everything" state.
-    hiddenVisualOwnerIdsByOperation = {},
   } = uiState
   // These small setters keep the card code readable while routing every
   // presentation change through App. App stays mounted when Assembly is
@@ -588,28 +535,6 @@ export function AssemblyView({
   const setToolDraftFor = (nextDraft: AssemblyToolDraft | null) => {
     onUiStateChange((current) => ({ ...current, toolDraftFor: nextDraft }))
   }
-  /** Hides an owner's canvases from one card without touching the graph. */
-  const setVisualOwnerVisible = (
-    operationId: string,
-    ownerId: string,
-    isVisible: boolean,
-  ) => {
-    onUiStateChange((current) => {
-      const hiddenByOperation = current.hiddenVisualOwnerIdsByOperation ?? {}
-      const hiddenOwnerIds = new Set(hiddenByOperation[operationId] ?? [])
-      if (isVisible) hiddenOwnerIds.delete(ownerId)
-      else hiddenOwnerIds.add(ownerId)
-
-      const nextHiddenByOperation = { ...hiddenByOperation }
-      if (hiddenOwnerIds.size) nextHiddenByOperation[operationId] = [...hiddenOwnerIds]
-      else delete nextHiddenByOperation[operationId]
-
-      return {
-        ...current,
-        hiddenVisualOwnerIdsByOperation: nextHiddenByOperation,
-      }
-    })
-  }
   const activeFocusedCardId = focusedCardId === INDEX_CARD_ID
     || assemblyOperations.some((operation) => operation.id === focusedCardId)
     ? focusedCardId
@@ -639,8 +564,8 @@ export function AssemblyView({
   const editingVisualCandidate = editingVisualId
     ? nodes.find((node) => node.id === editingVisualId)
     : undefined
-  // A card can deliberately reference either a reusable Visual or an
-  // ordinary Part/Tool photo. Only a real Visual opens the canvas editor.
+  // A step owns the one canvas that illustrates it. Only a real Visual opens
+  // the canvas editor; plain project photos remain in the project library.
   const editingVisual = isVisualNode(editingVisualCandidate)
     ? editingVisualCandidate
     : undefined
@@ -649,14 +574,6 @@ export function AssemblyView({
     : undefined
   const editingVisualNameIsInherited = editingVisualOwner !== undefined
     && osaRole(editingVisualOwner) === 'step'
-  const canRemoveEditingVisualFromCard = editingVisual !== undefined
-    && editingOperationId !== null
-    && onUnlinkObjectVisual !== undefined
-    && edges.some((edge) => (
-      edge.source === editingOperationId
-      && edge.target === editingVisual.id
-      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationVisual
-    ))
   const editingVisualEmbeds = editingVisual
     ? visualDraftEmbedsForCanvas(editingVisual.id, nodes, edges)
     : []
@@ -1288,6 +1205,17 @@ export function AssemblyView({
               ? [{ step, canvas }]
               : []
           })
+          // The authoring card shows each non-empty Step canvas, whether or
+          // not it has been checked for the team-facing instruction packet.
+          // That keeps an unfinished draft visible without accidentally
+          // publishing it. A source slide or a part/tool library image never
+          // appears here merely because it exists elsewhere in the project.
+          const stepVisuals = steps.flatMap((step) => {
+            const canvas = canvasOwnedByStep(step.id, nodes, edges)
+            return canvas && visualHasInstructionContent(canvas, nodes, edges)
+              ? [{ step, canvas }]
+              : []
+          })
           // Older OSA boards used one undirected "operation item" relation.
           // Treat those as inputs so opening an existing board does not make
           // its parts disappear alongside the newer structured in/out edges.
@@ -1311,32 +1239,6 @@ export function AssemblyView({
           const inputParts = structuredInputParts.length
             ? structuredInputParts
             : legacyInputParts
-          // A card's represented part is its primary output. Other outputs
-          // are legitimate project objects too, so retain both in the owner
-          // picker. A canvas can belong to the thing this card creates.
-          const primaryOutputParts = connectedTargets(
-            operation.id,
-            nodes,
-            edges,
-            OSA_RELATION.operationPrimaryOutput,
-            /\b(represents?|primary output)\b/i,
-          )
-          const outputParts = connectedTargets(
-            operation.id,
-            nodes,
-            edges,
-            OSA_RELATION.operationOutput,
-            /\b(produces?|parts? out|output)\b/i,
-          )
-          // A View reference is its own deliberate relationship. It does not
-          // infer a visual from In, Tools, or Out. New cards point at canonical
-          // Visual nodes, whose content is owned by a part, assembly, or tool.
-          // Existing boards can still display a legacy object image here.
-          const includedObjectVisuals = orderedOperationVisualTargets(
-            operation.id,
-            nodes,
-            edges,
-          )
           const availableParts = uniqueNodes(
             // An Assembly is a part-like object too. Keep the current parent
             // in the picker so someone can explicitly use it as an input or
@@ -1348,85 +1250,6 @@ export function AssemblyView({
           const toolDraftForOperation = toolDraftFor?.operationId === operation.id
             ? toolDraftFor
             : null
-          const visualReference = operation.data.properties[OSA_PROPERTY.instructionVisual]?.trim() ?? ''
-          const linkedSourceVisual = edges.find((edge) => (
-            edge.source === operation.id
-            && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationSourceVisual
-          ))
-          const linkedSourceVisualNode = linkedSourceVisual
-            ? nodes.find((node) => node.id === linkedSourceVisual.target)
-            : undefined
-          const referencedVisualNode = nodes.find((node) => node.id === visualReference)
-          // New canonical Visual nodes are connected by operation-source-visual
-          // and own `asset:image`. Older imports may still point to a source
-          // node or a raw URL through instruction:visual, so retain both
-          // fallbacks while the existing Shako data remains usable.
-          const sourceVisualNode = linkedSourceVisualNode ?? referencedVisualNode
-          const visualSource = objectImageSource(sourceVisualNode)
-            || sourceVisualNode?.data.properties[OSA_PROPERTY.instructionVisual]?.trim()
-            || visualReference
-          const visualAlt = operation.data.properties[OSA_PROPERTY.instructionVisualAlt]?.trim()
-            || (sourceVisualNode ? objectImageAlt(sourceVisualNode) : '')
-            || 'Instruction visual'
-          // An instruction can reference two different kinds of visual
-          // material: canonical Visual nodes (editable canvases or immutable
-          // image Visuals) and a direct primary photo attached to an ordinary
-          // Part/Tool. The latter is not a canvas and must not be sent to the
-          // canvas editor just because it appears on this card.
-          const includedCanvasVisuals = includedObjectVisuals.filter((node) => isVisualNode(node))
-          const includedPhotoObjects = includedObjectVisuals.filter((node) => !isVisualNode(node))
-          // A source slide is a normal Visual too. Put it first, then show
-          // any deliberately added Visuals below it without duplicating a
-          // source Visual that also happens to be placed on the card.
-          const linkedVisuals = sourceVisualNode
-            ? uniqueNodes([sourceVisualNode], includedCanvasVisuals)
-            : includedCanvasVisuals
-          // The source visual is the instruction's provenance record and
-          // remains first. Every directly linked canvas below it, including
-          // photo canvases, can be reordered with its operation-to-Visual
-          // relationship.
-          const reorderableCardVisuals = linkedVisuals.filter((visual) => (
-            visual.id !== sourceVisualNode?.id
-            && includedCanvasVisuals.some((candidate) => candidate.id === visual.id)
-          ))
-          // A board saved before source slides became first-class Visual
-          // objects keeps its slide as a raw `instruction:visual` URL. It is
-          // still the first canvas. Do not let the presence of a later blank
-          // reusable Visual hide that source slide.
-          const legacySourceImage = sourceVisualNode ? '' : visualSource
-          // Keep ownership choice local to this instruction: the parent
-          // Assembly, its represented/produced parts, its inputs, tools, and
-          // its named Steps. A Step is a real owner, not a hidden UI wrapper.
-          const canvasObjectOwners = uniqueNodes(
-            selectedAssembly ? [selectedAssembly] : [],
-            primaryOutputParts,
-            outputParts,
-            inputParts,
-            tools,
-          ).filter(canOwnOsaVisual)
-          const canvasOwners = uniqueNodes(canvasObjectOwners, steps)
-            .filter(canOwnOsaVisual)
-          const hiddenVisualOwnerIds = new Set(
-            hiddenVisualOwnerIdsByOperation[operation.id] ?? [],
-          )
-          // The source slide is provenance and remains visible. Every other
-          // object-owned canvas/photo can be hidden by its owner without
-          // deleting it or changing a card link.
-          const filterableVisualOwners = uniqueNodes(
-            linkedVisuals
-              .filter((visual) => visual.id !== sourceVisualNode?.id)
-              .map((visual) => visualOwnerFor(visual.id, nodes, edges))
-              .filter((owner): owner is TextFlowNode => owner !== undefined),
-            includedPhotoObjects,
-          )
-          const visibleLinkedVisuals = linkedVisuals.filter((visual) => {
-            if (visual.id === sourceVisualNode?.id) return true
-            const owner = visualOwnerFor(visual.id, nodes, edges)
-            return !owner || !hiddenVisualOwnerIds.has(owner.id)
-          })
-          const visibleIncludedPhotoObjects = includedPhotoObjects.filter((object) => (
-            !hiddenVisualOwnerIds.has(object.id)
-          ))
           const isOpen = activeOpenCardId === operation.id
           const focusCard = () => {
             setFocusedCardId(operation.id)
@@ -1496,7 +1319,13 @@ export function AssemblyView({
                       lineHeight: 1.05,
                     }}
                   />
-                  <strong style={{ fontSize: 'clamp(0.76rem, 1.5vw, 1.15rem)', fontWeight: 500 }}>criteria</strong>
+                  <section
+                    aria-label={`${nodeTitle(operation)} parts and tools`}
+                    style={{ display: 'grid', gap: 8, minWidth: 0 }}
+                  >
+                    <strong style={{ fontSize: 'clamp(0.76rem, 1.5vw, 1.15rem)', fontWeight: 500 }}>
+                      parts &amp; tools
+                    </strong>
 
                   <div style={fieldLabel}>
                     <span>parts in</span>
@@ -1686,6 +1515,7 @@ export function AssemblyView({
                       ) : null}
                     </div>
                   </div>
+                  </section>
 
                   <section style={{ display: 'grid', gap: 5, minWidth: 0 }} aria-label={`${nodeTitle(operation)} steps`}>
                     <strong style={{ fontSize: 'clamp(0.76rem, 1.5vw, 1.15rem)', fontWeight: 500 }}>steps</strong>
@@ -1820,265 +1650,41 @@ export function AssemblyView({
                   </section>
                 </div>
 
-                <section className="assembly-card__view" aria-label={`${nodeTitle(operation)} view`}>
+                <section className="assembly-card__view" aria-label={`${nodeTitle(operation)} visuals`}>
                   <header className="assembly-card__view-header">
                     <h2>visuals</h2>
-                    {filterableVisualOwners.length ? (
-                      <details
-                        className="assembly-card__visual-filter"
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        <summary>filter</summary>
-                        <div className="assembly-card__visual-filter-options">
-                          {filterableVisualOwners.map((owner) => (
-                            <label key={owner.id}>
-                              <input
-                                type="checkbox"
-                                checked={!hiddenVisualOwnerIds.has(owner.id)}
-                                onChange={(event) => {
-                                  setVisualOwnerVisible(
-                                    operation.id,
-                                    owner.id,
-                                    event.currentTarget.checked,
-                                  )
-                                }}
-                              />
-                              {nodeTitle(owner)}
-                            </label>
-                          ))}
-                        </div>
-                      </details>
-                    ) : null}
                   </header>
-                  <div style={{ display: 'grid', gap: 12, padding: 'clamp(10px, 1.5vw, 18px)' }}>
-                    <section
-                      aria-label="Visuals"
-                      style={{ display: 'grid', gap: 8, minWidth: 0 }}
-                    >
-                      {legacySourceImage ? (
-                        <article
-                          aria-label={`${nodeTitle(operation)} source slide`}
-                          style={{ display: 'grid', gap: 8, minWidth: 0, paddingBottom: 12, borderBottom: '1px solid var(--osa-border-subtle)' }}
-                        >
-                          <img
-                            src={legacySourceImage}
-                            alt={visualAlt}
-                            style={{ display: 'block', width: '100%', height: 'auto', border: '1px solid #d8d8d8', background: '#fff', objectFit: 'contain' }}
-                          />
-                        </article>
-                      ) : null}
-
-                      {visibleIncludedPhotoObjects.map((object) => {
-                        const image = objectImageSource(object)
-                        const label = nodeTitle(object)
-                        const accent = appearanceAccentColor(object)
-                        return (
-                          <figure
-                            className={accent
-                              ? 'assembly-card__direct-photo assembly-card__visual-accent'
-                              : 'assembly-card__direct-photo'}
-                            key={object.id}
-                            style={semanticAccentStyleFromColor(accent)}
-                          >
-                            <figcaption className="assembly-card__direct-photo-header">
-                              <button
-                                className={accent
-                                  ? 'assembly-object-link assembly-object-link--accented'
-                                  : 'assembly-object-link'}
-                                type="button"
-                                style={semanticAccentStyleFromColor(accent)}
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  onOpenNode(object.id)
-                                }}
-                              >
-                                {label}
-                              </button>
-                              {focused && !readOnly && onUnlinkObjectVisual ? (
-                                <button
-                                  className="assembly-object-unlink"
-                                  type="button"
-                                  title="remove this photo from the instruction"
-                                  aria-label={`remove ${label} photo from this instruction`}
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    onUnlinkObjectVisual(operation.id, object.id)
-                                  }}
-                                >
-                                  <span aria-hidden="true">×</span> remove
-                                </button>
-                              ) : null}
-                            </figcaption>
-                            {image ? (
-                              <img
-                                className="assembly-card__direct-photo-image"
-                                src={image}
-                                alt={objectImageAlt(object)}
-                              />
-                            ) : (
-                              <div className="assembly-card__photo-unavailable">
-                                photo unavailable
-                              </div>
-                            )}
-                          </figure>
-                        )
-                      })}
-
-                      {visibleLinkedVisuals.map((visual) => {
-                        const label = nodeTitle(visual)
-                        const owner = visualOwnerFor(visual.id, nodes, edges)
-                        const accent = visualAccentColor(visual, nodes, edges)
-                        const immutableVisual = isImmutableVisual(visual)
-                        const visualEmbeds = visualEmbedsForCanvas(visual.id, nodes, edges)
-                        const reorderIndex = reorderableCardVisuals.findIndex((candidate) => (
-                          candidate.id === visual.id
-                        ))
-                        // The source slide is fixed at the top for provenance,
-                        // but it is still a real Visual and must open like every
-                        // other canvas. Opening and reordering are independent.
-                        const canOpenVisual = isVisualNode(visual)
-                        const canMoveUp = reorderIndex > 0
-                        const canMoveDown = reorderIndex >= 0
-                          && reorderIndex < reorderableCardVisuals.length - 1
-                        return (
-                          <article
-                            className={accent ? 'assembly-card__visual-accent' : undefined}
-                            key={visual.id}
-                            style={{
-                              display: 'grid',
-                              gap: 8,
-                              minWidth: 0,
-                              paddingBottom: 12,
-                              borderBottom: '1px solid var(--osa-border-subtle)',
-                              ...semanticAccentStyleFromColor(accent),
-                            }}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
-                              <input
-                                aria-label={`${label} name`}
-                                value={visual.data.name}
-                                readOnly={readOnly || immutableVisual}
-                                onClick={(event) => event.stopPropagation()}
-                                onChange={(event) => {
-                                  if (!readOnly && !immutableVisual) onNameChange(visual.id, event.target.value)
-                                }}
-                                style={{
-                                  ...transparentInput,
-                                  flex: '1 1 auto',
-                                  fontSize: '0.88rem',
-                                  fontWeight: 600,
-                                  ...(accent ? { color: accent } : {}),
-                                }}
-                              />
-                              {!readOnly && onReorderOperationVisual && reorderIndex >= 0 ? (
-                                <span style={{ display: 'inline-flex', gap: 2 }}>
-                                  <button
-                                    type="button"
-                                    aria-label={`move ${label} up`}
-                                    title="Move up"
-                                    disabled={!canMoveUp}
-                                    onClick={(event) => {
-                                      event.stopPropagation()
-                                      onReorderOperationVisual(operation.id, visual.id, 'up')
-                                    }}
-                                    style={{ padding: '0 4px', minWidth: 24 }}
-                                  >
-                                    ↑
-                                  </button>
-                                  <button
-                                    type="button"
-                                    aria-label={`move ${label} down`}
-                                    title="Move down"
-                                    disabled={!canMoveDown}
-                                    onClick={(event) => {
-                                      event.stopPropagation()
-                                      onReorderOperationVisual(operation.id, visual.id, 'down')
-                                    }}
-                                    style={{ padding: '0 4px', minWidth: 24 }}
-                                  >
-                                    ↓
-                                  </button>
-                                </span>
-                              ) : null}
-                            </div>
-                            {canOpenVisual ? (
-                              <button
-                                type="button"
-                                aria-label={`open ${label}`}
-                                title="Open visual"
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  // A Visual is edited in-place over this card.
-                                  // Do not jump to Space: the card is a live
-                                  // viewport onto the same durable canvas.
-                                  setEditingVisual(visual.id, operation.id)
-                                }}
-                                style={{ display: 'block', width: '100%', padding: 0, border: 0, background: 'transparent', cursor: 'pointer' }}
-                              >
-                                <VisualCanvasPreview
-                                  visual={visual}
-                                  embeddedVisuals={visualEmbeds}
-                                  annotationTargets={annotationTargets}
-                                  className="assembly-card__visual-preview"
-                                />
-                              </button>
-                            ) : (
-                              <VisualCanvasPreview
-                                visual={visual}
-                                embeddedVisuals={visualEmbeds}
-                                annotationTargets={annotationTargets}
-                                className="assembly-card__visual-preview"
-                              />
-                            )}
-                            <select
-                              aria-label={`${label} owner`}
-                              value={owner?.id ?? ''}
-                              // The owner is an edge relationship rather than
-                              // part of the photo/image itself. Keep it
-                              // editable for every Visual type.
-                              disabled={readOnly || !onChangeVisualOwner}
-                              onClick={(event) => event.stopPropagation()}
-                              onChange={(event) => {
-                                event.stopPropagation()
-                                const ownerId = event.currentTarget.value
-                                if (!readOnly && ownerId) onChangeVisualOwner?.(visual.id, ownerId)
-                              }}
-                              style={{ width: 'fit-content', maxWidth: '100%', padding: 0, border: 0, background: 'transparent', color: accent ?? 'var(--osa-muted)', font: 'inherit', fontSize: '0.76rem', cursor: readOnly ? 'default' : 'pointer' }}
-                            >
-                              <option value="" disabled>owner</option>
-                              {canvasOwners.map((candidate) => (
-                                <option value={candidate.id} key={candidate.id}>
-                                  {nodeTitle(candidate)}
-                                </option>
-                              ))}
-                            </select>
-                          </article>
-                        )
-                      })}
-
-                      {!legacySourceImage && !linkedVisuals.length && !includedPhotoObjects.length ? (
-                        <div style={{ minHeight: 8 }} />
-                      ) : null}
-
-                      {!readOnly && onCreateOwnedVisualForOperation ? (
-                        <div className="assembly-card__canvas-create">
+                  {stepVisuals.length ? (
+                    <div className="assembly-instructions-view__canvas-list">
+                      {stepVisuals.map(({ step, canvas }, index) => (
+                        <figure className="assembly-instructions-view__step-canvas" key={canvas.id}>
+                          <figcaption>
+                            <strong>Step {index + 1}</strong>
+                            <span>{nodeTitle(step)}</span>
+                          </figcaption>
                           <button
-                            className="text-action"
+                            className="assembly-instructions-view__open-canvas"
                             type="button"
+                            aria-label={`open ${nodeTitle(step)} visual`}
+                            title="Open visual"
                             onClick={(event) => {
                               event.stopPropagation()
-                              // A card only creates a blank canvas record.
-                              // The canvas itself chooses its permanent type
-                              // (photo, OSA draw, Draw.io, or Konva) on first open.
-                              onCreateOwnedVisualForOperation(operation.id, 'untyped')
+                              setEditingVisual(canvas.id, operation.id)
                             }}
                           >
-                            + canvas
+                            <VisualCanvasPreview
+                              visual={canvas}
+                              embeddedVisuals={visualEmbedsForCanvas(canvas.id, nodes, edges)}
+                              annotationTargets={annotationTargets}
+                              className="assembly-card__visual-preview"
+                            />
                           </button>
-                        </div>
-                      ) : null}
-                    </section>
-                  </div>
+                        </figure>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="assembly-card__empty-link-list">no step visual yet.</p>
+                  )}
                 </section>
               </div>
                 </>
@@ -2097,7 +1703,7 @@ export function AssemblyView({
                     <strong className="assembly-card__summary-title">{nodeTitle(operation)}</strong>
                     <span className="assembly-card__summary-fields">
                       <span>
-                        <b>in</b>
+                        <b>parts in</b>
                         {inputParts.length ? inputParts.map(nodeTitle).join(' · ') : 'no parts linked'}
                       </span>
                       <span>
@@ -2153,10 +1759,6 @@ export function AssemblyView({
           availableVisuals={editingVisualCandidates}
           readOnly={readOnly}
           onClose={() => setEditingVisual(null)}
-          onRemoveFromCard={canRemoveEditingVisualFromCard ? () => {
-            onUnlinkObjectVisual?.(editingOperationId!, editingVisual.id)
-            setEditingVisual(null)
-          } : undefined}
           onNameChange={onNameChange}
           nameReadOnly={editingVisualNameIsInherited}
           onSketchChange={onSketchChange}

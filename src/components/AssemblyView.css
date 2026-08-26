@@ -707,15 +707,9 @@
 }
 
 /* Assembly is a document authoring surface, not the project inventory.
-   Parts, tools, and Visuals remain project objects in Space. A card only
-   exposes the information needed to write and perform that one instruction. */
-.assembly-view .assembly-operation-card.is-open .assembly-card__columns {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.assembly-view .assembly-operation-card.is-open .assembly-card__view {
-  display: none;
-}
+   A card keeps one calm Visuals section: only non-empty canvases owned by its
+   own Steps. Part/tool libraries remain available in Space without becoming
+   a second, confusing visual catalog inside every instruction. */
 
 /* The title card is intentionally just the assembly title and the ordered
    card list. Project inventory, costs, colors, and authoring notes belong in
