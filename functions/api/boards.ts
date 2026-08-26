@@ -29,6 +29,10 @@ type BoardMetadataRow = {
   access: BoardRow['access']
 }
 type RawBoardRow = BoardMetadataRow & { content: string }
+type LegacyBoardListFootprint = {
+  boardCount: number
+  contentBytes: number
+}
 type SaveRequest = {
   board?: unknown
   /** Accepted during deployment so an older open tab cannot fail abruptly. */
@@ -57,6 +61,14 @@ const rawBoardNameHeader = 'x-osa-board-name'
 const rawBoardUpdatedAtHeader = 'x-osa-board-updated-at'
 const rawBoardBaseRevisionHeader = 'x-osa-base-revision'
 
+// Older open tabs still request every stored board in one response. Parsing
+// and serializing several photo-heavy documents can exceed the Pages Worker
+// CPU limit, so direct those tabs to reload into the current thin transport.
+// These are intentionally conservative: the metadata and raw-document routes
+// below remain available for any size board.
+const legacyFullListMaximumBoards = 12
+const legacyFullListMaximumContentBytes = 750_000
+
 type RawBoardSave = {
   id: string
   name: string
@@ -74,6 +86,35 @@ function json(body: unknown, status = 200) {
     status,
     headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
   })
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function isTooLargeError(error: unknown) {
+  return /(?:SQLITE_TOOBIG|too (?:large|big)|(?:maximum|max(?:imum)?) (?:string|blob|row)|string or blob|value too large)/i.test(
+    errorMessage(error),
+  )
+}
+
+/** Keeps D1 failures from becoming opaque Pages 1101/500 responses. */
+function unexpectedBoardServiceResponse(error: unknown) {
+  console.error('OSA board API failed.', error)
+  if (isTooLargeError(error)) {
+    return json({
+      error: 'This board is too large for cloud sync. Reduce or replace large photos and try again.',
+    }, 413)
+  }
+  return json({ error: 'Board service is temporarily unavailable. Please try again.' }, 503)
+}
+
+async function withBoardServiceErrors(work: () => Promise<Response>) {
+  try {
+    return await work()
+  } catch (error) {
+    return unexpectedBoardServiceResponse(error)
+  }
 }
 
 /** The stored JSON is the board document; server state lives in D1 columns. */
@@ -276,6 +317,36 @@ function requestsMetadata(url: URL) {
 }
 
 /**
+ * A legacy list response expands every board document. Check only aggregate
+ * D1 metadata first so stale tabs get a useful reload instruction instead of
+ * pushing the Worker through a multi-megabyte parse/stringify cycle.
+ */
+async function legacyFullListRequiresReload(env: Env, email: string, archived: number) {
+  const footprint = await env.OSA_DB
+    .prepare(`
+      SELECT
+        COUNT(*) AS boardCount,
+        COALESCE(SUM(LENGTH(boards.content)), 0) AS contentBytes
+      FROM boards
+      WHERE boards.archived = ?
+        AND (
+          boards.owner_email = ?
+          OR EXISTS (
+            SELECT 1
+            FROM board_collaborators
+            WHERE board_collaborators.board_id = boards.id
+              AND board_collaborators.email = ?
+          )
+        )
+    `)
+    .bind(archived, email, email)
+    .first<LegacyBoardListFootprint>()
+
+  return (footprint?.boardCount ?? 0) > legacyFullListMaximumBoards
+    || (footprint?.contentBytes ?? 0) > legacyFullListMaximumContentBytes
+}
+
+/**
  * The normal access helper intentionally returns only the stored document.
  * The raw transport additionally needs D1's compact metadata, so it performs
  * the exact same owner/collaborator predicate while selecting those columns.
@@ -352,6 +423,7 @@ async function ownedBoardMetadata(env: Env, boardId: string, owner: string): Pro
  * whether it may edit it. Archived boards require an explicit opt-in.
  */
 export const onRequestGet: PagesFunction<Env, string, AccessData> = async ({ request, env, data }) => {
+  return withBoardServiceErrors(async () => {
   const email = signedInEmail(data)
   if (!email) return json({ error: 'Private sign-in required.' }, 403)
 
@@ -403,6 +475,10 @@ export const onRequestGet: PagesFunction<Env, string, AccessData> = async ({ req
     return json({ boards: result.results.map(boardMetadata) })
   }
 
+  if (await legacyFullListRequiresReload(env, email, archived)) {
+    return json({ error: 'Reload OSA to use the current cloud sync.' }, 426)
+  }
+
   const result = await env.OSA_DB
     .prepare(`
       SELECT
@@ -424,6 +500,7 @@ export const onRequestGet: PagesFunction<Env, string, AccessData> = async ({ req
     .bind(email, email, archived, email, email)
     .all<BoardRow>()
   return json({ boards: result.results.map(boardWithServerState) })
+  })
 }
 
 /**
@@ -521,6 +598,7 @@ async function saveRawBoard(
 }
 
 export const onRequestPut: PagesFunction<Env, string, AccessData> = async ({ request, env, data }) => {
+  return withBoardServiceErrors(async () => {
   const email = signedInEmail(data)
   if (!email) return json({ error: 'Private sign-in required.' }, 403)
   const rawRequest = rawBoardSaveRequest(request)
@@ -652,10 +730,12 @@ export const onRequestPut: PagesFunction<Env, string, AccessData> = async ({ req
     return json({ error: 'Restore an archived board before saving changes.' }, 409)
   }
   return json({ ok: true })
+  })
 }
 
 /** Archiving is owner-only: collaborators can edit the document, not its lifecycle. */
 export const onRequestPatch: PagesFunction<Env, string, AccessData> = async ({ request, env, data }) => {
+  return withBoardServiceErrors(async () => {
   const owner = signedInEmail(data)
   if (!owner) return json({ error: 'Private sign-in required.' }, 403)
 
@@ -681,4 +761,5 @@ export const onRequestPatch: PagesFunction<Env, string, AccessData> = async ({ r
   const board = await ownedBoard(env, boardId, owner)
   if (!board) return json({ error: 'Unable to read the saved board.' }, 500)
   return json({ ok: true, archived, board: boardWithServerState(board) })
+  })
 }
