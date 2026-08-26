@@ -135,14 +135,13 @@ import {
   BoardAccessError,
   BoardConflictError,
   BoardUnavailableError,
-  archiveBoard,
+  archiveBoardSummary,
   createAssemblyShare,
-  fetchArchivedBoards,
   fetchBoard,
   fetchBoardCollaborators,
-  fetchBoards,
+  fetchBoardSummaries,
   fetchSharedAssembly,
-  restoreBoard,
+  restoreBoardSummary,
   removeBoardCollaborator,
   saveBoard,
   saveBoardCollaborator,
@@ -151,6 +150,7 @@ import {
   type BoardCollaborator,
   type CollaboratorRole,
   type SavedBoard,
+  type BoardSummary,
 } from './graph/boardStorage'
 import {
   sharedAssemblyReferenceFromLocation,
@@ -187,12 +187,24 @@ const LEGACY_SHAKO_VISUAL = /^\/import-assets\/shako-light-wrap\/operation-\d+\.
 
 /** Saved board names are unique within the active list so a person can tell
  * exactly which board they will load. Archive names may safely overlap. */
-function boardNameAlreadyInUse(boards: readonly SavedBoard[], boardId: string, name: string) {
+function boardNameAlreadyInUse(boards: readonly BoardSummary[], boardId: string, name: string) {
   const normalizedName = name.trim().toLocaleLowerCase()
   return boards.some((board) => (
     board.id !== boardId
     && board.name.trim().toLocaleLowerCase() === normalizedName
   ))
+}
+
+/** Keeps board pickers small even after opening an image-heavy board. */
+function boardSummary(savedBoard: SavedBoard): BoardSummary {
+  return {
+    id: savedBoard.id,
+    name: savedBoard.name,
+    updatedAt: savedBoard.updatedAt,
+    archived: savedBoard.archived,
+    revision: savedBoard.revision,
+    access: savedBoard.access,
+  }
 }
 
 /** One deliberately saved cloud board is refreshed in the background while open. */
@@ -736,10 +748,12 @@ function Flow() {
     x: number
     y: number
   } | null>(null)
-  const [savedBoards, setSavedBoards] = useState<SavedBoard[]>([])
+  // Pickers keep only compact cloud metadata. A full snapshot is fetched
+  // only when opening or refreshing that one board.
+  const [savedBoards, setSavedBoards] = useState<BoardSummary[]>([])
   // Archived boards stay separate from the normal picker. They are only
   // shown when someone deliberately opens the archive, and can be restored.
-  const [archivedBoards, setArchivedBoards] = useState<SavedBoard[]>([])
+  const [archivedBoards, setArchivedBoards] = useState<BoardSummary[]>([])
   const [showingArchivedBoards, setShowingArchivedBoards] = useState(false)
   const [boardId, setBoardId] = useState<string>(() => startupDraft?.id ?? crypto.randomUUID())
   const [boardName, setBoardName] = useState(startupDraft?.name ?? 'Untitled board')
@@ -971,7 +985,7 @@ function Flow() {
   const refreshSavedBoards = useCallback(async () => {
     setStorageStatus('Loading saved boards…')
     try {
-      const boards = await fetchBoards()
+      const boards = await fetchBoardSummaries()
       setNeedsSignIn(false)
       setSavedBoards(boards)
       setSelectedBoardId((currentId) => (
@@ -992,7 +1006,7 @@ function Flow() {
   const showArchivedBoardList = useCallback(async () => {
     setStorageStatus('Loading archive…')
     try {
-      const boards = await fetchArchivedBoards()
+      const boards = await fetchBoardSummaries({ archived: true })
       setNeedsSignIn(false)
       setArchivedBoards(boards)
       setShowingArchivedBoards(true)
@@ -3469,12 +3483,35 @@ function Flow() {
     setCloudConflictBoard(null)
     setCloudSyncStatus(status)
     setSavedBoards((currentBoards) => [
-      savedBoard,
+      boardSummary(savedBoard),
       ...currentBoards.filter((board) => board.id !== savedBoard.id),
     ])
     setSelectedBoardId(savedBoard.id)
     setShowingArchivedBoards(false)
   }, [applyBoardSnapshot])
+
+  /** Loads the one selected cloud board after a metadata-only picker read. */
+  const openSavedCloudBoard = useCallback(async (
+    id: string,
+    status = 'Synced',
+  ): Promise<SavedBoard | null> => {
+    try {
+      const savedBoard = await fetchBoard(id)
+      if (!savedBoard) {
+        setStorageStatus('That saved board is no longer available.')
+        return null
+      }
+      setNeedsSignIn(false)
+      applyCloudBoard(savedBoard, status)
+      return savedBoard
+    } catch (error) {
+      setNeedsSignIn(error instanceof BoardAccessError)
+      setStorageStatus(error instanceof BoardUnavailableError
+        ? 'Board storage is unavailable right now.'
+        : error instanceof Error ? error.message : 'Unable to open this board.')
+      return null
+    }
+  }, [applyCloudBoard])
 
   // A collaborator opening OSA in a fresh browser should land on the newest
   // board they can access. A recovered local draft, a named/imported board,
@@ -3515,8 +3552,11 @@ function Flow() {
     if (!untouchedInitialDocument && !savedStartupBoard) return
 
     openedInitialCloudBoard.current = true
-    applyCloudBoard(savedStartupBoard ?? savedBoards[0], 'Opened latest saved board')
-  }, [applyCloudBoard, boardName, edges, isSharedAssembly, nodes, savedBoards, startupDraft])
+    void openSavedCloudBoard(
+      (savedStartupBoard ?? savedBoards[0]).id,
+      'Opened latest saved board',
+    )
+  }, [boardName, edges, isSharedAssembly, nodes, openSavedCloudBoard, savedBoards, startupDraft])
 
   /**
    * A recipient's link restores an assembly snapshot into the normal graph,
@@ -3612,7 +3652,7 @@ function Flow() {
       const savedBoard = await saveBoard(boardToSave, baseRevision)
       setNeedsSignIn(false)
       setSavedBoards((currentBoards) => [
-        savedBoard,
+        boardSummary(savedBoard),
         ...currentBoards.filter((board) => board.id !== savedBoard.id),
       ])
 
@@ -3650,7 +3690,7 @@ function Flow() {
           if (error.board.archived) {
             setSavedBoards((currentBoards) => currentBoards.filter((board) => board.id !== error.board.id))
             setArchivedBoards((currentBoards) => [
-              error.board,
+              boardSummary(error.board),
               ...currentBoards.filter((board) => board.id !== error.board.id),
             ])
           }
@@ -3761,7 +3801,7 @@ function Flow() {
 
     setStorageStatus('Archiving…')
     try {
-      const archivedBoard = await archiveBoard(board.id)
+      const archivedBoard = await archiveBoardSummary(board.id)
       setNeedsSignIn(false)
       setSavedBoards((currentBoards) => currentBoards.filter((savedBoard) => savedBoard.id !== board.id))
       setArchivedBoards((currentBoards) => [
@@ -3793,18 +3833,18 @@ function Flow() {
 
     setStorageStatus('Restoring…')
     try {
-      const restoredBoard = await restoreBoard(board.id)
+      const restoredBoard = await restoreBoardSummary(board.id)
       setNeedsSignIn(false)
       setArchivedBoards((currentBoards) => currentBoards.filter((savedBoard) => savedBoard.id !== board.id))
-      applyCloudBoard(restoredBoard)
-      setStorageStatus(`Restored “${restoredBoard.name}”`)
+      const openedBoard = await openSavedCloudBoard(restoredBoard.id, 'Synced')
+      if (openedBoard) setStorageStatus(`Restored “${openedBoard.name}”`)
     } catch (error) {
       setNeedsSignIn(error instanceof BoardAccessError)
       setStorageStatus(error instanceof BoardUnavailableError
         ? ''
         : error instanceof Error ? error.message : 'Unable to restore this board.')
     }
-  }, [applyCloudBoard, archivedBoards, selectedBoardId])
+  }, [archivedBoards, openSavedCloudBoard, selectedBoardId])
 
   /** Saves first, then creates a public, read-only link to the selected assembly. */
   const createAssemblyShareLink = useCallback(async () => {
@@ -3848,16 +3888,17 @@ function Flow() {
     }
   }, [activeAssemblyId, saveCurrentBoard, shareSlug])
 
-  const loadSelectedBoard = useCallback(() => {
-    const savedBoard = savedBoards.find((board) => board.id === selectedBoardId)
-    if (!savedBoard) {
+  const loadSelectedBoard = useCallback(async () => {
+    const selectedBoard = savedBoards.find((board) => board.id === selectedBoardId)
+    if (!selectedBoard) {
       setStorageStatus('Choose a saved board to load.')
       return
     }
 
-    applyCloudBoard(savedBoard)
-    setStorageStatus(`Loaded “${savedBoard.name}”`)
-  }, [applyCloudBoard, savedBoards, selectedBoardId])
+    setStorageStatus('Opening board…')
+    const openedBoard = await openSavedCloudBoard(selectedBoard.id)
+    if (openedBoard) setStorageStatus(`Loaded “${openedBoard.name}”`)
+  }, [openSavedCloudBoard, savedBoards, selectedBoardId])
 
   /** A compact conflict escape hatch: keep this device's work as a new board. */
   const saveCurrentBoardAsCopy = useCallback(async () => {
@@ -3886,7 +3927,7 @@ function Flow() {
       const savedCopy = await saveBoard(copy, null)
       setNeedsSignIn(false)
       setSavedBoards((currentBoards) => [
-        savedCopy,
+        boardSummary(savedCopy),
         ...currentBoards.filter((board) => board.id !== savedCopy.id),
       ])
 
@@ -4000,14 +4041,14 @@ function Flow() {
         if (remoteAccess !== 'owner') setBoardCollaborators([])
       }
       setSavedBoards((currentBoards) => [
-        remoteBoard,
+        boardSummary(remoteBoard),
         ...currentBoards.filter((board) => board.id !== remoteBoard.id),
       ])
 
       if (remoteBoard.archived) {
         setSavedBoards((currentBoards) => currentBoards.filter((board) => board.id !== remoteBoard.id))
         setArchivedBoards((currentBoards) => [
-          remoteBoard,
+          boardSummary(remoteBoard),
           ...currentBoards.filter((board) => board.id !== remoteBoard.id),
         ])
         setCloudConflictBoard(remoteBoard)
@@ -4090,12 +4131,15 @@ function Flow() {
       || remoteBoard.revision <= cloudRevisionRef.current
     ) return
     if (cloudDirtyRef.current) {
-      setCloudConflictBoard(remoteBoard)
-      setCloudSyncStatus('Changed elsewhere')
+      void fetchBoard(remoteBoard.id).then((currentBoard) => {
+        if (!currentBoard || latestBoardId.current !== remoteBoard.id) return
+        setCloudConflictBoard(currentBoard)
+        setCloudSyncStatus('Changed elsewhere')
+      }).catch(() => undefined)
       return
     }
-    applyCloudBoard(remoteBoard, 'Synced')
-  }, [applyCloudBoard, isSharedAssembly, savedBoards, startupDraft])
+    void openSavedCloudBoard(remoteBoard.id, 'Synced')
+  }, [isSharedAssembly, openSavedCloudBoard, savedBoards, startupDraft])
 
   const saveBoardAsJson = useCallback(() => {
     const board = createBoardSnapshot(nodes, edges)
@@ -4515,7 +4559,7 @@ function Flow() {
             className="board-button"
             onClick={showingArchivedBoards
               ? () => void restoreSelectedBoard()
-              : loadSelectedBoard}
+              : () => void loadSelectedBoard()}
             disabled={!selectedBoardId}
           >
             {showingArchivedBoards ? 'Restore' : 'Load'}

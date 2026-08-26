@@ -13,6 +13,12 @@ export type SavedBoard = {
   access?: BoardAccess
 }
 
+/**
+ * The small, durable identity of a saved board. Board pickers only need this
+ * metadata; loading a board's image-heavy snapshot is a separate request.
+ */
+export type BoardSummary = Omit<SavedBoard, 'snapshot'>
+
 export type BoardAccess = 'owner' | 'editor' | 'viewer'
 export type CollaboratorRole = Exclude<BoardAccess, 'owner'>
 export type BoardCollaborator = { email: string; role: CollaboratorRole }
@@ -25,6 +31,10 @@ export type SharedAssembly = {
 
 type BoardsResponse = {
   boards: SavedBoard[]
+}
+
+type BoardSummariesResponse = {
+  boards: BoardSummary[]
 }
 
 type CreateShareResponse = {
@@ -78,20 +88,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
-function parseSavedBoard(value: unknown): SavedBoard | null {
+function parseBoardSummary(value: unknown): BoardSummary | null {
   if (
     !isRecord(value)
     || typeof value.id !== 'string'
     || typeof value.name !== 'string'
     || typeof value.updatedAt !== 'string'
   ) return null
-  const snapshot = parseBoardSnapshot(value.snapshot)
-  if (!snapshot) return null
   return {
     id: value.id,
     name: value.name,
     updatedAt: value.updatedAt,
-    snapshot,
     archived: typeof value.archived === 'boolean' ? value.archived : false,
     revision: typeof value.revision === 'number'
       && Number.isInteger(value.revision)
@@ -102,6 +109,55 @@ function parseSavedBoard(value: unknown): SavedBoard | null {
       ? value.access
       : undefined,
   }
+}
+
+function parseSavedBoard(value: unknown): SavedBoard | null {
+  const summary = parseBoardSummary(value)
+  if (!summary || !isRecord(value)) return null
+  const snapshot = parseBoardSnapshot(value.snapshot)
+  if (!snapshot) return null
+  return { ...summary, snapshot }
+}
+
+type RawBoardServerState = Pick<Required<BoardSummary>, 'id' | 'name' | 'updatedAt' | 'archived' | 'revision' | 'access'>
+
+function decodeRawBoardHeader(value: string | null) {
+  if (value === null) return null
+  try {
+    const decoded = decodeURIComponent(value)
+    return decoded || null
+  } catch {
+    return null
+  }
+}
+
+function parseRawBoardServerState(headers: Headers): RawBoardServerState | null {
+  const id = headers.get('x-osa-board-id')
+  const name = decodeRawBoardHeader(headers.get('x-osa-board-name'))
+  const updatedAt = headers.get('x-osa-board-updated-at')
+  const revisionText = headers.get('x-osa-board-revision')
+  const access = headers.get('x-osa-board-access')
+  const archived = headers.get('x-osa-board-archived')
+  const revision = revisionText === null ? NaN : Number(revisionText)
+  if (
+    !id
+    || !name
+    || !updatedAt
+    || !Number.isSafeInteger(revision)
+    || revision < 1
+    || (access !== 'owner' && access !== 'editor' && access !== 'viewer')
+    || (archived !== 'true' && archived !== 'false')
+  ) return null
+  return { id, name, updatedAt, revision, access, archived: archived === 'true' }
+}
+
+/** Applies authoritative response headers to one raw JSON board document. */
+function applyRawBoardServerState(board: SavedBoard, headers: Headers): SavedBoard | null {
+  const state = parseRawBoardServerState(headers)
+  // A mismatched identifier would mean the response cannot safely be applied
+  // to the board the caller requested or saved.
+  if (!state || state.id !== board.id) return null
+  return { ...board, ...state }
 }
 
 async function responseError(response: Response): Promise<Error> {
@@ -116,7 +172,9 @@ async function responseError(response: Response): Promise<Error> {
       : new BoardPermissionError(message || undefined)
   }
   if (response.status === 409 && isRecord(body)) {
-    const conflictingBoard = parseSavedBoard(body.board)
+    const conflictingBoard = isRecord(body.board)
+      ? parseSavedBoard(body.board)
+      : parseSavedBoard(body)
     if (conflictingBoard) return new BoardConflictError(conflictingBoard)
   }
   const message = isRecord(body) && typeof body.error === 'string'
@@ -149,10 +207,40 @@ export type BoardListOptions = {
   archived?: boolean
 }
 
+function boardListQuery(options: BoardListOptions, metadataOnly = false) {
+  const query = new URLSearchParams()
+  if (metadataOnly) query.set('metadata', 'true')
+  if (options.archived) query.set('archived', 'true')
+  const encoded = query.toString()
+  return encoded ? `?${encoded}` : ''
+}
+
+/**
+ * Reads only board identity and server state. This avoids expanding every
+ * image-heavy snapshot just to populate a board picker. Older servers safely
+ * return their full board objects here; the parser intentionally extracts
+ * only the metadata until the thin endpoint has rolled out.
+ */
+export async function fetchBoardSummaries(options: BoardListOptions = {}): Promise<BoardSummary[]> {
+  const response = await boardRequest(`/api/boards${boardListQuery(options, true)}`, {
+    headers: { accept: 'application/json' },
+  })
+  if (!response.ok) throw await responseError(response)
+
+  const body: unknown = await response.json()
+  if (!isRecord(body) || !Array.isArray(body.boards)) {
+    throw new Error('The board service returned invalid data.')
+  }
+  const boards = body.boards.map(parseBoardSummary)
+  if (boards.some((board) => board === null)) {
+    throw new Error('The board service returned invalid data.')
+  }
+  return boards as BoardSummariesResponse['boards']
+}
+
 /** Loads normal boards by default, or archived boards with `{ archived: true }`. */
 export async function fetchBoards(options: BoardListOptions = {}): Promise<SavedBoard[]> {
-  const query = options.archived ? '?archived=true' : ''
-  const response = await boardRequest(`/api/boards${query}`, {
+  const response = await boardRequest(`/api/boards${boardListQuery(options)}`, {
     headers: { accept: 'application/json' },
   })
   if (!response.ok) throw await responseError(response)
@@ -175,16 +263,129 @@ export async function fetchArchivedBoards(): Promise<SavedBoard[]> {
 
 /** Loads one current board for cross-device refresh and conflict recovery. */
 export async function fetchBoard(boardId: string): Promise<SavedBoard | null> {
-  const response = await boardRequest(`/api/boards?id=${encodeURIComponent(boardId)}`, {
+  const response = await boardRequest(`/api/boards?id=${encodeURIComponent(boardId)}&raw=true`, {
     headers: { accept: 'application/json' },
   })
   if (response.status === 404) return null
   if (!response.ok) throw await responseError(response)
 
   const body: unknown = await response.json()
-  const board = isRecord(body) ? parseSavedBoard(body.board) : null
+  // Pre-thin deployments ignore `raw=true` and retain the envelope. Current
+  // deployments return the stored board document directly with D1 state in
+  // headers, avoiding a server-side parse/stringify of the same large JSON.
+  const legacyBoard = isRecord(body) ? parseSavedBoard(body.board) : null
+  const rawBoard = legacyBoard === null ? parseSavedBoard(body) : null
+  const board = rawBoard === null
+    ? legacyBoard
+    : applyRawBoardServerState(rawBoard, response.headers)
   if (!board) throw new Error('The board service returned invalid data.')
   return board
+}
+
+type RawSaveAttempt =
+  | { kind: 'saved'; board: SavedBoard }
+  | { kind: 'legacy-server' }
+
+// A pre-deployment server returns one known no-op validation error for a raw
+// save. Remember that result for this tab so legacy deployments do not pay
+// for a failed request before every normal autosave.
+let rawSaveTransportAvailable: boolean | undefined
+
+function boardDocumentForRawSave(board: SavedBoard) {
+  const document: SavedBoard & { baseRevision?: unknown } = { ...board }
+  delete document.archived
+  delete document.revision
+  delete document.access
+  delete document.baseRevision
+  return document
+}
+
+function rawSaveHeaders(board: SavedBoard, baseRevision: number | null | undefined) {
+  return {
+    'content-type': 'application/vnd.osa.board+json',
+    'x-osa-board-id': board.id,
+    // Header values must remain ASCII-safe. The worker decodes this value
+    // before storing the ordinary readable board name in D1.
+    'x-osa-board-name': encodeURIComponent(board.name),
+    'x-osa-board-updated-at': board.updatedAt,
+    ...(baseRevision === undefined
+      ? {}
+      : { 'x-osa-base-revision': baseRevision === null ? 'null' : String(baseRevision) }),
+  }
+}
+
+function rawTransportIsNotDeployed(response: Response, body: unknown) {
+  // The prior endpoint parses this raw document but expects `{ board }`, then
+  // returns this exact validation response without writing anything. Limit
+  // fallback to that known no-op so an actual rejected raw save never becomes
+  // a second, unguarded write.
+  return response.status === 400
+    && isRecord(body)
+    && body.error === 'Expected a board.'
+}
+
+/**
+ * The raw worker deliberately keeps conflict responses small. Only after a
+ * real revision collision do we fetch the one current board document needed
+ * by the existing reload/save-a-copy recovery UI.
+ */
+async function rawConflictError(body: unknown): Promise<BoardConflictError | null> {
+  if (
+    !isRecord(body)
+    || (body.code !== 'stale' && body.code !== 'archived')
+    || !isRecord(body.board)
+  ) return null
+
+  // Legacy workers already include the full conflicting board. Let
+  // `responseError` parse that established response shape below.
+  if (parseSavedBoard(body.board)) return null
+
+  const summary = parseBoardSummary(body.board)
+  if (!summary) return null
+  const currentBoard = await fetchBoard(summary.id)
+  if (!currentBoard) {
+    throw new Error('The newer board version is unavailable.')
+  }
+  return new BoardConflictError(currentBoard)
+}
+
+/**
+ * Uses the compact raw document protocol when its worker is deployed. A
+ * successful response is 204 with metadata headers, so autosave does not
+ * download its own complete snapshot just to learn the next revision.
+ */
+async function saveBoardRaw(
+  board: SavedBoard,
+  baseRevision: number | null | undefined,
+): Promise<RawSaveAttempt> {
+  const response = await boardRequest('/api/boards', {
+    method: 'PUT',
+    headers: rawSaveHeaders(board, baseRevision),
+    body: JSON.stringify(boardDocumentForRawSave(board)),
+  })
+
+  if (response.status === 204) {
+    const savedBoard = applyRawBoardServerState(board, response.headers)
+    if (!savedBoard) throw new Error('The board service returned an invalid save acknowledgement.')
+    return { kind: 'saved', board: savedBoard }
+  }
+
+  if (!response.ok) {
+    const body: unknown = await response.clone().json().catch(() => null)
+    if (rawTransportIsNotDeployed(response, body)) return { kind: 'legacy-server' }
+    if (response.status === 409) {
+      const conflict = await rawConflictError(body)
+      if (conflict) throw conflict
+    }
+    throw await responseError(response)
+  }
+
+  // Accept a transitional worker that recognizes the raw request but still
+  // returns the older `{ board }` envelope.
+  const body: unknown = await response.json().catch(() => null)
+  const savedBoard = isRecord(body) ? parseSavedBoard(body.board) : null
+  if (!savedBoard) throw new Error('The board service returned invalid data.')
+  return { kind: 'saved', board: savedBoard }
 }
 
 /**
@@ -195,6 +396,17 @@ export async function saveBoard(
   board: SavedBoard,
   baseRevision: number | null | undefined = undefined,
 ): Promise<SavedBoard> {
+  if (rawSaveTransportAvailable !== false) {
+    const rawAttempt = await saveBoardRaw(board, baseRevision)
+    if (rawAttempt.kind === 'saved') {
+      rawSaveTransportAvailable = true
+      return rawAttempt.board
+    }
+    rawSaveTransportAvailable = false
+  }
+
+  // Older open deployments do not understand the raw document contract yet.
+  // Their fallback remains exactly the established API shape.
   const response = await boardRequest('/api/boards', {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
@@ -210,16 +422,45 @@ export async function saveBoard(
 
 /** Moves a board into the archive, preserving its data and public share links. */
 export async function archiveBoard(boardId: string): Promise<SavedBoard> {
-  return setBoardArchived(boardId, true)
+  return setBoardArchived(boardId, true, false)
 }
 
 /** Returns an archived board to the normal saved-board list. */
 export async function restoreBoard(boardId: string): Promise<SavedBoard> {
-  return setBoardArchived(boardId, false)
+  return setBoardArchived(boardId, false, false)
 }
 
-async function setBoardArchived(boardId: string, archived: boolean): Promise<SavedBoard> {
-  const response = await boardRequest('/api/boards', {
+/**
+ * Archives without downloading the board snapshot. Use this for a board-list
+ * row; the normal `archiveBoard` remains for callers that already expect the
+ * full document after the lifecycle change.
+ */
+export async function archiveBoardSummary(boardId: string): Promise<BoardSummary> {
+  return setBoardArchived(boardId, true, true)
+}
+
+/** Restores a board-list row without expanding its snapshot. */
+export async function restoreBoardSummary(boardId: string): Promise<BoardSummary> {
+  return setBoardArchived(boardId, false, true)
+}
+
+async function setBoardArchived(
+  boardId: string,
+  archived: boolean,
+  metadataOnly: true,
+): Promise<BoardSummary>
+async function setBoardArchived(
+  boardId: string,
+  archived: boolean,
+  metadataOnly: false,
+): Promise<SavedBoard>
+async function setBoardArchived(
+  boardId: string,
+  archived: boolean,
+  metadataOnly: boolean,
+): Promise<BoardSummary | SavedBoard> {
+  const query = metadataOnly ? '?metadata=true' : ''
+  const response = await boardRequest(`/api/boards${query}`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ boardId, archived }),
@@ -227,7 +468,13 @@ async function setBoardArchived(boardId: string, archived: boolean): Promise<Sav
   if (!response.ok) throw await responseError(response)
 
   const body: unknown = await response.json().catch(() => null)
-  const board = isRecord(body) ? parseSavedBoard(body.board) : null
+  if (!isRecord(body)) throw new Error('The board service returned invalid data.')
+  if (metadataOnly) {
+    const board = parseBoardSummary(body.board)
+    if (!board) throw new Error('The board service returned invalid data.')
+    return board
+  }
+  const board = parseSavedBoard(body.board)
   if (!board) throw new Error('The board service returned invalid data.')
   return board
 }
