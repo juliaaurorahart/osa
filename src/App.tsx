@@ -919,6 +919,9 @@ function Flow() {
     if (!candidates.size) return
 
     let cancelled = false
+    const attemptKeys = [...candidates.values()].flatMap((owners) => owners.map(({ id, image }) => (
+      `${boardId}\u0000${id}\u0000${image}`
+    )))
     setCloudSyncStatus('Moving existing photos…')
     void (async () => {
       const replacements = new Map<string, string>()
@@ -935,7 +938,14 @@ function Flow() {
         }
       }
 
-      if (cancelled || latestBoardId.current !== boardId) return
+      if (cancelled || latestBoardId.current !== boardId) {
+        // A graph migration or board switch can invalidate this effect while
+        // uploads are still running. R2 writes are content-addressed and safe
+        // to repeat, so release these guards and let the current graph retry
+        // instead of leaving uploaded pixels embedded in the board forever.
+        attemptKeys.forEach((key) => inlineAssetMigrationAttempts.current.delete(key))
+        return
+      }
       if (replacements.size) {
         setNodes((currentNodes) => currentNodes.map((node) => {
           const image = node.data.properties[OSA_PROPERTY.assetImage]
@@ -958,6 +968,7 @@ function Flow() {
 
     return () => {
       cancelled = true
+      attemptKeys.forEach((key) => inlineAssetMigrationAttempts.current.delete(key))
     }
   }, [boardAccess, boardId, cloudRevision, isSharedAssembly, nodes, setNodes])
 
