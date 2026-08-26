@@ -3513,9 +3513,9 @@ function Flow() {
     }
   }, [applyCloudBoard])
 
-  // A collaborator opening OSA in a fresh browser should land on the newest
-  // board they can access. A recovered local draft, a named/imported board,
-  // or any local edit always wins; this never discards work in progress.
+  // A signed-in device opens the newest saved board. A local draft only wins
+  // when it contains unsynced work; a clean local copy is a recovery cache,
+  // not a reason to leave a phone or another computer on an older board.
   const openedInitialCloudBoard = useRef(false)
   useEffect(() => {
     if (
@@ -3543,19 +3543,8 @@ function Flow() {
     )
     if (recoveredLocalWork) return
 
-    // A clean cloud-backed draft represents the last board this person was
-    // using. Load its newest server version if it is still accessible; a
-    // default local draft instead opens the newest available board.
-    const savedStartupBoard = startupDraft?.revision
-      ? savedBoards.find((board) => board.id === startupDraft.id)
-      : undefined
-    if (!untouchedInitialDocument && !savedStartupBoard) return
-
     openedInitialCloudBoard.current = true
-    void openSavedCloudBoard(
-      (savedStartupBoard ?? savedBoards[0]).id,
-      'Opened latest saved board',
-    )
+    void openSavedCloudBoard(savedBoards[0].id, 'Opened latest saved board')
   }, [boardName, edges, isSharedAssembly, nodes, openSavedCloudBoard, savedBoards, startupDraft])
 
   /**
