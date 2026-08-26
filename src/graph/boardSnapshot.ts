@@ -124,6 +124,19 @@ export function createBoardSnapshot(
   }
 }
 
+/**
+ * Compares board documents after the same restore/save normalization used by
+ * the editor. This keeps legacy-compatible hydration details from looking
+ * like a person edited a board on another device.
+ */
+export function boardDocumentFingerprint(name: string, snapshot: BoardSnapshot) {
+  const restored = restoreBoardSnapshot(snapshot)
+  return JSON.stringify({
+    name: name.trim(),
+    snapshot: createBoardSnapshot(restored.nodes, restored.edges),
+  })
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }

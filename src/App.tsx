@@ -120,10 +120,10 @@ import {
   type NodeKindFilter,
 } from './graph/space'
 import {
+  boardDocumentFingerprint,
   createBoardSnapshot,
   parseBoardSnapshot,
   restoreBoardSnapshot,
-  type BoardSnapshot,
 } from './graph/boardSnapshot'
 import {
   createProjectTaskEdge,
@@ -215,15 +215,6 @@ const CLOUD_REFRESH_INTERVAL_MS = 15_000
 /** Local recovery data also remembers whether it contains unsynced cloud edits. */
 type LocalDraft = SavedBoard & {
   cloudDirty?: boolean
-}
-
-/**
- * A cloud revision acknowledges one exact document, not merely one moment in
- * time. Keeping that baseline lets development StrictMode and remote loads
- * distinguish an incoming document from a real local edit.
- */
-function boardDocumentFingerprint(name: string, snapshot: BoardSnapshot) {
-  return JSON.stringify({ name: name.trim(), snapshot })
 }
 
 /**
@@ -778,6 +769,10 @@ function Flow() {
   const [cloudDirty, setCloudDirty] = useState(() => startupDraft?.cloudDirty ?? false)
   const cloudDirtyRef = useRef(cloudDirty)
   cloudDirtyRef.current = cloudDirty
+  // A dirty recovery draft has an unknown remote baseline after a reload.
+  // Keep its explicit recovery flag until a one-board cloud comparison proves
+  // it already matches, rather than clearing it from rehydration alone.
+  const startupDirtyDraft = useRef(Boolean(startupDraft?.cloudDirty))
   // This is the last exact board document acknowledged by D1. It deliberately
   // includes the board name because renaming is also a cloud edit.
   const cloudBaselineRef = useRef<string | null>(
@@ -1034,6 +1029,7 @@ function Flow() {
   useEffect(() => {
     if (isSharedAssembly) return
     if (cloudRevisionRef.current === null) return
+    if (startupDirtyDraft.current) return
 
     const currentDocument = boardDocumentFingerprint(
       boardName,
@@ -3538,6 +3534,7 @@ function Flow() {
 
   /** Applies a newer D1 board without treating that incoming change as a local edit. */
   const applyCloudBoard = useCallback((savedBoard: SavedBoard, status = 'Synced') => {
+    startupDirtyDraft.current = false
     cloudBaselineRef.current = boardDocumentFingerprint(
       savedBoard.name,
       savedBoard.snapshot,
@@ -3590,13 +3587,55 @@ function Flow() {
   // when it contains unsynced work; a clean local copy is a recovery cache,
   // not a reason to leave a phone or another computer on an older board.
   const openedInitialCloudBoard = useRef(false)
+  const checkingStartupDirtyDraft = useRef(false)
   useEffect(() => {
     if (
       openedInitialCloudBoard.current
       || isSharedAssembly
-      || cloudDirtyRef.current
       || !savedBoards.length
     ) return
+
+    if (cloudDirty) {
+      const draft = startupDraft
+      const savedDraft = draft?.cloudDirty
+        && draft.revision !== undefined
+        && savedBoards.some((board) => board.id === draft.id)
+      if (!savedDraft || checkingStartupDirtyDraft.current) return
+
+      checkingStartupDirtyDraft.current = true
+      const draftId = draft.id
+      const draftDocument = boardDocumentFingerprint(draft.name, draft.snapshot)
+      void fetchBoard(draftId).then((remoteBoard) => {
+        if (
+          !remoteBoard
+          || remoteBoard.archived
+          || latestBoardId.current !== draftId
+          || boardDocumentFingerprint(
+            latestBoardName.current,
+            createBoardSnapshot(latestNodes.current, latestEdges.current),
+          ) !== draftDocument
+          || boardDocumentFingerprint(remoteBoard.name, remoteBoard.snapshot) !== draftDocument
+        ) return
+
+        // This recovery record was marked dirty by an older client, but it is
+        // byte-for-byte equivalent after editor normalization. Let this device
+        // proceed to the newest saved board instead of presenting a conflict.
+        startupDirtyDraft.current = false
+        cloudBaselineRef.current = boardDocumentFingerprint(remoteBoard.name, remoteBoard.snapshot)
+        cloudRevisionRef.current = remoteBoard.revision ?? null
+        setCloudRevision(remoteBoard.revision ?? null)
+        const access = remoteBoard.access ?? 'owner'
+        boardAccessRef.current = access
+        setBoardAccess(access)
+        cloudDirtyRef.current = false
+        setCloudDirty(false)
+        setCloudSyncStatus('Synced')
+      }).catch(() => {
+        // Keep the recovery draft intact if this verification cannot complete.
+        checkingStartupDirtyDraft.current = false
+      })
+      return
+    }
 
     const untouchedInitialDocument = boardDocumentFingerprint(
       boardName,
@@ -3611,14 +3650,14 @@ function Flow() {
     // local-draft timer, so it must not prevent a later sign-in from opening
     // the newest cloud board.
     const recoveredLocalWork = startupDraft && (
-      startupDraft.cloudDirty
+      startupDirtyDraft.current
       || (startupDraft.revision === undefined && !untouchedInitialDocument)
     )
     if (recoveredLocalWork) return
 
     openedInitialCloudBoard.current = true
     void openSavedCloudBoard(savedBoards[0].id, 'Opened latest saved board')
-  }, [boardName, edges, isSharedAssembly, nodes, openSavedCloudBoard, savedBoards, startupDraft])
+  }, [boardName, cloudDirty, edges, isSharedAssembly, nodes, openSavedCloudBoard, savedBoards, startupDraft])
 
   /**
    * A recipient's link restores an assembly snapshot into the normal graph,
@@ -3719,6 +3758,7 @@ function Flow() {
       ])
 
       if (latestBoardId.current === savedBoard.id) {
+        startupDirtyDraft.current = false
         cloudRevisionRef.current = savedBoard.revision ?? null
         setCloudRevision(savedBoard.revision ?? null)
         const access = savedBoard.access ?? 'owner'
@@ -4002,6 +4042,7 @@ function Flow() {
         const changedDuringSave = boardDocumentFingerprint(liveName, liveSnapshot) !== sourceDocument
         if (changedDuringSave) {
           const nextName = liveName === sourceName ? savedCopy.name : liveName
+          startupDirtyDraft.current = false
           cloudBaselineRef.current = boardDocumentFingerprint(savedCopy.name, savedCopy.snapshot)
           setBoardId(savedCopy.id)
           setBoardName(nextName)
@@ -4174,35 +4215,6 @@ function Flow() {
     }
   }, [cloudRevision, isSharedAssembly, refreshCurrentCloudBoard])
 
-  // A recovered local draft may already know which cloud revision it came
-  // from. On startup, accept a newer remote board only if that draft is clean.
-  const reconciledStartupCloud = useRef(false)
-  useEffect(() => {
-    if (
-      reconciledStartupCloud.current
-      || isSharedAssembly
-      || !startupDraft
-      || cloudRevisionRef.current === null
-    ) return
-    const remoteBoard = savedBoards.find((board) => board.id === latestBoardId.current)
-    if (!remoteBoard) return
-
-    reconciledStartupCloud.current = true
-    if (
-      remoteBoard.revision === undefined
-      || remoteBoard.revision <= cloudRevisionRef.current
-    ) return
-    if (cloudDirtyRef.current) {
-      void fetchBoard(remoteBoard.id).then((currentBoard) => {
-        if (!currentBoard || latestBoardId.current !== remoteBoard.id) return
-        setCloudConflictBoard(currentBoard)
-        setCloudSyncStatus('Changed elsewhere')
-      }).catch(() => undefined)
-      return
-    }
-    void openSavedCloudBoard(remoteBoard.id, 'Synced')
-  }, [isSharedAssembly, openSavedCloudBoard, savedBoards, startupDraft])
-
   const saveBoardAsJson = useCallback(() => {
     const board = createBoardSnapshot(nodes, edges)
 
@@ -4238,6 +4250,7 @@ function Flow() {
       if (!snapshot) throw new Error('This is not a valid OSA board file.')
 
       applyBoardSnapshot(snapshot)
+      startupDirtyDraft.current = false
       cloudBaselineRef.current = null
       cloudRevisionRef.current = null
       setCloudRevision(null)

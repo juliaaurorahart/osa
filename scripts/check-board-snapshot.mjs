@@ -19,6 +19,7 @@ try {
     createTextNode,
   } = await server.ssrLoadModule('/src/graph/textNode.ts')
   const {
+    boardDocumentFingerprint,
     createBoardSnapshot,
     parseBoardSnapshot,
     restoreBoardSnapshot,
@@ -725,6 +726,42 @@ try {
     restoredCurrent.nodes.find((node) => node.id === 'former-action-1')?.data.task,
     { day: '2026-08-22', completedAt: null },
     'Inactive Action facts survive a semantic type change',
+  )
+
+  // Cloud recovery compares the parsed server document with the live document
+  // recreated after hydration. An older Shako-style action can intentionally
+  // have a blank body and a meaningful name, so both forms must fingerprint
+  // alike without pretending the browser made a local edit.
+  const blankAction = createTextNode({
+    id: 'blank-action-1',
+    position: { x: 80, y: 80 },
+    name: 'Connector Box Drill',
+    text: '',
+    kind: 'action',
+    properties: { 'source:slide': '1' },
+  })
+  const blankActionSnapshot = createBoardSnapshot([blankAction], [])
+  const parsedBlankActionSnapshot = parseBoardSnapshot(
+    JSON.parse(JSON.stringify(blankActionSnapshot)),
+  )
+  assert.ok(parsedBlankActionSnapshot, 'A blank action snapshot must parse')
+  const restoredBlankActionSnapshot = restoreBoardSnapshot(parsedBlankActionSnapshot)
+  const recreatedBlankActionSnapshot = createBoardSnapshot(
+    restoredBlankActionSnapshot.nodes,
+    restoredBlankActionSnapshot.edges,
+  )
+  const remoteFingerprint = boardDocumentFingerprint('Shako board', parsedBlankActionSnapshot)
+  assert.equal(
+    remoteFingerprint,
+    boardDocumentFingerprint('Shako board', recreatedBlankActionSnapshot),
+    'Rehydrating a saved board does not create a false cloud edit.',
+  )
+  const changedBlankActionSnapshot = structuredClone(recreatedBlankActionSnapshot)
+  changedBlankActionSnapshot.nodes[0].data.text = 'Drill the connector box.'
+  assert.notEqual(
+    remoteFingerprint,
+    boardDocumentFingerprint('Shako board', changedBlankActionSnapshot),
+    'A real local edit still differs from the saved cloud board.',
   )
 
   const assignedOnce = addNodeToSpace([space, notebookPage], notebookPage.id, space.id)
