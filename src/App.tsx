@@ -63,6 +63,7 @@ import {
 } from './graph/textNode'
 import { migrateLegacyCanvasBackgroundImages } from './graph/legacyCanvasImages'
 import { migrateLegacyOperationSourceVisuals } from './graph/legacySourceVisuals'
+import { isInlineImage, storeInlineImage } from './graph/imageAsset'
 import type { NodeKind } from './graph/nodeKinds'
 import {
   defaultOperationVisualPosition,
@@ -793,6 +794,10 @@ function Flow() {
   const cloudConflictRef = useRef<SavedBoard | null>(cloudConflictBoard)
   cloudConflictRef.current = cloudConflictBoard
   const cloudSaveInFlight = useRef(false)
+  // Each legacy base64 image is moved at most once during this browser
+  // session. Once its URL reaches the graph, ordinary autosave persists the
+  // small board document while the pixels remain in R2.
+  const inlineAssetMigrationAttempts = useRef(new Set<string>())
   const [cloudSaveCycle, setCloudSaveCycle] = useState(0)
   const [needsSignIn, setNeedsSignIn] = useState(false)
   const [shareStatus, setShareStatus] = useState('')
@@ -892,6 +897,74 @@ function Flow() {
     if (migratedCanvasImages.nodes !== nodes) setNodes(migratedCanvasImages.nodes)
     if (migratedCanvasImages.edges !== edges) setEdges(migratedCanvasImages.edges)
   }, [bundledShakoImportPlan, edges, nodes, setEdges, setNodes])
+
+  // Older boards embedded camera data directly in their graph JSON. Move
+  // those source pixels to object storage as the board is opened, without
+  // changing the picture or asking someone to re-upload it. This deliberately
+  // skips shared/read-only views: only the board author can update canonical
+  // links.
+  useEffect(() => {
+    if (
+      isSharedAssembly
+      || cloudRevision === null
+      || boardAccess === 'viewer'
+    ) return
+
+    const candidates = new Map<string, Array<{ id: string; image: string }>>()
+    nodes.forEach((node) => {
+      const image = node.data.properties[OSA_PROPERTY.assetImage]
+      if (!isInlineImage(image)) return
+      const attemptKey = `${boardId}\u0000${node.id}\u0000${image}`
+      if (inlineAssetMigrationAttempts.current.has(attemptKey)) return
+      inlineAssetMigrationAttempts.current.add(attemptKey)
+      const grouped = candidates.get(image) ?? []
+      grouped.push({ id: node.id, image })
+      candidates.set(image, grouped)
+    })
+    if (!candidates.size) return
+
+    let cancelled = false
+    setCloudSyncStatus('Moving existing photos…')
+    void (async () => {
+      const replacements = new Map<string, string>()
+      let hadFailure = false
+
+      for (const [image, owners] of candidates) {
+        try {
+          const url = await storeInlineImage(image)
+          owners.forEach(({ id, image: previous }) => {
+            replacements.set(`${id}\u0000${previous}`, url)
+          })
+        } catch {
+          hadFailure = true
+        }
+      }
+
+      if (cancelled || latestBoardId.current !== boardId) return
+      if (replacements.size) {
+        setNodes((currentNodes) => currentNodes.map((node) => {
+          const image = node.data.properties[OSA_PROPERTY.assetImage]
+          const replacement = image
+            ? replacements.get(`${node.id}\u0000${image}`)
+            : undefined
+          return replacement
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  properties: { ...node.data.properties, [OSA_PROPERTY.assetImage]: replacement },
+                },
+              }
+            : node
+        }))
+      }
+      if (hadFailure) setCloudSyncStatus('Some existing photos could not be moved yet.')
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [boardAccess, boardId, cloudRevision, isSharedAssembly, nodes, setNodes])
 
   useEffect(() => {
     if (isSharedAssembly) return

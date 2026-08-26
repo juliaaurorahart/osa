@@ -1,6 +1,6 @@
 import { useState, type ChangeEvent, type DragEvent } from 'react'
 import type { TextFlowNode } from '../graph/textNode'
-import { compactImageFile } from '../graph/imageAsset'
+import { storeImageFile } from '../graph/imageAsset'
 import { NODE_KINDS } from '../graph/nodeKinds'
 import {
   appearanceAccentColor,
@@ -109,7 +109,7 @@ export function PropertiesPanel({
     setImageImportError(null)
     let imageData: string
     try {
-      imageData = await compactImageFile(file)
+      imageData = await storeImageFile(file)
     } catch (error) {
       setImageImportError(error instanceof Error ? error.message : 'The image could not be imported.')
       return

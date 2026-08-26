@@ -1,29 +1,16 @@
 /**
- * Board images currently travel with the board document so an Assembly can be
- * shared without a second asset service.  A camera original is far larger
- * than an instruction needs, though, and can exceed D1's single-row limit.
- * Keep imports presentation-ready and deliberately compact before they enter
- * the durable graph.
+ * Image pixels belong in object storage, while graph data holds only the
+ * immutable URL. This keeps a photo-heavy Assembly comfortably below D1's
+ * per-row limit and lets a shared instruction render the same photo.
  */
-const MAX_IMAGE_EDGE = 1_024
-const MAX_IMAGE_BYTES = 96 * 1024
-const MIN_WEBP_QUALITY = 0.58
-const INITIAL_WEBP_QUALITY = 0.84
+const MAX_IMAGE_EDGE = 1_600
+const MAX_IMAGE_BYTES = 900 * 1024
+const MIN_WEBP_QUALITY = 0.64
+const INITIAL_WEBP_QUALITY = 0.9
 const SMALL_FILE_BYTES = MAX_IMAGE_BYTES
 
-function readAsDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.addEventListener('load', () => {
-      if (typeof reader.result === 'string') {
-        resolve(reader.result)
-      } else {
-        reject(new Error('The image could not be read.'))
-      }
-    })
-    reader.addEventListener('error', () => reject(new Error('The image could not be read.')))
-    reader.readAsDataURL(blob)
-  })
+type StoredImageResponse = {
+  url?: unknown
 }
 
 function loadImage(url: string): Promise<HTMLImageElement> {
@@ -50,18 +37,15 @@ function canvasBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {
 }
 
 /**
- * Converts a picked/dropped photo to a compact WebP data URL.
- *
- * Small assets remain byte-for-byte unchanged so transparent diagrams and
- * icons keep their original format.  Larger images are scaled for Assembly
- * viewing, then quality is reduced only as far as needed for reliable cloud
- * saving.  WebP preserves transparency for the rare large PNG as well.
+ * Keeps new instruction photos presentation-ready before upload. Small
+ * graphics preserve their original bytes; larger camera originals become a
+ * compact WebP without putting any pixels into the board document.
  */
-export async function compactImageFile(file: File): Promise<string> {
+async function prepareImageForStorage(file: File): Promise<Blob> {
   if (!file.type.startsWith('image/')) {
     throw new Error('Choose an image file.')
   }
-  if (file.size <= SMALL_FILE_BYTES) return readAsDataUrl(file)
+  if (file.size <= SMALL_FILE_BYTES) return file
 
   const sourceUrl = URL.createObjectURL(file)
   try {
@@ -84,7 +68,7 @@ export async function compactImageFile(file: File): Promise<string> {
       const quality = Math.max(MIN_WEBP_QUALITY, INITIAL_WEBP_QUALITY - attempt * 0.08)
       const compacted = await canvasBlob(canvas, quality)
       if (compacted.size <= MAX_IMAGE_BYTES) {
-        return readAsDataUrl(compacted)
+        return compacted
       }
       scale *= 0.75
     }
@@ -92,8 +76,56 @@ export async function compactImageFile(file: File): Promise<string> {
     URL.revokeObjectURL(sourceUrl)
   }
 
-  throw new Error('This photo is too large to save here. Choose a smaller image.')
+  throw new Error('This photo is too large to prepare. Choose a smaller image.')
 }
 
-/** Exposed for storage checks and future R2 migration work. */
-export const MAX_INLINE_IMAGE_BYTES = MAX_IMAGE_BYTES
+async function responseMessage(response: Response) {
+  const body: unknown = await response.json().catch(() => null)
+  if (typeof body === 'object' && body !== null && 'error' in body) {
+    const error = body.error
+    if (typeof error === 'string' && error.trim()) return error
+  }
+  return `Photo upload failed (${response.status}).`
+}
+
+async function uploadImageBlob(blob: Blob): Promise<string> {
+  let response: Response
+  try {
+    response = await fetch('/api/assets', {
+      method: 'POST',
+      headers: { 'content-type': blob.type || 'application/octet-stream' },
+      body: blob,
+    })
+  } catch {
+    throw new Error('Photo upload is unavailable right now.')
+  }
+  if (!response.ok) throw new Error(await responseMessage(response))
+
+  const result: unknown = await response.json().catch(() => null)
+  if (!result || typeof result !== 'object' || !('url' in result)) {
+    throw new Error('Photo storage returned an invalid link.')
+  }
+  const url = (result as StoredImageResponse).url
+  if (typeof url !== 'string' || !url.trim()) {
+    throw new Error('Photo storage returned an invalid link.')
+  }
+  return url
+}
+
+/** Uploads one picked, dropped, or camera photo and returns its durable URL. */
+export async function storeImageFile(file: File): Promise<string> {
+  return uploadImageBlob(await prepareImageForStorage(file))
+}
+
+/** Existing inline images are moved without recompression or visual change. */
+export async function storeInlineImage(dataUrl: string): Promise<string> {
+  const response = await fetch(dataUrl)
+  if (!response.ok) throw new Error('The existing image could not be read.')
+  const blob = await response.blob()
+  if (!blob.type.startsWith('image/')) throw new Error('The existing file is not an image.')
+  return uploadImageBlob(blob)
+}
+
+export function isInlineImage(data: string | undefined) {
+  return Boolean(data && /^data:image\//i.test(data))
+}

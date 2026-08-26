@@ -20,7 +20,7 @@ import {
   type SketchAnnotationTarget,
   type TextFlowNode,
 } from '../graph/textNode'
-import { compactImageFile } from '../graph/imageAsset'
+import { storeImageFile } from '../graph/imageAsset'
 import { annotationTargetsForNodes } from '../graph/sketchAnnotation'
 import {
   visualForOfficialVersion,
@@ -308,7 +308,7 @@ export function VisualCanvasEditor({
     if (!file) return null
     setImageImportError(null)
     try {
-      return await compactImageFile(file)
+      return await storeImageFile(file)
     } catch (error) {
       setImageImportError(error instanceof Error ? error.message : 'The image could not be imported.')
       return null
