@@ -234,82 +234,6 @@ function semanticAccentStyle(node: TextFlowNode | undefined) {
   return semanticAccentStyleFromColor(appearanceAccentColor(node))
 }
 
-type AssemblySemanticItem = {
-  node: TextFlowNode
-  kind: 'part' | 'tool'
-}
-
-/**
- * The Assembly overview is the project-facing place to designate semantic
- * information. This list is derived from the Assembly's real relationships;
- * it never creates a second, manually maintained inventory just for the view.
- */
-function semanticItemsForAssembly(
-  assemblyParts: TextFlowNode[],
-  assemblyOperations: TextFlowNode[],
-  nodes: TextFlowNode[],
-  edges: GraphEdge[],
-): AssemblySemanticItem[] {
-  const items = new Map<string, AssemblySemanticItem>()
-  const add = (node: TextFlowNode, kind: AssemblySemanticItem['kind']) => {
-    if (!items.has(node.id)) items.set(node.id, { node, kind })
-  }
-
-  assemblyParts.filter(isPartLike).forEach((part) => add(part, 'part'))
-
-  assemblyOperations.forEach((operation) => {
-    const operationTools = connectedTargets(
-      operation.id,
-      nodes,
-      edges,
-      OSA_RELATION.operationTool,
-      /\b(tool|tools)\b/i,
-    )
-    operationTools.forEach((tool) => add(tool, 'tool'))
-
-    const legacyInputs = connectedTargets(
-      operation.id,
-      nodes,
-      edges,
-      OSA_RELATION.operationItem,
-      /\b(part|parts|material|materials|component|components)\b/i,
-    ).filter(isPartLike)
-    const structuredInputs = connectedTargets(
-      operation.id,
-      nodes,
-      edges,
-      OSA_RELATION.operationInput,
-      /\b(parts? in|input|inputs|requires?|needs?)\b/i,
-    ).filter(isPartLike)
-    const outputs = uniqueNodes(
-      connectedTargets(
-        operation.id,
-        nodes,
-        edges,
-        OSA_RELATION.operationPrimaryOutput,
-        /\b(represents?|primary output)\b/i,
-      ).filter(isPartLike),
-      connectedTargets(
-        operation.id,
-        nodes,
-        edges,
-        OSA_RELATION.operationOutput,
-        /\b(produces?|parts? out|output)\b/i,
-      ).filter(isPartLike),
-    )
-
-    // Structured In is authoritative once it exists, matching the card view.
-    ;(structuredInputs.length ? structuredInputs : legacyInputs)
-      .forEach((part) => add(part, 'part'))
-    outputs.forEach((part) => add(part, 'part'))
-  })
-
-  return [...items.values()].sort((left, right) => (
-    left.kind.localeCompare(right.kind)
-      || nodeTitle(left.node).localeCompare(nodeTitle(right.node))
-  ))
-}
-
 /** A printable card board projected from the ordinary objects in one Space. */
 export function AssemblyView({
   assemblies,
@@ -328,10 +252,6 @@ export function AssemblyView({
   onCreateStep,
   onReorderStep,
   onEnsureStepCanvas,
-  onCreatePart,
-  onCreateExpense,
-  onUnlinkAssemblyPart,
-  onUnlinkAssemblyExpense,
   onCreateTool,
   onLinkPart,
   onLinkPartInput,
@@ -369,16 +289,6 @@ export function AssemblyView({
   const assemblyOperations = useMemo(() => selectedAssembly
     ? operationsForAssembly(selectedAssembly.id, operations, edges)
     : [], [edges, operations, selectedAssembly])
-  // The Assembly card is the overview of the actual instruction sequence.
-  // Keep its step list derived from the same Step objects as each card rather
-  // than maintaining a second hand-written summary.
-  const assemblyCardSteps = useMemo(() => assemblyOperations.flatMap((operation) => (
-    stepsForOperation(operation.id, nodes, edges).map((step, index) => ({
-      operation,
-      step,
-      index,
-    }))
-  )), [assemblyOperations, edges, nodes])
   const assemblyParts = useMemo(() => selectedAssembly
     ? connectedTargets(
       selectedAssembly.id,
@@ -388,19 +298,6 @@ export function AssemblyView({
       /\b(part|parts|material|materials|component|components)\b/i,
     )
     : [], [edges, nodes, selectedAssembly])
-  const assemblyExpenses = useMemo(() => selectedAssembly
-    ? connectedTargets(
-      selectedAssembly.id,
-      nodes,
-      edges,
-      OSA_RELATION.assemblyExpense,
-      /\b(expense|expenses|cost|costs)\b/i,
-    )
-    : [], [edges, nodes, selectedAssembly])
-  const assemblyPartIds = useMemo(
-    () => new Set(assemblyParts.map((part) => part.id)),
-    [assemblyParts],
-  )
   const toolInventory = useMemo(() => {
     const candidates = tools?.length ? tools : nodes.filter((node) => (
       node.data.kind === 'tool' || osaRole(node) === 'tool'
@@ -411,12 +308,6 @@ export function AssemblyView({
       .filter((tool) => tool.data.kind === 'tool' || osaRole(tool) === 'tool')
       .sort((left, right) => nodeTitle(left).localeCompare(nodeTitle(right)))
   }, [nodes, tools])
-  const assemblySemanticItems = useMemo(() => semanticItemsForAssembly(
-    assemblyParts,
-    assemblyOperations,
-    nodes,
-    edges,
-  ), [assemblyOperations, assemblyParts, edges, nodes])
   const {
     focusedCardId,
     // Older in-memory state can survive a hot reload. A missing open card is
@@ -755,7 +646,7 @@ export function AssemblyView({
               lineHeight: 1.08,
             }}
           />
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.3fr) minmax(180px, 0.7fr)', gap: '6%' }}>
+          <div className="assembly-index-card__title-list">
             <div style={{ display: 'grid', alignContent: 'start', gap: 8 }}>
               <ol style={{ margin: 0, paddingLeft: '1.45em', fontSize: 'clamp(0.8rem, 1.8vw, 1.35rem)', lineHeight: 1.55 }}>
                 {assemblyOperations.length ? assemblyOperations.map((operation, operationIndex) => (
@@ -842,223 +733,7 @@ export function AssemblyView({
                 </button>
               ) : null}
             </div>
-            <textarea
-              aria-label="assembly overview"
-              placeholder="purpose, assumptions, or notes for this assembly"
-              value={selectedAssembly.data.text}
-              readOnly={readOnly}
-              onFocus={() => setFocusedCardId(INDEX_CARD_ID)}
-              onChange={(event) => {
-                if (!readOnly) onTextChange(selectedAssembly.id, event.target.value)
-              }}
-              style={{
-                ...transparentInput,
-                minHeight: 120,
-                resize: 'none',
-                color: 'var(--osa-muted)',
-                fontSize: 'clamp(0.72rem, 1.35vw, 1rem)',
-                lineHeight: 1.45,
-              }}
-            />
           </div>
-          {assemblyCardSteps.length ? (
-            <section className="assembly-index-card__steps" aria-label="instruction steps">
-              <strong>steps</strong>
-              <ol>
-                {assemblyCardSteps.map(({ operation, step, index }) => (
-                  <li key={step.id}>
-                    <span>{nodeTitle(operation)} · Step {index + 1}</span>
-                    <strong>{nodeTitle(step)}</strong>
-                    {step.data.text.trim() ? <p>{step.data.text}</p> : null}
-                  </li>
-                ))}
-              </ol>
-            </section>
-          ) : null}
-          {assemblyParts.length ? (
-            <section className="assembly-index-card__objects" aria-label="parts and materials in this assembly">
-              <strong>parts &amp; subassemblies</strong>
-              <div>
-                {assemblyParts.map((part) => (
-                  <span className="assembly-object-chip" key={part.id}>
-                    <button
-                      type="button"
-                      className={appearanceAccentColor(part)
-                        ? 'assembly-object-link assembly-object-link--accented'
-                        : 'assembly-object-link'}
-                      style={semanticAccentStyle(part)}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        onOpenNode(part.id)
-                      }}
-                    >
-                      {nodeTitle(part)}
-                    </button>
-                    {!readOnly ? (
-                      <button
-                        className="assembly-object-unlink"
-                        type="button"
-                        aria-label={`remove ${nodeTitle(part)} from this Assembly`}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          onUnlinkAssemblyPart(selectedAssembly.id, part.id)
-                        }}
-                      >
-                        <span aria-hidden="true">×</span> remove
-                      </button>
-                    ) : null}
-                  </span>
-                ))}
-              </div>
-            </section>
-          ) : null}
-          {assemblyExpenses.length ? (
-            <section className="assembly-index-card__objects" aria-label="expenses in this assembly">
-              <strong>expenses</strong>
-              <div>
-                {assemblyExpenses.map((expense) => (
-                  <span className="assembly-object-chip" key={expense.id}>
-                    <button
-                      type="button"
-                      className="assembly-object-link"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        onOpenNode(expense.id)
-                      }}
-                    >
-                      {nodeTitle(expense)}
-                    </button>
-                    {!readOnly ? (
-                      <button
-                        className="assembly-object-unlink"
-                        type="button"
-                        aria-label={`remove ${nodeTitle(expense)} from this Assembly`}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          onUnlinkAssemblyExpense(selectedAssembly.id, expense.id)
-                        }}
-                      >
-                        <span aria-hidden="true">×</span> remove
-                      </button>
-                    ) : null}
-                  </span>
-                ))}
-              </div>
-            </section>
-          ) : null}
-          {assemblySemanticItems.length ? (
-            <section className="assembly-semantic-table" aria-label="semantic information">
-              <strong>semantic information</strong>
-              <table>
-                <thead>
-                  <tr>
-                    <th scope="col">item</th>
-                    <th scope="col">kind</th>
-                    <th scope="col">color</th>
-                    {!readOnly ? <th scope="col">remove</th> : null}
-                  </tr>
-                </thead>
-                <tbody>
-                  {assemblySemanticItems.map(({ node, kind }) => {
-                    const accent = appearanceAccentColor(node)
-                    const canEditColor = !readOnly && Boolean(onPropertyChange)
-                    return (
-                      <tr key={node.id}>
-                        <td>
-                          <button
-                            type="button"
-                            className={accent
-                              ? 'assembly-object-link assembly-object-link--accented'
-                              : 'assembly-object-link'}
-                            style={semanticAccentStyle(node)}
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              onOpenNode(node.id)
-                            }}
-                          >
-                            {nodeTitle(node)}
-                          </button>
-                        </td>
-                        <td>{kind}</td>
-                        <td>
-                          <span className="assembly-semantic-table__color-control">
-                            <input
-                              type="color"
-                              aria-label={`Set semantic color for ${nodeTitle(node)}`}
-                              value={accent ?? '#d6d6d6'}
-                              disabled={!canEditColor}
-                              onClick={(event) => event.stopPropagation()}
-                              onChange={(event) => onPropertyChange?.(
-                                node.id,
-                                OSA_PROPERTY.appearanceAccentColor,
-                                event.target.value,
-                              )}
-                            />
-                            <output>{accent ?? 'default'}</output>
-                            {canEditColor ? (
-                              <button
-                                className="assembly-semantic-table__default"
-                                type="button"
-                                aria-label={`Use the default color for ${nodeTitle(node)}`}
-                                aria-pressed={!accent}
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  onPropertyChange?.(node.id, OSA_PROPERTY.appearanceAccentColor, '')
-                                }}
-                              >
-                                default
-                              </button>
-                            ) : null}
-                          </span>
-                        </td>
-                        {!readOnly ? (
-                          <td>
-                            {kind === 'part' && assemblyPartIds.has(node.id) ? (
-                              <button
-                                className="assembly-object-unlink"
-                                type="button"
-                                aria-label={`remove ${nodeTitle(node)} from this Assembly`}
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  onUnlinkAssemblyPart(selectedAssembly.id, node.id)
-                                }}
-                              >
-                                <span aria-hidden="true">×</span> remove
-                              </button>
-                            ) : null}
-                          </td>
-                        ) : null}
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </section>
-          ) : null}
-          {!readOnly ? (
-            <div className="assembly-index-card__create-actions">
-              <button
-                className="text-action"
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation()
-                  onOpenNode(onCreatePart(selectedAssembly.id))
-                }}
-              >
-                add part
-              </button>
-              <button
-                className="text-action"
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation()
-                  onOpenNode(onCreateExpense(selectedAssembly.id))
-                }}
-              >
-                add expense
-              </button>
-            </div>
-          ) : null}
             </>
           ) : (
             <button
@@ -1080,7 +755,7 @@ export function AssemblyView({
           )}
         </article> : null}
 
-        {assemblyOperations.map((operation, operationIndex) => {
+        {assemblyOperations.map((operation) => {
           if (activeLockedCardId && activeLockedCardId !== operation.id) return null
           const focused = activeFocusedCardId === operation.id
           const tools = connectedTargets(
@@ -1104,17 +779,6 @@ export function AssemblyView({
             return canvas
               && canvas.data.properties[OSA_PROPERTY.visualIncludeInInstructions] === 'true'
               && visualHasInstructionContent(canvas, nodes, edges)
-              ? [{ step, canvas }]
-              : []
-          })
-          // The authoring card shows each non-empty Step canvas, whether or
-          // not it has been checked for the team-facing instruction packet.
-          // That keeps an unfinished draft visible without accidentally
-          // publishing it. A source slide or a part/tool library image never
-          // appears here merely because it exists elsewhere in the project.
-          const stepVisuals = steps.flatMap((step) => {
-            const canvas = canvasOwnedByStep(step.id, nodes, edges)
-            return canvas && visualHasInstructionContent(canvas, nodes, edges)
               ? [{ step, canvas }]
               : []
           })
@@ -1164,7 +828,7 @@ export function AssemblyView({
               style={{ ...cardShell, ...(isOpen ? {} : { padding: 0 }), ...cardFocusStyle(isOpen) }}
               tabIndex={0}
               key={operation.id}
-              aria-label={`instruction card ${operationIndex + 1}: ${nodeTitle(operation)}`}
+              aria-label={`${nodeTitle(operation)} card`}
               onClick={() => {
                 if (!isOpen) openOperation()
               }}
@@ -1203,8 +867,8 @@ export function AssemblyView({
                 <div className="assembly-card__details">
                   <input
                     className="assembly-card__title"
-                    aria-label={`instruction ${operationIndex + 1} title`}
-                    placeholder={`instruction ${operationIndex + 1} title`}
+                    aria-label={`${nodeTitle(operation)} title`}
+                    placeholder="card title"
                     value={operation.data.name}
                     readOnly={readOnly}
                     onFocus={focusCard}
@@ -1566,9 +1230,9 @@ export function AssemblyView({
                   <header className="assembly-card__view-header">
                     <h2>visuals</h2>
                   </header>
-                  {stepVisuals.length ? (
+                  {stepCanvases.length ? (
                     <div className="assembly-instructions-view__canvas-list">
-                      {stepVisuals.map(({ step, canvas }, index) => (
+                      {stepCanvases.map(({ step, canvas }, index) => (
                         <figure className="assembly-instructions-view__step-canvas" key={canvas.id}>
                           <figcaption>
                             <strong>Step {index + 1}</strong>
@@ -1595,7 +1259,7 @@ export function AssemblyView({
                       ))}
                     </div>
                   ) : (
-                    <p className="assembly-card__empty-link-list">no step visual yet.</p>
+                    <p className="assembly-card__empty-link-list">publish a step canvas to show it here.</p>
                   )}
                 </section>
               </div>
@@ -1611,16 +1275,22 @@ export function AssemblyView({
                   onClick={openOperation}
                 >
                   <span className="assembly-card__summary-content">
-                    <span className="assembly-card__summary-kicker">instruction {operationIndex + 1}</span>
                     <strong className="assembly-card__summary-title">{nodeTitle(operation)}</strong>
-                    <span className="assembly-card__summary-fields">
-                      <span>
-                        <b>parts in</b>
-                        {inputParts.length ? inputParts.map(nodeTitle).join(' · ') : 'no parts linked'}
-                      </span>
-                      <span>
-                        <b>tools</b>
-                        {tools.length ? tools.map(nodeTitle).join(' · ') : 'no tools linked'}
+                    <span className="assembly-card__summary-parts-tools">
+                      <b>parts &amp; tools</b>
+                      <span className="assembly-card__summary-fields">
+                        {inputParts.length ? (
+                          <span>
+                            <b>parts in</b>
+                            {inputParts.map(nodeTitle).join(' · ')}
+                          </span>
+                        ) : null}
+                        {tools.length ? (
+                          <span>
+                            <b>tools</b>
+                            {tools.map(nodeTitle).join(' · ')}
+                          </span>
+                        ) : null}
                       </span>
                     </span>
                     {steps.length ? (
@@ -1633,21 +1303,21 @@ export function AssemblyView({
                           </span>
                         ))}
                       </span>
-                    ) : (
+                    ) : operation.data.text.trim() ? (
                       <span className="assembly-card__summary-steps">
                         <b>steps</b>
                         <span className="assembly-card__summary-notes">
-                          {operation.data.text.trim() || 'no steps yet'}
+                          {operation.data.text}
                         </span>
                       </span>
-                    )}
+                    ) : null}
                   </span>
                   {stepCanvases.length ? (
                     <span
                       className="assembly-card__summary-view"
-                      aria-label={`${nodeTitle(operation)} step canvases`}
+                      aria-label={`${nodeTitle(operation)} visuals`}
                     >
-                      <span className="assembly-card__summary-view-header">step canvases</span>
+                      <span className="assembly-card__summary-view-header">visuals</span>
                       <span className="assembly-card__summary-canvas-list">
                         {stepCanvases.map(({ step, canvas }, stepCanvasIndex) => (
                           <span className="assembly-card__summary-step-canvas" key={canvas.id}>

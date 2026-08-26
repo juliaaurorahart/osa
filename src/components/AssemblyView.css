@@ -177,6 +177,14 @@
   gap: 12px 18px;
 }
 
+/* The cover is deliberately only a title and an ordered table of contents. */
+.assembly-index-card__title-list {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+}
+
 .assembly-index-card__objects {
   display: grid;
   grid-template-columns: minmax(110px, 0.25fr) minmax(0, 1fr);
@@ -573,6 +581,21 @@
   text-transform: lowercase;
 }
 
+.assembly-card__summary-parts-tools {
+  display: grid;
+  gap: 5px;
+  margin-top: 3px;
+  padding-top: 10px;
+  border-top: 1px solid var(--osa-border-subtle);
+}
+
+.assembly-card__summary-parts-tools > b {
+  color: var(--osa-text);
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-transform: lowercase;
+}
+
 .assembly-card__summary-steps {
   display: grid;
   gap: 7px;
@@ -740,21 +763,6 @@
    A card keeps one calm Visuals section: only non-empty canvases owned by its
    own Steps. Part/tool libraries remain available in Space without becoming
    a second, confusing visual catalog inside every instruction. */
-
-/* The title card is intentionally just the assembly title and the ordered
-   card list. Project inventory, costs, colors, and authoring notes belong in
-   their own project views, not in the instruction sequence. */
-.assembly-view .assembly-index-card.is-open .assembly-index-card__steps,
-.assembly-view .assembly-index-card.is-open .assembly-index-card__objects,
-.assembly-view .assembly-index-card.is-open .assembly-semantic-table,
-.assembly-view .assembly-index-card.is-open .assembly-index-card__create-actions,
-.assembly-view .assembly-index-card.is-open textarea[aria-label='assembly overview'] {
-  display: none;
-}
-
-.assembly-view .assembly-index-card.is-open > div:not(.assembly-card__focus-controls) {
-  grid-template-columns: minmax(0, 1fr) !important;
-}
 
 .assembly-card__view-header h2 {
   font-size: clamp(0.82rem, 1.5vw, 1.1rem);
@@ -1040,8 +1048,7 @@
 }
 
 .assembly-instructions-view__assembly-title,
-.assembly-instructions-view__card-title,
-.assembly-instructions-view__criteria-title {
+.assembly-instructions-view__card-title {
   margin: 0;
 }
 
@@ -1088,7 +1095,13 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
-.assembly-instructions-view__criteria-title {
+.assembly-instructions-view__parts-tools {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.assembly-instructions-view__parts-tools > strong {
   font-size: clamp(0.76rem, 1.5vw, 1.15rem);
   font-weight: 500;
 }
@@ -1136,11 +1149,10 @@
   padding: clamp(10px, 1.5vw, 18px);
 }
 
-/* The team-facing sheet does not need editor jargon or a second generic
-   heading above every image. A selected visual sits directly beside its
-   numbered instructions, like a concise assembly page. */
+/* The team-facing sheet labels its single visual column once, then keeps the
+   selected step visuals directly beside their matching instructions. */
 .assembly-instructions-view__step-visuals {
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .assembly-instructions-view__step-canvas {
@@ -1158,8 +1170,9 @@
 .assembly-instructions-view__step-canvas figcaption {
   display: flex;
   gap: 8px;
-  color: var(--osa-muted);
+  color: var(--osa-text);
   font-size: 0.86rem;
+  font-weight: 600;
 }
 
 .assembly-instructions-view__step-canvas figcaption strong {

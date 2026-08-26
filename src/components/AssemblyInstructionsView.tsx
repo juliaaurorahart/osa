@@ -66,8 +66,6 @@ function semanticAccentStyle(node: TextFlowNode): CSSProperties | undefined {
 }
 
 function ObjectNames({ objects }: { objects: TextFlowNode[] }) {
-  if (!objects.length) return <span className="assembly-instructions__empty">—</span>
-
   return (
     <span className="assembly-instructions__object-list">
       {objects.map((object, index) => (
@@ -181,7 +179,7 @@ export function AssemblyInstructionsView({
 
       <div className="assembly-card-board assembly-instructions-view__board">
         <article className="assembly-card assembly-index-card" style={cardShell}>
-          <h2 className="assembly-instructions-view__assembly-title">{nodeTitle(assembly)}</h2>
+          <h2 id="assembly-instructions-title" className="assembly-instructions-view__assembly-title">{nodeTitle(assembly)}</h2>
           {assemblyOperations.length ? (
             <ol className="assembly-instructions-view__index">
               {assemblyOperations.map((operation) => <li key={operation.id}>{nodeTitle(operation)}</li>)}
@@ -189,7 +187,7 @@ export function AssemblyInstructionsView({
           ) : null}
         </article>
 
-        {assemblyOperations.map((operation, operationIndex) => {
+        {assemblyOperations.map((operation) => {
           const tools = connectedTargets(
             operation.id,
             nodes,
@@ -230,24 +228,29 @@ export function AssemblyInstructionsView({
               className="assembly-card assembly-operation-card assembly-instructions-view__card"
               style={cardShell}
               key={operation.id}
-              aria-label={`instruction ${operationIndex + 1}: ${nodeTitle(operation)}`}
+              aria-label={`${nodeTitle(operation)} assembly instruction`}
             >
               <div className={stepCanvases.length
                 ? 'assembly-card__columns'
                 : 'assembly-card__columns assembly-instructions-view__columns--details-only'}>
                 <div className="assembly-card__details">
                   <h2 className="assembly-instructions-view__card-title">{nodeTitle(operation)}</h2>
-                  <strong className="assembly-instructions-view__criteria-title">criteria</strong>
 
-                  <div style={fieldLabel}>
-                    <span>parts in</span>
-                    <ObjectNames objects={inputParts} />
-                  </div>
-
-                  <div style={fieldLabel}>
-                    <span>tools</span>
-                    <ObjectNames objects={tools} />
-                  </div>
+                  <section className="assembly-instructions-view__parts-tools" aria-label={`${nodeTitle(operation)} parts and tools`}>
+                    <strong>parts &amp; tools</strong>
+                    {inputParts.length ? (
+                      <div style={fieldLabel}>
+                        <span>parts in</span>
+                        <ObjectNames objects={inputParts} />
+                      </div>
+                    ) : null}
+                    {tools.length ? (
+                      <div style={fieldLabel}>
+                        <span>tools</span>
+                        <ObjectNames objects={tools} />
+                      </div>
+                    ) : null}
+                  </section>
 
                   {steps.length || operation.data.text.trim() ? (
                     <section className="assembly-instructions-view__steps" aria-label={`${nodeTitle(operation)} steps`}>
@@ -276,18 +279,20 @@ export function AssemblyInstructionsView({
 
                 {stepCanvases.length ? (
                   <section className="assembly-card__view assembly-instructions-view__step-visuals" aria-label={`${nodeTitle(operation)} step visuals`}>
+                    <header className="assembly-card__view-header">
+                      <h2>visuals</h2>
+                    </header>
                     <div className="assembly-instructions-view__canvas-list">
-                      {stepCanvases.map(({ step, canvas }, index) => (
+                      {stepCanvases.map(({ step, canvas }) => (
                         <figure className="assembly-instructions-view__step-canvas" key={canvas.id}>
                           <figcaption>
-                            <strong>Step {index + 1}</strong>
                             <span>{nodeTitle(step)}</span>
                           </figcaption>
                           <button
                             className="assembly-instructions-view__open-canvas"
                             type="button"
-                            aria-label={`Open ${nodeTitle(step)} canvas`}
-                            title="Open canvas"
+                            aria-label={`View ${nodeTitle(step)} visual`}
+                            title="View visual"
                             onClick={() => setOpenedStepCanvas({ step, canvas })}
                           >
                             <VisualCanvasPreview
