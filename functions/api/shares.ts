@@ -1,5 +1,6 @@
+import { signedInEmail, type AccessData } from './boardAccess'
+
 type Env = { OSA_DB: D1Database }
-type AccessData = { cloudflareAccess?: { JWT?: { payload?: { email?: string } } } }
 
 type CreateShareBody = {
   boardId?: unknown
@@ -9,6 +10,12 @@ type CreateShareBody = {
 
 type OwnedBoard = { content: string; archived: number }
 type ExistingShare = { token: string }
+type ExistingSlugShare = {
+  token: string
+  board_id: string
+  assembly_id: string
+  owner_email: string
+}
 
 const MAX_SHARE_SLUG_LENGTH = 80
 
@@ -37,10 +44,6 @@ function json(body: unknown, status = 200) {
     status,
     headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
   })
-}
-
-function ownerEmail(data: AccessData) {
-  return data.cloudflareAccess?.JWT?.payload?.email?.toLowerCase() ?? null
 }
 
 /**
@@ -83,7 +86,7 @@ function isDuplicateSlugError(error: unknown) {
 
 /** Creates a public, read-only link for an assembly on one of the owner's saved boards. */
 export const onRequestPost: PagesFunction<Env, string, AccessData> = async ({ request, env, data }) => {
-  const owner = ownerEmail(data)
+  const owner = signedInEmail(data)
   if (!owner) return json({ error: 'Private sign-in required.' }, 403)
 
   const body = await request.json().catch(() => null) as CreateShareBody | null
@@ -119,6 +122,44 @@ export const onRequestPost: PagesFunction<Env, string, AccessData> = async ({ re
 
   try {
     if (slug) {
+      // A friendly slug is the stable public name people remember. If this
+      // owner used it for an earlier board, move the name to the current
+      // saved board instead of leaving the link silently stale.
+      const currentSlug = await env.OSA_DB
+        .prepare(`
+          SELECT
+            board_shares.token,
+            board_shares.board_id,
+            board_shares.assembly_id,
+            boards.owner_email
+          FROM board_shares
+          INNER JOIN boards ON boards.id = board_shares.board_id
+          WHERE board_shares.slug = ?
+        `)
+        .bind(slug)
+        .first<ExistingSlugShare>()
+
+      if (currentSlug) {
+        if (currentSlug.owner_email !== owner) {
+          return json({ error: 'That public link name is already in use.' }, 409)
+        }
+        if (currentSlug.board_id === boardId && currentSlug.assembly_id === assemblyId) {
+          return json({ token: currentSlug.token, slug })
+        }
+
+        // A friendly link is the current public name, not a reason to mutate
+        // an older opaque capability into a link to a different board. Keep
+        // old tokens as historical snapshots, release this slug, then attach
+        // it to the requested board's share below.
+        await env.OSA_DB
+          .prepare('UPDATE board_shares SET slug = NULL WHERE token = ?')
+          .bind(currentSlug.token)
+          .run()
+
+        // If this current board already has a token, reuse it. Otherwise the
+        // normal insert path below mints a fresh token for the new board.
+      }
+
       // One current friendly name is enough for an Assembly. Updating the
       // latest row retains its long token, so existing pasted links survive.
       const existing = await env.OSA_DB

@@ -9,7 +9,13 @@ export type SavedBoard = {
   archived?: boolean
   /** D1 increments this on every cloud change so stale devices cannot overwrite newer work. */
   revision?: number
+  /** The signed-in person's server-authorized role for this board. */
+  access?: BoardAccess
 }
+
+export type BoardAccess = 'owner' | 'editor' | 'viewer'
+export type CollaboratorRole = Exclude<BoardAccess, 'owner'>
+export type BoardCollaborator = { email: string; role: CollaboratorRole }
 
 /** A public, read-only board response addressed by an opaque share token. */
 export type SharedAssembly = {
@@ -39,6 +45,14 @@ export class BoardUnavailableError extends Error {
   constructor() {
     super('Board storage is unavailable in this environment.')
     this.name = 'BoardUnavailableError'
+  }
+}
+
+/** The account is signed in but lacks permission for the requested board action. */
+export class BoardPermissionError extends Error {
+  constructor(message = 'You do not have permission to change this board.') {
+    super(message)
+    this.name = 'BoardPermissionError'
   }
 }
 
@@ -84,14 +98,23 @@ function parseSavedBoard(value: unknown): SavedBoard | null {
       && value.revision > 0
       ? value.revision
       : undefined,
+    access: value.access === 'owner' || value.access === 'editor' || value.access === 'viewer'
+      ? value.access
+      : undefined,
   }
 }
 
 async function responseError(response: Response): Promise<Error> {
-  if (response.status === 401 || response.status === 403) return new BoardAccessError()
+  if (response.status === 401) return new BoardAccessError()
   if (response.status === 404) return new BoardUnavailableError()
 
   const body: unknown = await response.json().catch(() => null)
+  if (response.status === 403) {
+    const message = isRecord(body) && typeof body.error === 'string' ? body.error : ''
+    return message === 'Private sign-in required.'
+      ? new BoardAccessError()
+      : new BoardPermissionError(message || undefined)
+  }
   if (response.status === 409 && isRecord(body)) {
     const conflictingBoard = parseSavedBoard(body.board)
     if (conflictingBoard) return new BoardConflictError(conflictingBoard)
@@ -232,6 +255,62 @@ export async function createAssemblyShare(
     throw new Error('The board service returned an invalid share link.')
   }
   return body as AssemblyShare
+}
+
+function parseCollaborator(value: unknown): BoardCollaborator | null {
+  if (
+    !isRecord(value)
+    || typeof value.email !== 'string'
+    || (value.role !== 'editor' && value.role !== 'viewer')
+  ) return null
+  return { email: value.email, role: value.role }
+}
+
+/** Lists people with access. The owner is implicit and is not duplicated here. */
+export async function fetchBoardCollaborators(boardId: string): Promise<BoardCollaborator[]> {
+  const response = await boardRequest(`/api/collaborators?boardId=${encodeURIComponent(boardId)}`, {
+    headers: { accept: 'application/json' },
+  })
+  if (!response.ok) throw await responseError(response)
+
+  const body: unknown = await response.json()
+  if (!isRecord(body) || !Array.isArray(body.collaborators)) {
+    throw new Error('The board service returned invalid collaborators.')
+  }
+  const collaborators = body.collaborators.map(parseCollaborator)
+  if (collaborators.some((collaborator) => collaborator === null)) {
+    throw new Error('The board service returned invalid collaborators.')
+  }
+  return collaborators as BoardCollaborator[]
+}
+
+/** Adds a person or changes their editor/viewer role. Owner-only on the server. */
+export async function saveBoardCollaborator(
+  boardId: string,
+  email: string,
+  role: CollaboratorRole,
+): Promise<BoardCollaborator> {
+  const response = await boardRequest('/api/collaborators', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ boardId, email, role }),
+  })
+  if (!response.ok) throw await responseError(response)
+
+  const body: unknown = await response.json()
+  const collaborator = isRecord(body) ? parseCollaborator(body.collaborator) : null
+  if (!collaborator) throw new Error('The board service returned an invalid collaborator.')
+  return collaborator
+}
+
+/** Removes one person's board access. Owner-only on the server. */
+export async function removeBoardCollaborator(boardId: string, email: string): Promise<void> {
+  const response = await boardRequest('/api/collaborators', {
+    method: 'DELETE',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ boardId, email }),
+  })
+  if (!response.ok) throw await responseError(response)
 }
 
 /** Loads the saved board and assembly selected by a public, read-only share link. */

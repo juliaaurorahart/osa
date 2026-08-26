@@ -1,3 +1,11 @@
+import {
+  accessibleBoard,
+  ownedBoard,
+  signedInEmail,
+  type AccessData,
+  type StoredBoardRow,
+} from './boardAccess'
+
 type Board = {
   id: string
   name: string
@@ -6,10 +14,12 @@ type Board = {
   archived?: unknown
   /** The database is authoritative; this client-supplied value is ignored on save. */
   revision?: unknown
+  /** The database is authoritative; this client-supplied value is ignored on save. */
+  access?: unknown
   [key: string]: unknown
 }
 
-type BoardRow = { content: string; archived: number; revision: number }
+type BoardRow = StoredBoardRow
 type SaveRequest = {
   board?: unknown
   /** Accepted during deployment so an older open tab cannot fail abruptly. */
@@ -21,9 +31,7 @@ type SaveRequest = {
   baseRevision?: unknown
 }
 type ArchiveRequest = { boardId?: unknown; archived?: unknown }
-
 type Env = { OSA_DB: D1Database }
-type AccessData = { cloudflareAccess?: { JWT?: { payload?: { email?: string } } } }
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -32,15 +40,11 @@ function json(body: unknown, status = 200) {
   })
 }
 
-function ownerEmail(data: AccessData) {
-  return data.cloudflareAccess?.JWT?.payload?.email?.toLowerCase() ?? null
-}
-
 /** The stored JSON is the board document; server state lives in D1 columns. */
-function boardWithServerState({ content, archived, revision }: BoardRow) {
+function boardWithServerState({ content, archived, revision, access }: BoardRow) {
   const board: unknown = JSON.parse(content)
   return typeof board === 'object' && board !== null
-    ? { ...board, archived: archived === 1, revision }
+    ? { ...board, archived: archived === 1, revision, access }
     : board
 }
 
@@ -57,20 +61,14 @@ function boardContent(board: Board) {
   const content = { ...board }
   delete content.archived
   delete content.revision
+  delete content.access
   delete content.baseRevision
   return content
 }
 
-async function ownedBoard(env: Env, boardId: string, owner: string) {
-  return env.OSA_DB
-    .prepare('SELECT content, archived, revision FROM boards WHERE id = ? AND owner_email = ?')
-    .bind(boardId, owner)
-    .first<BoardRow>()
-}
-
-/** Explains why a guarded save was not applied without revealing another owner's board. */
-async function saveConflictResponse(env: Env, boardId: string, owner: string) {
-  const current = await ownedBoard(env, boardId, owner)
+/** Explains why a guarded save was not applied without revealing another person's board. */
+async function saveConflictResponse(env: Env, boardId: string, email: string) {
+  const current = await accessibleBoard(env, boardId, email)
   if (!current) return json({ error: 'That saved board was not found.' }, 404)
 
   const board = boardWithServerState(current)
@@ -97,12 +95,13 @@ function requestedArchiveState(request: Request) {
 }
 
 /**
- * Normal boards are listed by default. Archived boards require an explicit
- * `?archived=true`, so an existing authoring screen never suddenly shows them.
+ * Normal boards are listed by default. A signed-in owner, editor, or viewer
+ * sees the same current board record; the returned access role tells the UI
+ * whether it may edit it. Archived boards require an explicit opt-in.
  */
 export const onRequestGet: PagesFunction<Env, string, AccessData> = async ({ request, env, data }) => {
-  const owner = ownerEmail(data)
-  if (!owner) return json({ error: 'Private sign-in required.' }, 403)
+  const email = signedInEmail(data)
+  if (!email) return json({ error: 'Private sign-in required.' }, 403)
 
   const url = new URL(request.url)
   const boardId = url.searchParams.get('id')
@@ -110,7 +109,7 @@ export const onRequestGet: PagesFunction<Env, string, AccessData> = async ({ req
   // also reveal that another device archived the board so it can stop syncing.
   if (boardId !== null) {
     if (!boardId.trim()) return json({ error: 'A board id is required.' }, 400)
-    const board = await ownedBoard(env, boardId, owner)
+    const board = await accessibleBoard(env, boardId, email)
     if (!board) return json({ error: 'That saved board was not found.' }, 404)
     return json({ board: boardWithServerState(board) })
   }
@@ -119,15 +118,31 @@ export const onRequestGet: PagesFunction<Env, string, AccessData> = async ({ req
   if (archived === null) return json({ error: 'Use archived=true or archived=false.' }, 400)
 
   const result = await env.OSA_DB
-    .prepare('SELECT content, archived, revision FROM boards WHERE owner_email = ? AND archived = ? ORDER BY updated_at DESC')
-    .bind(owner, archived)
+    .prepare(`
+      SELECT
+        boards.content,
+        boards.archived,
+        boards.revision,
+        CASE
+          WHEN boards.owner_email = ? THEN 'owner'
+          ELSE board_collaborators.role
+        END AS access
+      FROM boards
+      LEFT JOIN board_collaborators
+        ON board_collaborators.board_id = boards.id
+        AND board_collaborators.email = ?
+      WHERE boards.archived = ?
+        AND (boards.owner_email = ? OR board_collaborators.email = ?)
+      ORDER BY boards.updated_at DESC
+    `)
+    .bind(email, email, archived, email, email)
     .all<BoardRow>()
   return json({ boards: result.results.map(boardWithServerState) })
 }
 
 export const onRequestPut: PagesFunction<Env, string, AccessData> = async ({ request, env, data }) => {
-  const owner = ownerEmail(data)
-  if (!owner) return json({ error: 'Private sign-in required.' }, 403)
+  const email = signedInEmail(data)
+  if (!email) return json({ error: 'Private sign-in required.' }, 403)
   const body = await request.json().catch(() => null) as SaveRequest | null
 
   if (body?.board) {
@@ -140,8 +155,7 @@ export const onRequestPut: PagesFunction<Env, string, AccessData> = async ({ req
       return json({ error: 'baseRevision must be a positive integer or null.' }, 400)
     }
 
-    const content = boardContent(board)
-    const serializedContent = JSON.stringify(content)
+    const serializedContent = JSON.stringify(boardContent(board))
 
     if (baseRevision === null) {
       // New current clients explicitly create rather than overwriting a board
@@ -152,38 +166,63 @@ export const onRequestPut: PagesFunction<Env, string, AccessData> = async ({ req
           VALUES (?, ?, ?, ?, ?, 1)
           ON CONFLICT(id) DO NOTHING
         `)
-        .bind(board.id, owner, board.name, serializedContent, board.updatedAt)
+        .bind(board.id, email, board.name, serializedContent, board.updatedAt)
         .run()
-      if (!result.meta.changes) return saveConflictResponse(env, board.id, owner)
-      return json({ board: boardWithServerState({ content: serializedContent, archived: 0, revision: 1 }) })
+      if (!result.meta.changes) return saveConflictResponse(env, board.id, email)
+      return json({
+        board: boardWithServerState({
+          content: serializedContent,
+          archived: 0,
+          revision: 1,
+          access: 'owner',
+        }),
+      })
     }
 
     if (isRevision(baseRevision)) {
-      // This is the optimistic-concurrency path used by current clients. The
-      // revision predicate makes a stale device fail rather than last-write-win.
+      const current = await accessibleBoard(env, board.id, email)
+      if (!current) return json({ error: 'That saved board was not found.' }, 404)
+      if (current.access === 'viewer') {
+        return json({ error: 'This board is shared with you for viewing only.' }, 403)
+      }
+
+      // The revision predicate prevents a stale device from silently
+      // overwriting another owner/editor. The membership predicate is kept in
+      // the same statement so a removed collaborator cannot write mid-session.
       const result = await env.OSA_DB
         .prepare(`
           UPDATE boards
           SET name = ?, content = ?, updated_at = ?, revision = revision + 1
           WHERE id = ?
-            AND owner_email = ?
             AND archived = 0
             AND revision = ?
+            AND (
+              owner_email = ?
+              OR EXISTS (
+                SELECT 1
+                FROM board_collaborators
+                WHERE board_collaborators.board_id = boards.id
+                  AND board_collaborators.email = ?
+                  AND board_collaborators.role = 'editor'
+              )
+            )
         `)
-        .bind(board.name, serializedContent, board.updatedAt, board.id, owner, baseRevision)
+        .bind(board.name, serializedContent, board.updatedAt, board.id, baseRevision, email, email)
         .run()
-      if (!result.meta.changes) return saveConflictResponse(env, board.id, owner)
+      if (!result.meta.changes) return saveConflictResponse(env, board.id, email)
       return json({
         board: boardWithServerState({
           content: serializedContent,
           archived: 0,
           revision: baseRevision + 1,
+          access: current.access,
         }),
       })
     }
 
-    // Older open tabs do not send `baseRevision`. Keep them functional during
-    // rollout, while still preventing them from reviving an archived board.
+    // Older open tabs do not send `baseRevision`. Keep the old owner-only
+    // route functional during rollout; current collaborating clients always
+    // send a revision and use the guarded branch above.
     const result = await env.OSA_DB
       .prepare(`
         INSERT INTO boards (id, owner_email, name, content, updated_at, revision)
@@ -196,23 +235,21 @@ export const onRequestPut: PagesFunction<Env, string, AccessData> = async ({ req
         WHERE boards.owner_email = excluded.owner_email
           AND boards.archived = 0
       `)
-      .bind(board.id, owner, board.name, serializedContent, board.updatedAt)
+      .bind(board.id, email, board.name, serializedContent, board.updatedAt)
       .run()
-    if (!result.meta.changes) return saveConflictResponse(env, board.id, owner)
-    const saved = await ownedBoard(env, board.id, owner)
+    if (!result.meta.changes) return saveConflictResponse(env, board.id, email)
+    const saved = await accessibleBoard(env, board.id, email)
     if (!saved) return json({ error: 'Unable to read the saved board.' }, 500)
     return json({ board: boardWithServerState(saved) })
   }
 
-  // The old multi-board payload remains accepted for clients that were already
-  // open during deployment. New clients use the guarded single-board route.
+  // The old multi-board payload remains accepted for already-open owner tabs.
+  // New clients save a single guarded board at a time.
   const boards = Array.isArray(body?.boards) ? body.boards as Board[] : null
   if (!boards) return json({ error: 'Expected a board.' }, 400)
   if (boards.length > 250) return json({ error: 'Too many boards in one save.' }, 413)
   if (boards.some((board) => !board?.id || !board.name || !board.updatedAt)) return json({ error: 'One or more boards are missing required details.' }, 400)
   const statements = boards.map((board) => {
-    // A stale tab must never unarchive a board just because its in-memory JSON
-    // still says `archived: false`. Only PATCH below changes this D1 field.
     const content = boardContent(board)
     return env.OSA_DB.prepare(`
       INSERT INTO boards (id, owner_email, name, content, updated_at, revision)
@@ -224,7 +261,7 @@ export const onRequestPut: PagesFunction<Env, string, AccessData> = async ({ req
         revision = boards.revision + 1
       WHERE boards.owner_email = excluded.owner_email
         AND boards.archived = 0
-    `).bind(board.id, owner, board.name, JSON.stringify(content), board.updatedAt)
+    `).bind(board.id, email, board.name, JSON.stringify(content), board.updatedAt)
   })
   const results = await env.OSA_DB.batch(statements)
   if (results.some((result) => result.meta.changes === 0)) {
@@ -233,9 +270,9 @@ export const onRequestPut: PagesFunction<Env, string, AccessData> = async ({ req
   return json({ ok: true })
 }
 
-/** Archives or restores one owned board without deleting its contents or shares. */
+/** Archiving is owner-only: collaborators can edit the document, not its lifecycle. */
 export const onRequestPatch: PagesFunction<Env, string, AccessData> = async ({ request, env, data }) => {
-  const owner = ownerEmail(data)
+  const owner = signedInEmail(data)
   if (!owner) return json({ error: 'Private sign-in required.' }, 403)
 
   const body = await request.json().catch(() => null) as ArchiveRequest | null

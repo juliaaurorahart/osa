@@ -24,7 +24,11 @@ try {
     restoreBoardSnapshot,
   } = await server.ssrLoadModule('/src/graph/boardSnapshot.ts')
   const { createGraphEdge } = await server.ssrLoadModule('/src/graph/graphEdge.ts')
-  const { OSA_PROPERTY, OSA_RELATION } = await server.ssrLoadModule('/src/graph/osaData.ts')
+  const {
+    OSA_PROPERTY,
+    OSA_RELATION,
+    normalizeVisualEmbedPlacement,
+  } = await server.ssrLoadModule('/src/graph/osaData.ts')
   const {
     visualDraftEmbedsForCanvas,
     visualEmbedsForCanvas,
@@ -47,6 +51,11 @@ try {
     onRequestPatch: patchSavedBoard,
     onRequestPut: putSavedBoard,
   } = await server.ssrLoadModule('/functions/api/boards.ts')
+  const {
+    onRequestDelete: removeCollaborator,
+    onRequestGet: getCollaborators,
+    onRequestPost: saveCollaborator,
+  } = await server.ssrLoadModule('/functions/api/collaborators.ts')
   const { onRequestGet: getSharedAssembly } = await server.ssrLoadModule('/functions/shared/[token].ts')
   const { onRequestPost: createSharedAssembly } = await server.ssrLoadModule('/functions/api/shares.ts')
 
@@ -129,33 +138,63 @@ try {
 
   const inserts = []
   const updates = []
+  const releasedSlugs = []
   const shareRows = []
   let shareBoardArchived = false
+  const shareBoardContent = (id) => JSON.stringify({
+    id,
+    name: id,
+    updatedAt: '2026-08-25T00:00:00.000Z',
+    snapshot: {
+      nodes: [{
+        id: 'verified-assembly',
+        data: {
+          kind: 'part',
+          properties: { [OSA_PROPERTY.role]: 'assembly' },
+        },
+      }, {
+        id: 'other-assembly',
+        data: {
+          kind: 'part',
+          properties: { [OSA_PROPERTY.role]: 'assembly' },
+        },
+      }],
+      edges: [],
+    },
+  })
+  const shareBoards = new Map([
+    ['board-1', { owner: 'julia@example.com', content: shareBoardContent('board-1') }],
+    ['board-2', { owner: 'julia@example.com', content: shareBoardContent('board-2') }],
+  ])
   const shareDatabase = {
     prepare(query) {
       if (query.includes('SELECT content, archived FROM boards')) {
         return {
-          bind: () => ({
-            first: async () => ({
-              content: JSON.stringify({
-                snapshot: {
-                  nodes: [{
-                    id: 'verified-assembly',
-                    data: {
-                      kind: 'part',
-                      properties: { [OSA_PROPERTY.role]: 'assembly' },
-                    },
-                  }, {
-                    id: 'other-assembly',
-                    data: {
-                      kind: 'part',
-                      properties: { [OSA_PROPERTY.role]: 'assembly' },
-                    },
-                  }],
-                },
-              }),
-              archived: shareBoardArchived ? 1 : 0,
-            }),
+          bind: (boardId, owner) => ({
+            first: async () => {
+              const board = shareBoards.get(boardId)
+              return board && board.owner === owner
+                ? { content: board.content, archived: boardId === 'board-1' && shareBoardArchived ? 1 : 0 }
+                : null
+            },
+          }),
+        }
+      }
+      if (query.includes('INNER JOIN boards') && query.includes('board_shares.slug = ?')) {
+        return {
+          bind: (slug) => ({
+            first: async () => {
+              const share = shareRows.find((row) => row.slug === slug)
+              const board = share && shareBoards.get(share.boardId)
+              return share && board
+                ? {
+                    token: share.token,
+                    board_id: share.boardId,
+                    assembly_id: share.assemblyId,
+                    owner_email: board.owner,
+                  }
+                : null
+            },
           }),
         }
       }
@@ -165,6 +204,18 @@ try {
             first: async () => shareRows.find((row) => (
               row.boardId === boardId && row.assemblyId === assemblyId
             )) ?? null,
+          }),
+        }
+      }
+      if (query.includes('UPDATE board_shares SET slug = NULL')) {
+        return {
+          bind: (token) => ({
+            run: async () => {
+              const row = shareRows.find((share) => share.token === token)
+              assert.ok(row, 'The old public link exists before its slug moves.')
+              row.slug = null
+              releasedSlugs.push(token)
+            },
           }),
         }
       }
@@ -200,22 +251,51 @@ try {
     },
   }
   const signedInData = { cloudflareAccess: { JWT: { payload: { email: 'julia@example.com' } } } }
+  const editorData = { cloudflareAccess: { JWT: { payload: { email: 'olivia@example.com' } } } }
+  const viewerData = { cloudflareAccess: { JWT: { payload: { email: 'viewer@example.com' } } } }
 
   // This focused in-memory D1 model exercises the real Pages Function's
-  // revision predicates. It deliberately exposes only the SQL shapes used by
-  // the current single-board cloud-sync API.
+  // revision predicates and board-member access checks. It deliberately
+  // exposes only the SQL shapes used by the current cloud-sync API.
   const revisionRows = new Map()
+  const revisionCollaborators = new Map()
+  const collaboratorRole = (boardId, email) => revisionCollaborators.get(boardId)?.get(email) ?? null
   const revisionDatabase = {
     prepare(query) {
       return {
         bind: (...values) => ({
           first: async () => {
-            assert.match(query, /SELECT content, archived, revision FROM boards/)
-            const [boardId, owner] = values
-            const row = revisionRows.get(boardId)
-            return row && row.owner === owner
-              ? { content: row.content, archived: row.archived, revision: row.revision }
-              : null
+            if (query.includes('LEFT JOIN board_collaborators')) {
+              const [email, , boardId] = values
+              const row = revisionRows.get(boardId)
+              const role = row?.owner === email ? 'owner' : collaboratorRole(boardId, email)
+              return row && role
+                ? {
+                    content: row.content,
+                    archived: row.archived,
+                    revision: row.revision,
+                    access: role,
+                  }
+                : null
+            }
+            if (query.includes('SELECT content, archived, revision FROM boards')) {
+              const [boardId, owner] = values
+              const row = revisionRows.get(boardId)
+              return row && row.owner === owner
+                ? { content: row.content, archived: row.archived, revision: row.revision }
+                : null
+            }
+            throw new Error(`Unexpected revision test lookup: ${query}`)
+          },
+          all: async () => {
+            if (query.includes('SELECT email, role FROM board_collaborators')) {
+              const [boardId] = values
+              return {
+                results: [...(revisionCollaborators.get(boardId)?.entries() ?? [])]
+                  .map(([email, role]) => ({ email, role })),
+              }
+            }
+            throw new Error(`Unexpected revision test list: ${query}`)
           },
           run: async () => {
             if (query.includes('ON CONFLICT(id) DO NOTHING')) {
@@ -232,10 +312,11 @@ try {
               return { meta: { changes: 1 } }
             }
 
-            if (query.includes('AND revision = ?')) {
-              const [name, content, updatedAt, boardId, owner, baseRevision] = values
+            if (query.includes('AND revision = ?') && query.includes('board_collaborators')) {
+              const [name, content, updatedAt, boardId, baseRevision, owner, editor] = values
               const row = revisionRows.get(boardId)
-              if (!row || row.owner !== owner || row.archived || row.revision !== baseRevision) {
+              const mayWrite = row?.owner === owner || collaboratorRole(boardId, editor) === 'editor'
+              if (!row || !mayWrite || row.archived || row.revision !== baseRevision) {
                 return { meta: { changes: 0 } }
               }
               Object.assign(row, {
@@ -244,6 +325,20 @@ try {
                 updatedAt,
                 revision: row.revision + 1,
               })
+              return { meta: { changes: 1 } }
+            }
+
+            if (query.includes('INSERT INTO board_collaborators')) {
+              const [boardId, email, role] = values
+              const collaborators = revisionCollaborators.get(boardId) ?? new Map()
+              collaborators.set(email, role)
+              revisionCollaborators.set(boardId, collaborators)
+              return { meta: { changes: 1 } }
+            }
+
+            if (query.includes('DELETE FROM board_collaborators')) {
+              const [boardId, email] = values
+              revisionCollaborators.get(boardId)?.delete(email)
               return { meta: { changes: 1 } }
             }
 
@@ -269,13 +364,13 @@ try {
     snapshot: { version: 7, nodes: [], edges: [] },
     marker,
   })
-  const putRevisionBoard = (board, baseRevision) => putSavedBoard({
+  const putRevisionBoard = (board, baseRevision, data = signedInData) => putSavedBoard({
     request: new Request('https://osa.example/api/boards', {
       method: 'PUT',
       body: JSON.stringify({ board, baseRevision }),
     }),
     env: { OSA_DB: revisionDatabase },
-    data: signedInData,
+    data,
   })
 
   const createdRevisionResponse = await putRevisionBoard(revisionBoard('created'), null)
@@ -294,14 +389,78 @@ try {
     'A matching base revision advances the saved board exactly once.',
   )
 
-  const staleRevisionResponse = await putRevisionBoard(revisionBoard('stale update'), 1)
+  const inviteEditorResponse = await saveCollaborator({
+    request: new Request('https://osa.example/api/collaborators', {
+      method: 'POST',
+      body: JSON.stringify({
+        boardId: 'revision-board',
+        email: 'olivia@example.com',
+        role: 'editor',
+      }),
+    }),
+    env: { OSA_DB: revisionDatabase },
+    data: signedInData,
+  })
+  assert.equal(inviteEditorResponse.status, 200)
+  assert.deepEqual(await inviteEditorResponse.json(), {
+    collaborator: { email: 'olivia@example.com', role: 'editor' },
+  })
+
+  const collaboratorsResponse = await getCollaborators({
+    request: new Request('https://osa.example/api/collaborators?boardId=revision-board'),
+    env: { OSA_DB: revisionDatabase },
+    data: signedInData,
+  })
+  assert.equal(collaboratorsResponse.status, 200)
+  assert.deepEqual(await collaboratorsResponse.json(), {
+    collaborators: [{ email: 'olivia@example.com', role: 'editor' }],
+  })
+
+  const editorReadResponse = await getSavedBoard({
+    request: new Request('https://osa.example/api/boards?id=revision-board'),
+    env: { OSA_DB: revisionDatabase },
+    data: editorData,
+  })
+  assert.equal(editorReadResponse.status, 200)
+  assert.equal((await editorReadResponse.json()).board.access, 'editor')
+
+  const editorWriteResponse = await putRevisionBoard(revisionBoard('editor update'), 2, editorData)
+  assert.equal(editorWriteResponse.status, 200)
+  assert.equal(
+    (await editorWriteResponse.json()).board.revision,
+    3,
+    'An invited editor can save the current revision.',
+  )
+
+  const inviteViewerResponse = await saveCollaborator({
+    request: new Request('https://osa.example/api/collaborators', {
+      method: 'POST',
+      body: JSON.stringify({
+        boardId: 'revision-board',
+        email: 'viewer@example.com',
+        role: 'viewer',
+      }),
+    }),
+    env: { OSA_DB: revisionDatabase },
+    data: signedInData,
+  })
+  assert.equal(inviteViewerResponse.status, 200)
+
+  const viewerWriteResponse = await putRevisionBoard(revisionBoard('viewer update'), 3, viewerData)
+  assert.equal(viewerWriteResponse.status, 403)
+  assert.equal(
+    (await viewerWriteResponse.json()).error,
+    'This board is shared with you for viewing only.',
+  )
+
+  const staleRevisionResponse = await putRevisionBoard(revisionBoard('stale update'), 2)
   assert.equal(staleRevisionResponse.status, 409)
   const staleRevision = await staleRevisionResponse.json()
   assert.equal(staleRevision.code, 'stale')
-  assert.equal(staleRevision.board.revision, 2)
+  assert.equal(staleRevision.board.revision, 3)
   assert.equal(
     staleRevision.board.marker,
-    'matching update',
+    'editor update',
     'A stale conflict returns the current remote board rather than the rejected draft.',
   )
 
@@ -316,11 +475,11 @@ try {
   assert.equal(archivedRevisionResponse.status, 200)
   assert.equal(
     (await archivedRevisionResponse.json()).board.revision,
-    3,
+    4,
     'Archiving advances the revision so an already-open device becomes stale.',
   )
 
-  const archivedWriteResponse = await putRevisionBoard(revisionBoard('write after archive'), 2)
+  const archivedWriteResponse = await putRevisionBoard(revisionBoard('write after archive'), 3)
   assert.equal(archivedWriteResponse.status, 409)
   assert.equal((await archivedWriteResponse.json()).code, 'archived')
 
@@ -335,13 +494,13 @@ try {
   assert.equal(restoredRevisionResponse.status, 200)
   assert.equal(
     (await restoredRevisionResponse.json()).board.revision,
-    4,
+    5,
     'Restoring also advances the revision; it cannot revive an old writer.',
   )
 
-  const staleAfterRestoreResponse = await putRevisionBoard(revisionBoard('still stale'), 2)
+  const staleAfterRestoreResponse = await putRevisionBoard(revisionBoard('still stale'), 3)
   assert.equal(staleAfterRestoreResponse.status, 409)
-  assert.equal((await staleAfterRestoreResponse.json()).board.revision, 4)
+  assert.equal((await staleAfterRestoreResponse.json()).board.revision, 5)
 
   const currentRevisionResponse = await getSavedBoard({
     request: new Request('https://osa.example/api/boards?id=revision-board'),
@@ -350,7 +509,7 @@ try {
   })
   assert.equal(currentRevisionResponse.status, 200)
   const currentRevision = await currentRevisionResponse.json()
-  assert.equal(currentRevision.board.revision, 4)
+  assert.equal(currentRevision.board.revision, 5)
   assert.equal(currentRevision.board.archived, false)
 
   const createValidShareResponse = await createSharedAssembly({
@@ -408,22 +567,92 @@ try {
   assert.equal(renamedShare.slug, 'shako-hat-instructions')
   assert.equal(updates.length, 1, 'Renaming changes one existing share record.')
 
-  const duplicateShareResponse = await createSharedAssembly({
+  const retargetShareResponse = await createSharedAssembly({
     request: new Request('https://osa.example/api/shares', {
       method: 'POST',
       body: JSON.stringify({
-        boardId: 'board-1',
-        assemblyId: 'other-assembly',
+        boardId: 'board-2',
+        assemblyId: 'verified-assembly',
         slug: 'Shako Hat Instructions',
       }),
     }),
     env: { OSA_DB: shareDatabase },
     data: signedInData,
   })
-  assert.equal(duplicateShareResponse.status, 409)
-  assert.deepEqual(await duplicateShareResponse.json(), {
-    error: 'That public link name is already in use.',
+  assert.equal(retargetShareResponse.status, 200)
+  const retargetedShare = await retargetShareResponse.json()
+  assert.equal(retargetedShare.slug, 'shako-hat-instructions')
+  assert.notEqual(
+    retargetedShare.token,
+    createdShare.token,
+    'Moving a readable slug keeps the old opaque link attached to its historical board.',
+  )
+  assert.equal(
+    shareRows.find((share) => share.token === createdShare.token)?.slug,
+    null,
+    'The previous board no longer owns the canonical friendly name.',
+  )
+  assert.equal(
+    shareRows.find((share) => share.token === retargetedShare.token)?.boardId,
+    'board-2',
+    'The familiar public link now targets the current saved board.',
+  )
+  assert.deepEqual(releasedSlugs, [createdShare.token])
+
+  const retargetedPublicResponse = await getSharedAssembly({
+    env: {
+      OSA_DB: {
+        prepare(query) {
+          assert.match(query, /board_shares\.slug = \? OR board_shares\.token = \?/)
+          return {
+            bind: (reference) => ({
+              first: async () => {
+                const share = shareRows.find((row) => row.slug === reference || row.token === reference)
+                const board = share ? shareBoards.get(share.boardId) : undefined
+                return share && board
+                  ? { content: board.content, assembly_id: share.assemblyId }
+                  : null
+              },
+            }),
+          }
+        },
+      },
+    },
+    params: { token: 'shako-hat-instructions' },
   })
+  assert.equal(retargetedPublicResponse.status, 200)
+  assert.equal(
+    (await retargetedPublicResponse.json()).board.id,
+    'board-2',
+    'The readable link resolves the current board instead of a stale copy.',
+  )
+
+  const historicalPublicResponse = await getSharedAssembly({
+    env: {
+      OSA_DB: {
+        prepare() {
+          return {
+            bind: (reference) => ({
+              first: async () => {
+                const share = shareRows.find((row) => row.token === reference)
+                const board = share ? shareBoards.get(share.boardId) : undefined
+                return share && board
+                  ? { content: board.content, assembly_id: share.assemblyId }
+                  : null
+              },
+            }),
+          }
+        },
+      },
+    },
+    params: { token: createdShare.token },
+  })
+  assert.equal(historicalPublicResponse.status, 200)
+  assert.equal(
+    (await historicalPublicResponse.json()).board.id,
+    'board-1',
+    'Existing opaque links remain valid historical snapshots.',
+  )
 
   const createBrokenShareResponse = await createSharedAssembly({
     request: new Request('https://osa.example/api/shares', {
@@ -438,7 +667,7 @@ try {
     data: signedInData,
   })
   assert.equal(createBrokenShareResponse.status, 400)
-  assert.equal(inserts.length, 1, 'A link is never minted for an Assembly absent from the saved board.')
+  assert.equal(inserts.length, 2, 'A link is never minted for an Assembly absent from the saved board.')
 
   const space = createTextNode({
     id: 'space-1',
@@ -1050,6 +1279,29 @@ try {
     'A property annotation without its property key is rejected at the board boundary.',
   )
   const visualCanvasSnapshot = createBoardSnapshot([visualCanvas], [])
+  const smallestVisualPlacement = normalizeVisualEmbedPlacement({
+    x: 12,
+    y: 18,
+    width: 1,
+    height: 1,
+    aspectRatioLocked: false,
+  })
+  assert.deepEqual(
+    smallestVisualPlacement,
+    {
+      x: 12,
+      y: 18,
+      width: 1,
+      height: 1,
+      aspectRatioLocked: false,
+    },
+    'A placed Visual can be one pixel wide and one pixel tall.',
+  )
+  assert.equal(
+    normalizeVisualEmbedPlacement({ width: 0, height: -5 }).width,
+    1,
+    'Zero-sized Visual placements still normalize to a drawable minimum.',
+  )
   const restoredVisualCanvasSnapshot = parseBoardSnapshot(
     JSON.parse(JSON.stringify(visualCanvasSnapshot)),
   )

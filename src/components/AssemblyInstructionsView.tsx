@@ -3,6 +3,7 @@ import type { GraphEdge } from '../graph/graphEdge'
 import {
   appearanceAccentColor,
   isPartLike,
+  OSA_PROPERTY,
   OSA_RELATION,
   osaRole,
 } from '../graph/osaData'
@@ -16,6 +17,7 @@ import {
   nodeTitle,
   operationsForAssembly,
   stepsForOperation,
+  visualHasInstructionContent,
 } from './assemblyProjection'
 import './AssemblyView.css'
 
@@ -224,7 +226,15 @@ export function AssemblyInstructionsView({
           const steps = stepsForOperation(operation.id, nodes, edges)
           const stepCanvases = steps.flatMap((step) => {
             const canvas = canvasOwnedByStep(step.id, nodes, edges)
-            return canvas ? [{ step, canvas }] : []
+            // Assembly Instructions is a deliberate publication, not an
+            // authoring dump. A real visual owned by a Step is shown by
+            // default; blank/unfinished canvases never create a page, and an
+            // author can explicitly hide a particular Step visual in Assembly.
+            return canvas
+              && canvas.data.properties[OSA_PROPERTY.visualIncludeInInstructions] !== 'false'
+              && visualHasInstructionContent(canvas, nodes, edges)
+              ? [{ step, canvas }]
+              : []
           })
 
           return (
@@ -251,12 +261,18 @@ export function AssemblyInstructionsView({
                     <ObjectNames objects={tools} />
                   </div>
 
-                  <section className="assembly-instructions-view__steps" aria-label={`${nodeTitle(operation)} steps`}>
-                    <strong>steps</strong>
-                    {operation.data.text.trim() ? (
-                      <p className="assembly-instructions-view__operation-notes">{operation.data.text}</p>
-                    ) : null}
-                    {steps.length ? (
+                  {steps.length || operation.data.text.trim() ? (
+                    <section className="assembly-instructions-view__steps" aria-label={`${nodeTitle(operation)} steps`}>
+                      <strong>steps</strong>
+                      {/* Once individual Step objects exist, they are the
+                          instruction. Card-level draft text often contains
+                          an old summary such as "4 steps", so it stays out
+                          of the team-facing document instead of competing
+                          with the actual ordered instructions. */}
+                      {operation.data.text.trim() && !steps.length ? (
+                        <p className="assembly-instructions-view__operation-notes">{operation.data.text}</p>
+                      ) : null}
+                      {steps.length ? (
                       <ol>
                         {steps.map((step) => (
                           <li key={step.id}>
@@ -265,17 +281,13 @@ export function AssemblyInstructionsView({
                           </li>
                         ))}
                       </ol>
-                    ) : !operation.data.text.trim() ? (
-                      <p className="assembly-instructions__empty">No steps supplied.</p>
-                    ) : null}
-                  </section>
+                      ) : null}
+                    </section>
+                  ) : null}
                 </div>
 
                 {stepCanvases.length ? (
-                  <section className="assembly-card__view" aria-label={`${nodeTitle(operation)} step canvases`}>
-                    <header className="assembly-card__view-header">
-                      <h2>step canvases</h2>
-                    </header>
+                  <section className="assembly-card__view assembly-instructions-view__step-visuals" aria-label={`${nodeTitle(operation)} step visuals`}>
                     <div className="assembly-instructions-view__canvas-list">
                       {stepCanvases.map(({ step, canvas }, index) => (
                         <figure className="assembly-instructions-view__step-canvas" key={canvas.id}>

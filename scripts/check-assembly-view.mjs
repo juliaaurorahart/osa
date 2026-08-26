@@ -42,6 +42,7 @@ try {
   const focusedAssemblyUiState = {
     ...createAssemblyViewUiState(),
     focusedCardId: connectorBoxDrill.id,
+    openCardId: connectorBoxDrill.id,
   }
   const connectorBoxDrilled = plan.nodes.find((node) => node.data.name === 'Connector Box Drilled')
   assert.ok(connectorBoxDrilled, 'expected Connector Box Drilled output object')
@@ -230,6 +231,7 @@ try {
     onSelectAssembly: noop,
     onCreateAssembly: () => '',
     onCreateOperation: () => '',
+    onReorderOperation: noop,
     onCreatePart: () => '',
     onCreateExpense: () => '',
     onCreateTool: () => '',
@@ -259,13 +261,11 @@ try {
   const markup = renderAssembly(planWithObjectVisual.edges)
 
   assert.equal((markup.match(/assembly-operation-card/g) ?? []).length, 6)
-  // Every card preview is a live SVG composition now: the stored source
-  // image is underneath the Visual's durable shapes/text/pen layers. It is
-  // intentionally not a detached <img> thumbnail anymore.
-  // The fifth preview is deliberately blank: it is still a real, editable
-  // Visual before a person gives it a background image.
-  assert.equal((markup.match(/assembly-card__visual-preview/g) ?? []).length, 5)
-  assert.equal((markup.match(/<image /g) ?? []).length, 4)
+  // The opened card exposes its live SVG canvases; other cards stay compact
+  // until the author chooses to open them. One preview is deliberately blank:
+  // it is still a real, editable Visual before a person gives it an image.
+  assert.equal((markup.match(/assembly-card__visual-preview/g) ?? []).length, 3)
+  assert.equal((markup.match(/<image /g) ?? []).length, 2)
   assert.match(markup, /data-sketch-element-id="assembly-view-check-canvas-label"/)
   assert.match(markup, /assembly-index-card/)
   for (const label of ['criteria', 'in', 'tools', 'steps']) {
@@ -281,6 +281,11 @@ try {
   assert.match(markup, />visuals</)
   assert.match(markup, /aria-label="Connector Box Drilled — Assembly Picture name"/)
   assert.match(markup, /aria-label="Connector Box Drilled — Assembly Picture owner"/)
+  const indexMarkup = renderAssembly(planWithObjectVisual.edges, {
+    ...createAssemblyViewUiState(),
+    openCardId: 'assembly-index',
+  })
+  assert.match(indexMarkup, /aria-label="move Connector Box Drill card down"/)
   assert.match(markup, /aria-label="move Connector Box Drilled — Assembly Picture down"/)
   assert.doesNotMatch(markup, /Remove canvas from this card/)
   assert.match(markup, /\+ canvas/)
@@ -404,6 +409,10 @@ try {
     data: {
       ...connectorBoxBlankVisual.data,
       name: 'Drill side hole',
+      properties: {
+        ...connectorBoxBlankVisual.data.properties,
+        [OSA_PROPERTY.visualIncludeInInstructions]: 'true',
+      },
     },
   }
   const instructionNodes = [...nodesWithCanvas, instructionStep, instructionCanvas]
@@ -435,14 +444,78 @@ try {
   assert.match(instructionsMarkup, /Connector Box Drill/)
   assert.match(instructionsMarkup, /Drill the 5\/16 in side hole/)
   assert.match(instructionsMarkup, /Use the 5\/16 in bit on the marked side\./)
-  assert.equal((instructionsMarkup.match(/<h2>step canvases<\/h2>/g) ?? []).length, 1)
+  assert.doesNotMatch(
+    instructionsMarkup,
+    /step canvases/,
+    'The team-facing sheet uses no editor-specific canvas heading.',
+  )
   assert.match(
     instructionsMarkup,
     /aria-label="Open Drill the 5\/16 in side hole canvas"/,
     'A recipient can open a specific step canvas from the read-only instructions.',
   )
   assert.doesNotMatch(instructionsMarkup, /new assembly|add card|semantic information|source slide/)
+  assert.doesNotMatch(instructionsMarkup, /move Connector Box Drill card down/)
   assert.doesNotMatch(instructionsMarkup, /back to Assembly/)
+
+  // The compact authoring card uses that same Step -> Canvas projection.
+  // It keeps the canvas visible for orientation, while all of the broader
+  // source/provenance and editor controls remain inside the opened card.
+  const compactAssemblyMarkup = renderAssembly(
+    instructionEdges,
+    createAssemblyViewUiState(),
+    instructionNodes,
+  )
+  assert.equal((compactAssemblyMarkup.match(/assembly-card__summary-canvas-preview/g) ?? []).length, 1)
+  assert.match(compactAssemblyMarkup, /Drill the 5\/16 in side hole/)
+  assert.match(compactAssemblyMarkup, /Drill the 5\/16 in side hole/)
+  assert.doesNotMatch(compactAssemblyMarkup, /Connector Box Drilled — Assembly Picture owner/)
+
+  // Card order is durable data on the operation. Both the authoring board and
+  // the team-facing instructions project that one order identically.
+  const reorderedOperationNodes = planWithObjectVisual.nodes.map((node) => {
+    if (node.id === connectorBoxDrill.id) {
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          properties: { ...node.data.properties, [OSA_PROPERTY.order]: '2' },
+        },
+      }
+    }
+    if (node.data.name === 'Shako Wrap Punch Holes') {
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          properties: { ...node.data.properties, [OSA_PROPERTY.order]: '1' },
+        },
+      }
+    }
+    return node
+  })
+  const reorderedOperations = reorderedOperationNodes.filter((node) => node.data.kind === 'action')
+  const reorderedAssemblyMarkup = renderAssembly(
+    planWithObjectVisual.edges,
+    focusedAssemblyUiState,
+    reorderedOperationNodes,
+  )
+  assert.ok(
+    reorderedAssemblyMarkup.indexOf('aria-label="instruction card 1: Shako Wrap Punch Holes"')
+      < reorderedAssemblyMarkup.indexOf('aria-label="instruction card 2: Connector Box Drill"'),
+    'The Assembly board projects a changed durable card order.',
+  )
+  const reorderedInstructionsMarkup = renderToStaticMarkup(createElement(AssemblyInstructionsView, {
+    assembly: reorderedOperationNodes.find((node) => node.id === plan.assemblyNodeId),
+    nodes: reorderedOperationNodes,
+    operations: reorderedOperations,
+    edges: planWithObjectVisual.edges,
+  }))
+  assert.ok(
+    reorderedInstructionsMarkup.indexOf('aria-label="instruction 1: Shako Wrap Punch Holes"')
+      < reorderedInstructionsMarkup.indexOf('aria-label="instruction 2: Connector Box Drill"'),
+    'The shared instruction view projects that same card order.',
+  )
 
   const stepCanvasViewerMarkup = renderToStaticMarkup(createElement(StepCanvasViewer, {
     step: instructionStep,
@@ -545,14 +618,15 @@ try {
   assert.match(connectorVisualOwnerOptions, /Connector Box Drilled/)
   assert.doesNotMatch(connectorVisualOwnerOptions, /DC-DC Converter/)
 
-  // Canvas creation remains visible on an unfocused card: people should not
-  // need to discover the card-focus interaction before they can continue
-  // building a visual in their assembly view.
+  // The compact Assembly document hides mutation controls until a person
+  // deliberately opens the card; its summaries still show the core facts.
   const unfocusedMarkup = renderAssembly(planWithObjectVisual.edges, {
     ...createAssemblyViewUiState(),
     focusedCardId: 'assembly-index',
   })
-  assert.match(unfocusedMarkup, /\+ canvas/)
+  assert.match(unfocusedMarkup, /Open Connector Box Drill details/)
+  assert.match(unfocusedMarkup, /assembly-card__summary/)
+  assert.doesNotMatch(unfocusedMarkup, /\+ canvas/)
 
   // A photo attached directly to a Part remains a photo when a card chooses
   // to show it. It is not silently promoted to an editable canvas merely

@@ -137,11 +137,17 @@ import {
   createAssemblyShare,
   fetchArchivedBoards,
   fetchBoard,
+  fetchBoardCollaborators,
   fetchBoards,
   fetchSharedAssembly,
   restoreBoard,
+  removeBoardCollaborator,
   saveBoard,
+  saveBoardCollaborator,
   SharedAssemblyUnavailableError,
+  type BoardAccess,
+  type BoardCollaborator,
+  type CollaboratorRole,
   type SavedBoard,
 } from './graph/boardStorage'
 import {
@@ -586,6 +592,11 @@ function readLocalDraft(): LocalDraft | null {
         && candidate.revision > 0
         ? candidate.revision
         : undefined,
+      access: candidate.access === 'owner'
+        || candidate.access === 'editor'
+        || candidate.access === 'viewer'
+        ? candidate.access
+        : undefined,
       cloudDirty: candidate.cloudDirty === true,
     } : null
   } catch {
@@ -740,6 +751,13 @@ function Flow() {
   const [cloudRevision, setCloudRevision] = useState<number | null>(() => startupDraft?.revision ?? null)
   const cloudRevisionRef = useRef<number | null>(cloudRevision)
   cloudRevisionRef.current = cloudRevision
+  // The database returns this role with every saved board. A fresh local
+  // draft has no remote role yet, so it stays editable until its first save.
+  const [boardAccess, setBoardAccess] = useState<BoardAccess>(() => startupDraft?.access ?? 'owner')
+  const boardAccessRef = useRef<BoardAccess>(boardAccess)
+  boardAccessRef.current = boardAccess
+  const [boardCollaborators, setBoardCollaborators] = useState<BoardCollaborator[]>([])
+  const [collaborationStatus, setCollaborationStatus] = useState('')
   const [cloudDirty, setCloudDirty] = useState(() => startupDraft?.cloudDirty ?? false)
   const cloudDirtyRef = useRef(cloudDirty)
   cloudDirtyRef.current = cloudDirty
@@ -870,6 +888,7 @@ function Flow() {
           updatedAt: new Date().toISOString(),
           snapshot: createBoardSnapshot(nodes, edges),
           ...(cloudRevision === null ? {} : { revision: cloudRevision }),
+          ...(cloudRevision === null ? {} : { access: boardAccess }),
           cloudDirty,
         })
         setDraftStatus(`Draft saved ${new Date().toLocaleTimeString([], {
@@ -882,7 +901,7 @@ function Flow() {
       }
     }, 900)
     return () => window.clearTimeout(saveTimer)
-  }, [boardId, boardName, cloudDirty, cloudRevision, edges, isSharedAssembly, nodes])
+  }, [boardAccess, boardId, boardName, cloudDirty, cloudRevision, edges, isSharedAssembly, nodes])
 
   // The ordinary autosave is debounced so drawing stays responsive. When the
   // page is about to disappear, however, save the most recent graph
@@ -899,6 +918,7 @@ function Flow() {
           updatedAt: new Date().toISOString(),
           snapshot: createBoardSnapshot(nodes, edges),
           ...(cloudRevisionRef.current === null ? {} : { revision: cloudRevisionRef.current }),
+          ...(cloudRevisionRef.current === null ? {} : { access: boardAccessRef.current }),
           cloudDirty: cloudDirtyRef.current,
         })
       } catch {
@@ -3436,6 +3456,9 @@ function Flow() {
     const revision = savedBoard.revision ?? null
     cloudRevisionRef.current = revision
     setCloudRevision(revision)
+    const access = savedBoard.access ?? 'owner'
+    boardAccessRef.current = access
+    setBoardAccess(access)
     cloudDirtyRef.current = false
     setCloudDirty(false)
     setCloudConflictBoard(null)
@@ -3447,6 +3470,48 @@ function Flow() {
     setSelectedBoardId(savedBoard.id)
     setShowingArchivedBoards(false)
   }, [applyBoardSnapshot])
+
+  // A collaborator opening OSA in a fresh browser should land on the newest
+  // board they can access. A recovered local draft, a named/imported board,
+  // or any local edit always wins; this never discards work in progress.
+  const openedInitialCloudBoard = useRef(false)
+  useEffect(() => {
+    if (
+      openedInitialCloudBoard.current
+      || isSharedAssembly
+      || cloudDirtyRef.current
+      || !savedBoards.length
+    ) return
+
+    const untouchedInitialDocument = boardDocumentFingerprint(
+      boardName,
+      createBoardSnapshot(nodes, edges),
+    ) === boardDocumentFingerprint(
+      'Untitled board',
+      createBoardSnapshot(initialNodes, initialEdges),
+    )
+
+    // Local recovery wins only when it contains work that has not reached
+    // D1. An untouched startup draft is automatically written by the normal
+    // local-draft timer, so it must not prevent a later sign-in from opening
+    // the newest cloud board.
+    const recoveredLocalWork = startupDraft && (
+      startupDraft.cloudDirty
+      || (startupDraft.revision === undefined && !untouchedInitialDocument)
+    )
+    if (recoveredLocalWork) return
+
+    // A clean cloud-backed draft represents the last board this person was
+    // using. Load its newest server version if it is still accessible; a
+    // default local draft instead opens the newest available board.
+    const savedStartupBoard = startupDraft?.revision
+      ? savedBoards.find((board) => board.id === startupDraft.id)
+      : undefined
+    if (!untouchedInitialDocument && !savedStartupBoard) return
+
+    openedInitialCloudBoard.current = true
+    applyCloudBoard(savedStartupBoard ?? savedBoards[0], 'Opened latest saved board')
+  }, [applyCloudBoard, boardName, edges, isSharedAssembly, nodes, savedBoards, startupDraft])
 
   /**
    * A recipient's link restores an assembly snapshot into the normal graph,
@@ -3490,6 +3555,12 @@ function Flow() {
   const saveCurrentBoard = useCallback(async (
     mode: 'manual' | 'auto' = 'manual',
   ): Promise<SavedBoard | null> => {
+    if (boardAccess === 'viewer') {
+      const message = 'This board is shared with you for viewing only.'
+      setCloudSyncStatus(message)
+      if (mode === 'manual') setStorageStatus(message)
+      return null
+    }
     const id = latestBoardId.current
     const name = latestBoardName.current.trim()
     if (!name) {
@@ -3543,6 +3614,9 @@ function Flow() {
       if (latestBoardId.current === savedBoard.id) {
         cloudRevisionRef.current = savedBoard.revision ?? null
         setCloudRevision(savedBoard.revision ?? null)
+        const access = savedBoard.access ?? 'owner'
+        boardAccessRef.current = access
+        setBoardAccess(access)
         setSelectedBoardId(savedBoard.id)
         setShowingArchivedBoards(false)
         setBoardName(savedBoard.name)
@@ -3596,11 +3670,81 @@ function Flow() {
       cloudSaveInFlight.current = false
       setCloudSaveCycle((current) => current + 1)
     }
-  }, [archivedBoards, savedBoards])
+  }, [archivedBoards, boardAccess, savedBoards])
 
   const saveBoardToDatabase = useCallback(async () => {
     await saveCurrentBoard('manual')
   }, [saveCurrentBoard])
+
+  /** Loads the small invitation list only for the owner of this saved board. */
+  const refreshBoardCollaborators = useCallback(async () => {
+    const id = latestBoardId.current
+    if (cloudRevisionRef.current === null || boardAccess !== 'owner') {
+      setBoardCollaborators([])
+      return
+    }
+    try {
+      const collaborators = await fetchBoardCollaborators(id)
+      if (latestBoardId.current === id) setBoardCollaborators(collaborators)
+    } catch (error) {
+      if (error instanceof BoardAccessError) setNeedsSignIn(true)
+      if (latestBoardId.current === id) {
+        setCollaborationStatus(error instanceof Error ? error.message : 'Unable to load people with access.')
+      }
+    }
+  }, [boardAccess])
+
+  useEffect(() => {
+    if (isSharedAssembly || cloudRevision === null || boardAccess !== 'owner') {
+      setBoardCollaborators([])
+      return
+    }
+    void refreshBoardCollaborators()
+  }, [boardAccess, boardId, cloudRevision, isSharedAssembly, refreshBoardCollaborators])
+
+  /** Owner-only invitation action used by the compact Assembly people panel. */
+  const addBoardCollaborator = useCallback(async (email: string, role: CollaboratorRole) => {
+    if (cloudRevisionRef.current === null) {
+      setCollaborationStatus('Save this board before adding people.')
+      return
+    }
+    if (boardAccess !== 'owner') {
+      setCollaborationStatus('Only the board owner can manage people.')
+      return
+    }
+    const id = latestBoardId.current
+    setCollaborationStatus('Adding access…')
+    try {
+      const collaborator = await saveBoardCollaborator(id, email, role)
+      if (latestBoardId.current !== id) return
+      setBoardCollaborators((current) => [
+        collaborator,
+        ...current.filter((candidate) => candidate.email !== collaborator.email),
+      ].sort((left, right) => left.email.localeCompare(right.email)))
+      setCollaborationStatus(`${collaborator.email} can ${collaborator.role === 'editor' ? 'edit' : 'view'} this board.`)
+    } catch (error) {
+      if (error instanceof BoardAccessError) setNeedsSignIn(true)
+      setCollaborationStatus(error instanceof Error ? error.message : 'Unable to add access.')
+    }
+  }, [boardAccess])
+
+  const removeBoardCollaboratorAccess = useCallback(async (email: string) => {
+    if (cloudRevisionRef.current === null || boardAccess !== 'owner') {
+      setCollaborationStatus('Only the board owner can manage people.')
+      return
+    }
+    const id = latestBoardId.current
+    setCollaborationStatus('Removing access…')
+    try {
+      await removeBoardCollaborator(id, email)
+      if (latestBoardId.current !== id) return
+      setBoardCollaborators((current) => current.filter((candidate) => candidate.email !== email))
+      setCollaborationStatus(`${email} no longer has access to this board.`)
+    } catch (error) {
+      if (error instanceof BoardAccessError) setNeedsSignIn(true)
+      setCollaborationStatus(error instanceof Error ? error.message : 'Unable to remove access.')
+    }
+  }, [boardAccess])
 
   /** Moves the board currently open for editing into the recoverable archive. */
   const archiveCurrentBoard = useCallback(async () => {
@@ -3755,6 +3899,9 @@ function Flow() {
           setBoardName(nextName)
           cloudRevisionRef.current = savedCopy.revision ?? null
           setCloudRevision(savedCopy.revision ?? null)
+          const access = savedCopy.access ?? 'owner'
+          boardAccessRef.current = access
+          setBoardAccess(access)
           cloudDirtyRef.current = true
           setCloudDirty(true)
           setCloudConflictBoard(null)
@@ -3819,6 +3966,14 @@ function Flow() {
     const revision = cloudRevisionRef.current
     const id = latestBoardId.current
     if (isSharedAssembly || revision === null || cloudConflictRef.current || cloudSaveInFlight.current) return
+    // Take a synchronous snapshot before awaiting the network. An edit can
+    // land while this request is in flight; comparing again below prevents a
+    // clean remote response from overwriting that edit before React's dirty
+    // effect has had a chance to run.
+    const documentAtRequest = boardDocumentFingerprint(
+      latestBoardName.current,
+      createBoardSnapshot(latestNodes.current, latestEdges.current),
+    )
 
     try {
       const remoteBoard = await fetchBoard(id)
@@ -3829,6 +3984,21 @@ function Flow() {
         setCloudSyncStatus('Cloud board is unavailable')
         return
       }
+
+      // Access is data too. A board owner can change someone from editor to
+      // viewer without touching the graph, so apply that role even when the
+      // content revision did not change.
+      const remoteAccess = remoteBoard.access ?? 'owner'
+      if (remoteAccess !== boardAccessRef.current) {
+        boardAccessRef.current = remoteAccess
+        setBoardAccess(remoteAccess)
+        if (remoteAccess !== 'owner') setBoardCollaborators([])
+      }
+      setSavedBoards((currentBoards) => [
+        remoteBoard,
+        ...currentBoards.filter((board) => board.id !== remoteBoard.id),
+      ])
+
       if (remoteBoard.archived) {
         setSavedBoards((currentBoards) => currentBoards.filter((board) => board.id !== remoteBoard.id))
         setArchivedBoards((currentBoards) => [
@@ -3850,7 +4020,19 @@ function Flow() {
 
       // A clean viewer follows the latest cloud board automatically. An editor
       // with unsaved work keeps that work and gets an explicit choice instead.
-      if (cloudDirtyRef.current) {
+      const currentDocument = boardDocumentFingerprint(
+        latestBoardName.current,
+        createBoardSnapshot(latestNodes.current, latestEdges.current),
+      )
+      const changedWhileFetching = currentDocument !== documentAtRequest
+      const differsFromCloudBaseline = cloudBaselineRef.current !== null
+        && currentDocument !== cloudBaselineRef.current
+      if (differsFromCloudBaseline && !cloudDirtyRef.current) {
+        cloudDirtyRef.current = true
+        setCloudDirty(true)
+        setCloudSyncStatus('Saved locally')
+      }
+      if (cloudDirtyRef.current || changedWhileFetching || differsFromCloudBaseline) {
         setCloudConflictBoard(remoteBoard)
         setCloudSyncStatus('Changed elsewhere')
         return
@@ -3948,6 +4130,10 @@ function Flow() {
       cloudBaselineRef.current = null
       cloudRevisionRef.current = null
       setCloudRevision(null)
+      boardAccessRef.current = 'owner'
+      setBoardAccess('owner')
+      setBoardCollaborators([])
+      setCollaborationStatus('')
       cloudDirtyRef.current = false
       setCloudDirty(false)
       setCloudConflictBoard(null)
@@ -4662,7 +4848,14 @@ function Flow() {
               onPropertyChange={onPropertyChange}
               onSketchChange={onSketchChange}
               onOpenNode={openNodeInSpace}
-              onShare={() => void createAssemblyShareLink()}
+              readOnly={boardAccess === 'viewer'}
+              onSaveBoard={() => void saveBoardToDatabase()}
+              boardAccess={boardAccess}
+              collaborators={boardCollaborators}
+              onAddCollaborator={(email, role) => void addBoardCollaborator(email, role)}
+              onRemoveCollaborator={(email) => void removeBoardCollaboratorAccess(email)}
+              collaborationStatus={collaborationStatus}
+              onShare={boardAccess === 'owner' ? () => void createAssemblyShareLink() : undefined}
               shareSlug={shareSlug}
               onShareSlugChange={setShareSlug}
               onPreviewInstructions={() => setAssemblyInstructionsPreview(true)}

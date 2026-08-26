@@ -1,5 +1,6 @@
 import {
   useMemo,
+  useState,
   type CSSProperties,
   type Dispatch,
   type KeyboardEvent,
@@ -34,6 +35,7 @@ import {
   nodeTitle,
   operationsForAssembly,
   stepsForOperation,
+  visualHasInstructionContent,
 } from './assemblyProjection'
 import { VisualCanvasEditor, VisualCanvasPreview } from './VisualCanvas'
 import './AssemblyView.css'
@@ -165,6 +167,15 @@ type AssemblyViewProps = {
   shareUrl?: string | null
   /** Opens OSA's bundled Shako Light Wrap starter board. */
   onLoadShakoStarter?: () => void
+  /** Saves the current durable board before another device opens it. */
+  onSaveBoard?: () => void
+  /** Server-derived role; viewers may inspect this Assembly but cannot edit it. */
+  boardAccess?: 'owner' | 'editor' | 'viewer'
+  /** The owner-managed people explicitly invited to this saved board. */
+  collaborators?: Array<{ email: string; role: 'editor' | 'viewer' }>
+  onAddCollaborator?: (email: string, role: 'editor' | 'viewer') => void
+  onRemoveCollaborator?: (email: string) => void
+  collaborationStatus?: string
 }
 
 /** An object owns its reusable visual; an instruction only links to it. */
@@ -466,15 +477,34 @@ export function AssemblyView({
   shareStatus,
   shareUrl,
   onLoadShakoStarter,
+  onSaveBoard,
+  boardAccess = 'owner',
+  collaborators = [],
+  onAddCollaborator,
+  onRemoveCollaborator,
+  collaborationStatus,
 }: AssemblyViewProps) {
   const selectedAssembly = assemblies.find((assembly) => assembly.id === selectedAssemblyId)
     ?? assemblies[0]
+  const [peopleOpen, setPeopleOpen] = useState(false)
+  const [collaboratorEmail, setCollaboratorEmail] = useState('')
+  const [collaboratorRole, setCollaboratorRole] = useState<'editor' | 'viewer'>('editor')
   // Every card and its open canvas resolve annotation references from the
   // canonical project graph rather than from just that card's local objects.
   const annotationTargets = useMemo(() => annotationTargetsForNodes(nodes), [nodes])
   const assemblyOperations = useMemo(() => selectedAssembly
     ? operationsForAssembly(selectedAssembly.id, operations, edges)
     : [], [edges, operations, selectedAssembly])
+  // The Assembly card is the overview of the actual instruction sequence.
+  // Keep its step list derived from the same Step objects as each card rather
+  // than maintaining a second hand-written summary.
+  const assemblyCardSteps = useMemo(() => assemblyOperations.flatMap((operation) => (
+    stepsForOperation(operation.id, nodes, edges).map((step, index) => ({
+      operation,
+      step,
+      index,
+    }))
+  )), [assemblyOperations, edges, nodes])
   const assemblyParts = useMemo(() => selectedAssembly
     ? connectedTargets(
       selectedAssembly.id,
@@ -641,6 +671,14 @@ export function AssemblyView({
     openCard(INDEX_CARD_ID)
   }
 
+  const canManagePeople = !readOnly && boardAccess === 'owner' && onAddCollaborator !== undefined
+  const addCollaborator = () => {
+    const email = collaboratorEmail.trim()
+    if (!email || !onAddCollaborator) return
+    onAddCollaborator(email, collaboratorRole)
+    setCollaboratorEmail('')
+  }
+
   if (!selectedAssembly) {
     return (
       <section className="work-view assembly-view" aria-labelledby="assembly-view-title">
@@ -717,12 +755,25 @@ export function AssemblyView({
                 </button>
               ) : null}
               <button className="text-action" type="button" onClick={addCard}>add card</button>
+              {onSaveBoard ? (
+                <button className="text-action" type="button" onClick={onSaveBoard}>save</button>
+              ) : null}
+              {canManagePeople ? (
+                <button
+                  className="text-action"
+                  type="button"
+                  aria-expanded={peopleOpen}
+                  onClick={() => setPeopleOpen((isOpen) => !isOpen)}
+                >
+                  people
+                </button>
+              ) : null}
               {onPreviewInstructions ? (
                 <button className="text-action" type="button" onClick={onPreviewInstructions}>
                   preview instructions
                 </button>
               ) : null}
-              {onShare ? (
+              {onShare && boardAccess === 'owner' ? (
                 <>
                   <input
                     className="assembly-view__share-slug"
@@ -767,6 +818,55 @@ export function AssemblyView({
             />
           ) : null}
         </div>
+      ) : null}
+
+      {peopleOpen && canManagePeople ? (
+        <section className="assembly-view__people" aria-label="People with board access">
+          <strong>people</strong>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault()
+              addCollaborator()
+            }}
+          >
+            <input
+              aria-label="Email to add to this board"
+              type="email"
+              placeholder="email@example.com"
+              value={collaboratorEmail}
+              onChange={(event) => setCollaboratorEmail(event.target.value)}
+            />
+            <select
+              aria-label="Board access role"
+              value={collaboratorRole}
+              onChange={(event) => setCollaboratorRole(event.target.value as 'editor' | 'viewer')}
+            >
+              <option value="editor">can edit</option>
+              <option value="viewer">can view</option>
+            </select>
+            <button className="text-action" type="submit" disabled={!collaboratorEmail.trim()}>add</button>
+          </form>
+          {collaborators.length ? (
+            <ul>
+              {collaborators.map((collaborator) => (
+                <li key={collaborator.email}>
+                  <span>{collaborator.email}</span>
+                  <small>{collaborator.role === 'editor' ? 'can edit' : 'can view'}</small>
+                  {onRemoveCollaborator ? (
+                    <button
+                      className="text-action"
+                      type="button"
+                      onClick={() => onRemoveCollaborator(collaborator.email)}
+                    >
+                      remove
+                    </button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : <p>no one added yet.</p>}
+          {collaborationStatus ? <p role="status">{collaborationStatus}</p> : null}
+        </section>
       ) : null}
 
       <div
@@ -942,6 +1042,20 @@ export function AssemblyView({
               }}
             />
           </div>
+          {assemblyCardSteps.length ? (
+            <section className="assembly-index-card__steps" aria-label="instruction steps">
+              <strong>steps</strong>
+              <ol>
+                {assemblyCardSteps.map(({ operation, step, index }) => (
+                  <li key={step.id}>
+                    <span>{nodeTitle(operation)} · Step {index + 1}</span>
+                    <strong>{nodeTitle(step)}</strong>
+                    {step.data.text.trim() ? <p>{step.data.text}</p> : null}
+                  </li>
+                ))}
+              </ol>
+            </section>
+          ) : null}
           {assemblyParts.length ? (
             <section className="assembly-index-card__objects" aria-label="parts and materials in this assembly">
               <strong>parts &amp; subassemblies</strong>
@@ -1135,17 +1249,13 @@ export function AssemblyView({
               aria-expanded={false}
               onClick={() => openCard(INDEX_CARD_ID)}
             >
-              <span className="assembly-card__summary-kicker">assembly</span>
               <strong className="assembly-card__summary-title">{nodeTitle(selectedAssembly)}</strong>
-              <span className="assembly-card__summary-meta">
-                {assemblyOperations.length
-                  ? `${assemblyOperations.length} ${assemblyOperations.length === 1 ? 'card' : 'cards'}`
-                  : 'no cards yet'}
-                {assemblyParts.length ? ` · ${assemblyParts.length} ${assemblyParts.length === 1 ? 'part' : 'parts'}` : ''}
-                {assemblyExpenses.length ? ` · ${assemblyExpenses.length} ${assemblyExpenses.length === 1 ? 'expense' : 'expenses'}` : ''}
-              </span>
-              {selectedAssembly.data.text.trim() ? (
-                <span className="assembly-card__summary-notes">{selectedAssembly.data.text}</span>
+              {assemblyOperations.length ? (
+                <ol className="assembly-index-card__summary-index" aria-label="instruction cards">
+                  {assemblyOperations.map((operation) => (
+                    <li key={operation.id}>{nodeTitle(operation)}</li>
+                  ))}
+                </ol>
               ) : null}
             </button>
           )}
@@ -1168,7 +1278,15 @@ export function AssemblyView({
           // hidden until the card itself is opened.
           const stepCanvases = steps.flatMap((step) => {
             const canvas = canvasOwnedByStep(step.id, nodes, edges)
-            return canvas ? [{ step, canvas }] : []
+            // A team-facing instruction is intentionally opt-in. Authoring
+            // canvases, source slides, and empty work surfaces stay in the
+            // Assembly workbench until the author chooses to publish a
+            // finished, non-empty Step canvas.
+                return canvas
+                  && canvas.data.properties[OSA_PROPERTY.visualIncludeInInstructions] !== 'false'
+              && visualHasInstructionContent(canvas, nodes, edges)
+              ? [{ step, canvas }]
+              : []
           })
           // Older OSA boards used one undirected "operation item" relation.
           // Treat those as inputs so opening an existing board does not make
@@ -1589,6 +1707,9 @@ export function AssemblyView({
                       <ol style={{ display: 'grid', gap: 8, margin: 0, paddingLeft: '1.35em' }}>
                         {steps.map((step, stepIndex) => {
                           const stepCanvas = canvasOwnedByStep(step.id, nodes, edges)
+                      const includeStepCanvas = stepCanvas?.data.properties[
+                        OSA_PROPERTY.visualIncludeInInstructions
+                      ] !== 'false'
                           return (
                             <li key={step.id} style={{ display: 'grid', gap: 4, minWidth: 0 }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
@@ -1645,6 +1766,24 @@ export function AssemblyView({
                                   >
                                     {stepCanvas ? 'canvas' : '+ canvas'}
                                   </button>
+                                ) : null}
+                                {stepCanvas && !readOnly && onPropertyChange ? (
+                                  <label
+                                    style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: '0.72rem', whiteSpace: 'nowrap' }}
+                                    onClick={(event) => event.stopPropagation()}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      aria-label={`Show ${nodeTitle(step)} canvas in Assembly Instructions`}
+                                      checked={includeStepCanvas}
+                                      onChange={(event) => onPropertyChange(
+                                        stepCanvas.id,
+                                        OSA_PROPERTY.visualIncludeInInstructions,
+                                        event.currentTarget.checked ? 'true' : 'false',
+                                      )}
+                                    />
+                                    show
+                                  </label>
                                 ) : null}
                               </div>
                               <textarea

@@ -162,9 +162,10 @@ function createAssemblyScopedBoard(board: unknown, assemblyId: string): JsonReco
     }
   }
 
-  // A shared instruction needs the Visual owned by each included Step, plus
-  // only the Visuals embedded inside those step canvases. This walks that
-  // small dependency tree without exposing every visual attached to a Part.
+  // A shared instruction needs only the explicitly published Visual owned by
+  // each included Step, plus the Visuals embedded inside that canvas. This
+  // keeps source slides, references, empty draft surfaces, and unpublished
+  // design work out of the public packet entirely.
   while (pendingNodeIds.length) {
     const includedNodeId = pendingNodeIds.shift()!
     const includedNode = nodesById.get(includedNodeId)
@@ -174,7 +175,10 @@ function createAssemblyScopedBoard(board: unknown, assemblyId: string): JsonReco
     if (role === 'step') {
       for (const edge of edges) {
         if (edge.source === includedNodeId && edgeRelation(edge) === 'object-visual') {
-          includeNode(edge.target as string)
+          const stepCanvas = nodesById.get(edge.target as string)
+            if (nodeProperties(stepCanvas)?.['visual:include-in-instructions'] !== 'false') {
+            includeNode(edge.target as string)
+          }
         }
       }
     }

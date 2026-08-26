@@ -6,7 +6,8 @@ import {
   osaRole,
 } from '../graph/osaData'
 import type { TextFlowNode } from '../graph/textNode'
-import { isVisualNode } from '../graph/visualEmbed'
+import { isVisualNode, visualEmbedsForCanvas } from '../graph/visualEmbed'
+import { visualForOfficialVersion } from '../graph/visualVersion'
 
 /**
  * Shared, read-only derivations for Assembly and Assembly Instructions.
@@ -93,4 +94,28 @@ export function canvasOwnedByStep(stepId: string, nodes: TextFlowNode[], edges: 
   ))?.target
   const visual = visualId ? nodes.find((node) => node.id === visualId) : undefined
   return isVisualNode(visual) ? visual : undefined
+}
+
+/**
+ * Returns whether a Visual will contribute something visible to a read-only
+ * Assembly Instruction. The instruction view renders the Official version
+ * when there is one, so this deliberately checks that same projection rather
+ * than exposing an empty draft work surface to a recipient.
+ */
+export function visualHasInstructionContent(
+  visual: TextFlowNode,
+  nodes: TextFlowNode[],
+  edges: GraphEdge[],
+) {
+  const displayed = visualForOfficialVersion(visual)
+  const image = displayed.data.properties[OSA_PROPERTY.assetImage]?.trim()
+  if (image) return true
+
+  const hasDrawing = displayed.data.sketch.layers.some((layer) => (
+    (layer.elements?.length ?? 0) > 0 || layer.strokes.length > 0
+  ))
+  if (hasDrawing) return true
+
+  // A deliberately assembled canvas can consist solely of linked Visuals.
+  return visualEmbedsForCanvas(visual.id, nodes, edges).length > 0
 }

@@ -40,6 +40,10 @@ import type { VisualEmbedInstance } from '../graph/visualEmbed'
 const PEN_COLORS = ['#222222', '#f5a9b8', '#5bcefa', '#9b59d0', '#ff8c00'] as const
 const MIN_PAGE_SIZE = 100
 const MAX_PAGE_SIZE = 20_000
+/** A placed Visual may be genuinely tiny; only a zero-size placement is invalid. */
+const MIN_VISUAL_EMBED_SIZE = 1
+/** Tiny Visuals retain this invisible target so they remain easy to select. */
+const MIN_VISUAL_EMBED_HIT_SIZE = 24
 const MIN_ZOOM = 0.1
 const MAX_ZOOM = 8
 
@@ -62,6 +66,34 @@ type SketchTool = 'select' | 'pen' | ShapeTool | 'text' | 'eraser' | 'pan'
 
 function isShapeTool(tool: SketchTool): tool is ShapeTool {
   return SHAPE_TOOLS.some((shapeTool) => shapeTool === tool)
+}
+
+function formatCanvasDimension(value: number) {
+  return String(Math.round(value * 1000) / 1000)
+}
+
+/** A blank or partial field is not geometry yet, so leave the canvas alone. */
+function parseVisualEmbedDimension(value: string) {
+  if (!value.trim()) return null
+  const numeric = Number(value)
+  if (
+    !Number.isFinite(numeric)
+    || numeric < MIN_VISUAL_EMBED_SIZE
+    || numeric > MAX_PAGE_SIZE
+  ) return null
+  return numeric
+}
+
+/** Selection is forgiving even when a placed Visual itself is only a few pixels. */
+function visualEmbedHitBounds(placement: Pick<VisualEmbedPlacement, 'x' | 'y' | 'width' | 'height'>) {
+  const width = Math.max(placement.width, MIN_VISUAL_EMBED_HIT_SIZE)
+  const height = Math.max(placement.height, MIN_VISUAL_EMBED_HIT_SIZE)
+  return {
+    x: placement.x - (width - placement.width) / 2,
+    y: placement.y - (height - placement.height) / 2,
+    width,
+    height,
+  }
 }
 
 type SketchPadProps = {
@@ -283,7 +315,7 @@ function sizedEmbedPlacementUpdate(
   dimension: 'width' | 'height',
   requestedValue: number,
 ): Pick<VisualEmbedPlacement, 'width' | 'height'> {
-  const value = Math.max(24, requestedValue)
+  const value = Math.max(MIN_VISUAL_EMBED_SIZE, requestedValue)
   if (placement.aspectRatioLocked === false || placement.width <= 0 || placement.height <= 0) {
     return dimension === 'width'
       ? { width: value, height: placement.height }
@@ -292,13 +324,13 @@ function sizedEmbedPlacementUpdate(
 
   const ratio = placement.width / placement.height
   if (dimension === 'width') {
-    // Keep both dimensions above the image-box minimum without breaking ratio.
-    const width = Math.max(value, 24 * ratio)
+    // Keep both dimensions above the real Visual minimum without breaking ratio.
+    const width = Math.max(value, MIN_VISUAL_EMBED_SIZE * ratio)
     return { width, height: width / ratio }
   }
 
-  // Keep both dimensions above the image-box minimum without breaking ratio.
-  const height = Math.max(value, 24 / ratio)
+  // Keep both dimensions above the real Visual minimum without breaking ratio.
+  const height = Math.max(value, MIN_VISUAL_EMBED_SIZE / ratio)
   return { width: height * ratio, height }
 }
 
@@ -930,6 +962,7 @@ function EmbeddedVisualGraphic({
   annotationTargets?: readonly SketchAnnotationTarget[]
 }) {
   const { placement, visual } = embed
+  const hitBounds = interactive ? visualEmbedHitBounds(placement) : null
   // A semantic shade is a parent-side presentation choice. The canonical
   // drawing/photo and its owner color remain unchanged for every other use.
   const semanticShadeColor = placement.semanticShade ? embed.accentColor : undefined
@@ -1036,20 +1069,32 @@ function EmbeddedVisualGraphic({
         />
       ) : null}
       {interactive ? (
-        // This is an invisible hit target until the item is selected. A photo
-        // therefore looks like just a photo in the canvas, while still being
-        // selectable and resizable from the ordinary Select tool.
-        <rect
-          x={placement.x}
-          y={placement.y}
-          width={placement.width}
-          height={placement.height}
-          fill="transparent"
-          stroke={selected ? '#26799b' : 'none'}
-          strokeWidth={selected ? 3 : 0}
-          strokeDasharray={selected ? '7 5' : undefined}
-          pointerEvents="all"
-        />
+        // A Visual can be smaller than a comfortable mouse target. Keep the
+        // selection target roomy without making its visible selection frame
+        // larger than the actual placed Visual.
+        <>
+          <rect
+            x={hitBounds?.x}
+            y={hitBounds?.y}
+            width={hitBounds?.width}
+            height={hitBounds?.height}
+            fill="transparent"
+            pointerEvents="all"
+          />
+          {selected ? (
+            <rect
+              x={placement.x}
+              y={placement.y}
+              width={placement.width}
+              height={placement.height}
+              fill="none"
+              stroke="#26799b"
+              strokeWidth={3}
+              strokeDasharray="7 5"
+              pointerEvents="none"
+            />
+          ) : null}
+        </>
       ) : null}
     </g>
   )
@@ -1264,6 +1309,9 @@ export function SketchPad({
   const activeEmbedRef = useRef<ActiveEmbedInteraction | null>(null)
   const activeEmbedCropRef = useRef<ActiveEmbedCropInteraction | null>(null)
   const activeSelectionMoveRef = useRef<ActiveSelectionMove | null>(null)
+  /** Uncontrolled fields preserve a temporarily blank or partial number while typing. */
+  const selectedEmbedWidthInputRef = useRef<HTMLInputElement | null>(null)
+  const selectedEmbedHeightInputRef = useRef<HTMLInputElement | null>(null)
   const activePenPointerIdRef = useRef<number | null>(null)
   const ignoreTouchUntilRef = useRef(0)
   const touchPointersRef = useRef(new Map<number, TouchPoint>())
@@ -1858,11 +1906,11 @@ export function SketchPad({
             interaction.original,
             interaction.original.width + dx,
             interaction.original.height + dy,
-            24,
+            MIN_VISUAL_EMBED_SIZE,
           )
           : {
-            width: Math.max(24, interaction.original.width + dx),
-            height: Math.max(24, interaction.original.height + dy),
+            width: Math.max(MIN_VISUAL_EMBED_SIZE, interaction.original.width + dx),
+            height: Math.max(MIN_VISUAL_EMBED_SIZE, interaction.original.height + dy),
           }),
       }
 
@@ -3249,6 +3297,25 @@ export function SketchPad({
     ? renderedEmbeds.find((embed) => embed.id === selectedEmbedIds[0])
     : undefined
   const selectedEmbedPlacement = selectedEmbedForRender?.placement ?? selectedEmbed?.placement
+  const selectedVisualEmbedId = selectedEmbedForRender?.id ?? selectedEmbed?.id
+  const selectedVisualEmbedWidth = selectedEmbedPlacement?.width
+  const selectedVisualEmbedHeight = selectedEmbedPlacement?.height
+
+  // Preserve a field while it is actively being typed, including a temporary
+  // blank or partial number. Outside an edit, drag/undo/remote geometry is
+  // reflected back into the inspector normally.
+  useEffect(() => {
+    const activeInput = globalThis.document.activeElement
+    const widthInput = selectedEmbedWidthInputRef.current
+    const heightInput = selectedEmbedHeightInputRef.current
+    if (activeInput !== widthInput && widthInput && selectedVisualEmbedWidth !== undefined) {
+      widthInput.value = formatCanvasDimension(selectedVisualEmbedWidth)
+    }
+    if (activeInput !== heightInput && heightInput && selectedVisualEmbedHeight !== undefined) {
+      heightInput.value = formatCanvasDimension(selectedVisualEmbedHeight)
+    }
+  }, [selectedVisualEmbedHeight, selectedVisualEmbedId, selectedVisualEmbedWidth])
+
   /** Update the parent-side image box only; the referenced Visual is unchanged. */
   const updateSelectedEmbedPlacement = (update: Partial<VisualEmbedPlacement>) => {
     if (!selectedEmbedForRender || !onEmbeddedVisualPlacementChange) return
@@ -3265,6 +3332,21 @@ export function SketchPad({
   const updateSelectedEmbedDimension = (dimension: 'width' | 'height', value: number) => {
     if (!selectedEmbedPlacement) return
     updateSelectedEmbedPlacement(sizedEmbedPlacementUpdate(selectedEmbedPlacement, dimension, value))
+  }
+  /** Update immediately only after the text represents a valid, positive size. */
+  const updateSelectedEmbedDimensionText = (dimension: 'width' | 'height', value: string) => {
+    const numeric = parseVisualEmbedDimension(value)
+    if (numeric !== null) updateSelectedEmbedDimension(dimension, numeric)
+  }
+  /** Finish a field cleanly, restoring the actual size when its text is incomplete. */
+  const finishSelectedEmbedDimensionText = (dimension: 'width' | 'height', input: HTMLInputElement) => {
+    if (!selectedEmbedPlacement) return
+    const numeric = parseVisualEmbedDimension(input.value)
+    if (numeric === null) {
+      input.value = formatCanvasDimension(selectedEmbedPlacement[dimension])
+      return
+    }
+    updateSelectedEmbedDimension(dimension, numeric)
   }
   const selectedEmbedCrop: VisualEmbedCrop = selectedEmbedPlacement?.crop ?? {
     x: 0,
@@ -4239,34 +4321,32 @@ export function SketchPad({
               <label>
                 <span>Width</span>
                 <input
-                  type="number"
+                  key={`visual-width-${selectedVisualEmbedId}`}
+                  ref={selectedEmbedWidthInputRef}
+                  type="text"
                   aria-label="Selected visual width"
-                  min="24"
-                  max="20000"
-                  step="1"
-                  value={Math.round(selectedEmbedPlacement.width)}
-                  onChange={(event) => {
-                    const width = Number(event.target.value)
-                    if (Number.isFinite(width) && width >= 24) {
-                      updateSelectedEmbedDimension('width', width)
-                    }
+                  inputMode="decimal"
+                  defaultValue={formatCanvasDimension(selectedEmbedPlacement.width)}
+                  onChange={(event) => updateSelectedEmbedDimensionText('width', event.target.value)}
+                  onBlur={(event) => finishSelectedEmbedDimensionText('width', event.currentTarget)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') event.currentTarget.blur()
                   }}
                 />
               </label>
               <label>
                 <span>Height</span>
                 <input
-                  type="number"
+                  key={`visual-height-${selectedVisualEmbedId}`}
+                  ref={selectedEmbedHeightInputRef}
+                  type="text"
                   aria-label="Selected visual height"
-                  min="24"
-                  max="20000"
-                  step="1"
-                  value={Math.round(selectedEmbedPlacement.height)}
-                  onChange={(event) => {
-                    const height = Number(event.target.value)
-                    if (Number.isFinite(height) && height >= 24) {
-                      updateSelectedEmbedDimension('height', height)
-                    }
+                  inputMode="decimal"
+                  defaultValue={formatCanvasDimension(selectedEmbedPlacement.height)}
+                  onChange={(event) => updateSelectedEmbedDimensionText('height', event.target.value)}
+                  onBlur={(event) => finishSelectedEmbedDimensionText('height', event.currentTarget)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') event.currentTarget.blur()
                   }}
                 />
               </label>

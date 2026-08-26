@@ -59,6 +59,8 @@ export const OSA_PROPERTY = {
   visualIdentity: 'visual:identity',
   /** Imported/file image assets stay protected from direct canvas edits. */
   visualImmutable: 'visual:immutable',
+  /** Whether a Step-owned canvas appears in the read-only Assembly Instructions view. */
+  visualIncludeInInstructions: 'visual:include-in-instructions',
   /** Horizontal pixel position of a Visual placed inside another canvas. */
   visualEmbedX: 'visual-embed:x',
   /** Vertical pixel position of a Visual placed inside another canvas. */
