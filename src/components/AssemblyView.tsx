@@ -1162,6 +1162,14 @@ export function AssemblyView({
             /\b(tool|tools)\b/i,
           )
           const steps = stepsForOperation(operation.id, nodes, edges)
+          // Compact Assembly cards use precisely the same visual contract as
+          // the team-facing instructions: a Step contributes its one owned
+          // canvas. Source slides and other authoring-only Visual links stay
+          // hidden until the card itself is opened.
+          const stepCanvases = steps.flatMap((step) => {
+            const canvas = canvasOwnedByStep(step.id, nodes, edges)
+            return canvas ? [{ step, canvas }] : []
+          })
           // Older OSA boards used one undirected "operation item" relation.
           // Treat those as inputs so opening an existing board does not make
           // its parts disappear alongside the newer structured in/out edges.
@@ -1937,38 +1945,60 @@ export function AssemblyView({
                 </>
               ) : (
                 <button
-                  className="assembly-card__summary"
+                  className={stepCanvases.length
+                    ? 'assembly-card__summary assembly-card__summary--with-canvases'
+                    : 'assembly-card__summary'}
                   type="button"
                   aria-label={`Open ${nodeTitle(operation)} details`}
                   aria-expanded={false}
                   onClick={openOperation}
                 >
-                  <span className="assembly-card__summary-kicker">instruction {operationIndex + 1}</span>
-                  <strong className="assembly-card__summary-title">{nodeTitle(operation)}</strong>
-                  <span className="assembly-card__summary-fields">
-                    <span>
-                      <b>in</b>
-                      {inputParts.length ? inputParts.map(nodeTitle).join(' · ') : 'no parts linked'}
-                    </span>
-                    <span>
-                      <b>tools</b>
-                      {tools.length ? tools.map(nodeTitle).join(' · ') : 'no tools linked'}
-                    </span>
-                    <span>
-                      <b>steps</b>
-                      {steps.length
-                        ? `${steps.length} ${steps.length === 1 ? 'step' : 'steps'}`
-                        : operation.data.text.trim() ? 'instruction notes' : 'no steps yet'}
-                    </span>
-                    {visibleLinkedVisuals.length + visibleIncludedPhotoObjects.length ? (
+                  <span className="assembly-card__summary-content">
+                    <span className="assembly-card__summary-kicker">instruction {operationIndex + 1}</span>
+                    <strong className="assembly-card__summary-title">{nodeTitle(operation)}</strong>
+                    <span className="assembly-card__summary-fields">
                       <span>
-                        <b>visuals</b>
-                        {visibleLinkedVisuals.length + visibleIncludedPhotoObjects.length}
+                        <b>in</b>
+                        {inputParts.length ? inputParts.map(nodeTitle).join(' · ') : 'no parts linked'}
                       </span>
+                      <span>
+                        <b>tools</b>
+                        {tools.length ? tools.map(nodeTitle).join(' · ') : 'no tools linked'}
+                      </span>
+                      <span>
+                        <b>steps</b>
+                        {steps.length
+                          ? `${steps.length} ${steps.length === 1 ? 'step' : 'steps'}`
+                          : operation.data.text.trim() ? 'instruction notes' : 'no steps yet'}
+                      </span>
+                    </span>
+                    {operation.data.text.trim() ? (
+                      <span className="assembly-card__summary-notes">{operation.data.text}</span>
                     ) : null}
                   </span>
-                  {operation.data.text.trim() ? (
-                    <span className="assembly-card__summary-notes">{operation.data.text}</span>
+                  {stepCanvases.length ? (
+                    <span
+                      className="assembly-card__summary-view"
+                      aria-label={`${nodeTitle(operation)} step canvases`}
+                    >
+                      <span className="assembly-card__summary-view-header">step canvases</span>
+                      <span className="assembly-card__summary-canvas-list">
+                        {stepCanvases.map(({ step, canvas }, stepCanvasIndex) => (
+                          <span className="assembly-card__summary-step-canvas" key={canvas.id}>
+                            <span className="assembly-card__summary-step-canvas-label">
+                              <b>Step {stepCanvasIndex + 1}</b>
+                              <span>{nodeTitle(step)}</span>
+                            </span>
+                            <VisualCanvasPreview
+                              visual={canvas}
+                              embeddedVisuals={visualEmbedsForCanvas(canvas.id, nodes, edges)}
+                              annotationTargets={annotationTargets}
+                              className="assembly-card__visual-preview assembly-card__summary-canvas-preview"
+                            />
+                          </span>
+                        ))}
+                      </span>
+                    </span>
                   ) : null}
                 </button>
               )}
