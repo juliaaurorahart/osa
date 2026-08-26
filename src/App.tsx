@@ -1980,6 +1980,69 @@ function Flow() {
   }, [setNodes])
 
   /**
+   * Removes one durable instruction step. A step-owned canvas exists only for
+   * that step, so remove it and every display/embed edge at the same time;
+   * then close the editor if that canvas was open and renumber what remains.
+   */
+  const removeOperationStep = useCallback((operationId: string, stepId: string) => {
+    const step = latestNodes.current.find((node) => node.id === stepId)
+    const belongsToOperation = latestEdges.current.some((edge) => (
+      edge.source === operationId
+      && edge.target === stepId
+      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationStep
+    ))
+    if (!step || osaRole(step) !== 'step' || !belongsToOperation) return
+
+    const visualId = latestEdges.current.find((edge) => (
+      edge.source === stepId
+      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
+    ))?.target
+    const removedIds = new Set([stepId, ...(visualId ? [visualId] : [])])
+
+    const remainingStepIds = latestEdges.current
+      .filter((edge) => (
+        edge.source === operationId
+        && edge.target !== stepId
+        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationStep
+      ))
+      .map((edge) => edge.target)
+    const edgePosition = new Map(remainingStepIds.map((id, index) => [id, index]))
+    const orderedRemainingSteps = latestNodes.current
+      .filter((node) => remainingStepIds.includes(node.id) && osaRole(node) === 'step')
+      .sort((left, right) => {
+        const leftOrder = Number(left.data.properties[OSA_PROPERTY.order])
+        const rightOrder = Number(right.data.properties[OSA_PROPERTY.order])
+        return (Number.isFinite(leftOrder) ? leftOrder : edgePosition.get(left.id) ?? 0)
+          - (Number.isFinite(rightOrder) ? rightOrder : edgePosition.get(right.id) ?? 0)
+      })
+    const orderByStepId = new Map(
+      orderedRemainingSteps.map((remainingStep, index) => [remainingStep.id, String(index + 1)]),
+    )
+
+    setEdges((currentEdges) => currentEdges.filter((edge) => (
+      !removedIds.has(edge.source) && !removedIds.has(edge.target)
+    )))
+    setNodes((currentNodes) => currentNodes
+      .filter((node) => !removedIds.has(node.id))
+      .map((node) => {
+        const order = orderByStepId.get(node.id)
+        if (order === undefined || node.data.properties[OSA_PROPERTY.order] === order) return node
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            properties: { ...node.data.properties, [OSA_PROPERTY.order]: order },
+          },
+        }
+      }))
+    setAssemblyViewState((current) => (
+      visualId && current.editingVisualId === visualId
+        ? { ...current, editingVisualId: null, editingOperationId: null }
+        : current
+    ))
+  }, [setEdges, setNodes])
+
+  /**
    * A step has one directly owned canvas. The ownership edge is the durable
    * association; keeping its name synchronized happens in `onNameChange`.
    */
@@ -4973,6 +5036,7 @@ function Flow() {
               onRemoveOperation={removeAssemblyOperation}
               onCreateStep={createOperationStep}
               onReorderStep={reorderOperationStep}
+              onRemoveStep={removeOperationStep}
               onEnsureStepCanvas={ensureStepCanvas}
               onCreatePart={createAssemblyPart}
               onCreateExpense={createAssemblyExpense}

@@ -60,6 +60,8 @@ type AssemblyViewProps = {
   onCreateStep: (operationId: string) => string
   /** Moves one durable step without rewriting the rest of the card text. */
   onReorderStep: (operationId: string, stepId: string, direction: 'up' | 'down') => void
+  /** Removes one step and its one step-owned canvas from this instruction. */
+  onRemoveStep: (operationId: string, stepId: string) => void
   /** Returns the one canvas owned by a step, creating it only when needed. */
   onEnsureStepCanvas: (stepId: string) => string
   onCreatePart: (assemblyId: string) => string
@@ -251,6 +253,7 @@ export function AssemblyView({
   onRemoveOperation,
   onCreateStep,
   onReorderStep,
+  onRemoveStep,
   onEnsureStepCanvas,
   onCreateTool,
   onLinkPart,
@@ -1164,6 +1167,17 @@ export function AssemblyView({
                                     }}
                                   >
                                     {stepCanvas ? 'canvas' : '+ canvas'}
+                                  </button>
+                                  <button
+                                    className="text-action"
+                                    type="button"
+                                    aria-label={`remove ${nodeTitle(step)}`}
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      onRemoveStep(operation.id, step.id)
+                                    }}
+                                  >
+                                    remove
                                   </button>
                                   {stepCanvas && onPropertyChange ? (
                                     <label
