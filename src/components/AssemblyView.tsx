@@ -1421,10 +1421,10 @@ export function AssemblyView({
 
                   <section style={{ display: 'grid', gap: 5, minWidth: 0 }} aria-label={`${nodeTitle(operation)} steps`}>
                     <strong style={{ fontSize: 'clamp(0.76rem, 1.5vw, 1.15rem)', fontWeight: 500 }}>steps</strong>
-                    {operation.data.text.trim() || steps.length === 0 ? (
+                    {steps.length === 0 ? (
                       <textarea
                         aria-label={`${nodeTitle(operation)} steps`}
-                        placeholder="write the complete instructions here."
+                        placeholder="write the first instruction here."
                         rows={focused ? 6 : 3}
                         value={operation.data.text}
                         readOnly={readOnly}
@@ -1436,15 +1436,18 @@ export function AssemblyView({
                       />
                     ) : null}
                     {steps.length ? (
-                      <ol style={{ display: 'grid', gap: 8, margin: 0, paddingLeft: '1.35em' }}>
+                      <ol style={{ display: 'grid', gap: 14, margin: 0, padding: 0, listStyle: 'none' }}>
                         {steps.map((step, stepIndex) => {
                           const stepCanvas = canvasOwnedByStep(step.id, nodes, edges)
                           const includeStepCanvas = stepCanvas?.data.properties[
                             OSA_PROPERTY.visualIncludeInInstructions
                           ] === 'true'
                           return (
-                            <li key={step.id} style={{ display: 'grid', gap: 4, minWidth: 0 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+                            <li key={step.id} style={{ display: 'grid', gap: 7, minWidth: 0 }}>
+                              <div style={{ display: 'grid', gap: 4, minWidth: 0 }}>
+                                <span style={{ color: 'var(--osa-muted)', fontSize: '0.76rem', fontWeight: 600 }}>
+                                  Step {stepIndex + 1}
+                                </span>
                                 <input
                                   aria-label={`Step ${stepIndex + 1} name`}
                                   value={step.data.name}
@@ -1454,9 +1457,11 @@ export function AssemblyView({
                                   onChange={(event) => {
                                     if (!readOnly) onNameChange(step.id, event.target.value)
                                   }}
-                                  style={{ ...transparentInput, flex: '1 1 auto', fontWeight: 600 }}
+                                  style={{ ...transparentInput, width: '100%', fontSize: '1rem', fontWeight: 600 }}
                                 />
-                                {!readOnly ? (
+                              </div>
+                              {!readOnly ? (
+                                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, minWidth: 0 }}>
                                   <span style={{ display: 'inline-flex', gap: 2 }}>
                                     <button
                                       className="text-action"
@@ -1485,8 +1490,6 @@ export function AssemblyView({
                                       ↓
                                     </button>
                                   </span>
-                                ) : null}
-                                {!readOnly ? (
                                   <button
                                     className="text-action"
                                     type="button"
@@ -1498,26 +1501,26 @@ export function AssemblyView({
                                   >
                                     {stepCanvas ? 'canvas' : '+ canvas'}
                                   </button>
-                                ) : null}
-                                {stepCanvas && !readOnly && onPropertyChange ? (
-                                  <label
-                                    style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: '0.72rem', whiteSpace: 'nowrap' }}
-                                    onClick={(event) => event.stopPropagation()}
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      aria-label={`Show ${nodeTitle(step)} canvas in Assembly Instructions`}
-                                      checked={includeStepCanvas}
-                                      onChange={(event) => onPropertyChange(
-                                        stepCanvas.id,
-                                        OSA_PROPERTY.visualIncludeInInstructions,
-                                        event.currentTarget.checked ? 'true' : 'false',
-                                      )}
-                                    />
-                                    show
-                                  </label>
-                                ) : null}
-                              </div>
+                                  {stepCanvas && onPropertyChange ? (
+                                    <label
+                                      style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: '0.72rem', whiteSpace: 'nowrap' }}
+                                      onClick={(event) => event.stopPropagation()}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        aria-label={`Show ${nodeTitle(step)} canvas in Assembly Instructions`}
+                                        checked={includeStepCanvas}
+                                        onChange={(event) => onPropertyChange(
+                                          stepCanvas.id,
+                                          OSA_PROPERTY.visualIncludeInInstructions,
+                                          event.currentTarget.checked ? 'true' : 'false',
+                                        )}
+                                      />
+                                      show
+                                    </label>
+                                  ) : null}
+                                </div>
+                              ) : null}
                               <textarea
                                 aria-label={`${nodeTitle(step)} instructions`}
                                 placeholder="describe this step."
@@ -1529,7 +1532,14 @@ export function AssemblyView({
                                 onChange={(event) => {
                                   if (!readOnly) onTextChange(step.id, event.target.value)
                                 }}
-                                style={{ ...transparentInput, minHeight: focused ? '3.9em' : '2.7em', resize: 'none', lineHeight: 1.35 }}
+                                style={{
+                                  ...transparentInput,
+                                  minHeight: focused ? '3.9em' : '2.7em',
+                                  resize: 'none',
+                                  color: 'var(--osa-text)',
+                                  fontSize: '0.95rem',
+                                  lineHeight: 1.45,
+                                }}
                               />
                             </li>
                           )
@@ -1612,16 +1622,25 @@ export function AssemblyView({
                         <b>tools</b>
                         {tools.length ? tools.map(nodeTitle).join(' · ') : 'no tools linked'}
                       </span>
-                      <span>
-                        <b>steps</b>
-                        {steps.length
-                          ? `${steps.length} ${steps.length === 1 ? 'step' : 'steps'}`
-                          : operation.data.text.trim() ? 'instruction notes' : 'no steps yet'}
-                      </span>
                     </span>
-                    {operation.data.text.trim() ? (
-                      <span className="assembly-card__summary-notes">{operation.data.text}</span>
-                    ) : null}
+                    {steps.length ? (
+                      <span className="assembly-card__summary-steps">
+                        <b>steps</b>
+                        {steps.map((step, stepIndex) => (
+                          <span className="assembly-card__summary-step" key={step.id}>
+                            <strong>Step {stepIndex + 1} · {nodeTitle(step)}</strong>
+                            {step.data.text.trim() ? <span>{step.data.text}</span> : null}
+                          </span>
+                        ))}
+                      </span>
+                    ) : (
+                      <span className="assembly-card__summary-steps">
+                        <b>steps</b>
+                        <span className="assembly-card__summary-notes">
+                          {operation.data.text.trim() || 'no steps yet'}
+                        </span>
+                      </span>
+                    )}
                   </span>
                   {stepCanvases.length ? (
                     <span

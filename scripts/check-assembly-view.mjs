@@ -235,7 +235,28 @@ try {
   const compactMarkup = renderAssembly(edges, createAssemblyViewUiState())
   assert.equal((compactMarkup.match(/assembly-card__summary-canvas-preview/g) ?? []).length, 1)
   assert.match(compactMarkup, /Drill the 5\/16 in side hole/)
+  assert.match(
+    compactMarkup,
+    /Use the 5\/16 in bit on the marked side\./,
+    'The compact Assembly card repeats the actual Step description, not only its canvas label.',
+  )
   assert.doesNotMatch(compactMarkup, /visual filter|aria-label="[^"]+ owner"/)
+
+  const staleCardNoteNodes = nodes.map((node) => node.id === connectorBoxDrill.id
+    ? {
+        ...node,
+        data: {
+          ...node.data,
+          text: 'Legacy card note that must not compete with real steps.',
+        },
+      }
+    : node)
+  const staleCardNoteMarkup = renderAssembly(edges, focusedUiState, staleCardNoteNodes)
+  assert.doesNotMatch(
+    staleCardNoteMarkup,
+    /Legacy card note that must not compete with real steps\./,
+    'Once real Steps exist, the Assembly editor does not render the card-level notes above them.',
+  )
 
   const instructionsMarkup = renderToStaticMarkup(createElement(AssemblyInstructionsView, {
     assembly,

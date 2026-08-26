@@ -573,6 +573,36 @@
   text-transform: lowercase;
 }
 
+.assembly-card__summary-steps {
+  display: grid;
+  gap: 7px;
+  margin-top: 3px;
+  padding-top: 10px;
+  border-top: 1px solid var(--osa-border-subtle);
+}
+
+.assembly-card__summary-steps > b {
+  color: var(--osa-text);
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-transform: lowercase;
+}
+
+.assembly-card__summary-step {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  color: var(--osa-muted);
+  font-size: 0.88rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.assembly-card__summary-step strong {
+  color: var(--osa-text);
+  font-weight: 600;
+}
+
 /* A compact authoring card keeps the exact Step -> Canvas projection that a
    teammate sees in Assembly Instructions. It is a readable preview only;
    clicking it opens the card's full authoring controls. */
@@ -1022,10 +1052,16 @@
 }
 
 .assembly-instructions-view__overview,
-.assembly-instructions-view__operation-notes,
-.assembly-instructions-view__steps p {
+.assembly-instructions-view__operation-notes {
   margin: 0;
   color: var(--osa-muted);
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.assembly-instructions-view__steps p {
+  margin: 0;
+  color: var(--osa-text);
   line-height: 1.45;
   white-space: pre-wrap;
 }
