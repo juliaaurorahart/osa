@@ -6,8 +6,8 @@ import { createServer } from 'vite'
 
 /**
  * Proves that imported OSA project data projects into a deliberately small
- * Assembly document: title card, ordered instruction cards, criteria, steps,
- * and only the nonblank Visuals owned by those Steps.
+ * Assembly document: a title card with the ordered card titles, then cards
+ * with parts and tools, full Steps, and only deliberately published Visuals.
  */
 const server = await createServer({
   appType: 'custom',
@@ -199,23 +199,48 @@ try {
   assert.match(authorMarkup, /assembly-index-card/)
   assert.match(authorMarkup, /Shako Hat Assembly Instructions/)
   assert.match(authorMarkup, /<h1 id="assembly-view-title">Assembly<\/h1>/)
-  assert.match(authorMarkup, /aria-label="instruction card 1: Connector Box Drill"/)
+  assert.match(authorMarkup, /aria-label="Connector Box Drill card"/)
+  const authorTitleCardStart = authorMarkup.indexOf('aria-label="assembly index card"')
+  const authorTitleCardEnd = authorMarkup.indexOf('</article>', authorTitleCardStart)
+  assert.ok(authorTitleCardStart >= 0 && authorTitleCardEnd >= 0, 'The Assembly title card renders.')
+  const authorTitleCard = authorMarkup.slice(authorTitleCardStart, authorTitleCardEnd)
+  assert.deepEqual(
+    [...authorTitleCard.matchAll(/<li>([^<]+)<\/li>/g)].map(([, title]) => title),
+    [
+      'Connector Box Drill',
+      'Shako Wrap Punch Holes',
+      'Front Center – 1 Hole',
+      'Left Side (from user’s perspective)',
+      'Boost Attach V-out Wires',
+      'Power Section Assembly',
+    ],
+    'The title card contains only the Assembly name and its ordered card titles.',
+  )
+  assert.doesNotMatch(
+    authorTitleCard,
+    /parts &amp; tools|>steps<|>visuals<|assembly overview|semantic information|expenses/,
+    'The Assembly title card does not repeat instruction-card details.',
+  )
   const openedIndexMarkup = renderAssembly(edges, {
     ...createAssemblyViewUiState(),
     openCardId: 'assembly-index',
   })
   assert.match(openedIndexMarkup, /aria-label="move Connector Box Drill card down"/)
 
-  const connectorStart = authorMarkup.indexOf('aria-label="instruction card 1: Connector Box Drill"')
-  const connectorEnd = authorMarkup.indexOf('aria-label="instruction card 2:', connectorStart)
-  const connectorCard = authorMarkup.slice(connectorStart, connectorEnd === -1 ? undefined : connectorEnd)
+  const connectorStart = authorMarkup.indexOf('aria-label="Connector Box Drill card"')
+  const connectorEnd = authorMarkup.indexOf('</article>', connectorStart)
+  assert.ok(connectorStart >= 0 && connectorEnd >= 0, 'The Connector Box Drill card renders.')
+  const connectorCard = authorMarkup.slice(connectorStart, connectorEnd)
   for (const label of ['parts &amp; tools', 'parts in', 'tools', 'steps']) {
     assert.match(connectorCard, new RegExp(`>${label}<`), `Connector Box Drill shows ${label}.`)
   }
+  assert.doesNotMatch(connectorCard, /instruction card 1|instruction 1 title/i)
   assert.match(connectorCard, /Electronics Box/)
   assert.match(connectorCard, /Drill/)
   assert.match(connectorCard, /Drill the 5\/16 in side hole/)
   assert.match(connectorCard, /Use the 5\/16 in bit on the marked side\./)
+  assert.match(connectorCard, /Inspect the hole/)
+  assert.match(connectorCard, /Confirm the opening is clean before continuing\./)
   assert.match(connectorCard, /aria-label="open Drill the 5\/16 in side hole visual"/)
   assert.match(connectorCard, /assembly-card__visual-preview/)
   assert.doesNotMatch(
@@ -231,7 +256,7 @@ try {
   assert.doesNotMatch(authorMarkup, /This card represents|<span>Out<\/span>|<span>Entrance<\/span>|<span>Exit<\/span>/)
 
   // The compact authoring card and the team-facing document use the same
-  // published Step -> Canvas relationship.
+  // published Step -> Visual relationship.
   const compactMarkup = renderAssembly(edges, createAssemblyViewUiState())
   assert.equal((compactMarkup.match(/assembly-card__summary-canvas-preview/g) ?? []).length, 1)
   assert.match(compactMarkup, /Drill the 5\/16 in side hole/)
@@ -266,23 +291,62 @@ try {
   }))
   assert.doesNotMatch(instructionsMarkup, /<h1 id="assembly-instructions-title">Assembly Instructions<\/h1>/)
   assert.equal((instructionsMarkup.match(/assembly-operation-card/g) ?? []).length, 6)
-  assert.match(instructionsMarkup, /Shako Hat Assembly Instructions/)
-  assert.match(instructionsMarkup, /Connector Box Drill/)
-  assert.match(instructionsMarkup, /Drill the 5\/16 in side hole/)
-  assert.match(instructionsMarkup, /Use the 5\/16 in bit on the marked side\./)
-  assert.match(instructionsMarkup, />parts in</)
-  assert.match(instructionsMarkup, />tools</)
-  assert.match(instructionsMarkup, />steps</)
-  assert.doesNotMatch(instructionsMarkup, />out</)
+  const instructionsTitleCardStart = instructionsMarkup.indexOf('class="assembly-card assembly-index-card"')
+  const instructionsTitleCardEnd = instructionsMarkup.indexOf('</article>', instructionsTitleCardStart)
+  assert.ok(
+    instructionsTitleCardStart >= 0 && instructionsTitleCardEnd >= 0,
+    'The reader-facing title card renders.',
+  )
+  const instructionsTitleCard = instructionsMarkup.slice(instructionsTitleCardStart, instructionsTitleCardEnd)
   assert.match(
+    instructionsTitleCard,
+    /<h2 id="assembly-instructions-title"[^>]*>Shako Hat Assembly Instructions<\/h2>/,
+  )
+  assert.deepEqual(
+    [...instructionsTitleCard.matchAll(/<li>([^<]+)<\/li>/g)].map(([, title]) => title),
+    [
+      'Connector Box Drill',
+      'Shako Wrap Punch Holes',
+      'Front Center – 1 Hole',
+      'Left Side (from user’s perspective)',
+      'Boost Attach V-out Wires',
+      'Power Section Assembly',
+    ],
+    'The reader-facing title card contains the ordered card titles.',
+  )
+  assert.doesNotMatch(
+    instructionsTitleCard,
+    /parts &amp; tools|>parts in<|>tools<|>steps<|>visuals<|assembly overview|semantic information|expenses/,
+    'The reader-facing title card is only an Assembly title and ordered card list.',
+  )
+
+  const readerConnectorStart = instructionsMarkup.indexOf(
+    'aria-label="Connector Box Drill assembly instruction"',
+  )
+  const readerConnectorEnd = instructionsMarkup.indexOf('</article>', readerConnectorStart)
+  assert.ok(readerConnectorStart >= 0 && readerConnectorEnd >= 0, 'The reader-facing card renders.')
+  const readerConnectorCard = instructionsMarkup.slice(readerConnectorStart, readerConnectorEnd)
+  for (const label of ['parts &amp; tools', 'parts in', 'tools', 'steps']) {
+    assert.match(readerConnectorCard, new RegExp(`>${label}<`), `The reader sees Connector Box Drill ${label}.`)
+  }
+  assert.match(readerConnectorCard, /Drill the 5\/16 in side hole/)
+  assert.match(readerConnectorCard, /Use the 5\/16 in bit on the marked side\./)
+  assert.match(readerConnectorCard, /Inspect the hole/)
+  assert.match(readerConnectorCard, /Confirm the opening is clean before continuing\./)
+  assert.match(readerConnectorCard, /aria-label="View Drill the 5\/16 in side hole visual"/)
+  assert.match(readerConnectorCard, /title="View visual"/)
+  assert.match(readerConnectorCard, /<h2>visuals<\/h2>/)
+  assert.doesNotMatch(readerConnectorCard, /aria-label="View Inspect the hole visual"/)
+  assert.doesNotMatch(instructionsMarkup, />out</)
+  assert.doesNotMatch(
     instructionsMarkup,
-    /aria-label="Open Drill the 5\/16 in side hole canvas"/,
-    'A reader can enlarge the deliberate Step visual without entering the editor.',
+    /aria-label="(?:instruction|step) \d+[^\"]*"|(?:aria-label|title)="[^\"]*canvas[^\"]*"|>Step \d+<\/(?:strong|span)>/i,
+    'The reader-facing document does not expose instruction numbers or canvases as its UI.',
   )
   assert.doesNotMatch(
     instructionsMarkup,
-    /new assembly|add card|semantic information|visual filter|aria-label="[^"]+ owner"/,
-    'The public page is an instruction sheet, not an authoring or library UI.',
+    /new assembly|add card|semantic information|visual filter|aria-label="[^"]+ owner"|Source slide visual imported from the assembly-instruction presentation\.|Assembly instructions imported for authoring in OSA\./,
+    'The public page is an instruction sheet, not an import or authoring UI.',
   )
 
   const unpublishedCanvas = {
@@ -304,8 +368,8 @@ try {
   }))
   assert.doesNotMatch(
     unpublishedMarkup,
-    /aria-label="Open Drill the 5\/16 in side hole canvas"/,
-    'An author must deliberately publish a Step canvas before it reaches the team-facing sheet.',
+    /aria-label="View Drill the 5\/16 in side hole visual"/,
+    'An author must deliberately publish a Step visual before it reaches the team-facing sheet.',
   )
 
   const stepCanvasViewerMarkup = renderToStaticMarkup(createElement(StepCanvasViewer, {
@@ -323,7 +387,7 @@ try {
   assert.doesNotMatch(
     stepCanvasViewerMarkup,
     /unlock|save draft|make official|canvas name|remove/,
-    'The enlarged step canvas is a viewer, not the canvas editor.',
+    'The enlarged published visual is a viewer, not the canvas editor.',
   )
 
   // A Tool's semantic accent drives its linked Assembly label. The accent
@@ -384,8 +448,8 @@ try {
   })
   const reorderedAuthorMarkup = renderAssembly(edges, focusedUiState, reorderedNodes)
   assert.ok(
-    reorderedAuthorMarkup.indexOf('aria-label="instruction card 1: Shako Wrap Punch Holes"')
-      < reorderedAuthorMarkup.indexOf('aria-label="instruction card 2: Connector Box Drill"'),
+    reorderedAuthorMarkup.indexOf('aria-label="Shako Wrap Punch Holes card"')
+      < reorderedAuthorMarkup.indexOf('aria-label="Connector Box Drill card"'),
     'The Assembly board projects a changed durable card order.',
   )
   const reorderedInstructionsMarkup = renderToStaticMarkup(createElement(AssemblyInstructionsView, {
@@ -395,8 +459,8 @@ try {
     edges,
   }))
   assert.ok(
-    reorderedInstructionsMarkup.indexOf('aria-label="instruction 1: Shako Wrap Punch Holes"')
-      < reorderedInstructionsMarkup.indexOf('aria-label="instruction 2: Connector Box Drill"'),
+    reorderedInstructionsMarkup.indexOf('aria-label="Shako Wrap Punch Holes assembly instruction"')
+      < reorderedInstructionsMarkup.indexOf('aria-label="Connector Box Drill assembly instruction"'),
     'The public instructions project that same card order.',
   )
 
