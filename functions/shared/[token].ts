@@ -176,7 +176,7 @@ function createAssemblyScopedBoard(board: unknown, assemblyId: string): JsonReco
       for (const edge of edges) {
         if (edge.source === includedNodeId && edgeRelation(edge) === 'object-visual') {
           const stepCanvas = nodesById.get(edge.target as string)
-            if (nodeProperties(stepCanvas)?.['visual:include-in-instructions'] !== 'false') {
+            if (nodeProperties(stepCanvas)?.['visual:include-in-instructions'] === 'true') {
             includeNode(edge.target as string)
           }
         }

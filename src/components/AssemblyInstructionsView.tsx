@@ -110,13 +110,10 @@ export function StepCanvasViewer({
         className="assembly-instructions-view__canvas-viewer"
         role="dialog"
         aria-modal="true"
-        aria-label={`View ${nodeTitle(step)} canvas`}
+        aria-label={`View ${nodeTitle(step)}`}
       >
         <header>
-          <div>
-            <span>step canvas</span>
-            <h2>{nodeTitle(step)}</h2>
-          </div>
+          <h2>{nodeTitle(step)}</h2>
           <button type="button" onClick={onClose}>close</button>
         </header>
         <div className="assembly-instructions-view__canvas-viewer-body">
@@ -145,7 +142,6 @@ export function AssemblyInstructionsView({
   statusMessage,
   onBackToAssembly,
 }: AssemblyInstructionsViewProps) {
-  const modeLabel = onBackToAssembly ? 'preview' : 'read-only'
   const [openedStepCanvas, setOpenedStepCanvas] = useState<OpenStepCanvas | null>(null)
   // The shared instructions render the same live project-backed annotations
   // as Assembly, without copying names or properties into canvas content.
@@ -160,7 +156,6 @@ export function AssemblyInstructionsView({
             {onBackToAssembly ? (
               <button className="text-action" type="button" onClick={onBackToAssembly}>back to Assembly</button>
             ) : null}
-            <span className="assembly-view__shared-label">{modeLabel}</span>
           </div>
         </header>
         <p className="work-view__empty" role="status">
@@ -174,15 +169,12 @@ export function AssemblyInstructionsView({
 
   return (
     <section className="work-view assembly-view assembly-instructions-view" aria-labelledby="assembly-instructions-title">
-      <header className="work-view__header assembly-view__header">
-        <div>
-          <h1 id="assembly-instructions-title">Assembly Instructions</h1>
-        </div>
+      <header className="work-view__header assembly-view__header" aria-label="Instruction controls">
+        <div />
         <div className="assembly-view__header-actions">
           {onBackToAssembly ? (
             <button className="text-action" type="button" onClick={onBackToAssembly}>back to Assembly</button>
           ) : null}
-          <span className="assembly-view__shared-label">{modeLabel}</span>
           <button className="text-action" type="button" onClick={() => window.print()}>print</button>
         </div>
       </header>
@@ -190,9 +182,6 @@ export function AssemblyInstructionsView({
       <div className="assembly-card-board assembly-instructions-view__board">
         <article className="assembly-card assembly-index-card" style={cardShell}>
           <h2 className="assembly-instructions-view__assembly-title">{nodeTitle(assembly)}</h2>
-          {assembly.data.text.trim() ? (
-            <p className="assembly-instructions-view__overview">{assembly.data.text}</p>
-          ) : null}
           {assemblyOperations.length ? (
             <ol className="assembly-instructions-view__index">
               {assemblyOperations.map((operation) => <li key={operation.id}>{nodeTitle(operation)}</li>)}
@@ -227,11 +216,10 @@ export function AssemblyInstructionsView({
           const stepCanvases = steps.flatMap((step) => {
             const canvas = canvasOwnedByStep(step.id, nodes, edges)
             // Assembly Instructions is a deliberate publication, not an
-            // authoring dump. A real visual owned by a Step is shown by
-            // default; blank/unfinished canvases never create a page, and an
-            // author can explicitly hide a particular Step visual in Assembly.
+            // authoring dump. A real Step-owned visual appears only after an
+            // author deliberately checks “show” in Assembly.
             return canvas
-              && canvas.data.properties[OSA_PROPERTY.visualIncludeInInstructions] !== 'false'
+              && canvas.data.properties[OSA_PROPERTY.visualIncludeInInstructions] === 'true'
               && visualHasInstructionContent(canvas, nodes, edges)
               ? [{ step, canvas }]
               : []
@@ -252,7 +240,7 @@ export function AssemblyInstructionsView({
                   <strong className="assembly-instructions-view__criteria-title">criteria</strong>
 
                   <div style={fieldLabel}>
-                    <span>in</span>
+                    <span>parts in</span>
                     <ObjectNames objects={inputParts} />
                   </div>
 

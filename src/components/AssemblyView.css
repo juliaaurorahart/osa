@@ -706,6 +706,32 @@
   margin: 0;
 }
 
+/* Assembly is a document authoring surface, not the project inventory.
+   Parts, tools, and Visuals remain project objects in Space. A card only
+   exposes the information needed to write and perform that one instruction. */
+.assembly-view .assembly-operation-card.is-open .assembly-card__columns {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.assembly-view .assembly-operation-card.is-open .assembly-card__view {
+  display: none;
+}
+
+/* The title card is intentionally just the assembly title and the ordered
+   card list. Project inventory, costs, colors, and authoring notes belong in
+   their own project views, not in the instruction sequence. */
+.assembly-view .assembly-index-card.is-open .assembly-index-card__steps,
+.assembly-view .assembly-index-card.is-open .assembly-index-card__objects,
+.assembly-view .assembly-index-card.is-open .assembly-semantic-table,
+.assembly-view .assembly-index-card.is-open .assembly-index-card__create-actions,
+.assembly-view .assembly-index-card.is-open textarea[aria-label='assembly overview'] {
+  display: none;
+}
+
+.assembly-view .assembly-index-card.is-open > div:not(.assembly-card__focus-controls) {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
 .assembly-card__view-header h2 {
   font-size: clamp(0.82rem, 1.5vw, 1.1rem);
   font-weight: 600;

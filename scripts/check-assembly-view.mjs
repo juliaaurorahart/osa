@@ -268,7 +268,7 @@ try {
   assert.equal((markup.match(/<image /g) ?? []).length, 2)
   assert.match(markup, /data-sketch-element-id="assembly-view-check-canvas-label"/)
   assert.match(markup, /assembly-index-card/)
-  for (const label of ['criteria', 'in', 'tools', 'steps']) {
+  for (const label of ['criteria', 'parts in', 'tools', 'steps']) {
     assert.match(markup, new RegExp(`>${label}<`))
   }
   assert.match(markup, />preview instructions<\/button>/)
@@ -439,11 +439,13 @@ try {
     operations: instructionNodes.filter((node) => node.data.kind === 'action'),
     edges: instructionEdges,
   }))
-  assert.match(instructionsMarkup, /<h1 id="assembly-instructions-title">Assembly Instructions<\/h1>/)
+  assert.doesNotMatch(instructionsMarkup, /<h1 id="assembly-instructions-title">Assembly Instructions<\/h1>/)
   assert.equal((instructionsMarkup.match(/assembly-operation-card/g) ?? []).length, 6)
   assert.match(instructionsMarkup, /Connector Box Drill/)
   assert.match(instructionsMarkup, /Drill the 5\/16 in side hole/)
   assert.match(instructionsMarkup, /Use the 5\/16 in bit on the marked side\./)
+  assert.match(instructionsMarkup, />parts in</)
+  assert.doesNotMatch(instructionsMarkup, />out</)
   assert.doesNotMatch(
     instructionsMarkup,
     /step canvases/,
@@ -526,7 +528,7 @@ try {
     onClose: noop,
   }))
   assert.match(stepCanvasViewerMarkup, /role="dialog"/)
-  assert.match(stepCanvasViewerMarkup, /aria-label="View Drill the 5\/16 in side hole canvas"/)
+  assert.match(stepCanvasViewerMarkup, /aria-label="View Drill the 5\/16 in side hole"/)
   assert.match(stepCanvasViewerMarkup, />close<\/button>/)
   assert.match(stepCanvasViewerMarkup, /<svg[^>]*class="sketch-preview/)
   assert.doesNotMatch(

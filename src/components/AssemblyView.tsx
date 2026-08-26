@@ -1273,17 +1273,17 @@ export function AssemblyView({
           )
           const steps = stepsForOperation(operation.id, nodes, edges)
           // Compact Assembly cards use precisely the same visual contract as
-          // the team-facing instructions: a Step contributes its one owned
-          // canvas. Source slides and other authoring-only Visual links stay
-          // hidden until the card itself is opened.
+          // the team-facing instructions: a Step contributes its one
+          // deliberately published canvas. Source slides and other
+          // authoring-only Visual links stay out of the instruction.
           const stepCanvases = steps.flatMap((step) => {
             const canvas = canvasOwnedByStep(step.id, nodes, edges)
             // A team-facing instruction is intentionally opt-in. Authoring
             // canvases, source slides, and empty work surfaces stay in the
             // Assembly workbench until the author chooses to publish a
             // finished, non-empty Step canvas.
-                return canvas
-                  && canvas.data.properties[OSA_PROPERTY.visualIncludeInInstructions] !== 'false'
+            return canvas
+              && canvas.data.properties[OSA_PROPERTY.visualIncludeInInstructions] === 'true'
               && visualHasInstructionContent(canvas, nodes, edges)
               ? [{ step, canvas }]
               : []
@@ -1499,7 +1499,7 @@ export function AssemblyView({
                   <strong style={{ fontSize: 'clamp(0.76rem, 1.5vw, 1.15rem)', fontWeight: 500 }}>criteria</strong>
 
                   <div style={fieldLabel}>
-                    <span>in</span>
+                    <span>parts in</span>
                     <div style={{ minWidth: 0 }}>
                       <div className="assembly-linked-object-list" style={{ minHeight: '1.3em' }}>
                         {inputParts.length
@@ -1707,9 +1707,9 @@ export function AssemblyView({
                       <ol style={{ display: 'grid', gap: 8, margin: 0, paddingLeft: '1.35em' }}>
                         {steps.map((step, stepIndex) => {
                           const stepCanvas = canvasOwnedByStep(step.id, nodes, edges)
-                      const includeStepCanvas = stepCanvas?.data.properties[
-                        OSA_PROPERTY.visualIncludeInInstructions
-                      ] !== 'false'
+                          const includeStepCanvas = stepCanvas?.data.properties[
+                            OSA_PROPERTY.visualIncludeInInstructions
+                          ] === 'true'
                           return (
                             <li key={step.id} style={{ display: 'grid', gap: 4, minWidth: 0 }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
