@@ -112,8 +112,28 @@
 .assembly-card__focus-controls {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
   min-height: 27px;
   margin: -3px 0 8px;
+}
+
+.assembly-card__close-button {
+  min-height: 27px;
+  padding: 4px 8px;
+  border: 1px solid var(--osa-border);
+  border-radius: 999px;
+  background: var(--osa-surface);
+  color: var(--osa-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+.assembly-card__close-button:hover,
+.assembly-card__close-button:focus-visible {
+  border-color: var(--osa-focus);
+  color: var(--osa-text);
+  outline: 0;
 }
 
 .assembly-card__lock-button {
@@ -381,6 +401,88 @@
 .assembly-card.is-focused {
   max-width: 1080px;
   justify-self: center;
+}
+
+/* Assembly begins as a light, preview-like document. A compact card exposes
+   only the facts that help someone choose it; clicking it opens the same
+   authoring card and callbacks that have always backed this view. */
+.assembly-card.is-summary {
+  overflow: hidden;
+}
+
+.assembly-card__summary {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  gap: 7px;
+  box-sizing: border-box;
+  padding: clamp(15px, 2.5vw, 26px) clamp(16px, 3vw, 34px);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.assembly-card__summary:hover,
+.assembly-card__summary:focus-visible {
+  background: var(--osa-hover-surface);
+  outline: 2px solid var(--osa-focus);
+  outline-offset: -2px;
+}
+
+.assembly-card__summary-kicker {
+  color: var(--osa-muted);
+  font-size: 0.74rem;
+  line-height: 1.2;
+  text-transform: lowercase;
+}
+
+.assembly-card__summary-title {
+  min-width: 0;
+  color: var(--osa-text);
+  font-size: clamp(1.05rem, 2vw, 1.6rem);
+  font-weight: 500;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.assembly-card__summary-meta,
+.assembly-card__summary-notes {
+  color: var(--osa-muted);
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.assembly-card__summary-notes {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.assembly-card__summary-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+  gap: 8px 18px;
+  color: var(--osa-muted);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.assembly-card__summary-fields > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.assembly-card__summary-fields b {
+  display: block;
+  margin-bottom: 1px;
+  color: var(--osa-text);
+  font-size: 0.88em;
+  font-weight: 600;
+  text-transform: lowercase;
 }
 
 .assembly-card input::placeholder,
@@ -991,6 +1093,10 @@
   .assembly-card {
     min-height: 62vw;
     aspect-ratio: auto !important;
+  }
+
+  .assembly-card.is-summary {
+    min-height: 0;
   }
 
   .assembly-card__columns {

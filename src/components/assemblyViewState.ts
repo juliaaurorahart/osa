@@ -10,6 +10,12 @@ export type AssemblyToolDraft = {
 
 export type AssemblyViewUiState = {
   focusedCardId: string
+  /**
+   * The card whose full authoring controls are currently open. Keeping this
+   * separate from focus lets Assembly stay a compact, preview-like document
+   * until someone deliberately opens one card to edit it.
+   */
+  openCardId: string | null
   lockedCardId: string | null
   /** The Visual being edited over this Assembly card; never saved as project data. */
   editingVisualId: string | null
@@ -26,6 +32,7 @@ export type AssemblyViewUiState = {
 export function createAssemblyViewUiState(): AssemblyViewUiState {
   return {
     focusedCardId: 'assembly-index',
+    openCardId: null,
     lockedCardId: null,
     editingVisualId: null,
     editingOperationId: null,

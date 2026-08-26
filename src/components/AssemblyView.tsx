@@ -58,6 +58,8 @@ type AssemblyViewProps = {
   onSelectAssembly: (assemblyId: string) => void
   onCreateAssembly: (title: string) => string
   onCreateOperation: (assemblyId: string, title: string) => string
+  /** Moves one card in the durable Assembly instruction sequence. */
+  onReorderOperation: (assemblyId: string, operationId: string, direction: 'up' | 'down') => void
   /** Removes one card from this Assembly without deleting its project objects. */
   onRemoveOperation: (operationId: string) => void
   /** Adds one named, ordered durable step beneath an instruction card. */
@@ -426,6 +428,7 @@ export function AssemblyView({
   onSelectAssembly,
   onCreateAssembly,
   onCreateOperation,
+  onReorderOperation,
   onRemoveOperation,
   onCreateStep,
   onReorderStep,
@@ -512,6 +515,9 @@ export function AssemblyView({
   ), [assemblyOperations, assemblyParts, edges, nodes])
   const {
     focusedCardId,
+    // Older in-memory state can survive a hot reload. A missing open card is
+    // simply the normal compact Assembly document.
+    openCardId = null,
     lockedCardId,
     editingVisualId,
     editingOperationId,
@@ -527,6 +533,9 @@ export function AssemblyView({
   // Assembly. It is intentionally not part of the saved graph.
   const setFocusedCardId = (nextCardId: string) => {
     onUiStateChange((current) => ({ ...current, focusedCardId: nextCardId }))
+  }
+  const setOpenCardId = (nextCardId: string | null) => {
+    onUiStateChange((current) => ({ ...current, openCardId: nextCardId }))
   }
   const setLockedCardId = (nextCardId: SetStateAction<string | null>) => {
     onUiStateChange((current) => ({
@@ -575,6 +584,13 @@ export function AssemblyView({
     || assemblyOperations.some((operation) => operation.id === focusedCardId)
     ? focusedCardId
     : INDEX_CARD_ID
+  // Opening a card is a presentational choice, just like focus and lock. A
+  // stale card ID must never leave the author with a blank page after a card
+  // has been removed or the selected Assembly changes.
+  const activeOpenCardId = openCardId === INDEX_CARD_ID
+    || assemblyOperations.some((operation) => operation.id === openCardId)
+    ? openCardId
+    : null
   // A card can disappear when its source data changes or the selected
   // assembly changes. In that case, quietly fall back to the normal board
   // rather than leaving the builder with an empty locked pane.
@@ -585,6 +601,11 @@ export function AssemblyView({
   const toggleCardLock = (cardId: string) => {
     setLockedCardId((currentCardId) => currentCardId === cardId ? null : cardId)
   }
+  const openCard = (cardId: string) => {
+    setFocusedCardId(cardId)
+    setOpenCardId(cardId)
+  }
+  const closeCard = () => setOpenCardId(null)
   const editingVisualCandidate = editingVisualId
     ? nodes.find((node) => node.id === editingVisualId)
     : undefined
@@ -617,7 +638,7 @@ export function AssemblyView({
     if (readOnly) return
     const assemblyId = onCreateAssembly(`Assembly ${assemblies.length + 1}`)
     onSelectAssembly(assemblyId)
-    setFocusedCardId(INDEX_CARD_ID)
+    openCard(INDEX_CARD_ID)
   }
 
   if (!selectedAssembly) {
@@ -654,7 +675,7 @@ export function AssemblyView({
       selectedAssembly.id,
       `Instruction ${assemblyOperations.length + 1}`,
     )
-    setFocusedCardId(cardId)
+    openCard(cardId)
   }
 
   const cardFocusStyle = (focused: boolean): CSSProperties => focused
@@ -664,6 +685,7 @@ export function AssemblyView({
         outlineOffset: 4,
       }
     : { cursor: 'pointer' }
+  const isIndexOpen = activeOpenCardId === INDEX_CARD_ID
 
   return (
     <section className="work-view assembly-view" aria-labelledby="assembly-view-title">
@@ -760,14 +782,17 @@ export function AssemblyView({
         }}
       >
         {!activeLockedCardId || activeLockedCardId === INDEX_CARD_ID ? <article
-          className={`assembly-card assembly-index-card${activeFocusedCardId === INDEX_CARD_ID ? ' is-focused' : ''}`}
-          style={{ ...cardShell, ...cardFocusStyle(activeFocusedCardId === INDEX_CARD_ID) }}
+          className={`assembly-card assembly-index-card${isIndexOpen ? ' is-focused is-open' : ' is-summary'}`}
+          style={{ ...cardShell, ...(isIndexOpen ? {} : { padding: 0 }), ...cardFocusStyle(isIndexOpen) }}
           tabIndex={0}
           aria-label="assembly index card"
-          onClick={() => setFocusedCardId(INDEX_CARD_ID)}
-          onKeyDown={(event) => cardKeyDown(event, () => setFocusedCardId(INDEX_CARD_ID))}
+          onClick={() => {
+            if (!isIndexOpen) openCard(INDEX_CARD_ID)
+          }}
+          onKeyDown={(event) => cardKeyDown(event, () => openCard(INDEX_CARD_ID))}
         >
-          {activeFocusedCardId === INDEX_CARD_ID ? (
+          {isIndexOpen ? (
+            <>
             <div className="assembly-card__focus-controls">
               <button
                 className="assembly-card__lock-button"
@@ -783,8 +808,18 @@ export function AssemblyView({
               >
                 {activeLockedCardId === INDEX_CARD_ID ? 'unlock card view' : 'lock this card'}
               </button>
+              <button
+                className="assembly-card__close-button"
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  closeCard()
+                }}
+              >
+                close details
+              </button>
             </div>
-          ) : null}
+
           <input
             aria-label="assembly title"
             placeholder="assembly title"
@@ -804,7 +839,7 @@ export function AssemblyView({
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.3fr) minmax(180px, 0.7fr)', gap: '6%' }}>
             <div style={{ display: 'grid', alignContent: 'start', gap: 8 }}>
               <ol style={{ margin: 0, paddingLeft: '1.45em', fontSize: 'clamp(0.8rem, 1.8vw, 1.35rem)', lineHeight: 1.55 }}>
-                {assemblyOperations.length ? assemblyOperations.map((operation) => (
+                {assemblyOperations.length ? assemblyOperations.map((operation, operationIndex) => (
                   <li key={operation.id}>
                     {readOnly ? (
                       <button
@@ -828,6 +863,34 @@ export function AssemblyView({
                           onChange={(event) => onNameChange(operation.id, event.target.value)}
                           style={{ ...transparentInput, flex: '1 1 auto', minWidth: 0, font: 'inherit' }}
                         />
+                        <span style={{ display: 'inline-flex', gap: 2 }}>
+                          <button
+                            className="text-action"
+                            type="button"
+                            aria-label={`move ${nodeTitle(operation)} card up`}
+                            title="Move card up"
+                            disabled={operationIndex === 0}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              onReorderOperation(selectedAssembly.id, operation.id, 'up')
+                            }}
+                          >
+                            ↑
+                          </button>
+                          <button
+                            className="text-action"
+                            type="button"
+                            aria-label={`move ${nodeTitle(operation)} card down`}
+                            title="Move card down"
+                            disabled={operationIndex === assemblyOperations.length - 1}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              onReorderOperation(selectedAssembly.id, operation.id, 'down')
+                            }}
+                          >
+                            ↓
+                          </button>
+                        </span>
                         <button
                           className="text-action"
                           type="button"
@@ -1063,6 +1126,29 @@ export function AssemblyView({
               </button>
             </div>
           ) : null}
+            </>
+          ) : (
+            <button
+              className="assembly-card__summary"
+              type="button"
+              aria-label={`Open ${nodeTitle(selectedAssembly)} details`}
+              aria-expanded={false}
+              onClick={() => openCard(INDEX_CARD_ID)}
+            >
+              <span className="assembly-card__summary-kicker">assembly</span>
+              <strong className="assembly-card__summary-title">{nodeTitle(selectedAssembly)}</strong>
+              <span className="assembly-card__summary-meta">
+                {assemblyOperations.length
+                  ? `${assemblyOperations.length} ${assemblyOperations.length === 1 ? 'card' : 'cards'}`
+                  : 'no cards yet'}
+                {assemblyParts.length ? ` · ${assemblyParts.length} ${assemblyParts.length === 1 ? 'part' : 'parts'}` : ''}
+                {assemblyExpenses.length ? ` · ${assemblyExpenses.length} ${assemblyExpenses.length === 1 ? 'expense' : 'expenses'}` : ''}
+              </span>
+              {selectedAssembly.data.text.trim() ? (
+                <span className="assembly-card__summary-notes">{selectedAssembly.data.text}</span>
+              ) : null}
+            </button>
+          )}
         </article> : null}
 
         {assemblyOperations.map((operation, operationIndex) => {
@@ -1215,22 +1301,37 @@ export function AssemblyView({
           const visibleIncludedPhotoObjects = includedPhotoObjects.filter((object) => (
             !hiddenVisualOwnerIds.has(object.id)
           ))
+          const isOpen = activeOpenCardId === operation.id
           const focusCard = () => {
             setFocusedCardId(operation.id)
           }
+          const openOperation = () => openCard(operation.id)
 
           return (
             <article
-              className={`assembly-card assembly-operation-card${focused ? ' is-focused' : ''}`}
-              style={{ ...cardShell, ...cardFocusStyle(focused) }}
+              className={`assembly-card assembly-operation-card${isOpen ? ' is-focused is-open' : ' is-summary'}`}
+              style={{ ...cardShell, ...(isOpen ? {} : { padding: 0 }), ...cardFocusStyle(isOpen) }}
               tabIndex={0}
               key={operation.id}
               aria-label={`instruction card ${operationIndex + 1}: ${nodeTitle(operation)}`}
-              onClick={focusCard}
-              onKeyDown={(event) => cardKeyDown(event, focusCard)}
+              onClick={() => {
+                if (!isOpen) openOperation()
+              }}
+              onKeyDown={(event) => cardKeyDown(event, openOperation)}
             >
-              {focused ? (
+              {isOpen ? (
+                <>
                 <div className="assembly-card__focus-controls">
+                  <button
+                    className="assembly-card__close-button"
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      closeCard()
+                    }}
+                  >
+                    close details
+                  </button>
                   <button
                     className="assembly-card__lock-button"
                     type="button"
@@ -1246,7 +1347,7 @@ export function AssemblyView({
                     {activeLockedCardId === operation.id ? 'unlock card view' : 'lock this card'}
                   </button>
                 </div>
-              ) : null}
+
               <div className="assembly-card__columns">
                 <div className="assembly-card__details">
                   <input
@@ -1833,6 +1934,44 @@ export function AssemblyView({
                   </div>
                 </section>
               </div>
+                </>
+              ) : (
+                <button
+                  className="assembly-card__summary"
+                  type="button"
+                  aria-label={`Open ${nodeTitle(operation)} details`}
+                  aria-expanded={false}
+                  onClick={openOperation}
+                >
+                  <span className="assembly-card__summary-kicker">instruction {operationIndex + 1}</span>
+                  <strong className="assembly-card__summary-title">{nodeTitle(operation)}</strong>
+                  <span className="assembly-card__summary-fields">
+                    <span>
+                      <b>in</b>
+                      {inputParts.length ? inputParts.map(nodeTitle).join(' · ') : 'no parts linked'}
+                    </span>
+                    <span>
+                      <b>tools</b>
+                      {tools.length ? tools.map(nodeTitle).join(' · ') : 'no tools linked'}
+                    </span>
+                    <span>
+                      <b>steps</b>
+                      {steps.length
+                        ? `${steps.length} ${steps.length === 1 ? 'step' : 'steps'}`
+                        : operation.data.text.trim() ? 'instruction notes' : 'no steps yet'}
+                    </span>
+                    {visibleLinkedVisuals.length + visibleIncludedPhotoObjects.length ? (
+                      <span>
+                        <b>visuals</b>
+                        {visibleLinkedVisuals.length + visibleIncludedPhotoObjects.length}
+                      </span>
+                    ) : null}
+                  </span>
+                  {operation.data.text.trim() ? (
+                    <span className="assembly-card__summary-notes">{operation.data.text}</span>
+                  ) : null}
+                </button>
+              )}
             </article>
           )
         })}

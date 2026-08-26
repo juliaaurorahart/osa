@@ -517,7 +517,8 @@ const OSA_THEME_KEY = 'osa:theme'
 type OsaTheme = 'dark' | 'light'
 
 function readOsaTheme(): OsaTheme {
-  return window.localStorage.getItem(OSA_THEME_KEY) === 'light' ? 'light' : 'dark'
+  const savedTheme = window.localStorage.getItem(OSA_THEME_KEY)
+  return savedTheme === 'dark' || savedTheme === 'light' ? savedTheme : 'light'
 }
 
 /** A public share reference is either a friendly name or an old opaque token. */
@@ -1682,6 +1683,60 @@ function Flow() {
   }, [createObjectNode, edges, nodes, operations, setEdges])
 
   /**
+   * An Assembly card's sequence belongs to its durable `osa:order` property.
+   * Renumbering the small affected set keeps authoring, shared instructions,
+   * and a saved board in the exact same order.
+   */
+  const reorderAssemblyOperation = useCallback((
+    assemblyId: string,
+    operationId: string,
+    direction: 'up' | 'down',
+  ) => {
+    const operationIds = latestEdges.current
+      .filter((edge) => (
+        edge.source === assemblyId
+        && (
+          edge.data.relationKind === 'project-task'
+          || edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.assemblyOperation
+        )
+      ))
+      .map((edge) => edge.target)
+    const edgePosition = new Map(operationIds.map((id, index) => [id, index]))
+    const orderedOperations = latestNodes.current
+      .filter((node) => operationIds.includes(node.id) && osaRole(node) === 'operation')
+      .sort((left, right) => {
+        const leftOrder = Number(left.data.properties[OSA_PROPERTY.order])
+        const rightOrder = Number(right.data.properties[OSA_PROPERTY.order])
+        const leftPosition = edgePosition.get(left.id) ?? Number.MAX_SAFE_INTEGER
+        const rightPosition = edgePosition.get(right.id) ?? Number.MAX_SAFE_INTEGER
+        return (Number.isFinite(leftOrder) ? leftOrder : leftPosition)
+          - (Number.isFinite(rightOrder) ? rightOrder : rightPosition)
+          || leftPosition - rightPosition
+      })
+    const currentIndex = orderedOperations.findIndex((operation) => operation.id === operationId)
+    const nextIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= orderedOperations.length) return
+
+    const reordered = [...orderedOperations]
+    ;[reordered[currentIndex], reordered[nextIndex]] = [reordered[nextIndex], reordered[currentIndex]]
+    const orderByOperationId = new Map(reordered.map((operation, index) => [
+      operation.id,
+      String(index + 1),
+    ]))
+    setNodes((currentNodes) => currentNodes.map((node) => {
+      const order = orderByOperationId.get(node.id)
+      if (order === undefined || node.data.properties[OSA_PROPERTY.order] === order) return node
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          properties: { ...node.data.properties, [OSA_PROPERTY.order]: order },
+        },
+      }
+    }))
+  }, [setNodes])
+
+  /**
    * Removes one Assembly card from the instruction sequence without deleting
    * its parts, tools, Steps, or Visuals. Those are ordinary project objects
    * and remain available in Space for relinking or recovery later.
@@ -1707,6 +1762,7 @@ function Flow() {
         focusedCardId: current.focusedCardId === operationId
           ? 'assembly-index'
           : current.focusedCardId,
+        openCardId: current.openCardId === operationId ? null : current.openCardId,
         lockedCardId: current.lockedCardId === operationId ? null : current.lockedCardId,
         editingVisualId: current.editingOperationId === operationId ? null : current.editingVisualId,
         editingOperationId: current.editingOperationId === operationId
@@ -4568,6 +4624,7 @@ function Flow() {
               onSelectAssembly={setSelectedAssemblyId}
               onCreateAssembly={createAssembly}
               onCreateOperation={createAssemblyOperation}
+              onReorderOperation={reorderAssemblyOperation}
               onRemoveOperation={removeAssemblyOperation}
               onCreateStep={createOperationStep}
               onReorderStep={reorderOperationStep}
