@@ -58,6 +58,14 @@ export class BoardUnavailableError extends Error {
   }
 }
 
+/** The browser caught an oversized document before D1 can reject the save. */
+export class BoardSizeError extends Error {
+  constructor() {
+    super('This board is too large to save. Remove or replace some photos.')
+    this.name = 'BoardSizeError'
+  }
+}
+
 /** The account is signed in but lacks permission for the requested board action. */
 export class BoardPermissionError extends Error {
   constructor(message = 'You do not have permission to change this board.') {
@@ -291,6 +299,12 @@ type RawSaveAttempt =
 // for a failed request before every normal autosave.
 let rawSaveTransportAvailable: boolean | undefined
 
+/**
+ * D1 has a 2 MB row limit. Leave room for protocol overhead and avoid making
+ * a person wait through an upload that the database will reject.
+ */
+export const MAX_BOARD_DOCUMENT_BYTES = 1_700_000
+
 function boardDocumentForRawSave(board: SavedBoard) {
   const document: SavedBoard & { baseRevision?: unknown } = { ...board }
   delete document.archived
@@ -298,6 +312,14 @@ function boardDocumentForRawSave(board: SavedBoard) {
   delete document.access
   delete document.baseRevision
   return document
+}
+
+function serializedBoardDocumentForRawSave(board: SavedBoard) {
+  const serialized = JSON.stringify(boardDocumentForRawSave(board))
+  if (new TextEncoder().encode(serialized).byteLength > MAX_BOARD_DOCUMENT_BYTES) {
+    throw new BoardSizeError()
+  }
+  return serialized
 }
 
 function rawSaveHeaders(board: SavedBoard, baseRevision: number | null | undefined) {
@@ -357,11 +379,12 @@ async function rawConflictError(body: unknown): Promise<BoardConflictError | nul
 async function saveBoardRaw(
   board: SavedBoard,
   baseRevision: number | null | undefined,
+  serializedBoardDocument: string,
 ): Promise<RawSaveAttempt> {
   const response = await boardRequest('/api/boards', {
     method: 'PUT',
     headers: rawSaveHeaders(board, baseRevision),
-    body: JSON.stringify(boardDocumentForRawSave(board)),
+    body: serializedBoardDocument,
   })
 
   if (response.status === 204) {
@@ -396,8 +419,11 @@ export async function saveBoard(
   board: SavedBoard,
   baseRevision: number | null | undefined = undefined,
 ): Promise<SavedBoard> {
+  // Do this before either transport path. The old JSON-envelope fallback is
+  // only a few bytes larger than this raw document and still has D1 headroom.
+  const serializedBoardDocument = serializedBoardDocumentForRawSave(board)
   if (rawSaveTransportAvailable !== false) {
-    const rawAttempt = await saveBoardRaw(board, baseRevision)
+    const rawAttempt = await saveBoardRaw(board, baseRevision, serializedBoardDocument)
     if (rawAttempt.kind === 'saved') {
       rawSaveTransportAvailable = true
       return rawAttempt.board

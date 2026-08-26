@@ -20,6 +20,7 @@ import {
   type SketchAnnotationTarget,
   type TextFlowNode,
 } from '../graph/textNode'
+import { compactImageFile } from '../graph/imageAsset'
 import { annotationTargetsForNodes } from '../graph/sketchAnnotation'
 import {
   visualForOfficialVersion,
@@ -195,6 +196,7 @@ export function VisualCanvasEditor({
     embeddedVisuals.map(cloneEmbed)
   ))
   const [viewingVersionId, setViewingVersionId] = useState<string | null>(null)
+  const [imageImportError, setImageImportError] = useState<string | null>(null)
   const draftEmbedsRef = useRef(draftEmbeds)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const cameraInputRef = useRef<HTMLInputElement | null>(null)
@@ -301,39 +303,46 @@ export function VisualCanvasEditor({
     )))
   }
 
-  const addImageAsset = (file: File | undefined) => {
-    if (editingDisabled || !file || !file.type.startsWith('image/')) return
-    const reader = new FileReader()
-    reader.addEventListener('load', () => {
-      // A late file read must not sneak an edit in after the canvas is locked.
-      if (editingDisabledRef.current) return
-      const imageData = reader.result
-      if (typeof imageData !== 'string') return
+  /** Prepares picked, camera, and dropped images through one durable budget. */
+  const prepareImageImport = async (file: File | undefined) => {
+    if (!file) return null
+    setImageImportError(null)
+    try {
+      return await compactImageFile(file)
+    } catch (error) {
+      setImageImportError(error instanceof Error ? error.message : 'The image could not be imported.')
+      return null
+    }
+  }
 
-      const title = imageTitle(file)
-      const imageAsset = createTextNode({
-        // The editor may allocate the durable UUID; App adds this node as soon
-        // as its placement is published.
-        id: `osa:asset:${crypto.randomUUID()}`,
-        position: {
-          x: visual.position.x + 240,
-          y: visual.position.y + 120,
-        },
-        name: title,
-        text: 'Imported image asset.',
-        kind: 'visual',
-        spaceIds: visual.data.spaceIds,
-        properties: {
-          [OSA_PROPERTY.role]: 'visual',
-          [OSA_PROPERTY.visualContent]: 'image',
-          [OSA_PROPERTY.visualImmutable]: 'true',
-          [OSA_PROPERTY.assetImage]: imageData,
-          [OSA_PROPERTY.assetImageAlt]: title,
-        },
-      })
-      addVisual(imageAsset)
+  const addImageAsset = async (file: File | undefined) => {
+    if (editingDisabled || !file) return
+    const imageData = await prepareImageImport(file)
+    // A late image conversion must not sneak an edit in after the canvas is locked.
+    if (editingDisabledRef.current || !imageData) return
+
+    const title = imageTitle(file)
+    const imageAsset = createTextNode({
+      // The editor may allocate the durable UUID; App adds this node as soon
+      // as its placement is published.
+      id: `osa:asset:${crypto.randomUUID()}`,
+      position: {
+        x: visual.position.x + 240,
+        y: visual.position.y + 120,
+      },
+      name: title,
+      text: 'Imported image asset.',
+      kind: 'visual',
+      spaceIds: visual.data.spaceIds,
+      properties: {
+        [OSA_PROPERTY.role]: 'visual',
+        [OSA_PROPERTY.visualContent]: 'image',
+        [OSA_PROPERTY.visualImmutable]: 'true',
+        [OSA_PROPERTY.assetImage]: imageData,
+        [OSA_PROPERTY.assetImageAlt]: title,
+      },
     })
-    reader.readAsDataURL(file)
+    addVisual(imageAsset)
   }
 
   /**
@@ -349,56 +358,46 @@ export function VisualCanvasEditor({
   }
 
   /** Turns a generic canvas into a protected photo Visual after a real file is chosen. */
-  const selectPhotoIdentity = (file: File | undefined) => {
-    if (readOnly || !awaitingIdentity || !onPropertyChange || !file || !file.type.startsWith('image/')) return
+  const selectPhotoIdentity = async (file: File | undefined) => {
+    if (readOnly || !awaitingIdentity || !onPropertyChange || !file) return
+    const imageData = await prepareImageImport(file)
+    if (!imageData) return
 
-    const reader = new FileReader()
-    reader.addEventListener('load', () => {
-      const imageData = reader.result
-      if (typeof imageData !== 'string') return
-
-      const title = imageTitle(file)
-      onPropertyChange(visual.id, OSA_PROPERTY.visualIdentity, 'photo')
-      onPropertyChange(visual.id, OSA_PROPERTY.visualContent, 'image')
-      onPropertyChange(visual.id, OSA_PROPERTY.visualImmutable, 'true')
-      onPropertyChange(visual.id, OSA_PROPERTY.assetImage, imageData)
-      onPropertyChange(visual.id, OSA_PROPERTY.assetImageAlt, title)
-      // A step canvas is named by its step. The photo filename remains useful
-      // as alt/source metadata, but must not break that inherited name.
-      if (!nameReadOnly) onNameChange(visual.id, title)
-    })
-    reader.readAsDataURL(file)
+    const title = imageTitle(file)
+    onPropertyChange(visual.id, OSA_PROPERTY.visualIdentity, 'photo')
+    onPropertyChange(visual.id, OSA_PROPERTY.visualContent, 'image')
+    onPropertyChange(visual.id, OSA_PROPERTY.visualImmutable, 'true')
+    onPropertyChange(visual.id, OSA_PROPERTY.assetImage, imageData)
+    onPropertyChange(visual.id, OSA_PROPERTY.assetImageAlt, title)
+    // A step canvas is named by its step. The photo filename remains useful
+    // as alt/source metadata, but must not break that inherited name.
+    if (!nameReadOnly) onNameChange(visual.id, title)
   }
 
   const onIdentityPhotoChange = (event: ChangeEvent<HTMLInputElement>) => {
-    selectPhotoIdentity(event.currentTarget.files?.[0])
+    void selectPhotoIdentity(event.currentTarget.files?.[0])
     event.currentTarget.value = ''
   }
 
   /** Replaces the pixels of an existing photo canvas without changing its identity. */
-  const replacePhoto = (file: File | undefined) => {
-    if (readOnly || identity !== 'photo' || !onPropertyChange || !file || !file.type.startsWith('image/')) return
+  const replacePhoto = async (file: File | undefined) => {
+    if (readOnly || identity !== 'photo' || !onPropertyChange || !file) return
+    const imageData = await prepareImageImport(file)
+    if (!imageData) return
 
-    const reader = new FileReader()
-    reader.addEventListener('load', () => {
-      const imageData = reader.result
-      if (typeof imageData !== 'string') return
-
-      onPropertyChange(visual.id, OSA_PROPERTY.assetImage, imageData)
-      onPropertyChange(visual.id, OSA_PROPERTY.assetImageAlt, imageTitle(file))
-    })
-    reader.readAsDataURL(file)
+    onPropertyChange(visual.id, OSA_PROPERTY.assetImage, imageData)
+    onPropertyChange(visual.id, OSA_PROPERTY.assetImageAlt, imageTitle(file))
   }
 
   const onReplacePhotoChange = (event: ChangeEvent<HTMLInputElement>) => {
-    replacePhoto(event.currentTarget.files?.[0])
+    void replacePhoto(event.currentTarget.files?.[0])
     // Selecting the same photo a second time is a valid replacement.
     event.currentTarget.value = ''
   }
 
   const onImageChange = (event: ChangeEvent<HTMLInputElement>) => {
     if (editingDisabled) return
-    addImageAsset(event.currentTarget.files?.[0])
+    void addImageAsset(event.currentTarget.files?.[0])
     // Let a person select the same file again after removing/replacing it.
     event.currentTarget.value = ''
   }
@@ -406,7 +405,7 @@ export function VisualCanvasEditor({
   const onDrop = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault()
     if (editingDisabled) return
-    addImageAsset(event.dataTransfer.files[0])
+    void addImageAsset(event.dataTransfer.files[0])
   }
 
   const updateEmbedPlacement = (id: string, placement: VisualEmbedPlacement) => {
@@ -586,6 +585,7 @@ export function VisualCanvasEditor({
             <button type="button" onClick={closeEditor}>close</button>
           </div>
         </header>
+        {imageImportError ? <p role="alert">{imageImportError}</p> : null}
         <div className="visual-canvas-editor__body">
           {awaitingIdentity ? (
             <section className="visual-canvas-editor__identity" aria-label="Choose canvas type">

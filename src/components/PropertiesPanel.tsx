@@ -1,5 +1,6 @@
-import type { ChangeEvent, DragEvent } from 'react'
+import { useState, type ChangeEvent, type DragEvent } from 'react'
 import type { TextFlowNode } from '../graph/textNode'
+import { compactImageFile } from '../graph/imageAsset'
 import { NODE_KINDS } from '../graph/nodeKinds'
 import {
   appearanceAccentColor,
@@ -57,6 +58,7 @@ export function PropertiesPanel({
   onOpenOwnedVisual,
   onRemoveOwnedVisualCanvas,
 }: PropertiesPanelProps) {
+  const [imageImportError, setImageImportError] = useState<string | null>(null)
   const propertyEntries = Object.entries(node.data.properties)
   const accentColor = appearanceAccentColor(node)
   const assetImage = node.data.properties[OSA_PROPERTY.assetImage] ?? ''
@@ -103,46 +105,47 @@ export function PropertiesPanel({
   )
 
   /** Assign one image file as this object's durable visual/canvas content. */
-  const setAssetImageFromFile = (file: File) => {
-    // `accept` filters the picker, but drag-and-drop can bypass it.
-    if (!file.type.startsWith('image/')) return
+  const setAssetImageFromFile = async (file: File) => {
+    setImageImportError(null)
+    let imageData: string
+    try {
+      imageData = await compactImageFile(file)
+    } catch (error) {
+      setImageImportError(error instanceof Error ? error.message : 'The image could not be imported.')
+      return
+    }
+    onPropertyChange(node.id, OSA_PROPERTY.assetImage, imageData)
 
-    const reader = new FileReader()
-    reader.addEventListener('load', () => {
-      if (typeof reader.result !== 'string') return
-      onPropertyChange(node.id, OSA_PROPERTY.assetImage, reader.result)
-
-      // A filename is a useful starting description, but remains editable
-      // immediately below for a better description of the visual.
-      if (!assetImageAlt.trim()) {
-        onPropertyChange(
-          node.id,
-          OSA_PROPERTY.assetImageAlt,
-          file.name.replace(/\.[^.]+$/, ''),
-        )
-      }
-    })
-    reader.readAsDataURL(file)
+    // A filename is a useful starting description, but remains editable
+    // immediately below for a better description of the visual.
+    if (!assetImageAlt.trim()) {
+      onPropertyChange(
+        node.id,
+        OSA_PROPERTY.assetImageAlt,
+        file.name.replace(/\.[^.]+$/, ''),
+      )
+    }
   }
 
   const onImageFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0]
     // Allow selecting the same image again after replacement.
     event.currentTarget.value = ''
-    if (file) setAssetImageFromFile(file)
+    if (file) void setAssetImageFromFile(file)
   }
 
   const onImageDrop = (event: DragEvent<HTMLElement>) => {
     // Prevent an image dropped on the panel from becoming a browser navigation.
     event.preventDefault()
     const file = event.dataTransfer.files[0]
-    if (file) setAssetImageFromFile(file)
+    if (file) void setAssetImageFromFile(file)
   }
 
   return (
     <section className="properties-panel">
       <p className="properties-panel__eyebrow">selected node</p>
       <h2>{nodeLabel}</h2>
+      {imageImportError ? <p role="alert">{imageImportError}</p> : null}
       {showsQuickPhoto ? (
         <div
           className="properties-panel__quick-photo"

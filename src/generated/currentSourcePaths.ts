@@ -39,6 +39,7 @@ export const CURRENT_SOURCE_PATHS = [
   "src/graph/boardStorage.ts",
   "src/graph/currentSourceHierarchy.ts",
   "src/graph/graphEdge.ts",
+  "src/graph/imageAsset.ts",
   "src/graph/legacyCanvasImages.ts",
   "src/graph/legacySourceVisuals.ts",
   "src/graph/nodeKinds.ts",
