@@ -1,9 +1,9 @@
 /* The canvas editor is intentionally a temporary overlay, not another OSA
-   workspace. Close it and the Assembly card beneath it is exactly where it
-   was before. */
+   workspace. Close it and the Assembly or node card beneath it is exactly
+   where it was before. */
 .visual-canvas-editor__scrim {
   position: fixed;
-  z-index: 80;
+  z-index: 100;
   inset: 0;
   display: grid;
   place-items: stretch;

@@ -274,12 +274,6 @@
   background: rgb(255 255 255 / 97%);
 }
 
-/* A Visual canvas editor is a real modal. Its header and drawing toolbar must
-   remain above OSA's persistent navigation until the editor is closed. */
-.work-view-shell.is-modal-open {
-  z-index: 90;
-}
-
 .workspace-menu-hidden .work-view-shell {
   padding-top: 38px;
 }

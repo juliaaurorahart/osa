@@ -15,14 +15,10 @@ import {
   osaRole,
   type OperationVisualPlacement,
 } from '../graph/osaData'
-import type { SketchDocument, TextFlowNode } from '../graph/textNode'
+import type { TextFlowNode } from '../graph/textNode'
 import { annotationTargetsForNodes } from '../graph/sketchAnnotation'
 import {
-  isVisualNode,
-  visualOwnerFor,
-  visualDraftEmbedsForCanvas,
   visualEmbedsForCanvas,
-  type VisualEmbedInstance,
 } from '../graph/visualEmbed'
 import type { AssemblyToolDraft, AssemblyViewUiState } from './assemblyViewState'
 import {
@@ -33,7 +29,7 @@ import {
   stepsForOperation,
   visualHasInstructionContent,
 } from './assemblyProjection'
-import { VisualCanvasEditor, VisualCanvasPreview } from './VisualCanvas'
+import { VisualCanvasPreview } from './VisualCanvas'
 import './AssemblyView.css'
 
 const INDEX_CARD_ID = 'assembly-index'
@@ -132,22 +128,11 @@ type AssemblyViewProps = {
   ) => string | undefined
   /** Reassigns a Visual to a Part, Assembly, or Tool without changing its card references. */
   onChangeVisualOwner?: (visualId: string, ownerId: string) => void
-  /** Publishes direct canvas -> Visual placements when the editor locks. */
-  onEmbeddedVisualsChange?: (parentVisualId: string, embeds: VisualEmbedInstance[]) => void
-  /** Saves an editable canvas record without changing the card-visible official version. */
-  onSaveVisualDraftVersion?: (visualId: string) => void
-  /** Makes the canvas's current draft the one version cards display. */
-  onMakeVisualOfficialVersion?: (visualId: string) => void
-  /** Opens one saved visual record as the canvas's current editable draft. */
-  onRestoreVisualVersion?: (visualId: string, versionId: string) => void
-  /** Clones an OSA drawing into an independently editable canonical Visual. */
-  onCreateIndependentVisualCopy?: (sourceVisualId: string) => TextFlowNode | null
   onNameChange: (nodeId: string, name: string) => void
   onTextChange: (nodeId: string, text: string) => void
   /** Updates durable Visual metadata chosen inside the canvas editor. */
   onPropertyChange?: (nodeId: string, propertyName: string, value: string) => void
   onOpenNode: (nodeId: string) => void
-  onSketchChange?: (nodeId: string, sketch: SketchDocument) => void
   /** A shared link can project a board without exposing editing controls. */
   readOnly?: boolean
   /** Creates/copies a read-only link for the current assembly. */
@@ -325,61 +310,6 @@ function semanticItemsForAssembly(
   ))
 }
 
-/**
- * The canvas picker stays deliberately local to the card being edited:
- * source slide, current canvases, and Visuals owned by its in/tools/out
- * objects. Broader project-wide filtering is a later view concern.
- */
-function visualCandidatesForOperation(
-  operationId: string,
-  nodes: TextFlowNode[],
-  edges: GraphEdge[],
-) {
-  const stepIds = new Set(edges
-    .filter((edge) => (
-      edge.source === operationId
-      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationStep
-    ))
-    .map((edge) => edge.target))
-  const contextObjectIds = new Set(edges
-    .filter((edge) => {
-      if (edge.source === operationId) {
-        const role = edge.data.properties[OSA_PROPERTY.relationRole]
-        return role === OSA_RELATION.operationInput
-          || role === OSA_RELATION.operationOutput
-          || role === OSA_RELATION.operationPrimaryOutput
-          || role === OSA_RELATION.operationTool
-      }
-      return edge.target === operationId
-        && (
-          edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.assemblyOperation
-          || edge.data.relationKind === 'project-task'
-        )
-    })
-    .map((edge) => edge.source === operationId ? edge.target : edge.source))
-
-  const directVisualIds = edges
-    .filter((edge) => (
-      edge.source === operationId
-      && (
-        edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationVisual
-        || edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationSourceVisual
-      )
-    ))
-    .map((edge) => edge.target)
-  const ownedVisualIds = edges
-    .filter((edge) => (
-      (contextObjectIds.has(edge.source) || stepIds.has(edge.source))
-      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
-    ))
-    .map((edge) => edge.target)
-
-  return uniqueNodes(nodes.filter((node) => (
-    (directVisualIds.includes(node.id) || ownedVisualIds.includes(node.id))
-    && isVisualNode(node)
-  )))
-}
-
 /** A printable card board projected from the ordinary objects in one Space. */
 export function AssemblyView({
   assemblies,
@@ -409,15 +339,9 @@ export function AssemblyView({
   onCreatePartForOperation,
   onLinkTool,
   onUnlinkTool,
-  onEmbeddedVisualsChange,
-  onSaveVisualDraftVersion,
-  onMakeVisualOfficialVersion,
-  onRestoreVisualVersion,
-  onCreateIndependentVisualCopy,
   onNameChange,
   onTextChange,
   onPropertyChange,
-  onSketchChange,
   onOpenNode,
   readOnly = false,
   onShare,
@@ -499,8 +423,6 @@ export function AssemblyView({
     // simply the normal compact Assembly document.
     openCardId = null,
     lockedCardId,
-    editingVisualId,
-    editingOperationId,
     toolDraft,
     toolDraftFor,
   } = uiState
@@ -561,26 +483,6 @@ export function AssemblyView({
     setOpenCardId(cardId)
   }
   const closeCard = () => setOpenCardId(null)
-  const editingVisualCandidate = editingVisualId
-    ? nodes.find((node) => node.id === editingVisualId)
-    : undefined
-  // A step owns the one canvas that illustrates it. Only a real Visual opens
-  // the canvas editor; plain project photos remain in the project library.
-  const editingVisual = isVisualNode(editingVisualCandidate)
-    ? editingVisualCandidate
-    : undefined
-  const editingVisualOwner = editingVisual
-    ? visualOwnerFor(editingVisual.id, nodes, edges)
-    : undefined
-  const editingVisualNameIsInherited = editingVisualOwner !== undefined
-    && osaRole(editingVisualOwner) === 'step'
-  const editingVisualEmbeds = editingVisual
-    ? visualDraftEmbedsForCanvas(editingVisual.id, nodes, edges)
-    : []
-  const editingVisualCandidates = editingOperationId
-    ? visualCandidatesForOperation(editingOperationId, nodes, edges)
-    : []
-
   const createAssembly = () => {
     if (readOnly) return
     const assemblyId = onCreateAssembly(`Assembly ${assemblies.length + 1}`)
@@ -1751,28 +1653,6 @@ export function AssemblyView({
           )
         })}
       </div>
-      {editingVisual && onSketchChange ? (
-        <VisualCanvasEditor
-          key={editingVisual.id}
-          visual={editingVisual}
-          embeddedVisuals={editingVisualEmbeds}
-          availableVisuals={editingVisualCandidates}
-          readOnly={readOnly}
-          onClose={() => setEditingVisual(null)}
-          onNameChange={onNameChange}
-          nameReadOnly={editingVisualNameIsInherited}
-          onSketchChange={onSketchChange}
-          onPropertyChange={onPropertyChange}
-          onEmbeddedVisualsChange={onEmbeddedVisualsChange}
-          graphNodes={nodes}
-          graphEdges={edges}
-          annotationTargets={annotationTargets}
-          onSaveDraftVersion={onSaveVisualDraftVersion}
-          onMakeOfficialVersion={onMakeVisualOfficialVersion}
-          onRestoreVisualVersion={onRestoreVisualVersion}
-          onCreateIndependentVisualCopy={onCreateIndependentVisualCopy}
-        />
-      ) : null}
     </section>
   )
 }

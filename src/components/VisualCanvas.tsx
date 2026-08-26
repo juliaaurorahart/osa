@@ -88,7 +88,7 @@ type VisualCanvasEditorProps = {
   visual: TextFlowNode
   /** Existing direct children of this canvas. */
   embeddedVisuals?: VisualEmbedInstance[]
-  /** Scope supplied by the open Assembly card: source, parts, tools, canvases. */
+  /** Project Visuals available for deliberate placement on this canvas. */
   availableVisuals?: TextFlowNode[]
   readOnly?: boolean
   onClose: () => void
@@ -157,8 +157,8 @@ function versionLabel(record: VisualVersionRecord) {
 }
 
 /**
- * In-place editor used from Assembly. It intentionally does not change the
- * workspace: closing returns to the same card and scroll position.
+ * In-place editor used from Assembly and node cards. It intentionally does
+ * not change the workspace: closing returns to the same card and scroll position.
  */
 export function VisualCanvasEditor({
   visual,
@@ -183,8 +183,8 @@ export function VisualCanvasEditor({
   // A canvas opens as a protected preview. Editing is a deliberate, local
   // choice and resets when this editor closes and opens again.
   const identity = visualIdentity(visual)
-  // Assembly supplies the complete board list. Keep a graph-context fallback
-  // so an editor used elsewhere still resolves its bound text live.
+  // The shared editor host supplies the complete board list. Keep a
+  // graph-context fallback so a standalone editor still resolves bound text live.
   const annotationTargets = suppliedAnnotationTargets
     ?? annotationTargetsForNodes(graphNodes ?? [])
   const awaitingIdentity = identity === 'untyped'

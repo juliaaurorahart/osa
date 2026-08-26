@@ -44,6 +44,7 @@ import { NotebookView } from './components/NotebookView'
 import { ProjectsView } from './components/ProjectsView'
 import { PointerToolPalette, type PointerToolAction } from './components/PointerToolPalette'
 import { SpaceToolbar } from './components/SpaceToolbar'
+import { VisualCanvasEditor } from './components/VisualCanvas'
 import {
   createGraphEdge,
   type GraphEdge,
@@ -93,6 +94,7 @@ import {
   visualDraftEmbedsForCanvas,
   visualEmbedsForVersion,
   visualEmbedWouldCreateCycle,
+  visualOwnerFor,
   type VisualEmbedInstance,
 } from './graph/visualEmbed'
 import {
@@ -2566,10 +2568,13 @@ function Flow() {
     saveVisualEmbeds(visualId, embeds)
   }, [saveVisualEmbeds, setNodes])
 
-  /** Opens a canonical Visual in the ordinary node inspector for editing. */
+  /** Opens a part/tool-owned Visual over the current node card for editing. */
   const openOwnedVisualCanvas = useCallback((visualId: string) => {
-    setSelectedItem({ type: 'node', id: visualId })
-    setInspectorExpanded(true)
+    setAssemblyViewState((current) => ({
+      ...current,
+      editingVisualId: visualId,
+      editingOperationId: null,
+    }))
   }, [])
 
   /**
@@ -4300,10 +4305,34 @@ function Flow() {
     ])
   }, [makeEdge, nodeSpaceFilter, screenToFlowPosition, setEdges, setNodes])
 
-  // The canvas editor is a modal over an Assembly card. Raise its host above
-  // the persistent workspace menu so no global controls cover its own toolbar.
-  const visualCanvasEditorOpen = Boolean(assemblyViewState.editingVisualId)
-
+  // One editor host serves canvases opened from either Assembly or a Part/Tool
+  // node card. Closing it changes only temporary UI state, so the underlying
+  // view and selected node remain exactly where they were.
+  const editingVisualCandidate = assemblyViewState.editingVisualId
+    ? nodes.find((node) => node.id === assemblyViewState.editingVisualId)
+    : undefined
+  const editingVisual = isVisualNode(editingVisualCandidate)
+    ? editingVisualCandidate
+    : undefined
+  const editingVisualOwner = editingVisual
+    ? visualOwnerFor(editingVisual.id, nodes, edges)
+    : undefined
+  const editingVisualNameIsInherited = editingVisualOwner !== undefined
+    && osaRole(editingVisualOwner) === 'step'
+  const editingVisualEmbeds = editingVisual
+    ? visualDraftEmbedsForCanvas(editingVisual.id, nodes, edges)
+    : []
+  const editingVisualCandidates = useMemo(
+    () => nodes.filter(isVisualNode),
+    [nodes],
+  )
+  const closeVisualCanvasEditor = useCallback(() => {
+    setAssemblyViewState((current) => ({
+      ...current,
+      editingVisualId: null,
+      editingOperationId: null,
+    }))
+  }, [])
   return (
     <div
       className={`osa-workspace${workspaceMenuVisible ? '' : ' workspace-menu-hidden'}`}
@@ -4745,7 +4774,7 @@ function Flow() {
         />
       ) : null}
       {!canvasLabVisible && workspaceView !== 'nodes' ? (
-        <div className={`work-view-shell${visualCanvasEditorOpen ? ' is-modal-open' : ''}`}>
+        <div className="work-view-shell">
           {workspaceView === 'notebook' ? (
             <NotebookView
               pages={notebookPages}
@@ -4838,15 +4867,9 @@ function Flow() {
               onObjectVisualPlacementChange={updateObjectVisualPlacement}
               onCreateOwnedVisualForOperation={createOwnedVisualForOperation}
               onChangeVisualOwner={changeVisualOwner}
-              onEmbeddedVisualsChange={saveVisualEmbeds}
-              onSaveVisualDraftVersion={(visualId) => captureVisualVersion(visualId, 'draft')}
-              onMakeVisualOfficialVersion={(visualId) => captureVisualVersion(visualId, 'official')}
-              onRestoreVisualVersion={restoreVisualVersionAsDraft}
-              onCreateIndependentVisualCopy={createIndependentVisualCopy}
               onNameChange={onNameChange}
               onTextChange={onTextChange}
               onPropertyChange={onPropertyChange}
-              onSketchChange={onSketchChange}
               onOpenNode={openNodeInSpace}
               readOnly={boardAccess === 'viewer'}
               onSaveBoard={() => void saveBoardToDatabase()}
@@ -4865,6 +4888,28 @@ function Flow() {
             />
           )}
         </div>
+      ) : null}
+      {editingVisual ? (
+        <VisualCanvasEditor
+          key={editingVisual.id}
+          visual={editingVisual}
+          embeddedVisuals={editingVisualEmbeds}
+          availableVisuals={editingVisualCandidates}
+          readOnly={boardAccess === 'viewer'}
+          onClose={closeVisualCanvasEditor}
+          onNameChange={onNameChange}
+          nameReadOnly={editingVisualNameIsInherited}
+          onSketchChange={onSketchChange}
+          onPropertyChange={onPropertyChange}
+          onEmbeddedVisualsChange={saveVisualEmbeds}
+          graphNodes={nodes}
+          graphEdges={edges}
+          annotationTargets={annotationTargets}
+          onSaveDraftVersion={(visualId) => captureVisualVersion(visualId, 'draft')}
+          onMakeOfficialVersion={(visualId) => captureVisualVersion(visualId, 'official')}
+          onRestoreVisualVersion={restoreVisualVersionAsDraft}
+          onCreateIndependentVisualCopy={createIndependentVisualCopy}
+        />
       ) : null}
       {!canvasLabVisible && pointerPalette ? (
         <PointerToolPalette

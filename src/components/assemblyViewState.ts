@@ -17,9 +17,9 @@ export type AssemblyViewUiState = {
    */
   openCardId: string | null
   lockedCardId: string | null
-  /** The Visual being edited over this Assembly card; never saved as project data. */
+  /** The Visual in the temporary canvas editor overlay; never saved as project data. */
   editingVisualId: string | null
-  /** The specific card that opened the Visual editor; also temporary UI state. */
+  /** The card that opened the Visual editor; node-card canvases leave this null. */
   editingOperationId: string | null
   drawingCardId: string | null
   toolDraft: string
