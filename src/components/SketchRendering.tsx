@@ -643,7 +643,12 @@ export function SketchPreview({
       className={className ? `sketch-preview ${className}` : 'sketch-preview'}
       viewBox={`0 0 ${document.width} ${document.height}`}
       aria-label={ariaLabel}
-      style={height === undefined ? undefined : { height }}
+      // Match any letterboxed area to the saved paper instead of allowing a
+      // view-specific white CSS fallback to show around a dark canvas.
+      style={{
+        background: document.background,
+        ...(height === undefined ? {} : { height }),
+      }}
     >
       <rect width={document.width} height={document.height} fill={document.background} />
       {backgroundImage ? (

@@ -16,8 +16,12 @@ const server = await createServer({
 try {
   const {
     cloneSketchDocument,
+    createImageVisualDocument,
+    createSketchDocument,
     createTextNode,
+    notebookAfterKindChange,
   } = await server.ssrLoadModule('/src/graph/textNode.ts')
+  const { migrateLegacySketch } = await server.ssrLoadModule('/src/graph/sketchSnapshot.ts')
   const {
     boardDocumentFingerprint,
     createBoardSnapshot,
@@ -56,6 +60,67 @@ try {
     onRequestPatch: patchSavedBoard,
     onRequestPut: putSavedBoard,
   } = await server.ssrLoadModule('/functions/api/boards.ts')
+
+  assert.equal(
+    createSketchDocument().background,
+    '#000000',
+    'New OSA canvases begin with black paper.',
+  )
+  assert.equal(
+    createImageVisualDocument().background,
+    '#ffffff',
+    'Image assets retain a neutral white matte rather than drawing paper.',
+  )
+  assert.equal(
+    migrateLegacySketch([])?.background,
+    '#ffffff',
+    'Legacy stroke-only drawings retain their historical white paper.',
+  )
+  assert.deepEqual(
+    notebookAfterKindChange(null, 'sketch'),
+    { format: 'sketch' },
+    'Changing an ordinary node to Sketch creates its notebook presentation.',
+  )
+  assert.deepEqual(
+    notebookAfterKindChange({ format: 'text' }, 'sketch'),
+    { format: 'sketch' },
+    'Changing a Note to Sketch changes its notebook renderer too.',
+  )
+  assert.deepEqual(
+    notebookAfterKindChange({ format: 'sketch' }, 'note'),
+    { format: 'text' },
+    'Changing a Sketch to Note restores the text notebook renderer.',
+  )
+  assert.deepEqual(
+    notebookAfterKindChange({ format: 'sketch' }, 'idea'),
+    { format: 'sketch' },
+    'Other semantic type changes retain existing notebook presentation.',
+  )
+  const newSketchNode = createTextNode({
+    id: 'new-sketch',
+    position: { x: 0, y: 0 },
+    text: '',
+    kind: 'sketch',
+  })
+  assert.equal(newSketchNode.data.notebook?.format, 'sketch')
+  assert.equal(newSketchNode.data.sketch.background, '#000000')
+  const blackPreviewMarkup = renderToStaticMarkup(createElement(SketchPreview, {
+    document: createSketchDocument(),
+    height: 240,
+  }))
+  assert.match(
+    blackPreviewMarkup,
+    /style="background:#000000;height:240px"/,
+    'A black canvas also paints any preview letterboxing black.',
+  )
+  const whitePreviewMarkup = renderToStaticMarkup(createElement(SketchPreview, {
+    document: createSketchDocument('#ffffff'),
+  }))
+  assert.match(
+    whitePreviewMarkup,
+    /style="background:#ffffff"/,
+    'A deliberately white canvas keeps a white preview background.',
+  )
 
   const automaticCreationDefaults = {
     cloudBoardListReady: true,

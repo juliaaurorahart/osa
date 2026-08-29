@@ -88,6 +88,11 @@ try {
   const imageAsset = migrated.nodes.find((node) => node.id !== legacyCanvas.id)
 
   assert.equal(migrated.nodesChanged, true, 'the legacy canvas is upgraded once')
+  assert.equal(
+    imageAsset?.data.sketch.background,
+    '#ffffff',
+    'the promoted image asset retains a neutral white matte',
+  )
   assert.equal(migrated.edgesChanged, true, 'the image receives one placement relationship')
   assert.equal(migrated.nodes.length, 2, 'migration adds exactly one canonical image Visual')
   assert.ok(migratedCanvas, 'the original editable canvas remains present')

@@ -74,6 +74,11 @@ try {
     sourceVisual.data.properties[OSA_PROPERTY.assetImage],
     '/legacy/connector-box-drill-source-slide.png',
   )
+  assert.equal(
+    sourceVisual.data.sketch.background,
+    '#ffffff',
+    'a migrated source image retains a neutral white matte',
+  )
   const migratedOperation = migrated.nodes.find((node) => node.id === operation.id)
   assert.equal(
     migratedOperation?.data.properties[OSA_PROPERTY.instructionVisual],

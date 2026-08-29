@@ -15,6 +15,7 @@ import {
 } from '../graph/visualEmbed'
 import {
   cloneSketchDocument,
+  createImageVisualDocument,
   createTextNode,
   type SketchDocument,
   type SketchAnnotationTarget,
@@ -334,6 +335,7 @@ export function VisualCanvasEditor({
       text: 'Imported image asset.',
       kind: 'visual',
       spaceIds: visual.data.spaceIds,
+      sketch: createImageVisualDocument(),
       properties: {
         [OSA_PROPERTY.role]: 'visual',
         [OSA_PROPERTY.visualContent]: 'image',

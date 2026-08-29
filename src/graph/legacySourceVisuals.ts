@@ -5,7 +5,7 @@ import {
   OSA_RELATION,
   osaRole,
 } from './osaData'
-import { createTextNode, type TextFlowNode } from './textNode'
+import { createImageVisualDocument, createTextNode, type TextFlowNode } from './textNode'
 
 /** True when a node is OSA's first-class, reusable Visual object. */
 function isVisualNode(node: TextFlowNode | undefined) {
@@ -170,6 +170,7 @@ export function migrateLegacyOperationSourceVisuals(
           text: 'Source visual migrated from this operation.',
           kind: 'visual',
           spaceIds: operation.data.spaceIds,
+          sketch: createImageVisualDocument(),
           properties: sourceProperties(operation, rawReference, alt),
         })
         nextNodes = nextNodes.map((node) => (

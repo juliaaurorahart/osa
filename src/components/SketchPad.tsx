@@ -77,9 +77,25 @@ import {
 // Preserve the established public import path used by TextNode and VisualCanvas.
 export { SketchPreview } from './SketchRendering'
 
-const PEN_COLORS = ['#222222', '#f5a9b8', '#5bcefa', '#9b59d0', '#ff8c00'] as const
+const DARK_INK = '#222222'
+const LIGHT_INK = '#f5f5f5'
+const PEN_COLORS = [LIGHT_INK, DARK_INK, '#f5a9b8', '#5bcefa', '#9b59d0', '#ff8c00'] as const
 const MIN_ZOOM = 0.1
 const MAX_ZOOM = 8
+
+/** Picks visible initial ink without changing colors already saved on a canvas. */
+function contrastingInk(background: string) {
+  const match = /^#([\da-f]{3}|[\da-f]{6})$/i.exec(background.trim())
+  if (!match) return DARK_INK
+  const value = match[1].length === 3
+    ? [...match[1]].map((digit) => digit.repeat(2)).join('')
+    : match[1]
+  const red = Number.parseInt(value.slice(0, 2), 16)
+  const green = Number.parseInt(value.slice(2, 4), 16)
+  const blue = Number.parseInt(value.slice(4, 6), 16)
+  const luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+  return luminance < 128 ? LIGHT_INK : DARK_INK
+}
 
 /**
  * The canvas uses a deliberately small set of portable SVG primitives. They
@@ -272,7 +288,7 @@ export function SketchPad({
   // This keeps its arrowhead markers isolated from every preview on the page.
   const markerNamespace = useId()
   const [tool, setTool] = useState<SketchTool>(initialTool)
-  const [color, setColor] = useState<string>(PEN_COLORS[0])
+  const [color, setColor] = useState<string>(() => contrastingInk(document.background))
   /** Applies to newly created shapes, lines, and arrows. */
   const [strokeStyle, setStrokeStyle] = useState<SketchStrokeStyle>('solid')
   /** New enclosed shapes use this fill; lines, arrows, text, and pen ignore it. */

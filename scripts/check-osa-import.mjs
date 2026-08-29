@@ -724,6 +724,13 @@ try {
     visualEmbedProperties,
     'A nested visual stores finite placement geometry on its edge.',
   )
+  const visualEmbedPlan = planOsaImport(visualEmbedPackage)
+  assert.equal(
+    visualEmbedPlan.nodes.find((node) => node.data.name === 'Connector box photo')
+      ?.data.sketch.background,
+    '#ffffff',
+    'Imported image Visuals retain a neutral white matte.',
+  )
 
   const missingEmbedX = { ...visualEmbedProperties }
   delete missingEmbedX[OSA_PROPERTY.visualEmbedX]

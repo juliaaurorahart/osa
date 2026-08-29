@@ -11,6 +11,20 @@ export type NotebookPageData = {
   format: NotebookPageFormat
 }
 
+/**
+ * Choosing Note or Sketch is an explicit request to change the notebook page
+ * itself. Other semantic type changes retain any existing notebook membership
+ * and presentation instead of making that page disappear.
+ */
+export function notebookAfterKindChange(
+  notebook: NotebookPageData | null,
+  kind: NodeKind,
+): NotebookPageData | null {
+  if (kind === 'note') return { format: 'text' }
+  if (kind === 'sketch') return { format: 'sketch' }
+  return notebook ? { ...notebook } : null
+}
+
 export type SketchPoint = { x: number; y: number; pressure?: number }
 export type SketchStroke = {
   id: string
@@ -155,12 +169,18 @@ export type SketchDocument = {
   layers: SketchLayer[]
 }
 
-export function createSketchDocument(): SketchDocument {
+/** New OSA drawing surfaces begin dark regardless of the surrounding app theme. */
+export const DEFAULT_SKETCH_BACKGROUND = '#000000'
+export const DEFAULT_IMAGE_VISUAL_BACKGROUND = '#ffffff'
+
+export function createSketchDocument(
+  background = DEFAULT_SKETCH_BACKGROUND,
+): SketchDocument {
   return {
     version: 1,
     width: 1000,
     height: 700,
-    background: '#ffffff',
+    background,
     layers: [{
       id: 'layer-1',
       name: 'Layer 1',
@@ -170,6 +190,11 @@ export function createSketchDocument(): SketchDocument {
       strokes: [],
     }],
   }
+}
+
+/** Photos remain neutral assets rather than inheriting a drawing canvas's paper. */
+export function createImageVisualDocument(): SketchDocument {
+  return createSketchDocument(DEFAULT_IMAGE_VISUAL_BACKGROUND)
 }
 
 export function cloneSketchDocument(document: SketchDocument): SketchDocument {
@@ -241,7 +266,7 @@ export type TextNodeData = {
   kind: NodeKind
   /** IDs of Space nodes that contain this object; Spaces themselves stay top-level. */
   spaceIds: string[]
-  /** Notebook membership and page presentation survive semantic type changes. */
+  /** Notebook membership survives type changes; Note/Sketch explicitly choose its format. */
   notebook: NotebookPageData | null
   /** Task facts, retained while inactive so changing type never erases them. */
   task: TaskData | null

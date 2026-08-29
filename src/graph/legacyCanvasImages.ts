@@ -4,7 +4,7 @@ import {
   OSA_PROPERTY,
   OSA_RELATION,
 } from './osaData'
-import { createTextNode, type TextFlowNode } from './textNode'
+import { createImageVisualDocument, createTextNode, type TextFlowNode } from './textNode'
 import { isVisualEmbedEdge, isVisualNode } from './visualEmbed'
 
 /**
@@ -73,6 +73,7 @@ export function migrateLegacyCanvasBackgroundImages(
         text: 'Imported image asset migrated from a canvas background.',
         kind: 'visual',
         spaceIds: canvas.data.spaceIds,
+        sketch: createImageVisualDocument(),
         properties: {
           [OSA_PROPERTY.role]: 'visual',
           [OSA_PROPERTY.visualContent]: 'image',

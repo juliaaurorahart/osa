@@ -7,7 +7,11 @@ import {
   osaRole,
   type OsaRole,
 } from './osaData'
-import { createTextNode, type TextFlowNode } from './textNode'
+import {
+  createImageVisualDocument,
+  createTextNode,
+  type TextFlowNode,
+} from './textNode'
 
 export type OsaImportSource = {
   id: string
@@ -529,6 +533,9 @@ export function planOsaImport(importPackage: OsaImportPackage): OsaImportPlan {
       kind: node.kind,
       spaceIds: node.spaceIds.map((spaceId) => idMap.get(spaceId)!),
       properties,
+      sketch: properties[OSA_PROPERTY.visualContent] === 'image'
+        ? createImageVisualDocument()
+        : undefined,
     })
   })
 

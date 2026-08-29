@@ -354,7 +354,9 @@ export function parseSketchDocument(value: unknown): SketchDocument | null {
 
 /** Migrates normalized or pixel-based legacy stroke arrays into a v1 document. */
 export function migrateLegacySketch(value: unknown): SketchDocument | null {
-  const sketch = createSketchDocument()
+  // Version 1/2 drawings were authored against white paper. Preserve that
+  // historical contrast even though newly created OSA canvases now start black.
+  const sketch = createSketchDocument('#ffffff')
   const strokes = value === undefined
     ? []
     : parseSketchStrokes(value, {

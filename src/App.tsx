@@ -56,6 +56,7 @@ import { annotationTargetsForNodes } from './graph/sketchAnnotation'
 import {
   cloneSketchDocument,
   createTextNode,
+  notebookAfterKindChange,
   type NodeExpansion,
   type NodeLayout,
   type SketchDocument,
@@ -757,13 +758,7 @@ function Flow() {
               ...node.data,
               kind,
               spaceIds: kind === 'space' ? [] : node.data.spaceIds,
-              notebook: node.data.notebook ?? (
-                kind === 'note'
-                  ? { format: 'text' }
-                  : kind === 'sketch'
-                    ? { format: 'sketch' }
-                    : null
-              ),
+              notebook: notebookAfterKindChange(node.data.notebook, kind),
               task: node.data.task ?? (
                 kind === 'action' ? { day: null, completedAt: null } : null
               ),
