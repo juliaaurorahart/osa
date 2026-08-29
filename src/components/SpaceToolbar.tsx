@@ -28,7 +28,7 @@ export function SpaceToolbar({
   onConnectionChange,
 }: SpaceToolbarProps) {
   return (
-    <div className="space-toolbar" aria-label="Filter Space">
+    <div className="space-toolbar" role="group" aria-label="Filter Space">
       <label className="space-toolbar__control">
         <select
           aria-label="Space"

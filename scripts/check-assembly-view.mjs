@@ -186,7 +186,12 @@ try {
   assert.equal((authorMarkup.match(/assembly-operation-card/g) ?? []).length, 6)
   assert.match(authorMarkup, /assembly-index-card/)
   assert.match(authorMarkup, /Shako Hat Assembly Instructions/)
-  assert.match(authorMarkup, /<h1 id="assembly-view-title">Assembly<\/h1>/)
+  assert.match(authorMarkup, /<section class="work-view assembly-view" aria-label="Assembly">/)
+  assert.doesNotMatch(
+    authorMarkup,
+    /<h1[^>]*>Assembly<\/h1>/,
+    'The Assembly cards do not repeat the active workspace name as a page heading.',
+  )
   assert.doesNotMatch(
     authorMarkup,
     /Choose assembly|new assembly|open Shako starter|preview instructions|Public link name|>people<|>share<|>print</,
@@ -241,6 +246,22 @@ try {
   assert.match(connectorCard, /Confirm the opening is clean before continuing\./)
   assert.match(connectorCard, /aria-label="open Drill the 5\/16 in side hole visual"/)
   assert.match(connectorCard, /assembly-card__visual-preview/)
+  const firstStepHeading = connectorCard.indexOf('assembly-operation-step__heading')
+  const firstStepDescription = connectorCard.indexOf('aria-label="Drill the 5/16 in side hole instructions"')
+  const firstStepCanvas = connectorCard.indexOf('class="assembly-operation-step__canvas"')
+  const firstStepPreview = connectorCard.indexOf('aria-label="open Drill the 5/16 in side hole visual"')
+  assert.ok(
+    firstStepHeading >= 0
+      && firstStepHeading < firstStepDescription
+      && firstStepDescription < firstStepCanvas
+      && firstStepCanvas < firstStepPreview,
+    'Each Step flows from its name and reorder controls to its description and then its canvas.',
+  )
+  assert.doesNotMatch(
+    connectorCard,
+    /<span[^>]*>Step \d+<\/span>/,
+    'The authoring card does not repeat a gray Step-number label above the Step name.',
+  )
   assert.doesNotMatch(
     connectorCard,
     /aria-label="open Inspect the hole visual"/,
@@ -258,10 +279,29 @@ try {
   const compactMarkup = renderAssembly(edges, createAssemblyViewUiState())
   assert.equal((compactMarkup.match(/assembly-card__summary-canvas-preview/g) ?? []).length, 1)
   assert.match(compactMarkup, /Drill the 5\/16 in side hole/)
+  assert.doesNotMatch(
+    compactMarkup,
+    />Step \d+(?:\s*·[^<]*)?<\//,
+    'Compact Assembly cards use Step names without repeating visible Step numbers.',
+  )
   assert.match(
     compactMarkup,
     /Use the 5\/16 in bit on the marked side\./,
     'The compact Assembly card repeats the actual Step description, not only its canvas label.',
+  )
+  const compactConnectorStart = compactMarkup.indexOf('aria-label="Open Connector Box Drill details"')
+  const compactConnectorEnd = compactMarkup.indexOf('</article>', compactConnectorStart)
+  const compactConnectorCard = compactMarkup.slice(compactConnectorStart, compactConnectorEnd)
+  const firstCompactStep = compactConnectorCard.indexOf('Drill the 5/16 in side hole')
+  const firstCompactDescription = compactConnectorCard.indexOf('Use the 5/16 in bit on the marked side.')
+  const firstCompactCanvas = compactConnectorCard.indexOf('assembly-card__summary-canvas-preview')
+  const secondCompactStep = compactConnectorCard.indexOf('Inspect the hole')
+  assert.ok(
+    firstCompactStep >= 0
+      && firstCompactStep < firstCompactDescription
+      && firstCompactDescription < firstCompactCanvas
+      && firstCompactCanvas < secondCompactStep,
+    'Each compact-card canvas follows its matching Step description before the next Step begins.',
   )
   assert.doesNotMatch(compactMarkup, /visual filter|aria-label="[^"]+ owner"/)
 

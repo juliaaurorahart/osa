@@ -12,8 +12,6 @@ import {
 import { createPortal } from 'react-dom'
 import {
   Background,
-  Controls,
-  MiniMap,
   Panel,
   ReactFlow,
   ReactFlowProvider,
@@ -53,7 +51,6 @@ import {
 } from './graph/graphEdge'
 import { updateTextAnchorAfterEdit } from './graph/textAnchor'
 import { annotationTargetsForNodes } from './graph/sketchAnnotation'
-import { createCurrentSourceHierarchy } from './graph/currentSourceHierarchy'
 import {
   cloneSketchDocument,
   createTextNode,
@@ -191,10 +188,17 @@ const initialNodes: TextFlowNode[] = [
 ]
 
 const initialEdges: GraphEdge[] = []
+const ALL_NODES_SPACE_FILTER_KEY = '\u0000all\u0000all'
 
 type SelectedItem =
   | { type: 'node'; id: string }
   | { type: 'edge'; id: string }
+
+type HoveredEdgeState = {
+  edge: GraphEdge
+  x: number
+  y: number
+}
 
 type PointerPaletteState = {
   x: number
@@ -250,6 +254,7 @@ function Flow() {
   // LIVE GRAPH STATE: React Flow displays these two arrays.
   const [nodes, setNodes, onNodesChange] = useNodesState<TextFlowNode>(startupGraph.nodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState<GraphEdge>(startupGraph.edges)
+  const nodeDragActive = nodes.some((node) => node.dragging === true)
   const latestNodes = useRef(nodes)
   const latestEdges = useRef(edges)
   latestNodes.current = nodes
@@ -283,17 +288,15 @@ function Flow() {
   const [nodeKindFilter, setNodeKindFilter] = useState<NodeKindFilter>('all')
   const [nodeSpaceFilter, setNodeSpaceFilter] = useState('')
   const [nodeConnectionFilter, setNodeConnectionFilter] = useState<NodeConnectionFilter>('all')
-  const [miniMapExpanded, setMiniMapExpanded] = useState(false)
+  const lastCenteredSpaceFilterKey = useRef<string | null>(null)
   const [showTable, setShowTable] = useState(false)
   // A selected object always gets an inspector. The person can close it, but
   // selecting another object deliberately opens it again.
   const [inspectorExpanded, setInspectorExpanded] = useState(true)
   // Hover position belongs to the temporary browser UI, never the saved graph.
-  const [hoveredEdge, setHoveredEdge] = useState<{
-    edge: GraphEdge
-    x: number
-    y: number
-  } | null>(null)
+  const [hoveredEdge, setHoveredEdge] = useState<HoveredEdgeState | null>(null)
+  const pendingHoveredEdge = useRef<HoveredEdgeState | null>(null)
+  const hoveredEdgeFrame = useRef<number | null>(null)
   // Pickers keep only compact cloud metadata. A full snapshot is fetched
   // only when opening or refreshing that one board.
   const [savedBoards, setSavedBoards] = useState<BoardSummary[]>([])
@@ -371,7 +374,7 @@ function Flow() {
   latestBoardId.current = boardId
   const latestBoardName = useRef(boardName)
   latestBoardName.current = boardName
-  const { screenToFlowPosition, setCenter, fitView } = useReactFlow()
+  const { screenToFlowPosition, setCenter } = useReactFlow()
   const nextId = useRef(Math.max(
     1,
     ...(startupGraph?.nodes ?? initialNodes)
@@ -395,7 +398,9 @@ function Flow() {
   const suppressPointerContextMenuUntil = useRef(0)
 
   useLocalDraftPersistence({
-    enabled: !isSharedAssembly,
+    // React Flow publishes temporary position frames while a node is moving.
+    // Save the final frame instead of rebuilding the whole document mid-drag.
+    enabled: !isSharedAssembly && !nodeDragActive,
     boardId,
     boardName,
     nodes,
@@ -411,6 +416,8 @@ function Flow() {
   // so older project data keeps the same upgrade order it had before this
   // code was extracted from App.tsx.
   useEffect(() => {
+    if (nodeDragActive) return
+
     const refreshedNodes = bundledStarter.refreshImportedNodes(
       nodes,
       bundledStarterImportPlan,
@@ -429,7 +436,7 @@ function Flow() {
     )
     if (migratedCanvasImages.nodes !== nodes) setNodes(migratedCanvasImages.nodes)
     if (migratedCanvasImages.edges !== edges) setEdges(migratedCanvasImages.edges)
-  }, [bundledStarterImportPlan, edges, nodes, setEdges, setNodes])
+  }, [bundledStarterImportPlan, edges, nodeDragActive, nodes, setEdges, setNodes])
 
   // Older boards embedded camera data directly in their graph JSON. Move
   // those source pixels to object storage as the board is opened, without
@@ -439,7 +446,8 @@ function Flow() {
   useEffect(() => {
     const migrationAttempts = inlineAssetMigrationAttempts.current
     if (
-      isSharedAssembly
+      nodeDragActive
+      || isSharedAssembly
       || cloudRevision === null
       || boardAccess === 'viewer'
     ) return
@@ -509,13 +517,14 @@ function Flow() {
       cancelled = true
       attemptKeys.forEach((key) => migrationAttempts.delete(key))
     }
-  }, [boardAccess, boardId, cloudRevision, isSharedAssembly, nodes, setNodes])
+  }, [boardAccess, boardId, cloudRevision, isSharedAssembly, nodeDragActive, nodes, setNodes])
 
   // React Flow and the Assembly editor both edit the same node/edge state.
   // Compare it with the last D1 acknowledgement rather than treating an
   // effect run as an edit. React StrictMode intentionally runs mount effects
   // twice in development, and a remote load should remain clean on both runs.
   useEffect(() => {
+    if (nodeDragActive) return
     if (isSharedAssembly) return
     if (cloudRevisionRef.current === null) return
     if (startupDirtyDraft.current) return
@@ -537,7 +546,7 @@ function Flow() {
     cloudDirtyRef.current = changed
     setCloudDirty(changed)
     setCloudSyncStatus(changed ? 'Saved locally' : 'Synced')
-  }, [boardId, boardName, edges, isSharedAssembly, nodes])
+  }, [boardId, boardName, edges, isSharedAssembly, nodeDragActive, nodes])
 
   const suppressPaneCollapseUntil = useRef(0)
   const refreshSavedBoards = useCallback(async () => {
@@ -970,16 +979,28 @@ function Flow() {
     setInspectorExpanded(true)
   }, [])
 
-  const onEdgeMouseEnter: EdgeMouseHandler<GraphEdge> = useCallback((event, edge) => {
-    setHoveredEdge({ edge, x: event.clientX, y: event.clientY })
-  }, [])
-
-  const onEdgeMouseMove: EdgeMouseHandler<GraphEdge> = useCallback((event, edge) => {
-    setHoveredEdge({ edge, x: event.clientX, y: event.clientY })
+  const updateHoveredEdge: EdgeMouseHandler<GraphEdge> = useCallback((event, edge) => {
+    pendingHoveredEdge.current = { edge, x: event.clientX, y: event.clientY }
+    if (hoveredEdgeFrame.current !== null) return
+    hoveredEdgeFrame.current = window.requestAnimationFrame(() => {
+      hoveredEdgeFrame.current = null
+      setHoveredEdge(pendingHoveredEdge.current)
+    })
   }, [])
 
   const onEdgeMouseLeave = useCallback(() => {
+    pendingHoveredEdge.current = null
+    if (hoveredEdgeFrame.current !== null) {
+      window.cancelAnimationFrame(hoveredEdgeFrame.current)
+      hoveredEdgeFrame.current = null
+    }
     setHoveredEdge(null)
+  }, [])
+
+  useEffect(() => () => {
+    if (hoveredEdgeFrame.current !== null) {
+      window.cancelAnimationFrame(hoveredEdgeFrame.current)
+    }
   }, [])
 
   const selectedNode = selectedItem?.type === 'node'
@@ -1009,9 +1030,14 @@ function Flow() {
     () => filterGraphNodes(canvasContextNodes, canvasContextEdges, nodeKindFilter, nodeConnectionFilter),
     [canvasContextEdges, canvasContextNodes, nodeConnectionFilter, nodeKindFilter],
   )
+  const visibleNodeIdsKey = visibleNodes.map((node) => node.id).join('\u0000')
+  const visibleNodeIds = useMemo(
+    () => new Set(visibleNodeIdsKey ? visibleNodeIdsKey.split('\u0000') : []),
+    [visibleNodeIdsKey],
+  )
   const visibleEdges = useMemo(
-    () => edgesWithinNodes(visibleNodes, edges),
-    [edges, visibleNodes],
+    () => edges.filter((edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target)),
+    [edges, visibleNodeIds],
   )
   // These are shared objects, not private records owned by one view. Assembly
   // adopts the selected Space as its working context, so Space -> Assembly is
@@ -1685,6 +1711,9 @@ function Flow() {
     if (!node) return
     // A direct "open" action should always reveal its target. Canvas filters
     // are useful browsing tools, but they should never make navigation fail.
+    // The targeted center below owns this navigation. Do not let the normal
+    // all-Space filter focus race it back to the first object on the board.
+    lastCenteredSpaceFilterKey.current = ALL_NODES_SPACE_FILTER_KEY
     setNodeSpaceFilter('')
     setNodeKindFilter('all')
     setNodeConnectionFilter('all')
@@ -1867,29 +1896,6 @@ function Flow() {
     })
   }, [nodeSpaceFilter, setNodes])
 
-  /**
-   * Adds this application's current src/ folder/file hierarchy to the graph.
-   * Repeating the action is safe: existing hierarchy IDs are not duplicated.
-   */
-  const importCurrentSourceHierarchy = useCallback(() => {
-    const hierarchy = createCurrentSourceHierarchy()
-
-    // Imported nodes are not automatically assigned to an organizational
-    // Space, so return to the complete graph where the import is visible.
-    setNodeSpaceFilter('')
-    setNodeKindFilter('all')
-    setNodeConnectionFilter('all')
-
-    setNodes((currentNodes) => {
-      const existingIds = new Set(currentNodes.map((node) => node.id))
-      return [...currentNodes, ...hierarchy.nodes.filter((node) => !existingIds.has(node.id))]
-    })
-    setEdges((currentEdges) => {
-      const existingIds = new Set(currentEdges.map((edge) => edge.id))
-      return [...currentEdges, ...hierarchy.edges.filter((edge) => !existingIds.has(edge.id))]
-    })
-  }, [setEdges, setNodes])
-
   /** Restores durable graph state and advances the generated ID counters. */
   const applyBoardSnapshot = useCallback((snapshot: SavedBoard['snapshot']) => {
     const restoredBoard = restoreBoardSnapshot(snapshot)
@@ -1904,6 +1910,7 @@ function Flow() {
     setNodeSpaceFilter('')
     setNodeKindFilter('all')
     setNodeConnectionFilter('all')
+    lastCenteredSpaceFilterKey.current = null
 
     const numericIds = restoredBoard.nodes
       .map((node) => Number(node.id))
@@ -2226,14 +2233,20 @@ function Flow() {
   // not. The attempt key prevents StrictMode and re-renders from creating the
   // same board twice.
   useEffect(() => {
+    if (nodeDragActive) return
+
     const attemptKey = `${boardId}\u0000${boardName.trim().toLocaleLowerCase()}`
-    const currentBoardIsUntouched = boardDocumentFingerprint(
-      boardName,
-      createBoardSnapshot(nodes, edges),
-    ) === boardDocumentFingerprint(
-      'Untitled board',
-      createBoardSnapshot(initialNodes, initialEdges),
-    )
+    // Only an existing cloud board needs the relatively expensive untouched
+    // comparison. A fresh account always creates its first local document.
+    const currentBoardIsUntouched = cloudBoardListReady && savedBoards.length > 0
+      ? boardDocumentFingerprint(
+          boardName,
+          createBoardSnapshot(nodes, edges),
+        ) === boardDocumentFingerprint(
+          'Untitled board',
+          createBoardSnapshot(initialNodes, initialEdges),
+        )
+      : false
     const shouldCreate = shouldCreateCloudBoardAutomatically({
       cloudBoardListReady,
       isSharedAssembly,
@@ -2259,6 +2272,7 @@ function Flow() {
     cloudSaveCycle,
     edges,
     isSharedAssembly,
+    nodeDragActive,
     nodes,
     saveCurrentBoard,
     savedBoards.length,
@@ -2756,47 +2770,87 @@ function Flow() {
     }
   }, [addOsaImportPlan, bundledStarterImportPlan])
 
-  // Give the display component its UI callback without saving that callback
-  // inside the underlying node state.
-  const nodesForFlow = useMemo(() => visibleNodes.map((node) => ({
-    ...node,
-    data: {
-      ...node.data,
-      annotationTargets,
-      textExpanded: expandedNode?.id === node.id && expandedNode.text,
-      detailsExpanded: expandedNode?.id === node.id && expandedNode.details,
-      onNameChange,
-      onTextChange,
-      onTextInteractionStart,
-      onLayoutChange,
-      onKindChange,
-    },
-  })), [annotationTargets, expandedNode, visibleNodes, onNameChange, onTextChange, onTextInteractionStart, onLayoutChange, onKindChange])
+  // React Flow uses object identity to avoid redrawing unchanged nodes. Keep
+  // each projection stable while one different node is being dragged.
+  const flowNodeCallbacks = useMemo(() => ({
+    onNameChange,
+    onTextChange,
+    onTextInteractionStart,
+    onLayoutChange,
+    onKindChange,
+  }), [onKindChange, onLayoutChange, onNameChange, onTextChange, onTextInteractionStart])
+  const flowNodeProjectionCache = useRef(new WeakMap<TextFlowNode, {
+    callbacks: typeof flowNodeCallbacks
+    annotationTargets: typeof annotationTargets | undefined
+    textExpanded: boolean
+    detailsExpanded: boolean
+    projected: TextFlowNode
+  }>())
+  const nodesForFlow = useMemo(() => visibleNodes.map((node) => {
+    const textExpanded = expandedNode?.id === node.id && expandedNode.text === true
+    const detailsExpanded = expandedNode?.id === node.id && expandedNode.details === true
+    // Space only consumes annotation data while an actual sketch is open.
+    // Omitting it from ordinary collapsed cards avoids invalidating every node
+    // when one unrelated position changes.
+    const nodeAnnotationTargets = textExpanded && node.data.notebook?.format === 'sketch'
+      ? annotationTargets
+      : undefined
+    const cached = flowNodeProjectionCache.current.get(node)
+    if (
+      cached
+      && cached.callbacks === flowNodeCallbacks
+      && cached.annotationTargets === nodeAnnotationTargets
+      && cached.textExpanded === textExpanded
+      && cached.detailsExpanded === detailsExpanded
+    ) return cached.projected
 
+    const projected: TextFlowNode = {
+      ...node,
+      data: {
+        ...node.data,
+        annotationTargets: nodeAnnotationTargets,
+        textExpanded,
+        detailsExpanded,
+        ...flowNodeCallbacks,
+      },
+    }
+    flowNodeProjectionCache.current.set(node, {
+      callbacks: flowNodeCallbacks,
+      annotationTargets: nodeAnnotationTargets,
+      textExpanded,
+      detailsExpanded,
+      projected,
+    })
+    return projected
+  }), [annotationTargets, expandedNode, flowNodeCallbacks, visibleNodes])
+
+  const hoveredEdgeId = hoveredEdge?.edge.id ?? null
+  const selectedEdgeId = selectedItem?.type === 'edge' ? selectedItem.id : null
   const edgesForFlow = useMemo(() => visibleEdges
     .map((edge) => ({
       ...edge,
-      label: selectedItem?.type === 'edge' && selectedItem.id === edge.id
-        || hoveredEdge?.edge.id === edge.id
+      label: selectedEdgeId === edge.id || hoveredEdgeId === edge.id
         ? edge.data.relationship
         : undefined,
-    })), [hoveredEdge, selectedItem, visibleEdges])
+    })), [hoveredEdgeId, selectedEdgeId, visibleEdges])
 
   const visibleNodesRef = useRef(visibleNodes)
   visibleNodesRef.current = visibleNodes
-  const visibleNodeIdsKey = visibleNodes.map((node) => node.id).join('\u0000')
+  const spaceViewportFilterKey = `${selectedSpaceId}\u0000${nodeKindFilter}\u0000${nodeConnectionFilter}`
   useEffect(() => {
     if (workspaceView !== 'nodes' || !visibleNodesRef.current.length) return
+    if (lastCenteredSpaceFilterKey.current === spaceViewportFilterKey) return
+    lastCenteredSpaceFilterKey.current = spaceViewportFilterKey
+    const focusNode = visibleNodesRef.current[0]
     const frame = window.requestAnimationFrame(() => {
-      void fitView({
-        nodes: visibleNodesRef.current,
-        padding: 0.35,
-        maxZoom: 0.9,
-        duration: 350,
-      })
+      void setCenter(
+        focusNode.position.x + focusNode.data.layout.width / 2,
+        focusNode.position.y + 44,
+        { zoom: 0.8 },
+      )
     })
     return () => window.cancelAnimationFrame(frame)
-  }, [fitView, visibleNodeIdsKey, workspaceView])
+  }, [setCenter, spaceViewportFilterKey, visibleNodeIdsKey, workspaceView])
 
   // USER ACTION: dragging from one handle onto another makes an edge.
   const onConnect = useCallback((connection: Connection) => {
@@ -2883,7 +2937,7 @@ function Flow() {
       onPointerCancelCapture={canvasLabVisible ? undefined : finishPointerPalettePress}
     >
       <ReactFlow
-      className={`space-canvas${visibleEdges.length > 150 ? ' is-dense' : ''}`}
+      className={`space-canvas${visibleEdges.length > 60 ? ' is-dense' : ''}`}
       inert={workspaceView !== 'nodes' || canvasLabVisible}
       aria-hidden={workspaceView !== 'nodes' || canvasLabVisible}
       nodesFocusable={workspaceView === 'nodes' && !canvasLabVisible}
@@ -2891,6 +2945,16 @@ function Flow() {
       nodes={nodesForFlow}
       edges={edgesForFlow}
       nodeTypes={nodeTypes}
+      onInit={(instance) => {
+        const focusNode = visibleNodesRef.current[0]
+        if (!focusNode) return
+        lastCenteredSpaceFilterKey.current = spaceViewportFilterKey
+        void instance.setCenter(
+          focusNode.position.x + focusNode.data.layout.width / 2,
+          focusNode.position.y + 44,
+          { zoom: 0.8 },
+        )
+      }}
       onNodesChange={onNodesChange}
       onNodesDelete={onNodesDelete}
       onEdgesChange={onEdgesChange}
@@ -2904,8 +2968,8 @@ function Flow() {
         openPointerPalette(event.clientX, event.clientY, node.id)
       }}
       onEdgeClick={onEdgeClick}
-      onEdgeMouseEnter={onEdgeMouseEnter}
-      onEdgeMouseMove={onEdgeMouseMove}
+      onEdgeMouseEnter={updateHoveredEdge}
+      onEdgeMouseMove={updateHoveredEdge}
       onEdgeMouseLeave={onEdgeMouseLeave}
       onPaneClick={() => {
         if (performance.now() < suppressPointerPaletteClickUntil.current) return
@@ -2919,8 +2983,6 @@ function Flow() {
         if (performance.now() < suppressPointerContextMenuUntil.current) return
         openPointerPalette(event.clientX, event.clientY)
       }}
-      fitView
-      fitViewOptions={{ padding: 0.45, maxZoom: 0.78 }}
       onlyRenderVisibleElements
       minZoom={0.05}
       maxZoom={8}
@@ -2964,26 +3026,6 @@ function Flow() {
         </defs>
       </svg>
       <Background />
-      {workspaceView === 'nodes' && (
-        <Controls
-          className="canvas-corner-tools"
-          aria-label="Canvas controls"
-        />
-      )}
-      {workspaceView === 'nodes' && miniMapExpanded && (
-        <MiniMap
-          className="canvas-corner-minimap"
-          style={{
-            width: 200,
-            height: 150,
-          }}
-          ariaLabel="Board minimap"
-          onClick={(event) => {
-            event.stopPropagation()
-            setMiniMapExpanded(false)
-          }}
-        />
-      )}
       {workspaceView === 'nodes' && selectedNode && inspectorExpanded && (
         <Panel
           position="top-right"
@@ -3179,35 +3221,33 @@ function Flow() {
               </button>
             )}
             {workspaceView === 'nodes' ? (
-              <div className="space-command-bar" aria-label="Space controls">
-                <div className="space-canvas-toolbar" role="group" aria-label="Space tools">
-                  <button type="button" onClick={addNode}>+ Node</button>
-                  <button type="button" onClick={importCurrentSourceHierarchy}>Import src</button>
-                  <button
-                    type="button"
-                    aria-pressed={showTable}
-                    aria-controls="board-table"
-                    onClick={() => setShowTable((isVisible) => !isVisible)}
-                  >
-                    Table
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={miniMapExpanded}
-                    onClick={() => setMiniMapExpanded((isVisible) => !isVisible)}
-                  >
-                    Map
-                  </button>
+              <div className="space-command-bar" role="toolbar" aria-label="Space controls">
+                <div className="space-command-bar__group">
+                  <span className="space-command-bar__label">tools</span>
+                  <div className="space-canvas-toolbar" role="group" aria-label="Space tools">
+                    <button type="button" onClick={addNode}>+ Node</button>
+                    <button
+                      type="button"
+                      aria-pressed={showTable}
+                      aria-controls="board-table"
+                      onClick={() => setShowTable((isVisible) => !isVisible)}
+                    >
+                      Table
+                    </button>
+                  </div>
                 </div>
-                <SpaceToolbar
-                  spaces={allSpaces}
-                  selectedSpaceId={selectedSpaceId}
-                  kindFilter={nodeKindFilter}
-                  connectionFilter={nodeConnectionFilter}
-                  onSpaceChange={setNodeSpaceFilter}
-                  onKindChange={setNodeKindFilter}
-                  onConnectionChange={setNodeConnectionFilter}
-                />
+                <div className="space-command-bar__group is-filters">
+                  <span className="space-command-bar__label">filters</span>
+                  <SpaceToolbar
+                    spaces={allSpaces}
+                    selectedSpaceId={selectedSpaceId}
+                    kindFilter={nodeKindFilter}
+                    connectionFilter={nodeConnectionFilter}
+                    onSpaceChange={setNodeSpaceFilter}
+                    onKindChange={setNodeKindFilter}
+                    onConnectionChange={setNodeConnectionFilter}
+                  />
+                </div>
               </div>
             ) : null}
           </div>

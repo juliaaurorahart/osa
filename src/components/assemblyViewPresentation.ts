@@ -57,8 +57,8 @@ export const fieldLabel: CSSProperties = {
   alignItems: 'start',
   gap: 8,
   minWidth: 0,
-  fontSize: 'clamp(0.62rem, 1.15vw, 0.9rem)',
-  lineHeight: 1.3,
+  fontSize: 'clamp(0.92rem, 1.2vw, 1.08rem)',
+  lineHeight: 1.4,
 }
 
 export function cardFocusStyle(focused: boolean): CSSProperties {

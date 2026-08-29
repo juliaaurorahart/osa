@@ -185,13 +185,12 @@ export function AssemblyView({
 
   if (!selectedAssembly) {
     return (
-      <section className="work-view assembly-view" aria-labelledby="assembly-view-title">
-        <header className="work-view__header">
-          <div>
-            <h1 id="assembly-view-title">Assembly</h1>
+      <section className="work-view assembly-view" aria-label="Assembly">
+        {readOnly ? (
+          <div className="assembly-view__access-status">
+            <span className="assembly-view__shared-label">shared assembly · read-only</span>
           </div>
-          {readOnly ? <span className="assembly-view__shared-label">shared assembly · read-only</span> : null}
-        </header>
+        ) : null}
         <div className="assembly-view__empty-state">
           <p className="work-view__empty">there is no assembly board open yet.</p>
           {readOnly ? (
@@ -221,7 +220,7 @@ export function AssemblyView({
   }
 
   return (
-    <section className="work-view assembly-view" aria-labelledby="assembly-view-title">
+    <section className="work-view assembly-view" aria-label="Assembly">
       <AssemblyViewControls
         readOnly={readOnly}
         activeLockedCardId={activeLockedCardId}

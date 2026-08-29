@@ -17,6 +17,12 @@
   white-space: nowrap;
 }
 
+.assembly-view__access-status {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
 /* Locking changes only which cards are visible, never instruction data. */
 .assembly-view__lock-status {
   display: flex;

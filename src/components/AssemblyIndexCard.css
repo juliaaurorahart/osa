@@ -14,6 +14,10 @@
   margin: 4px 0 0;
   padding-left: 1.35em;
   color: var(--osa-text);
-  font-size: clamp(0.84rem, 1.45vw, 1.05rem);
-  line-height: 1.4;
+  font-size: clamp(1.1rem, 1.5vw, 1.25rem);
+  line-height: 1.5;
+}
+
+.assembly-index-card .assembly-card__summary-title {
+  font-size: clamp(1.55rem, 2.5vw, 2rem);
 }

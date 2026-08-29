@@ -7,8 +7,8 @@ type AssemblyViewControlsProps = {
 }
 
 /**
- * Keeps the Assembly document header quiet while retaining the one contextual
- * escape hatch needed when the card board is deliberately locked.
+ * Keeps the Assembly document chrome quiet while retaining the contextual
+ * status needed for shared or deliberately locked card boards.
  */
 export function AssemblyViewControls({
   readOnly,
@@ -17,12 +17,11 @@ export function AssemblyViewControls({
 }: AssemblyViewControlsProps) {
   return (
     <>
-      <header className="work-view__header assembly-view__header">
-        <div>
-          <h1 id="assembly-view-title">Assembly</h1>
+      {readOnly ? (
+        <div className="assembly-view__access-status">
+          <span className="assembly-view__shared-label">shared assembly · read-only</span>
         </div>
-        {readOnly ? <span className="assembly-view__shared-label">shared assembly · read-only</span> : null}
-      </header>
+      ) : null}
 
       {activeLockedCardId ? (
         <div className="assembly-view__lock-status" aria-live="polite">

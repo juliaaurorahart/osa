@@ -17,6 +17,7 @@
 .space-toolbar__control {
   display: flex;
   flex: none;
+  min-width: 0;
   align-items: center;
 }
 
@@ -50,6 +51,19 @@
 
 @media (max-width: 700px) {
   .space-toolbar {
-    gap: 8px;
+    display: grid;
+    flex: 1 1 auto;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .space-toolbar__control {
+    width: 100%;
+  }
+
+  .space-toolbar__control select {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
   }
 }

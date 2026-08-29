@@ -65,18 +65,17 @@ export function AssemblyPartsAndTools({
       aria-label={`${nodeTitle(operation)} parts and tools`}
       style={{ display: 'grid', gap: 8, minWidth: 0 }}
     >
-      <strong style={{ fontSize: 'clamp(0.76rem, 1.5vw, 1.15rem)', fontWeight: 500 }}>
+      <strong className="assembly-parts-tools__heading">
         parts &amp; tools
       </strong>
 
-      <div style={fieldLabel}>
-        <span>parts in</span>
+      <div className="assembly-parts-tools__field" style={fieldLabel}>
+        <span className="assembly-parts-tools__field-label">parts in</span>
         <div style={{ minWidth: 0 }}>
           <div className="assembly-linked-object-list" style={{ minHeight: '1.3em' }}>
             {inputParts.length
-              ? inputParts.map((part, index) => (
+              ? inputParts.map((part) => (
                 <span className="assembly-object-chip" key={part.id}>
-                  {index ? <span aria-hidden="true"> · </span> : null}
                   <button
                     className={appearanceAccentColor(part)
                       ? 'assembly-object-link assembly-object-link--accented'
@@ -144,14 +143,13 @@ export function AssemblyPartsAndTools({
         </div>
       </div>
 
-      <div style={fieldLabel}>
-        <span>tools</span>
+      <div className="assembly-parts-tools__field" style={fieldLabel}>
+        <span className="assembly-parts-tools__field-label">tools</span>
         <div style={{ minWidth: 0 }}>
           <div className="assembly-linked-object-list" style={{ minHeight: '1.3em' }}>
             {tools.length
-              ? tools.map((tool, index) => (
+              ? tools.map((tool) => (
                 <span className="assembly-object-chip" key={tool.id}>
-                  {index ? <span aria-hidden="true"> · </span> : null}
                   <button
                     className={appearanceAccentColor(tool)
                       ? 'assembly-object-link assembly-object-link--accented'

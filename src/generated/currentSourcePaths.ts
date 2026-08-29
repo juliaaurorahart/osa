@@ -17,6 +17,7 @@ export const CURRENT_SOURCE_PATHS = [
   "src/components/AssemblyInstructionsView.tsx",
   "src/components/AssemblyOperationCard.css",
   "src/components/AssemblyOperationCard.tsx",
+  "src/components/AssemblyOperationSteps.css",
   "src/components/AssemblyOperationSteps.tsx",
   "src/components/AssemblyPartsAndTools.css",
   "src/components/AssemblyPartsAndTools.tsx",

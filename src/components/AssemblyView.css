@@ -1,6 +1,7 @@
 /* Assembly page shell and styles shared by more than one card component. */
 .assembly-view {
   max-width: 1240px;
+  font-size: clamp(1.02rem, 1.1vw, 1.1rem);
 }
 
 .assembly-view .work-view__header {
@@ -58,7 +59,7 @@
   border-radius: 999px;
   cursor: pointer;
   font: inherit;
-  font-size: 0.78rem;
+  font-size: 0.92rem;
 }
 
 .assembly-card__close-button {
@@ -103,6 +104,7 @@
 
 .assembly-card {
   isolation: isolate;
+  font-size: clamp(1.05rem, 1.15vw, 1.15rem);
   transition: box-shadow 150ms ease, transform 150ms ease;
 }
 
@@ -148,8 +150,8 @@
 .assembly-card__summary-title {
   min-width: 0;
   color: var(--osa-text);
-  font-size: clamp(1.05rem, 2vw, 1.6rem);
-  font-weight: 500;
+  font-size: clamp(1.4rem, 2.2vw, 1.9rem);
+  font-weight: 600;
   line-height: 1.15;
   overflow-wrap: anywhere;
 }
@@ -184,10 +186,10 @@
   max-width: 100%;
 }
 
-/* Shared two-column document layout used by authoring and read-only output. */
+/* One shared document flow keeps the cards readable at every practical width. */
 .assembly-card__columns {
   display: grid;
-  grid-template-columns: minmax(0, 0.78fr) minmax(0, 1.22fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
   gap: clamp(18px, 4vw, 48px);
   min-height: 0;
@@ -228,14 +230,14 @@
 }
 
 .assembly-card__view-header h2 {
-  font-size: clamp(0.82rem, 1.5vw, 1.1rem);
-  font-weight: 600;
+  font-size: clamp(1.08rem, 1.5vw, 1.3rem);
+  font-weight: 700;
 }
 
 .assembly-card__view-header p {
   color: var(--osa-muted);
-  font-size: clamp(0.64rem, 1.05vw, 0.8rem);
-  line-height: 1.35;
+  font-size: clamp(0.95rem, 1.05vw, 1.05rem);
+  line-height: 1.45;
   text-align: right;
 }
 
@@ -269,10 +271,6 @@
 
   .assembly-card.is-summary {
     min-height: 0;
-  }
-
-  .assembly-card__columns {
-    grid-template-columns: minmax(0, 1fr);
   }
 
   .assembly-card__view-header {

@@ -93,13 +93,13 @@ export function AssemblyIndexCard({
             style={{
               ...transparentInput,
               marginBottom: 'clamp(18px, 3vw, 34px)',
-              fontSize: 'clamp(1.5rem, 4vw, 3.1rem)',
+              fontSize: 'clamp(1.8rem, 4vw, 3.25rem)',
               lineHeight: 1.08,
             }}
           />
           <div className="assembly-index-card__title-list">
             <div style={{ display: 'grid', alignContent: 'start', gap: 8 }}>
-              <ol style={{ margin: 0, paddingLeft: '1.45em', fontSize: 'clamp(0.8rem, 1.8vw, 1.35rem)', lineHeight: 1.55 }}>
+              <ol style={{ margin: 0, paddingLeft: '1.45em', fontSize: 'clamp(1.1rem, 1.8vw, 1.45rem)', lineHeight: 1.55 }}>
                 {operations.length ? operations.map((operation, operationIndex) => (
                   <li key={operation.id}>
                     {readOnly ? (

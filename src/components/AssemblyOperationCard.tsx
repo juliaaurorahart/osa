@@ -9,7 +9,7 @@ import {
   cardShell,
   transparentInput,
 } from './assemblyViewPresentation'
-import { AssemblyStepVisuals, AssemblyStepVisualSummary } from './AssemblyStepVisuals'
+import { AssemblyStepVisualSummary } from './AssemblyStepVisuals'
 import type { AssemblyStepCanvas, AssemblyViewActions } from './assemblyViewTypes'
 import './AssemblyOperationCard.css'
 
@@ -67,6 +67,10 @@ export function AssemblyOperationCard({
   onToolDraftChange,
   onToolDraftForChange,
 }: AssemblyOperationCardProps) {
+  const publishedCanvasByStepId = new Map(
+    stepCanvases.map((stepCanvas) => [stepCanvas.step.id, stepCanvas]),
+  )
+
   return (
     <article
       className={`assembly-card assembly-operation-card${isOpen ? ' is-focused is-open' : ' is-summary'}`}
@@ -121,7 +125,7 @@ export function AssemblyOperationCard({
                 }}
                 style={{
                   ...transparentInput,
-                  fontSize: 'clamp(1.15rem, 2.25vw, 2.1rem)',
+                  fontSize: 'clamp(1.4rem, 2.4vw, 2.3rem)',
                   lineHeight: 1.05,
                 }}
               />
@@ -152,6 +156,8 @@ export function AssemblyOperationCard({
                 operation={operation}
                 steps={steps}
                 stepCanvasByStepId={stepCanvasByStepId}
+                stepCanvases={stepCanvases}
+                annotationTargets={annotationTargets}
                 focused={focused}
                 readOnly={readOnly}
                 onFocusCard={onFocusCard}
@@ -165,20 +171,11 @@ export function AssemblyOperationCard({
                 onPropertyChange={actions.onPropertyChange}
               />
             </div>
-
-            <AssemblyStepVisuals
-              operation={operation}
-              stepCanvases={stepCanvases}
-              annotationTargets={annotationTargets}
-              onOpenVisual={onEditVisual}
-            />
           </div>
         </>
       ) : (
         <button
-          className={stepCanvases.length
-            ? 'assembly-card__summary assembly-card__summary--with-canvases'
-            : 'assembly-card__summary'}
+          className="assembly-card__summary"
           type="button"
           aria-label={`Open ${nodeTitle(operation)} details`}
           aria-expanded={false}
@@ -206,12 +203,22 @@ export function AssemblyOperationCard({
             {steps.length ? (
               <span className="assembly-card__summary-steps">
                 <b>steps</b>
-                {steps.map((step, stepIndex) => (
-                  <span className="assembly-card__summary-step" key={step.id}>
-                    <strong>Step {stepIndex + 1} · {nodeTitle(step)}</strong>
-                    {step.data.text.trim() ? <span>{step.data.text}</span> : null}
-                  </span>
-                ))}
+                {steps.map((step) => {
+                  const stepCanvas = publishedCanvasByStepId.get(step.id)
+
+                  return (
+                    <span className="assembly-card__summary-step" key={step.id}>
+                      <strong>{nodeTitle(step)}</strong>
+                      {step.data.text.trim() ? <span>{step.data.text}</span> : null}
+                      {stepCanvas ? (
+                        <AssemblyStepVisualSummary
+                          stepCanvas={stepCanvas}
+                          annotationTargets={annotationTargets}
+                        />
+                      ) : null}
+                    </span>
+                  )
+                })}
               </span>
             ) : operation.data.text.trim() ? (
               <span className="assembly-card__summary-steps">
@@ -222,11 +229,6 @@ export function AssemblyOperationCard({
               </span>
             ) : null}
           </span>
-          <AssemblyStepVisualSummary
-            operation={operation}
-            stepCanvases={stepCanvases}
-            annotationTargets={annotationTargets}
-          />
         </button>
       )}
     </article>

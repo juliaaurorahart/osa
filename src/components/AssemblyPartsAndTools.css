@@ -1,34 +1,49 @@
+.assembly-parts-tools__heading {
+  font-size: clamp(1.1rem, 1.7vw, 1.4rem);
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.assembly-parts-tools__field-label {
+  font-size: 1.04em;
+  font-weight: 700;
+}
+
 .assembly-linked-object-list {
   overflow-wrap: anywhere;
 }
 
 .assembly-operation-card .assembly-linked-object-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 0.2em;
+  display: grid;
+  gap: 7px;
 }
 
 /* A card owns links, not the linked objects themselves. */
 .assembly-object-chip {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.2em;
-  max-width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
 }
 
 .assembly-object-unlink {
   display: inline-flex;
-  align-items: baseline;
-  gap: 0.16em;
-  padding: 0 0.22em;
+  box-sizing: border-box;
+  align-items: center;
+  justify-self: end;
+  gap: 0.2em;
+  min-height: 32px;
+  padding: 4px 9px;
   border: 1px solid var(--osa-border);
   border-radius: 999px;
   background: var(--osa-surface-raised);
   color: var(--osa-muted);
   cursor: pointer;
   font: inherit;
-  font-size: 0.78em;
-  line-height: 1.35;
+  font-size: 0.92rem;
+  line-height: 1.2;
   white-space: nowrap;
 }
 
@@ -48,6 +63,7 @@
 }
 
 .assembly-object-link {
+  min-width: 0;
   padding: 0;
   border: 0;
   border-bottom: 1px solid transparent;
@@ -55,6 +71,7 @@
   color: inherit;
   cursor: pointer;
   font: inherit;
+  overflow-wrap: anywhere;
   text-align: left;
 }
 
