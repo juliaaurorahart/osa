@@ -31,6 +31,7 @@ export type WorkspaceSettingsFileHandler = (
  * belong to App so opening Settings cannot create a second source of truth.
  */
 export type WorkspaceSettingsMenuProps = {
+  triggerLabel?: string
   theme: OsaTheme
   onToggleTheme: () => void
 
@@ -99,6 +100,7 @@ function runAction(action: WorkspaceSettingsAction) {
 
 /** App-wide settings trigger and accessible, portal-mounted settings dialog. */
 export function WorkspaceSettingsMenu({
+  triggerLabel = 'Settings',
   theme,
   onToggleTheme,
   boardId,
@@ -590,7 +592,7 @@ export function WorkspaceSettingsMenu({
         aria-controls={open ? dialogId : undefined}
         onClick={() => setOpen((isOpen) => !isOpen)}
       >
-        Settings
+        {triggerLabel}
       </button>
       {dialog}
     </span>

@@ -178,8 +178,8 @@ import './App.css'
 /** React Flow uses this map to choose the component for `type: 'text'` nodes. */
 const nodeTypes = { text: TextNode }
 
-// The editor comparison is intentionally split out of the normal OSA bundle.
-// It loads only from the temporary dev-only Canvas Lab entry point.
+// The visual experiments are intentionally split out of the normal OSA bundle.
+// They load only after someone deliberately opens the Lab.
 const CanvasLab = lazy(async () => {
   const module = await import('./components/CanvasLab')
   return { default: module.CanvasLab }
@@ -3221,6 +3221,55 @@ function Flow() {
       editingOperationId: null,
     }))
   }, [])
+
+  // Both the main workspace and Lab use these same App-owned settings actions.
+  // The second trigger is a mirror, not another copy of board/settings state.
+  const renderWorkspaceSettingsMenu = (triggerLabel = 'Settings') => (
+    <WorkspaceSettingsMenu
+      triggerLabel={triggerLabel}
+      theme={theme}
+      onToggleTheme={toggleTheme}
+      boardId={boardId}
+      boardName={boardName}
+      boardAccess={boardAccess}
+      savedBoards={savedBoards}
+      archivedBoards={archivedBoards}
+      selectedBoardId={selectedBoardId}
+      showingArchivedBoards={showingArchivedBoards}
+      canArchiveCurrentBoard={savedBoards.some((board) => board.id === boardId)}
+      onBoardNameChange={setBoardName}
+      onSelectedBoardIdChange={setSelectedBoardId}
+      onShowSavedBoards={showActiveBoardList}
+      onShowArchivedBoards={showArchivedBoardList}
+      onLoadSelectedBoard={loadSelectedBoard}
+      onArchiveCurrentBoard={archiveCurrentBoard}
+      onRestoreSelectedBoard={restoreSelectedBoard}
+      onManualSync={saveBoardToDatabase}
+      storageStatus={storageStatus}
+      cloudSyncStatus={cloudSyncStatus}
+      localDraftStatus={draftStatus}
+      cloudRevision={cloudRevision}
+      needsSignIn={needsSignIn}
+      cloudConflictBoard={cloudConflictBoard}
+      onReloadCloudBoard={reloadCloudBoard}
+      onSaveBoardAsCopy={saveCurrentBoardAsCopy}
+      collaborators={boardCollaborators}
+      collaborationStatus={collaborationStatus}
+      onAddCollaborator={boardAccess === 'owner' ? addBoardCollaborator : undefined}
+      onRemoveCollaborator={boardAccess === 'owner' ? removeBoardCollaboratorAccess : undefined}
+      activeAssemblyLabel={activeAssembly ? nodeTitle(activeAssembly) : null}
+      shareSlug={shareSlug}
+      shareStatus={shareStatus}
+      shareUrl={shareUrl}
+      onShareSlugChange={setShareSlug}
+      onCreateAssemblyShare={boardAccess === 'owner' ? createAssemblyShareLink : undefined}
+      onPreviewAssembly={activeAssembly ? () => setAssemblyInstructionsPreview(true) : undefined}
+      onDownloadJsonBackup={saveBoardAsJson}
+      onLoadJsonBackup={loadBoardFromJson}
+      onImportOsaData={importOsaDataFromJson}
+    />
+  )
+
   return (
     <div
       className={`osa-workspace${workspaceMenuVisible ? '' : ' workspace-menu-hidden'}`}
@@ -3429,7 +3478,12 @@ function Flow() {
       </ReactFlow>
       {canvasLabVisible ? (
         <Suspense fallback={<div className="canvas-lab-loading" role="status">Opening lab…</div>}>
-          <CanvasLab theme={theme} onToggleTheme={toggleTheme} onExit={closeCanvasLab} />
+          <CanvasLab
+            theme={theme}
+            onToggleTheme={toggleTheme}
+            onExit={closeCanvasLab}
+            workspaceSettingsMenu={renderWorkspaceSettingsMenu('Open OSA workspace settings')}
+          />
         </Suspense>
       ) : null}
       {!canvasLabVisible ? (
@@ -3462,57 +3516,14 @@ function Flow() {
                     {view.label}
                   </button>
                 ))}
-                {import.meta.env.DEV ? (
-                  <button
-                    type="button"
-                    aria-label="Open Canvas Lab"
-                    onClick={openCanvasLab}
-                  >
-                    Lab
-                  </button>
-                ) : null}
-                <WorkspaceSettingsMenu
-                  theme={theme}
-                  onToggleTheme={toggleTheme}
-                  boardId={boardId}
-                  boardName={boardName}
-                  boardAccess={boardAccess}
-                  savedBoards={savedBoards}
-                  archivedBoards={archivedBoards}
-                  selectedBoardId={selectedBoardId}
-                  showingArchivedBoards={showingArchivedBoards}
-                  canArchiveCurrentBoard={savedBoards.some((board) => board.id === boardId)}
-                  onBoardNameChange={setBoardName}
-                  onSelectedBoardIdChange={setSelectedBoardId}
-                  onShowSavedBoards={showActiveBoardList}
-                  onShowArchivedBoards={showArchivedBoardList}
-                  onLoadSelectedBoard={loadSelectedBoard}
-                  onArchiveCurrentBoard={archiveCurrentBoard}
-                  onRestoreSelectedBoard={restoreSelectedBoard}
-                  onManualSync={saveBoardToDatabase}
-                  storageStatus={storageStatus}
-                  cloudSyncStatus={cloudSyncStatus}
-                  localDraftStatus={draftStatus}
-                  cloudRevision={cloudRevision}
-                  needsSignIn={needsSignIn}
-                  cloudConflictBoard={cloudConflictBoard}
-                  onReloadCloudBoard={reloadCloudBoard}
-                  onSaveBoardAsCopy={saveCurrentBoardAsCopy}
-                  collaborators={boardCollaborators}
-                  collaborationStatus={collaborationStatus}
-                  onAddCollaborator={boardAccess === 'owner' ? addBoardCollaborator : undefined}
-                  onRemoveCollaborator={boardAccess === 'owner' ? removeBoardCollaboratorAccess : undefined}
-                  activeAssemblyLabel={activeAssembly ? nodeTitle(activeAssembly) : null}
-                  shareSlug={shareSlug}
-                  shareStatus={shareStatus}
-                  shareUrl={shareUrl}
-                  onShareSlugChange={setShareSlug}
-                  onCreateAssemblyShare={boardAccess === 'owner' ? createAssemblyShareLink : undefined}
-                  onPreviewAssembly={activeAssembly ? () => setAssemblyInstructionsPreview(true) : undefined}
-                  onDownloadJsonBackup={saveBoardAsJson}
-                  onLoadJsonBackup={loadBoardFromJson}
-                  onImportOsaData={importOsaDataFromJson}
-                />
+                <button
+                  type="button"
+                  aria-label="Open visual tools Lab"
+                  onClick={openCanvasLab}
+                >
+                  Lab
+                </button>
+                {renderWorkspaceSettingsMenu()}
                 <span className="workspace-switcher__status" role="status">
                   {cloudSyncStatus || draftStatus}
                 </span>

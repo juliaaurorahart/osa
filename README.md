@@ -55,3 +55,13 @@ npx wrangler d1 export <database-name> --remote --output=./osa-backup.sql
 The repository intentionally does not contain a D1 database ID, so the deployed `OSA_DB` binding in Cloudflare is the source of truth for which database receives saves.
 
 Cloudflare references: [Pages bindings](https://developers.cloudflare.com/pages/functions/bindings/), [D1 SQL](https://developers.cloudflare.com/d1/sql-api/sql-statements/), and [D1 export](https://developers.cloudflare.com/d1/best-practices/import-export-data/).
+
+## Visual tools Lab
+
+The **Lab** menu opens isolated workbenches for draw.io, Excalidraw, Konva,
+Fabric, Paper, p5.js, PixiJS, Strudel REPL, Three.js, Mermaid, Vega-Lite, and
+CodeMirror. Each engine loads only when selected. Lab drafts are disposable
+and never alter the current board; download an image or native source file
+before switching workbenches. Strudel uses its officially documented remote
+iframe so its AGPL application remains separate from OSA; use Strudel's share
+control to retain a tune.

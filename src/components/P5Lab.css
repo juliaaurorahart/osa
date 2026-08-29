@@ -1,0 +1,175 @@
+.p5-lab {
+  --p5-bg: #f3f5f8;
+  --p5-panel: #fff;
+  --p5-text: #17202c;
+  --p5-muted: #5d6878;
+  --p5-line: #cbd3df;
+  color: var(--p5-text);
+  background: var(--p5-bg);
+  min-height: 100%;
+  padding: clamp(14px, 2.5vw, 30px);
+  box-sizing: border-box;
+}
+
+.p5-lab--dark {
+  --p5-bg: #0b0e14;
+  --p5-panel: #151923;
+  --p5-text: #f4f0ff;
+  --p5-muted: #aeb6c7;
+  --p5-line: #353c4b;
+}
+
+.p5-lab__header,
+.p5-lab__actions {
+  display: flex;
+  gap: 14px;
+}
+
+.p5-lab__header {
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.p5-lab h2 {
+  margin: 0 0 4px;
+  font-size: clamp(1.4rem, 3vw, 2rem);
+}
+
+.p5-lab p {
+  margin: 0;
+  color: var(--p5-muted);
+}
+
+.p5-lab__actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.p5-lab button,
+.p5-lab input,
+.p5-lab select {
+  color: inherit;
+  background: var(--p5-panel);
+  border: 1px solid var(--p5-line);
+  border-radius: 8px;
+  font: inherit;
+}
+
+.p5-lab button {
+  min-height: 38px;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+
+.p5-lab button:hover {
+  border-color: #9b62d5;
+}
+
+.p5-lab__layout {
+  display: grid;
+  grid-template-columns: minmax(230px, 290px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.p5-lab__controls {
+  min-width: 0;
+  height: clamp(420px, 62vw, 680px);
+  overflow-y: auto;
+  background: var(--p5-panel);
+  border: 1px solid var(--p5-line);
+  border-radius: 12px;
+  padding: 15px;
+  box-sizing: border-box;
+}
+
+.p5-lab__controls fieldset {
+  min-width: 0;
+  margin: 0 0 16px;
+  padding: 0;
+  border: 0;
+}
+
+.p5-lab__controls legend {
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 0 0 7px;
+  border-bottom: 1px solid var(--p5-line);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--p5-muted);
+}
+
+.p5-lab__controls label {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 7px;
+  margin-bottom: 14px;
+  font-weight: 700;
+}
+
+.p5-lab__controls output {
+  color: var(--p5-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.p5-lab__controls select,
+.p5-lab__controls input[type='number'] {
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding: 8px;
+}
+
+.p5-lab__controls input[type='range'] {
+  grid-column: 1 / -1;
+  width: 100%;
+  accent-color: #9b62d5;
+}
+
+.p5-lab__note {
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.p5-lab__stage {
+  min-width: 0;
+  height: clamp(420px, 62vw, 680px);
+  overflow: hidden;
+  border: 1px solid var(--p5-line);
+  border-radius: 12px;
+  background: #10131b;
+  box-sizing: border-box;
+}
+
+.p5-lab__stage canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+@media (max-width: 720px) {
+  .p5-lab__header {
+    flex-direction: column;
+  }
+
+  .p5-lab__actions {
+    justify-content: flex-start;
+  }
+
+  .p5-lab__layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .p5-lab__controls {
+    width: 100%;
+    height: auto;
+    overflow: visible;
+  }
+
+  .p5-lab__stage {
+    height: clamp(360px, 82vw, 560px);
+  }
+}

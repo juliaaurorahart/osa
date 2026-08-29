@@ -1,0 +1,180 @@
+.fabric-lab {
+  display: grid;
+  grid-template-rows: auto auto minmax(460px, 1fr) auto;
+  min-height: 650px;
+  overflow: hidden;
+  border: 1px solid var(--osa-border);
+  border-radius: 8px;
+  background: var(--osa-surface);
+  color: var(--osa-text);
+  box-shadow: 0 8px 22px var(--osa-shadow);
+}
+
+.fabric-lab__header,
+.fabric-lab__toolbar,
+.fabric-lab__exports,
+.fabric-lab__tool-group,
+.fabric-lab__footer,
+.fabric-lab__brush-controls label {
+  display: flex;
+  align-items: center;
+}
+
+.fabric-lab__header {
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 52px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--osa-border);
+  background: var(--osa-surface-raised);
+}
+
+.fabric-lab__title h2,
+.fabric-lab__title p {
+  margin: 0;
+}
+
+.fabric-lab__title h2 {
+  font-size: 0.98rem;
+  font-weight: 650;
+}
+
+.fabric-lab__title p,
+.fabric-lab__footer {
+  color: var(--osa-muted);
+  font-size: 0.76rem;
+}
+
+.fabric-lab__title p {
+  margin-top: 2px;
+}
+
+.fabric-lab__exports,
+.fabric-lab__tool-group {
+  gap: 6px;
+}
+
+.fabric-lab__toolbar {
+  flex-wrap: wrap;
+  gap: 7px;
+  min-height: 42px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--osa-border);
+  background: var(--osa-surface);
+}
+
+.fabric-lab__tool-group {
+  flex-wrap: wrap;
+  padding-right: 7px;
+  border-right: 1px solid var(--osa-border-subtle);
+}
+
+.fabric-lab__edit-actions {
+  margin-left: auto;
+  padding-right: 0;
+  border-right: 0;
+}
+
+.fabric-lab button,
+.fabric-lab input {
+  font: inherit;
+}
+
+.fabric-lab button {
+  padding: 5px 8px;
+  border: 1px solid var(--osa-border);
+  border-radius: 4px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
+  cursor: pointer;
+  font-size: 0.76rem;
+}
+
+.fabric-lab button:hover:not(:disabled),
+.fabric-lab button:focus-visible:not(:disabled),
+.fabric-lab button.is-active {
+  border-color: var(--osa-focus);
+  background: var(--osa-hover-surface);
+  outline: 0;
+}
+
+.fabric-lab button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.fabric-lab__brush-controls label {
+  gap: 5px;
+  color: var(--osa-muted);
+  font-size: 0.72rem;
+}
+
+.fabric-lab input[type='color'] {
+  width: 25px;
+  height: 23px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.fabric-lab__range-control input {
+  width: 78px;
+  accent-color: var(--osa-focus);
+}
+
+.fabric-lab__range-control output {
+  min-width: 27px;
+  color: var(--osa-muted);
+  font-size: 0.7rem;
+}
+
+.fabric-lab__canvas-host {
+  position: relative;
+  min-width: 0;
+  min-height: 460px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 1px 1px, var(--osa-grid-dot) 1px, transparent 0) 0 0 / 18px 18px,
+    var(--osa-bg);
+}
+
+.fabric-lab__canvas-host .canvas-container {
+  max-width: 100%;
+}
+
+.fabric-lab__canvas-host.is-drawing .upper-canvas {
+  cursor: crosshair !important;
+}
+
+.fabric-lab__footer {
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 32px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--osa-border);
+  background: var(--osa-surface);
+}
+
+@media (max-width: 700px) {
+  .fabric-lab {
+    grid-template-rows: auto auto minmax(500px, 1fr) auto;
+  }
+
+  .fabric-lab__header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .fabric-lab__edit-actions {
+    margin-left: 0;
+  }
+
+  .fabric-lab__canvas-host {
+    min-height: 500px;
+  }
+
+  .fabric-lab__footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

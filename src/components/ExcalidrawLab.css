@@ -1,0 +1,74 @@
+.excalidraw-lab {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: calc(100vh - 104px);
+  overflow: hidden;
+  border: 1px solid var(--osa-border);
+  border-radius: 10px;
+  background: var(--osa-bg);
+  box-shadow: 0 8px 22px var(--osa-shadow);
+}
+
+.excalidraw-lab__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 56px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--osa-border);
+  background: var(--osa-surface);
+}
+
+.excalidraw-lab__header h2,
+.excalidraw-lab__header p {
+  margin: 0;
+}
+
+.excalidraw-lab__header h2 {
+  font-size: 1.05rem;
+}
+
+.excalidraw-lab__header p,
+.excalidraw-lab__controls span {
+  color: var(--osa-muted);
+  font-size: 0.8rem;
+}
+
+.excalidraw-lab__controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.excalidraw-lab__controls button {
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid var(--osa-border);
+  border-radius: 6px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
+  cursor: pointer;
+  font: inherit;
+}
+
+.excalidraw-lab__stage {
+  position: relative;
+  min-height: 620px;
+}
+
+.excalidraw-lab__stage .excalidraw {
+  position: absolute;
+  inset: 0;
+}
+
+@media (max-width: 700px) {
+  .excalidraw-lab__header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .excalidraw-lab__stage {
+    min-height: 560px;
+  }
+}

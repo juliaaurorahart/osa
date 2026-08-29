@@ -33,10 +33,10 @@ type LabStatus = {
 type DrawioEmbedLabProps = {
   className?: string
   theme: 'dark' | 'light'
-  /** The Lab parent owns this draft so it survives switching editor tabs. */
-  initialXml: string
+  /** A parent may own the draft; otherwise this workbench starts with its sample. */
+  initialXml?: string
   /** This is still ephemeral Lab state, never an OSA board save. */
-  onXmlChange: (xml: string) => void
+  onXmlChange?: (xml: string) => void
 }
 
 function parseDrawioEvent(data: unknown): DrawioEvent | null {
@@ -74,7 +74,7 @@ function statusClassName(status: LabStatus) {
 export function DrawioEmbedLab({
   className,
   theme,
-  initialXml,
+  initialXml = DRAWIO_SAMPLE_XML,
   onXmlChange,
 }: DrawioEmbedLabProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
@@ -137,7 +137,7 @@ export function DrawioEmbedLab({
       if (event.event === 'autosave' || event.event === 'save') {
         if (event.xml) {
           currentXmlRef.current = event.xml
-          onXmlChange(event.xml)
+          onXmlChange?.(event.xml)
         }
         setStatus(event.event === 'autosave'
           ? { kind: 'autosaved', label: 'autosaved locally in this lab' }
@@ -161,7 +161,7 @@ export function DrawioEmbedLab({
 
   const resetSample = () => {
     currentXmlRef.current = DRAWIO_SAMPLE_XML
-    onXmlChange(DRAWIO_SAMPLE_XML)
+    onXmlChange?.(DRAWIO_SAMPLE_XML)
 
     if (!editorInitializedRef.current) {
       setStatus({ kind: 'waiting', label: 'sample reset; waiting for draw.io' })

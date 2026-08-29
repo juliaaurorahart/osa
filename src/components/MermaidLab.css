@@ -1,0 +1,24 @@
+.mermaid-lab { --mm-bg:#f3f5f8; --mm-panel:#fff; --mm-text:#17202c; --mm-muted:#5d6878; --mm-line:#cbd3df; color:var(--mm-text); background:var(--mm-bg); min-height:100%; padding:clamp(14px,2.5vw,30px); box-sizing:border-box; }
+.mermaid-lab--dark { --mm-bg:#0b0e14; --mm-panel:#151923; --mm-text:#f4f0ff; --mm-muted:#aeb6c7; --mm-line:#353c4b; }
+.mermaid-lab__header,.mermaid-lab__actions,.mermaid-lab__layout,.mermaid-lab__preview-heading { display:flex; gap:14px; }
+.mermaid-lab__header { align-items:flex-start; justify-content:space-between; margin-bottom:18px; }
+.mermaid-lab h2 { margin:0 0 4px; font-size:clamp(1.4rem,3vw,2rem); }
+.mermaid-lab p { margin:0; color:var(--mm-muted); }
+.mermaid-lab__actions { align-items:flex-end; flex-wrap:wrap; justify-content:flex-end; }
+.mermaid-lab__actions label { display:grid; gap:4px; font-size:.8rem; color:var(--mm-muted); }
+.mermaid-lab button,.mermaid-lab select,.mermaid-lab textarea { color:inherit; background:var(--mm-panel); border:1px solid var(--mm-line); border-radius:8px; font:inherit; }
+.mermaid-lab button,.mermaid-lab select { min-height:38px; padding:7px 12px; }
+.mermaid-lab button { cursor:pointer; }
+.mermaid-lab button:disabled { cursor:not-allowed; opacity:.45; }
+.mermaid-lab__layout { align-items:stretch; }
+.mermaid-lab__editor { flex:0 1 42%; display:flex; flex-direction:column; gap:8px; font-weight:700; }
+.mermaid-lab__editor textarea { flex:1 1 470px; min-height:340px; resize:vertical; padding:14px; box-sizing:border-box; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:.95rem; line-height:1.55; tab-size:2; }
+.mermaid-lab__preview { flex:1 1 58%; min-width:0; min-height:470px; overflow:auto; background:var(--mm-panel); border:1px solid var(--mm-line); border-radius:10px; }
+.mermaid-lab__preview-heading { position:sticky; top:0; z-index:1; align-items:center; justify-content:space-between; padding:10px 14px; background:var(--mm-panel); border-bottom:1px solid var(--mm-line); }
+.mermaid-lab__preview-heading span { color:var(--mm-muted); font-size:.85rem; }
+.mermaid-lab__diagram { display:grid; place-items:center; min-height:390px; padding:18px; box-sizing:border-box; }
+.mermaid-lab__diagram svg { display:block; max-width:100%; height:auto; }
+.mermaid-lab__error { margin:14px; padding:12px; overflow:auto; white-space:pre-wrap; color:#b42318; background:#fff0ee; border:1px solid #f1aaa2; border-radius:7px; font: .86rem/1.45 ui-monospace,SFMono-Regular,Consolas,monospace; }
+.mermaid-lab--dark .mermaid-lab__error { color:#ffb4ab; background:#351311; border-color:#7c332d; }
+.mermaid-lab__security { margin-top:12px !important; font-size:.86rem; }
+@media (max-width:780px) { .mermaid-lab__header,.mermaid-lab__layout { flex-direction:column; } .mermaid-lab__actions { justify-content:flex-start; } .mermaid-lab__editor { flex-basis:auto; } .mermaid-lab__editor textarea { flex-basis:320px; } .mermaid-lab__preview { min-height:360px; } }
