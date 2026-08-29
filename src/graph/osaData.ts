@@ -1,3 +1,4 @@
+import type { GraphEdge } from './graphEdge'
 import type { TextFlowNode } from './textNode'
 
 /** Reserved properties used by OSA's structured projections. */
@@ -511,6 +512,8 @@ export function isImmutableVisual(node: TextFlowNode) {
 export const OSA_RELATION = {
   assemblyOperation: 'assembly-operation',
   assemblyItem: 'assembly-item',
+  /** A Part, Assembly, or Tool contains another reusable project object. */
+  containerItem: 'container-item',
   assemblyExpense: 'assembly-expense',
   assemblySource: 'assembly-source',
   operationTool: 'operation-tool',
@@ -602,6 +605,40 @@ export function osaRole(node: TextFlowNode): OsaRole | null {
 export function isPartLike(node: TextFlowNode) {
   const role = osaRole(node)
   return node.data.kind === 'part' || role === 'bom-item' || role === 'assembly'
+}
+
+/** Parts, nested Assemblies, and Tools can participate in "Included in" links. */
+export function isContainableOsaObject(node: TextFlowNode) {
+  const role = osaRole(node)
+  return isPartLike(node) || node.data.kind === 'tool' || role === 'tool'
+}
+
+/** True when adding child below parent would create a containment loop. */
+export function containmentWouldCreateCycle(
+  parentId: string,
+  childId: string,
+  edges: GraphEdge[],
+) {
+  if (parentId === childId) return true
+
+  const checked = new Set<string>()
+  const toCheck = [childId]
+  while (toCheck.length) {
+    const currentId = toCheck.pop()!
+    if (currentId === parentId) return true
+    if (checked.has(currentId)) continue
+    checked.add(currentId)
+    edges
+      .filter((edge) => (
+        edge.source === currentId
+        && (
+          edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.assemblyItem
+          || edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.containerItem
+        )
+      ))
+      .forEach((edge) => toCheck.push(edge.target))
+  }
+  return false
 }
 
 /**

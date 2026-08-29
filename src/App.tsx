@@ -26,6 +26,7 @@ import {
 import '@xyflow/react/dist/style.css'
 import { TextNode } from './components/TextNode'
 import { PropertiesPanel } from './components/PropertiesPanel'
+import { FocusedNodeInspector } from './components/FocusedNodeInspector'
 import { EdgePropertiesPanel } from './components/EdgePropertiesPanel'
 import { EdgeHoverCard } from './components/EdgeHoverCard'
 import { GraphTablePanel } from './components/GraphTablePanel'
@@ -38,6 +39,7 @@ import {
   createAssemblyViewUiState,
   type AssemblyViewUiState,
 } from './components/assemblyViewState'
+import { inclusionRelationshipsFor } from './components/assemblyProjection'
 import { NotebookView } from './components/NotebookView'
 import { ProjectsView } from './components/ProjectsView'
 import { PointerToolPalette, type PointerToolAction } from './components/PointerToolPalette'
@@ -66,8 +68,11 @@ import type { NodeKind } from './graph/nodeKinds'
 import {
   defaultVisualEmbedPlacement,
   canOwnOsaVisual,
+  containmentWouldCreateCycle,
+  isContainableOsaObject,
   isImmutableVisual,
   isManagedOsaProperty,
+  isPartLike,
   normalizeVisualEmbedPlacement,
   OSA_PROPERTY,
   OSA_RELATION,
@@ -236,6 +241,25 @@ function getNextNodePosition(nodes: TextFlowNode[]) {
   }
 }
 
+/** Parts and tools use the inspector instead of the larger inline node editor. */
+function opensInInspectorOnly(node: TextFlowNode) {
+  return isPartLike(node) || node.data.kind === 'tool' || osaRole(node) === 'tool'
+}
+
+function ownedVisualsFor(
+  owner: TextFlowNode,
+  nodes: TextFlowNode[],
+  edges: GraphEdge[],
+) {
+  const visualIds = new Set(edges
+    .filter((edge) => (
+      edge.source === owner.id
+      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
+    ))
+    .map((edge) => edge.target))
+  return nodes.filter((node) => visualIds.has(node.id))
+}
+
 /** Owns the live React Flow node/edge state and responds to user actions. */
 function Flow() {
   const [startupDraft] = useState(readLocalDraft)
@@ -263,6 +287,7 @@ function Flow() {
   latestNodeText.current = new Map(nodes.map((node) => [node.id, node.data.text]))
   // UI state: this is not saved as part of the board itself.
   const [selectedItem, setSelectedItem] = useState<SelectedItem | null>(null)
+  const [focusedInspectorNodeId, setFocusedInspectorNodeId] = useState<string | null>(null)
   const [expandedNode, setExpandedNode] = useState<{
     id: string
     text: boolean
@@ -290,6 +315,7 @@ function Flow() {
   const [nodeConnectionFilter, setNodeConnectionFilter] = useState<NodeConnectionFilter>('all')
   const lastCenteredSpaceFilterKey = useRef<string | null>(null)
   const [showTable, setShowTable] = useState(false)
+  const [tablePeek, setTablePeek] = useState(false)
   // A selected object always gets an inspector. The person can close it, but
   // selecting another object deliberately opens it again.
   const [inspectorExpanded, setInspectorExpanded] = useState(true)
@@ -900,6 +926,14 @@ function Flow() {
     )))
   }, [setEdges])
 
+  /** Removes only the durable edge represented by one Included-in row. */
+  const onRemoveInclusionRelationship = useCallback((edgeId: string) => {
+    setEdges((currentEdges) => currentEdges.filter((edge) => edge.id !== edgeId))
+    setSelectedItem((current) => (
+      current?.type === 'edge' && current.id === edgeId ? null : current
+    ))
+  }, [setEdges])
+
   const onEdgePropertyChange = useCallback((id: string, propertyName: string, value: string) => {
     setEdges((currentEdges) => currentEdges.map((edge) => (
       edge.id === id
@@ -1006,6 +1040,9 @@ function Flow() {
   const selectedNode = selectedItem?.type === 'node'
     ? nodes.find((node) => node.id === selectedItem.id)
     : undefined
+  const focusedInspectorNode = focusedInspectorNodeId
+    ? nodes.find((node) => node.id === focusedInspectorNodeId)
+    : undefined
   const selectedEdge = selectedItem?.type === 'edge'
     ? edges.find((edge) => edge.id === selectedItem.id)
     : undefined
@@ -1048,17 +1085,24 @@ function Flow() {
     // composed, buildable objects first; keep each category's saved order.
     return Number(osaRole(right) === 'assembly') - Number(osaRole(left) === 'assembly')
   }), [nodes])
+  const allAssemblies = useMemo(
+    () => nodes.filter((node) => osaRole(node) === 'assembly'),
+    [nodes],
+  )
+  const allContainers = useMemo(
+    () => nodes.filter(isContainableOsaObject),
+    [nodes],
+  )
   const assemblies = useMemo(() => {
     // An Assembly is a part-like object with internal structure, not a second
     // project-shaped record. The role keeps old saved Project-kind assemblies
     // visible while new ones are created as ordinary Part-kind objects.
-    const allAssemblies = nodes.filter((node) => osaRole(node) === 'assembly')
     if (selectedSpaceId === '') return allAssemblies
     if (selectedSpaceId === NO_SPACE_FILTER) {
       return allAssemblies.filter((assembly) => assembly.data.spaceIds.length === 0)
     }
     return allAssemblies.filter((assembly) => assembly.data.spaceIds.includes(selectedSpaceId))
-  }, [nodes, selectedSpaceId])
+  }, [allAssemblies, selectedSpaceId])
   const operations = tasks
   const notebookPages = useMemo(
     () => nodes.filter((node) => node.data.notebook !== null),
@@ -1100,14 +1144,38 @@ function Flow() {
    */
   const selectedOwnedVisuals = useMemo(() => {
     if (!selectedNode) return []
-    const visualIds = new Set(edges
-      .filter((edge) => (
-        edge.source === selectedNode.id
-        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
-      ))
-      .map((edge) => edge.target))
-    return nodes.filter((node) => visualIds.has(node.id))
+    return ownedVisualsFor(selectedNode, nodes, edges)
   }, [edges, nodes, selectedNode])
+  const focusedInspectorOwnedVisuals = useMemo(() => {
+    if (!focusedInspectorNode) return []
+    return ownedVisualsFor(focusedInspectorNode, nodes, edges)
+  }, [edges, focusedInspectorNode, nodes])
+  const selectedInclusions = useMemo(() => (
+    selectedNode ? inclusionRelationshipsFor(selectedNode.id, nodes, edges) : []
+  ), [edges, nodes, selectedNode])
+  const focusedInclusions = useMemo(() => (
+    focusedInspectorNode
+      ? inclusionRelationshipsFor(focusedInspectorNode.id, nodes, edges)
+      : []
+  ), [edges, focusedInspectorNode, nodes])
+  const selectedAvailableContainers = useMemo(() => {
+    if (!selectedNode) return []
+    const includedIds = new Set(selectedInclusions.map((inclusion) => inclusion.container.id))
+    return allContainers.filter((container) => (
+      container.id !== selectedNode.id
+      && !includedIds.has(container.id)
+      && !containmentWouldCreateCycle(container.id, selectedNode.id, edges)
+    ))
+  }, [allContainers, edges, selectedInclusions, selectedNode])
+  const focusedAvailableContainers = useMemo(() => {
+    if (!focusedInspectorNode) return []
+    const includedIds = new Set(focusedInclusions.map((inclusion) => inclusion.container.id))
+    return allContainers.filter((container) => (
+      container.id !== focusedInspectorNode.id
+      && !includedIds.has(container.id)
+      && !containmentWouldCreateCycle(container.id, focusedInspectorNode.id, edges)
+    ))
+  }, [allContainers, edges, focusedInclusions, focusedInspectorNode])
 
   // A visible connection to a Space should never disagree with membership.
   // This also repairs direct node-to-Space edges saved before that gesture
@@ -1729,6 +1797,54 @@ function Flow() {
       )
     })
   }, [nodes, setCenter, setWorkspaceView])
+
+  /** Opens any table row as a focused editor without losing table position. */
+  const inspectNodeFromTable = useCallback((nodeId: string) => {
+    if (!nodes.some((node) => node.id === nodeId)) return
+    setSelectedItem({ type: 'node', id: nodeId })
+    setInspectorExpanded(false)
+    setFocusedInspectorNodeId(nodeId)
+  }, [nodes])
+
+  /**
+   * Shrinks the table and reveals its selected node in the canvas below.
+   * The vertical offset deliberately places the node in the newly open area
+   * instead of centering it underneath the table itself.
+   */
+  const revealNodeFromTable = useCallback((nodeId: string) => {
+    const node = nodes.find((candidate) => candidate.id === nodeId)
+    if (!node) return
+
+    const zoom = 0.9
+    const verticalOffset = window.innerHeight * 0.22 / zoom
+    lastCenteredSpaceFilterKey.current = ALL_NODES_SPACE_FILTER_KEY
+    setNodeSpaceFilter('')
+    setNodeKindFilter('all')
+    setNodeConnectionFilter('all')
+    setWorkspaceView('nodes')
+    setSelectedItem({ type: 'node', id: nodeId })
+    setInspectorExpanded(false)
+    setFocusedInspectorNodeId(null)
+    setExpandedNode({ id: nodeId, text: true, details: false })
+    setTablePeek(true)
+    window.requestAnimationFrame(() => {
+      void setCenter(
+        node.position.x + node.data.layout.width / 2,
+        node.position.y + 80 - verticalOffset,
+        { zoom, duration: 450 },
+      )
+    })
+  }, [nodes, setCenter, setWorkspaceView])
+
+  const openFocusedNodeInspector = useCallback((nodeId: string) => {
+    const node = nodes.find((candidate) => candidate.id === nodeId)
+    if (!node) return
+    if (!opensInInspectorOnly(node)) {
+      openNodeInSpace(nodeId)
+      return
+    }
+    setFocusedInspectorNodeId(nodeId)
+  }, [nodes, openNodeInSpace])
 
   const openNotebookPage = useCallback((nodeId: string) => {
     const node = nodes.find((candidate) => candidate.id === nodeId)
@@ -3047,11 +3163,13 @@ function Flow() {
           <PropertiesPanel
             node={selectedNode}
             spaces={allSpaces}
-            instructionOperations={operations.filter((operation) => (
-              operation.data.properties[OSA_PROPERTY.role] === 'operation'
-            ))}
+            includedIn={selectedInclusions}
+            availableContainers={selectedAvailableContainers}
+            onNameChange={onNameChange}
+            onTextChange={onTextChange}
             onSpaceIdsChange={onSpaceIdsChange}
-            onIncludeInInstruction={assemblyGraphActions.onLinkPart}
+            onIncludeInContainer={assemblyGraphActions.onIncludeInContainer}
+            onRemoveInclusionRelationship={onRemoveInclusionRelationship}
             onPropertyChange={onPropertyChange}
             onPropertyRename={onPropertyRename}
             onPropertyRemove={onPropertyRemove}
@@ -3095,28 +3213,40 @@ function Flow() {
       <Panel
         position="bottom-center"
         id="board-table"
-        className="table-dock is-pinned"
+        className={`table-dock is-pinned${tablePeek ? ' is-peek' : ''}`}
       >
           <GraphTablePanel
             nodes={nodes}
             edges={edges}
             selectedItem={selectedItem}
-            onSelectNode={(id) => {
-              setSelectedItem({ type: 'node', id })
-              setInspectorExpanded(true)
-            }}
+            onInspectNode={inspectNodeFromTable}
+            onRevealNode={revealNodeFromTable}
             onSelectEdge={(id) => {
               setSelectedItem({ type: 'edge', id })
               setInspectorExpanded(true)
             }}
           />
-        <button
-          className="table-dock__toggle"
-          type="button"
-          onClick={() => setShowTable((isVisible) => !isVisible)}
-        >
-          {showTable ? 'Close board table' : 'Board table'}
-        </button>
+        <div className="table-dock__actions">
+          {tablePeek ? (
+            <button
+              className="table-dock__toggle"
+              type="button"
+              onClick={() => setTablePeek(false)}
+            >
+              Full table
+            </button>
+          ) : null}
+          <button
+            className="table-dock__toggle"
+            type="button"
+            onClick={() => {
+              setShowTable(false)
+              setTablePeek(false)
+            }}
+          >
+            Close board table
+          </button>
+        </div>
       </Panel>
       )}
       </ReactFlow>
@@ -3230,7 +3360,10 @@ function Flow() {
                       type="button"
                       aria-pressed={showTable}
                       aria-controls="board-table"
-                      onClick={() => setShowTable((isVisible) => !isVisible)}
+                      onClick={() => {
+                        if (!showTable) setTablePeek(false)
+                        setShowTable(!showTable)
+                      }}
                     >
                       Table
                     </button>
@@ -3322,7 +3455,7 @@ function Flow() {
               selectedAssemblyId={activeAssemblyId}
               onSelectAssembly={setSelectedAssemblyId}
               actions={assemblyViewActions}
-              onOpenNode={openNodeInSpace}
+              onInspectNode={openFocusedNodeInspector}
               readOnly={boardAccess === 'viewer'}
               starterAction={{
                 label: bundledStarter.openActionLabel,
@@ -3331,6 +3464,32 @@ function Flow() {
             />
           )}
         </div>
+      ) : null}
+      {focusedInspectorNode ? (
+        <FocusedNodeInspector
+          node={focusedInspectorNode}
+          onClose={() => setFocusedInspectorNodeId(null)}
+        >
+          <PropertiesPanel
+            node={focusedInspectorNode}
+            spaces={allSpaces}
+            includedIn={focusedInclusions}
+            availableContainers={focusedAvailableContainers}
+            onNameChange={onNameChange}
+            onTextChange={onTextChange}
+            onSpaceIdsChange={onSpaceIdsChange}
+            onIncludeInContainer={assemblyGraphActions.onIncludeInContainer}
+            onRemoveInclusionRelationship={onRemoveInclusionRelationship}
+            onPropertyChange={onPropertyChange}
+            onPropertyRename={onPropertyRename}
+            onPropertyRemove={onPropertyRemove}
+            onPropertyAdd={onPropertyAdd}
+            ownedVisuals={focusedInspectorOwnedVisuals}
+            onCreateOwnedVisualCanvas={createOwnedVisualCanvas}
+            onOpenOwnedVisual={openOwnedVisualCanvas}
+            onRemoveOwnedVisualCanvas={removeOwnedVisualCanvas}
+          />
+        </FocusedNodeInspector>
       ) : null}
       {editingVisual ? (
         <VisualCanvasEditor

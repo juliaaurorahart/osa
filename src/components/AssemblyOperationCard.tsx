@@ -30,7 +30,7 @@ type AssemblyOperationCardProps = {
   toolDraft: string
   toolDraftFor: AssemblyToolDraft | null
   actions: AssemblyViewActions
-  onOpenNode: (nodeId: string) => void
+  onInspectNode: (nodeId: string) => void
   onOpen: () => void
   onClose: () => void
   onToggleLock: () => void
@@ -58,7 +58,7 @@ export function AssemblyOperationCard({
   toolDraft,
   toolDraftFor,
   actions,
-  onOpenNode,
+  onInspectNode,
   onOpen,
   onClose,
   onToggleLock,
@@ -140,7 +140,7 @@ export function AssemblyOperationCard({
                 readOnly={readOnly}
                 toolDraft={toolDraft}
                 toolDraftFor={toolDraftFor}
-                onOpenNode={onOpenNode}
+                onInspectNode={onInspectNode}
                 onLinkPart={actions.onLinkPart}
                 onLinkPartInput={actions.onLinkPartInput}
                 onUnlinkPartInput={actions.onUnlinkPartInput}

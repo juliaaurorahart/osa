@@ -40,6 +40,8 @@ export const CURRENT_SOURCE_PATHS = [
   "src/components/EdgeHoverCard.css",
   "src/components/EdgeHoverCard.tsx",
   "src/components/EdgePropertiesPanel.tsx",
+  "src/components/FocusedNodeInspector.css",
+  "src/components/FocusedNodeInspector.tsx",
   "src/components/GraphTablePanel.css",
   "src/components/GraphTablePanel.tsx",
   "src/components/KonvaItemRenderer.tsx",

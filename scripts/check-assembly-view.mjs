@@ -20,6 +20,9 @@ try {
     '/src/components/AssemblyInstructionsView.tsx',
   )
   const { PropertiesPanel } = await server.ssrLoadModule('/src/components/PropertiesPanel.tsx')
+  const { inclusionRelationshipsFor } = await server.ssrLoadModule(
+    '/src/components/assemblyProjection.ts',
+  )
   const { createAssemblyViewUiState } = await server.ssrLoadModule(
     '/src/components/assemblyViewState.ts',
   )
@@ -36,6 +39,7 @@ try {
   const assembly = assemblies[0]
   const connectorBoxDrill = operations.find((operation) => operation.data.name === 'Connector Box Drill')
   const drill = plan.nodes.find((node) => node.data.name === 'Drill')
+  const electronicsBox = plan.nodes.find((node) => node.data.name === 'Electronics Box')
   const sourceVisual = plan.nodes.find((node) => (
     osaRole(node) === 'visual' && node.data.name === 'source slide'
   ))
@@ -43,6 +47,7 @@ try {
   assert.ok(assembly, 'expected the imported Shako Assembly')
   assert.ok(connectorBoxDrill, 'expected the Connector Box Drill instruction card')
   assert.ok(drill, 'expected the Drill tool used by Connector Box Drill')
+  assert.ok(electronicsBox, 'expected the Electronics Box assembly item')
   assert.ok(sourceVisual, 'expected the imported PowerPoint source visual to remain in project data')
   assert.equal(
     connectorBoxDrill.data.text,
@@ -450,9 +455,13 @@ try {
   const accentPanelMarkup = renderToStaticMarkup(createElement(PropertiesPanel, {
     node: accentedDrill,
     spaces: [],
-    instructionOperations: [],
+    includedIn: [],
+    availableContainers: [],
+    onNameChange: noop,
+    onTextChange: noop,
     onSpaceIdsChange: noop,
-    onIncludeInInstruction: noop,
+    onIncludeInContainer: noop,
+    onRemoveInclusionRelationship: noop,
     onPropertyChange: noop,
     onPropertyRename: noop,
     onPropertyRemove: noop,
@@ -460,6 +469,144 @@ try {
   }))
   assert.match(accentPanelMarkup, /type="color"/)
   assert.match(accentPanelMarkup, /aria-label="Accent color for [^"]*Drill"/)
+
+  // Included in is a readable projection of the object's exact incoming
+  // graph edges. It does not maintain a second membership list that can
+  // become stale or infer a parent relationship that is not actually stored.
+  const electronicsBoxInclusions = inclusionRelationshipsFor(
+    electronicsBox.id,
+    nodes,
+    edges,
+  )
+  const electronicsBoxIncomingEdges = edges.filter((edge) => edge.target === electronicsBox.id)
+  assert.deepEqual(
+    electronicsBoxInclusions.map((entry) => ({
+      edgeId: entry.edgeId,
+      containerId: entry.container.id,
+      relationship: entry.relationship,
+    })),
+    electronicsBoxIncomingEdges.map((edge) => ({
+      edgeId: edge.id,
+      containerId: edge.source,
+      relationship: edge.data.relationship.trim() || 'relates to',
+    })),
+    'Included in returns one row for every exact incoming Electronics Box edge.',
+  )
+  assert.deepEqual(
+    new Set(electronicsBoxInclusions.map((entry) => entry.container.id)),
+    new Set([assembly.id, connectorBoxDrill.id]),
+    'Electronics Box lists both its Assembly and Connector Box Drill card relationships.',
+  )
+  const drillInclusions = inclusionRelationshipsFor(drill.id, nodes, edges)
+  const drillIncomingEdges = edges.filter((edge) => edge.target === drill.id)
+  assert.deepEqual(
+    drillInclusions.map((entry) => ({
+      edgeId: entry.edgeId,
+      containerId: entry.container.id,
+      relationship: entry.relationship,
+    })),
+    drillIncomingEdges.map((edge) => ({
+      edgeId: edge.id,
+      containerId: edge.source,
+      relationship: edge.data.relationship.trim() || 'relates to',
+    })),
+    'A Tool lists its exact incoming card relationship without an inferred Assembly row.',
+  )
+  assert.deepEqual(
+    new Set(drillInclusions.map((entry) => entry.container.id)),
+    new Set([connectorBoxDrill.id]),
+  )
+  const membershipPanelMarkup = renderToStaticMarkup(createElement(PropertiesPanel, {
+    node: electronicsBox,
+    spaces: [],
+    includedIn: electronicsBoxInclusions,
+    availableContainers: [],
+    onNameChange: noop,
+    onTextChange: noop,
+    onSpaceIdsChange: noop,
+    onIncludeInContainer: noop,
+    onRemoveInclusionRelationship: noop,
+    onPropertyChange: noop,
+    onPropertyRename: noop,
+    onPropertyRemove: noop,
+    onPropertyAdd: noop,
+  }))
+  assert.match(membershipPanelMarkup, /<legend>Included in<\/legend>/)
+  assert.match(membershipPanelMarkup, /Shako Hat Assembly Instructions/)
+  assert.match(membershipPanelMarkup, /Connector Box Drill/)
+  assert.match(membershipPanelMarkup, />uses part</)
+  assert.match(membershipPanelMarkup, />uses as input</)
+  assert.match(
+    membershipPanelMarkup,
+    /Remove uses part relationship from Shako Hat Assembly Instructions to Part Electronics Box/,
+  )
+  assert.match(
+    membershipPanelMarkup,
+    /Remove uses as input relationship from Connector Box Drill to Part Electronics Box/,
+  )
+  assert.doesNotMatch(membershipPanelMarkup, /Assembly instruction|include this part in/)
+  assert.match(membershipPanelMarkup, /aria-label="item:quantity property name" value="item:quantity"/)
+  assert.match(membershipPanelMarkup, /aria-label="item:quantity property value" value="1"/)
+
+  const assemblyInclusion = electronicsBoxInclusions.find((entry) => entry.container.id === assembly.id)
+  assert.ok(assemblyInclusion, 'expected the exact Assembly -> Electronics Box edge')
+  const edgesWithoutAssemblyInclusion = edges.filter((edge) => edge.id !== assemblyInclusion.edgeId)
+  assert.deepEqual(
+    inclusionRelationshipsFor(
+      electronicsBox.id,
+      nodes,
+      edgesWithoutAssemblyInclusion,
+    ).map((entry) => entry.edgeId),
+    electronicsBoxInclusions
+      .filter((entry) => entry.edgeId !== assemblyInclusion.edgeId)
+      .map((entry) => entry.edgeId),
+    'Removing one Included in row deletes only that exact edge.',
+  )
+
+  const electronicsBoxInclusionEdgeIds = new Set(
+    electronicsBoxInclusions.map((entry) => entry.edgeId),
+  )
+  const edgesWithoutElectronicsBoxInclusion = edges.filter(
+    (edge) => !electronicsBoxInclusionEdgeIds.has(edge.id),
+  )
+  assert.deepEqual(
+    inclusionRelationshipsFor(electronicsBox.id, nodes, edgesWithoutElectronicsBoxInclusion),
+    [],
+    'With every incoming relationship removed, Included in has no ghost entry.',
+  )
+
+  const fieldKit = createTextNode({
+    id: 'assembly-view-check-field-kit',
+    position: { x: 0, y: 0 },
+    name: 'Field Kit',
+    text: '',
+    kind: 'tool',
+    properties: { [OSA_PROPERTY.role]: 'tool' },
+  })
+  const fieldKitContainsElectronicsBox = createGraphEdge({
+    id: 'assembly-view-check-field-kit-item',
+    source: fieldKit.id,
+    target: electronicsBox.id,
+    relationship: 'contains item',
+    properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.containerItem },
+  })
+  assert.deepEqual(
+    inclusionRelationshipsFor(
+      electronicsBox.id,
+      [...nodes, fieldKit],
+      [...edgesWithoutElectronicsBoxInclusion, fieldKitContainsElectronicsBox],
+    ).map((entry) => ({
+      edgeId: entry.edgeId,
+      containerId: entry.container.id,
+      relationship: entry.relationship,
+    })),
+    [{
+      edgeId: fieldKitContainsElectronicsBox.id,
+      containerId: fieldKit.id,
+      relationship: 'contains item',
+    }],
+    'Included in projects a newly added exact Part-or-Tool container edge.',
+  )
 
   // Card order is durable operation data and stays aligned between the
   // authoring board and the team-facing instructions.

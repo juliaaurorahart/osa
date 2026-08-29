@@ -64,6 +64,40 @@ export function operationsForAssembly(
   ).sort((left, right) => operationOrder(left) - operationOrder(right))
 }
 
+/** One incoming graph relationship shown by an object's Included-in list. */
+export type InclusionRelationship = {
+  edgeId: string
+  container: TextFlowNode
+  relationship: string
+}
+
+/**
+ * Returns the exact incoming graph relationships for one object.
+ *
+ * The inspector does not keep a second membership list or infer hidden links.
+ * One row represents one durable edge, so removing that row can remove that
+ * exact edge without deleting either object or disturbing another relation.
+ */
+export function inclusionRelationshipsFor(
+  itemId: string,
+  nodes: TextFlowNode[],
+  edges: GraphEdge[],
+): InclusionRelationship[] {
+  const nodesById = new Map(nodes.map((node) => [node.id, node]))
+
+  return edges.flatMap((edge) => {
+    if (edge.target !== itemId) return []
+    const container = nodesById.get(edge.source)
+    if (!container) return []
+
+    return [{
+      edgeId: edge.id,
+      container,
+      relationship: edge.data.relationship.trim() || 'relates to',
+    }]
+  })
+}
+
 /** Ordered instruction objects that belong directly to one Assembly card. */
 export function stepsForOperation(
   operationId: string,

@@ -1,6 +1,10 @@
 .graph-table-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   width: min(720px, calc(100vw - 480px));
-  max-height: 230px;
+  height: calc(100dvh - 144px);
+  min-height: 230px;
+  max-height: none;
   overflow: hidden;
 }
 
@@ -20,7 +24,8 @@
 }
 
 .graph-table-panel__scroll {
-  max-height: 180px;
+  min-height: 0;
+  max-height: none;
   overflow: auto;
 }
 
@@ -48,13 +53,92 @@
   cursor: pointer;
 }
 
+.graph-table-panel tbody tr.graph-table-panel__node-row {
+  cursor: default;
+}
+
 .graph-table-panel tbody tr:hover,
 .graph-table-panel tbody tr.is-selected {
   background: var(--osa-hover-surface);
 }
 
+.graph-table-panel__name-button,
+.graph-table-panel__space-button {
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
+.graph-table-panel__name-button {
+  max-width: 220px;
+  padding: 2px 0;
+  background: transparent;
+  color: var(--osa-link);
+  font-weight: 600;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+}
+
+.graph-table-panel__name-button:hover {
+  text-decoration-color: currentColor;
+}
+
+.graph-table-panel__name-button:focus-visible,
+.graph-table-panel__space-button:focus-visible {
+  outline: 2px solid var(--osa-focus);
+  outline-offset: 2px;
+}
+
+.graph-table-panel__action-cell {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.graph-table-panel__nodes-table th:first-child,
+.graph-table-panel__nodes-table td:first-child {
+  width: 150px;
+  min-width: 130px;
+}
+
+.graph-table-panel__nodes-table th:nth-child(2),
+.graph-table-panel__nodes-table td:nth-child(2) {
+  width: 70px;
+}
+
+.graph-table-panel__nodes-table th:nth-child(3),
+.graph-table-panel__nodes-table td:nth-child(3) {
+  min-width: 260px;
+}
+
+.graph-table-panel__space-button {
+  min-height: 26px;
+  padding: 3px 8px;
+  border: 1px solid var(--osa-border);
+  border-radius: 6px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-muted);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.graph-table-panel__space-button:hover {
+  border-color: var(--osa-text);
+  color: var(--osa-text);
+}
+
 @media (max-width: 800px) {
   .graph-table-panel {
     width: calc(100vw - 32px);
+  }
+}
+
+/* The Space command bar wraps into tools and filters on narrow screens, so
+   reserve a little more room above the same full-height table. */
+@media (max-width: 700px) {
+  .graph-table-panel {
+    height: calc(100dvh - 196px);
   }
 }

@@ -1542,6 +1542,25 @@
   gap: 6px;
 }
 
+/* A table row can turn the full-height browser into a shorter index, leaving
+   the selected graph node visible in the lower part of Space. */
+.table-dock.is-peek {
+  top: 104px !important;
+  bottom: auto !important;
+}
+
+.table-dock.is-peek .graph-table-panel {
+  height: min(34dvh, 360px);
+  min-height: 230px;
+}
+
+.table-dock__actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+
 .table-dock__toggle {
   border: 0;
   color: var(--osa-muted);
@@ -1550,13 +1569,15 @@
   font-size: 12px;
 }
 
-@media (max-width: 800px) {
-  .table-dock.is-pinned {
-    bottom: 160px !important;
+@media (max-width: 700px) {
+  .table-dock.is-peek {
+    top: 156px !important;
+  }
+
+  .table-dock.is-peek .graph-table-panel {
+    height: min(32dvh, 320px);
   }
 }
-
-
 
 .edge-hover-card__anchor,
 .properties-panel__anchor {

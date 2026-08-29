@@ -7,7 +7,6 @@ import type { GraphEdge } from '../graph/graphEdge'
 import {
   OSA_PROPERTY,
   OSA_RELATION,
-  isPartLike,
   osaRole,
 } from '../graph/osaData'
 import type { TextFlowNode } from '../graph/textNode'
@@ -57,7 +56,7 @@ type AssemblyViewProps = {
   onSelectAssembly: (assemblyId: string) => void
   /** Durable graph mutations are grouped separately from view/navigation props. */
   actions: AssemblyViewActions
-  onOpenNode: (nodeId: string) => void
+  onInspectNode: (nodeId: string) => void
   /** A shared link can project a board without exposing editing controls. */
   readOnly?: boolean
   /** Optional project starter presented when building an Assembly. */
@@ -83,7 +82,7 @@ export function AssemblyView({
   selectedAssemblyId,
   onSelectAssembly,
   actions,
-  onOpenNode,
+  onInspectNode,
   readOnly = false,
   starterAction,
 }: AssemblyViewProps) {
@@ -306,7 +305,6 @@ export function AssemblyView({
           const availableParts = uniqueNodes(
             [selectedAssembly],
             assemblyParts,
-            nodes.filter(isPartLike),
           )
           const toolDraftForOperation = toolDraftFor?.operationId === operation.id
             ? toolDraftFor
@@ -331,7 +329,7 @@ export function AssemblyView({
               toolDraft={toolDraft}
               toolDraftFor={toolDraftForOperation}
               actions={actions}
-              onOpenNode={onOpenNode}
+              onInspectNode={onInspectNode}
               onOpen={() => openCard(operation.id)}
               onClose={closeCard}
               onToggleLock={() => toggleCardLock(operation.id)}

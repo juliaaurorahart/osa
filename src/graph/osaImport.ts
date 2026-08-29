@@ -106,6 +106,11 @@ const RELATION_ENDPOINT_ROLES: Record<RelationRoles, RelationEndpointRoles> = {
   [OSA_RELATION.assemblyOperation]: [['assembly'], ['operation']],
   // An assembly can contain a purchased/derived part or another assembly.
   [OSA_RELATION.assemblyItem]: [['assembly'], ['bom-item', 'assembly']],
+  // General containment supports kits, nested parts, and reusable tool sets.
+  [OSA_RELATION.containerItem]: [
+    ['bom-item', 'assembly', 'tool'],
+    ['bom-item', 'assembly', 'tool'],
+  ],
   [OSA_RELATION.assemblyExpense]: [['assembly'], ['expense']],
   [OSA_RELATION.assemblySource]: [['assembly'], ['source']],
   [OSA_RELATION.operationTool]: [['operation'], ['tool']],
@@ -148,6 +153,16 @@ function canImportNodeOwnVisual(node: OsaImportNode) {
     || role === 'assembly'
     || role === 'tool'
     || role === 'step'
+}
+
+/** An ordinary Part may participate before it receives a specific OSA role. */
+function canImportNodeParticipateInContainment(node: OsaImportNode) {
+  const role = importNodeRole(node)
+  return node.kind === 'part'
+    || node.kind === 'tool'
+    || role === 'bom-item'
+    || role === 'assembly'
+    || role === 'tool'
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -301,6 +316,15 @@ function validateManagedEdgeProperties(
   const targetRole = importNodeRole(targetNode)
   if (relationRole === OSA_RELATION.objectVisual) {
     if (!canImportNodeOwnVisual(sourceNode) || targetRole !== 'visual') {
+      throw new Error(`${path}.${OSA_PROPERTY.relationRole} has incompatible endpoint roles.`)
+    }
+    return
+  }
+  if (relationRole === OSA_RELATION.containerItem) {
+    if (
+      !canImportNodeParticipateInContainment(sourceNode)
+      || !canImportNodeParticipateInContainment(targetNode)
+    ) {
       throw new Error(`${path}.${OSA_PROPERTY.relationRole} has incompatible endpoint roles.`)
     }
     return

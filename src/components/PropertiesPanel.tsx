@@ -5,18 +5,24 @@ import { storeImageFile } from '../graph/imageAsset'
 import { NODE_KINDS } from '../graph/nodeKinds'
 import {
   appearanceAccentColor,
+  isContainableOsaObject,
   isManagedOsaProperty,
   isPartLike,
   OSA_PROPERTY,
   osaRole,
 } from '../graph/osaData'
+import { nodeTitle, type InclusionRelationship } from './assemblyProjection'
 
 type PropertiesPanelProps = {
   node: TextFlowNode
   spaces: TextFlowNode[]
-  instructionOperations: TextFlowNode[]
+  includedIn: InclusionRelationship[]
+  availableContainers: TextFlowNode[]
+  onNameChange: (nodeId: string, name: string) => void
+  onTextChange: (nodeId: string, text: string) => void
   onSpaceIdsChange: (nodeId: string, spaceIds: string[]) => void
-  onIncludeInInstruction: (operationId: string, partId: string) => void
+  onIncludeInContainer: (containerId: string, itemId: string) => void
+  onRemoveInclusionRelationship: (edgeId: string) => void
   onPropertyChange: (nodeId: string, propertyName: string, value: string) => void
   onPropertyRename: (nodeId: string, oldName: string, newName: string) => void
   onPropertyRemove: (nodeId: string, propertyName: string) => void
@@ -47,9 +53,13 @@ type PropertiesPanelProps = {
 export function PropertiesPanel({
   node,
   spaces,
-  instructionOperations,
+  includedIn,
+  availableContainers,
+  onNameChange,
+  onTextChange,
   onSpaceIdsChange,
-  onIncludeInInstruction,
+  onIncludeInContainer,
+  onRemoveInclusionRelationship,
   onPropertyChange,
   onPropertyRename,
   onPropertyRemove,
@@ -86,15 +96,6 @@ export function PropertiesPanel({
   const nodeLabel = nodeName ? `${kindLabel} ${nodeName}` : `${kindLabel} #${node.id}`
   const isVisual = role === 'visual' || node.data.kind === 'visual'
   const canOwnVisualCanvases = isPartLike(node) || node.data.kind === 'tool' || role === 'tool'
-  // Keep the ordinary-object photo action at the top of the panel. It writes
-  // the same `asset:image` property as the detailed Image section below; it
-  // does not create a Visual canvas or change the graph relationship.
-  const showsQuickPhoto = !isVisual && (
-    node.data.kind === 'part'
-    || node.data.kind === 'tool'
-    || role === 'bom-item'
-    || role === 'tool'
-  )
   // Keep this panel backward-compatible while App.tsx gains the durable
   // owner-to-Visual graph relationship. Once the host supplies either value,
   // an eligible part/tool gets the concise canvas section below.
@@ -144,41 +145,35 @@ export function PropertiesPanel({
 
   return (
     <section className="properties-panel">
-      <p className="properties-panel__eyebrow">selected node</p>
-      <h2>{nodeLabel}</h2>
-      {imageImportError ? <p role="alert">{imageImportError}</p> : null}
-      {showsQuickPhoto ? (
-        <div
-          className="properties-panel__quick-photo"
-          onDragOver={(event) => event.preventDefault()}
-          onDrop={onImageDrop}
-        >
-          <label className="board-file-button properties-panel__quick-photo-button">
-            {assetImage ? 'replace photo' : '+ photo'}
-            <input
-              type="file"
-              accept="image/*"
-              aria-label={`${assetImage ? 'Replace' : 'Choose'} a photo for ${nodeLabel}`}
-              onChange={onImageFileChange}
-            />
-          </label>
-          <label className="board-file-button properties-panel__quick-photo-button">
-            camera
-            <input
-              type="file"
-              accept="image/*"
-              capture="environment"
-              aria-label={`Take a photo for ${nodeLabel}`}
-              onChange={onImageFileChange}
-            />
-          </label>
-          <span>drop photo</span>
-        </div>
-      ) : null}
-      <fieldset className="properties-panel__appearance">
-        <legend>appearance</legend>
+      <div className="properties-panel__type-summary">
+        <p className="properties-panel__eyebrow">Type</p>
+        <h2>{kindLabel}</h2>
+      </div>
+
+      <fieldset className="properties-panel__section properties-panel__content">
+        <legend>Content</legend>
+        <label>
+          <span>Name</span>
+          <input
+            aria-label="Node name in inspector"
+            value={node.data.name}
+            onChange={(event) => onNameChange(node.id, event.target.value)}
+          />
+        </label>
+        <label>
+          <span>Text</span>
+          <textarea
+            aria-label="Node text in inspector"
+            value={node.data.text}
+            onChange={(event) => onTextChange(node.id, event.target.value)}
+          />
+        </label>
+      </fieldset>
+
+      <fieldset className="properties-panel__section properties-panel__appearance">
+        <legend>Appearance</legend>
         <label className="properties-panel__accent-control">
-          <span>accent</span>
+          <span>Accent</span>
           <input
             type="color"
             aria-label={`Accent color for ${nodeLabel}`}
@@ -203,17 +198,12 @@ export function PropertiesPanel({
           ) : null}
         </label>
       </fieldset>
-      {role ? (
-        <p className="properties-panel__managed">
-          imported view hint: {role.replace('-', ' ')}. This remains ordinary OSA data.
-        </p>
-      ) : null}
 
       {node.data.kind !== 'space' ? (
-        <fieldset className="properties-panel__spaces">
-          <legend>spaces</legend>
+        <fieldset className="properties-panel__section properties-panel__spaces">
+          <legend>Spaces</legend>
           {spaces.length === 0 ? (
-            <p className="properties-panel__empty">no Spaces have been created.</p>
+            <p className="properties-panel__empty">No Spaces have been created.</p>
           ) : spaces.map((space) => (
             <label key={space.id}>
               <input
@@ -234,16 +224,17 @@ export function PropertiesPanel({
 
       {node.data.kind !== 'space' ? (
         <fieldset
-          className="properties-panel__asset-image"
+          className="properties-panel__section properties-panel__asset-image"
           onDragOver={(event) => event.preventDefault()}
           onDrop={onImageDrop}
         >
-          <legend>{isVisual ? 'canvas image' : 'image'}</legend>
+          <legend>{isVisual ? 'Canvas image' : 'Image'}</legend>
           <p className="properties-panel__asset-help">
             {isVisual
               ? 'This image is this Visual’s canvas content. Every placed reference updates when it changes.'
               : 'Attach one picture to this object. It can be used by an Assembly card or a reusable Visual canvas.'}
           </p>
+          {imageImportError ? <p role="alert">{imageImportError}</p> : null}
 
           {assetImage ? (
             <figure className="properties-panel__asset-preview">
@@ -255,7 +246,7 @@ export function PropertiesPanel({
             </figure>
           ) : (
             <p className="properties-panel__empty">
-              {isVisual ? 'no canvas image attached yet.' : 'no image attached yet.'}
+              {isVisual ? 'No canvas image attached yet.' : 'No image attached yet.'}
             </p>
           )}
 
@@ -299,7 +290,7 @@ export function PropertiesPanel({
           </p>
 
           <label className="properties-panel__asset-alt">
-            image description
+            Image description
             <input
               aria-label={`Image description for ${nodeLabel}`}
               value={assetImageAlt}
@@ -315,8 +306,8 @@ export function PropertiesPanel({
       ) : null}
 
       {showsOwnedVisualCanvases ? (
-        <fieldset className="properties-panel__owned-visuals">
-          <legend>visual canvases</legend>
+        <fieldset className="properties-panel__section properties-panel__owned-visuals">
+          <legend>Visual canvases</legend>
           <p className="properties-panel__asset-help">
             Each canvas is a reusable Visual owned by this object. Place it deliberately in any Assembly canvas.
           </p>
@@ -348,7 +339,7 @@ export function PropertiesPanel({
               })}
             </ul>
           ) : (
-            <p className="properties-panel__empty">no visual canvases yet.</p>
+            <p className="properties-panel__empty">No visual canvases yet.</p>
           )}
           <button
             className="board-button"
@@ -361,67 +352,97 @@ export function PropertiesPanel({
         </fieldset>
       ) : null}
 
-      {(role === 'bom-item' || node.data.kind === 'part') ? (
-        <fieldset className="properties-panel__instruction-link">
-          <legend>assembly instruction</legend>
-          {instructionOperations.length ? (
+      {isContainableOsaObject(node) ? (
+        <fieldset className="properties-panel__section properties-panel__included-in">
+          <legend>Included in</legend>
+          {includedIn.length ? (
+            <ul className="properties-panel__container-list">
+              {includedIn.map((inclusion) => (
+                <li key={inclusion.edgeId}>
+                  <span className="properties-panel__container-copy">
+                    <strong>{nodeTitle(inclusion.container)}</strong>
+                    <small>{inclusion.relationship}</small>
+                  </span>
+                  <button
+                    className="properties-panel__container-remove"
+                    type="button"
+                    aria-label={`Remove ${inclusion.relationship} relationship from ${nodeTitle(inclusion.container)} to ${nodeLabel}`}
+                    onClick={() => onRemoveInclusionRelationship(inclusion.edgeId)}
+                  >
+                    remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="properties-panel__empty">Not included in another object or card.</p>
+          )}
+          {availableContainers.length ? (
             <select
-              aria-label="Include this part in an assembly instruction"
+              aria-label={`Choose where to include ${nodeLabel}`}
               defaultValue=""
               onChange={(event) => {
                 if (!event.target.value) return
-                onIncludeInInstruction(event.target.value, node.id)
+                onIncludeInContainer(event.target.value, node.id)
                 event.target.value = ''
               }}
             >
-              <option value="">include this part in…</option>
-              {instructionOperations.map((operation) => (
-                <option key={operation.id} value={operation.id}>
-                  {operation.data.name.trim() || operation.data.text.trim() || `Instruction #${operation.id}`}
+              <option value="">add to…</option>
+              {availableContainers.map((container) => (
+                <option key={container.id} value={container.id}>
+                  {nodeTitle(container)}
                 </option>
               ))}
             </select>
-          ) : (
-            <p className="properties-panel__empty">create an assembly instruction first.</p>
-          )}
+          ) : null}
         </fieldset>
       ) : null}
 
-      <div className="properties-panel__rows">
-        {properties.length === 0 ? (
-          <p className="properties-panel__empty">No properties yet.</p>
-        ) : properties.map(([name, value]) => (
-          <div className="property-row" key={name}>
-            <input
-              aria-label={`${name} property name`}
-              defaultValue={name}
-              onBlur={(event) => onPropertyRename(node.id, name, event.target.value)}
-            />
-            <input
-              aria-label={`${name} property value`}
-              value={value}
-              onChange={(event) => onPropertyChange(node.id, name, event.target.value)}
-            />
-            <button
-              className="property-row__remove"
-              type="button"
-              aria-label={`Remove ${name}`}
-              onClick={() => onPropertyRemove(node.id, name)}
-            >
-              ×
-            </button>
+      <fieldset className="properties-panel__section properties-panel__properties">
+        <legend>Properties</legend>
+        {properties.length ? (
+          <div className="properties-panel__property-headings" aria-hidden="true">
+            <span>Property</span>
+            <span>Value</span>
+            <span />
           </div>
-        ))}
-      </div>
+        ) : null}
+        <div className="properties-panel__rows">
+          {properties.length === 0 ? (
+            <p className="properties-panel__empty">No properties yet.</p>
+          ) : properties.map(([name, value]) => (
+            <div className="property-row" key={name}>
+              <input
+                aria-label={`${name} property name`}
+                defaultValue={name}
+                onBlur={(event) => onPropertyRename(node.id, name, event.target.value)}
+              />
+              <input
+                aria-label={`${name} property value`}
+                value={value}
+                onChange={(event) => onPropertyChange(node.id, name, event.target.value)}
+              />
+              <button
+                className="property-row__remove"
+                type="button"
+                aria-label={`Remove ${name}`}
+                onClick={() => onPropertyRemove(node.id, name)}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
 
-      <button className="board-button" type="button" onClick={() => onPropertyAdd(node.id)}>
-        + add property
-      </button>
+        <button className="board-button" type="button" onClick={() => onPropertyAdd(node.id)}>
+          + add property
+        </button>
+      </fieldset>
 
       {managedProperties.length ? (
-        <details className="properties-panel__managed-data">
+        <details className="properties-panel__managed-data properties-panel__details-section">
           <summary>
-            view hints
+            View hints
             <span>{managedProperties.length}</span>
           </summary>
           <dl>

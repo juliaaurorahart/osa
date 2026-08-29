@@ -22,7 +22,7 @@ type AssemblyPartsAndToolsProps = {
   readOnly: boolean
   toolDraft: string
   toolDraftFor: AssemblyToolDraft | null
-  onOpenNode: (nodeId: string) => void
+  onInspectNode: (nodeId: string) => void
   onLinkPart: (operationId: string, partId: string) => void
   onLinkPartInput?: (operationId: string, partId: string) => void
   onUnlinkPartInput?: (operationId: string, partId: string) => void
@@ -49,7 +49,7 @@ export function AssemblyPartsAndTools({
   readOnly,
   toolDraft,
   toolDraftFor,
-  onOpenNode,
+  onInspectNode,
   onLinkPart,
   onLinkPartInput,
   onUnlinkPartInput,
@@ -84,7 +84,7 @@ export function AssemblyPartsAndTools({
                     style={semanticAccentStyle(part)}
                     onClick={(event) => {
                       event.stopPropagation()
-                      onOpenNode(part.id)
+                      onInspectNode(part.id)
                     }}
                   >
                     {nodeTitle(part)}
@@ -158,7 +158,7 @@ export function AssemblyPartsAndTools({
                     style={semanticAccentStyle(tool)}
                     onClick={(event) => {
                       event.stopPropagation()
-                      onOpenNode(tool.id)
+                      onInspectNode(tool.id)
                     }}
                   >
                     {nodeTitle(tool)}

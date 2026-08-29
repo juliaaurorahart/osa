@@ -1,0 +1,77 @@
+/* Like the canvas editor, a focused inspector is a temporary overlay. The
+   Assembly card or Space viewport stays mounted beneath it and is restored
+   exactly as it was when the inspector closes. */
+.focused-node-inspector__scrim {
+  position: fixed;
+  z-index: 90;
+  inset: 0;
+  display: grid;
+  place-items: stretch;
+  padding: clamp(8px, 2vw, 24px);
+  background: rgb(20 24 25 / 58%);
+}
+
+.focused-node-inspector {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(720px, 100%);
+  height: 100%;
+  margin: auto;
+  overflow: hidden;
+  border: 1px solid var(--osa-border);
+  border-radius: 7px;
+  background: var(--osa-surface);
+  box-shadow: 0 20px 70px rgb(0 0 0 / 36%);
+}
+
+.focused-node-inspector__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--osa-border);
+  background: var(--osa-surface);
+}
+
+.focused-node-inspector__header strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.focused-node-inspector__header button {
+  padding: 4px 7px;
+  border: 1px solid var(--osa-border);
+  border-radius: 4px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+.focused-node-inspector__header button:hover,
+.focused-node-inspector__header button:focus-visible {
+  border-color: var(--osa-focus);
+  background: var(--osa-hover-surface);
+  outline: 0;
+}
+
+.focused-node-inspector__body {
+  min-height: 0;
+  overflow: auto;
+  background: var(--osa-bg);
+}
+
+.focused-node-inspector__body > .properties-panel {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 100%;
+  padding: clamp(16px, 3vw, 30px);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}

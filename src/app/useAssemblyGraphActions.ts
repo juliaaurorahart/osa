@@ -9,6 +9,8 @@ import type { AssemblyViewActions, OperationPartDirection } from '../components/
 import { createGraphEdge, type GraphEdge } from '../graph/graphEdge'
 import type { NodeKind } from '../graph/nodeKinds'
 import {
+  containmentWouldCreateCycle,
+  isContainableOsaObject,
   isPartLike,
   operationVisualDisplayOrder,
   OSA_PROPERTY,
@@ -32,7 +34,9 @@ type CreateObjectNode = (
 type GraphOnlyAssemblyActions = Omit<
   AssemblyViewActions,
   'onNameChange' | 'onTextChange' | 'onPropertyChange'
->
+> & {
+  onIncludeInContainer: (containerId: string, itemId: string) => void
+}
 
 type UseAssemblyGraphActionsOptions = {
   nodes: TextFlowNode[]
@@ -50,39 +54,29 @@ type UseAssemblyGraphActionsOptions = {
 }
 
 /** Finds the Assembly that contains a particular instruction operation. */
-function parentAssemblyIdForOperation(operationId: string, edges: GraphEdge[]) {
-  return edges.find((edge) => (
-    edge.target === operationId
-    && (
-      edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.assemblyOperation
-      || edge.data.relationKind === 'project-task'
-    )
-  ))?.source ?? null
-}
-
-/** True when adding child Assembly below parent Assembly would make a cycle. */
-function wouldCreateAssemblyMembershipCycle(
-  parentAssemblyId: string,
-  childAssemblyId: string,
+function parentAssemblyIdForOperation(
+  operationId: string,
+  nodes: TextFlowNode[],
   edges: GraphEdge[],
 ) {
-  if (parentAssemblyId === childAssemblyId) return true
-
-  const checked = new Set<string>()
-  const toCheck = [childAssemblyId]
-  while (toCheck.length) {
-    const currentId = toCheck.pop()!
-    if (currentId === parentAssemblyId) return true
-    if (checked.has(currentId)) continue
-    checked.add(currentId)
-    edges
-      .filter((edge) => (
-        edge.source === currentId
-        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.assemblyItem
-      ))
-      .forEach((edge) => toCheck.push(edge.target))
+  const nodesById = new Map(nodes.map((node) => [node.id, node]))
+  const isAssemblySource = (edge: GraphEdge) => {
+    const source = nodesById.get(edge.source)
+    return source !== undefined && osaRole(source) === 'assembly'
   }
-  return false
+
+  const canonicalEdge = edges.find((edge) => (
+    edge.target === operationId
+    && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.assemblyOperation
+    && isAssemblySource(edge)
+  ))
+  if (canonicalEdge) return canonicalEdge.source
+
+  return edges.find((edge) => (
+    edge.target === operationId
+    && edge.data.relationKind === 'project-task'
+    && isAssemblySource(edge)
+  ))?.source ?? null
 }
 
 /** Appends newly linked Visuals after the current card order, including legacy links. */
@@ -475,6 +469,7 @@ export function useAssemblyGraphActions({
     options?: { placeholder?: boolean },
   ) => {
     const operation = nodes.find((node) => node.id === operationId)
+    const assemblyId = parentAssemblyIdForOperation(operationId, nodes, edges)
     const toolId = createObjectNode(
       name,
       'tool',
@@ -487,33 +482,71 @@ export function useAssemblyGraphActions({
       },
       operation?.data.spaceIds,
     )
-    const id = `edge-${nextEdgeIdRef.current++}`
-    setEdges((currentEdges) => [...currentEdges, createGraphEdge({
-      id,
-      source: operationId,
-      target: toolId,
-      relationship: 'uses tool',
-      properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.operationTool },
-    })])
-    return toolId
-  }, [createObjectNode, nextEdgeIdRef, nodes, setEdges])
-
-  const linkToolToOperation = useCallback((operationId: string, toolId: string) => {
     setEdges((currentEdges) => {
-      const alreadyLinked = currentEdges.some((edge) => (
-        edge.source === operationId && edge.target === toolId
-      ))
-      if (alreadyLinked) return currentEdges
-      const id = `edge-${nextEdgeIdRef.current++}`
-      return [...currentEdges, createGraphEdge({
-        id,
+      const operationEdgeId = `edge-${nextEdgeIdRef.current++}`
+      const newEdges = [createGraphEdge({
+        id: operationEdgeId,
         source: operationId,
         target: toolId,
         relationship: 'uses tool',
         properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.operationTool },
       })]
+      if (assemblyId) {
+        const membershipEdgeId = `edge-${nextEdgeIdRef.current++}`
+        newEdges.push(createGraphEdge({
+          id: membershipEdgeId,
+          source: assemblyId,
+          target: toolId,
+          relationship: 'contains item',
+          properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.containerItem },
+        }))
+      }
+      return [...currentEdges, ...newEdges]
     })
-  }, [nextEdgeIdRef, setEdges])
+    return toolId
+  }, [createObjectNode, edges, nextEdgeIdRef, nodes, setEdges])
+
+  const linkToolToOperation = useCallback((operationId: string, toolId: string) => {
+    setEdges((currentEdges) => {
+      const assemblyId = parentAssemblyIdForOperation(
+        operationId,
+        latestNodes.current,
+        currentEdges,
+      )
+      const newEdges: GraphEdge[] = []
+      const alreadyLinked = currentEdges.some((edge) => (
+        edge.source === operationId
+        && edge.target === toolId
+        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationTool
+      ))
+      if (!alreadyLinked) {
+        const operationEdgeId = `edge-${nextEdgeIdRef.current++}`
+        newEdges.push(createGraphEdge({
+          id: operationEdgeId,
+          source: operationId,
+          target: toolId,
+          relationship: 'uses tool',
+          properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.operationTool },
+        }))
+      }
+      const alreadyIncluded = !assemblyId || currentEdges.some((edge) => (
+        edge.source === assemblyId
+        && edge.target === toolId
+        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.containerItem
+      ))
+      if (assemblyId && !alreadyIncluded) {
+        const membershipEdgeId = `edge-${nextEdgeIdRef.current++}`
+        newEdges.push(createGraphEdge({
+          id: membershipEdgeId,
+          source: assemblyId,
+          target: toolId,
+          relationship: 'contains item',
+          properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.containerItem },
+        }))
+      }
+      return newEdges.length ? [...currentEdges, ...newEdges] : currentEdges
+    })
+  }, [latestNodes, nextEdgeIdRef, setEdges])
 
   const unlinkToolFromOperation = useCallback((operationId: string, toolId: string) => {
     setEdges((currentEdges) => {
@@ -553,7 +586,7 @@ export function useAssemblyGraphActions({
     direction: OperationPartDirection,
   ) => {
     const material = nodes.find((node) => node.id === objectId)
-    const assemblyId = parentAssemblyIdForOperation(operationId, edges)
+    const assemblyId = parentAssemblyIdForOperation(operationId, nodes, edges)
     const isPart = material !== undefined && isPartLike(material)
     const isAssembly = material !== undefined && osaRole(material) === 'assembly'
     if (!material || (!isPart && !isAssembly)) return
@@ -586,7 +619,7 @@ export function useAssemblyGraphActions({
       const canJoinAssemblyInventory = Boolean(
         assemblyId
         && assemblyId !== objectId
-        && (!isAssembly || !wouldCreateAssemblyMembershipCycle(assemblyId, objectId, currentEdges))
+        && (!isAssembly || !containmentWouldCreateCycle(assemblyId, objectId, currentEdges))
       )
       const isAlreadyInAssembly = !canJoinAssemblyInventory || currentEdges.some((edge) => (
         edge.source === assemblyId
@@ -617,7 +650,7 @@ export function useAssemblyGraphActions({
     requestedName?: string,
   ) => {
     const operation = nodes.find((node) => node.id === operationId)
-    const assemblyId = parentAssemblyIdForOperation(operationId, edges)
+    const assemblyId = parentAssemblyIdForOperation(operationId, nodes, edges)
     const outputName = direction === 'output' ? requestedName?.trim() : ''
     const partId = createObjectNode(
       outputName || 'Part to define',
@@ -677,6 +710,49 @@ export function useAssemblyGraphActions({
     return partId
   }, [createObjectNode, edges, nextEdgeIdRef, nodes, setEdges])
 
+  /**
+   * Adds one object to a Part, Tool, or Assembly without copying the object.
+   * Assembly inventory keeps its established relationship; other containers
+   * use the general containment relationship projected by the inspector.
+   */
+  const includeInContainer = useCallback((containerId: string, itemId: string) => {
+    const container = latestNodes.current.find((node) => node.id === containerId)
+    const item = latestNodes.current.find((node) => node.id === itemId)
+    if (
+      !container
+      || !isContainableOsaObject(container)
+      || !item
+      || !isContainableOsaObject(item)
+      || containerId === itemId
+    ) return
+
+    setEdges((currentEdges) => {
+      const alreadyIncluded = currentEdges.some((edge) => (
+        edge.source === containerId
+        && edge.target === itemId
+        && (
+          edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.assemblyItem
+          || edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.containerItem
+        )
+      ))
+      if (alreadyIncluded || containmentWouldCreateCycle(containerId, itemId, currentEdges)) {
+        return currentEdges
+      }
+
+      const relationRole = osaRole(container) === 'assembly' && isPartLike(item)
+        ? OSA_RELATION.assemblyItem
+        : OSA_RELATION.containerItem
+      const id = `edge-${nextEdgeIdRef.current++}`
+      return [...currentEdges, createGraphEdge({
+        id,
+        source: containerId,
+        target: itemId,
+        relationship: 'contains item',
+        properties: { [OSA_PROPERTY.relationRole]: relationRole },
+      })]
+    })
+  }, [latestNodes, nextEdgeIdRef, setEdges])
+
   return useMemo(() => ({
     onCreateAssembly: createAssembly,
     onCreateOperation: createAssemblyOperation,
@@ -691,6 +767,7 @@ export function useAssemblyGraphActions({
     onLinkPartInput: (operationId, partId) => linkOperationMaterial(operationId, partId, 'input'),
     onUnlinkPartInput: (operationId, partId) => unlinkOperationMaterial(operationId, partId, 'input'),
     onCreatePartForOperation: createPartForOperation,
+    onIncludeInContainer: includeInContainer,
     onLinkTool: linkToolToOperation,
     onUnlinkTool: unlinkToolFromOperation,
   }), [
@@ -699,6 +776,7 @@ export function useAssemblyGraphActions({
     createOperationStep,
     createOperationTool,
     createPartForOperation,
+    includeInContainer,
     ensureStepCanvas,
     linkOperationMaterial,
     linkPartToOperation,
