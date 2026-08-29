@@ -158,12 +158,7 @@ import {
   sharedAssemblyUrl,
   suggestedAssemblyShareSlug,
 } from './graph/sharedAssemblyRoute'
-import {
-  createShakoLightWrapImportPlan,
-  migrateLegacyShakoDrillBits,
-  refreshBundledShakoSlideReferences,
-  SHAKO_LIGHT_WRAP_STARTER_NAME,
-} from './starters/shakoLightWrap'
+import { bundledStarter } from './starters'
 import './App.css'
 
 /** React Flow uses this map to choose the component for `type: 'text'` nodes. */
@@ -428,8 +423,8 @@ function Flow() {
   const [startupDraft] = useState(readLocalDraft)
   const [sharedAssemblyReference] = useState(readSharedAssemblyReference)
   const [theme, setTheme] = useState<OsaTheme>(readOsaTheme)
-  const bundledShakoImportPlan = useMemo(
-    createShakoLightWrapImportPlan,
+  const bundledStarterImportPlan = useMemo(
+    () => bundledStarter.createImportPlan(),
     [],
   )
   const startupGraph = useMemo(() => startupDraft
@@ -613,19 +608,17 @@ function Flow() {
     setCanvasLabVisible(false)
   }, [])
 
-  // Bundled-Shako upgrades are deliberately narrow: refresh OSA's own older
-  // source slides, promote direct source-image URLs into real Visuals, then
-  // split the one original combined drill-bit Tool. They preserve a person's
-  // Visuals, notes, graph connections, and chosen canvas owners. In
-  // particular, this must never rewrite a canvas owner after someone changes
-  // it in Assembly.
+  // Starter-specific upgrades remain behind the generic starter contract.
+  // Generic Visual migrations run between its preparation and graph passes
+  // so older project data keeps the same upgrade order it had before this
+  // code was extracted from App.tsx.
   useEffect(() => {
-    const refreshedNodes = refreshBundledShakoSlideReferences(
+    const refreshedNodes = bundledStarter.refreshImportedNodes(
       nodes,
-      bundledShakoImportPlan,
+      bundledStarterImportPlan,
     )
     const migratedSourceVisuals = migrateLegacyOperationSourceVisuals(refreshedNodes, edges)
-    const migratedDrillBits = migrateLegacyShakoDrillBits(
+    const migratedStarterGraph = bundledStarter.migrateLegacyGraph(
       migratedSourceVisuals.nodes,
       migratedSourceVisuals.edges,
     )
@@ -633,12 +626,12 @@ function Flow() {
     // pixels. Promote those images to their own immutable Visual objects so
     // they become normal, selectable placements in the parent canvas.
     const migratedCanvasImages = migrateLegacyCanvasBackgroundImages(
-      migratedDrillBits.nodes,
-      migratedDrillBits.edges,
+      migratedStarterGraph.nodes,
+      migratedStarterGraph.edges,
     )
     if (migratedCanvasImages.nodes !== nodes) setNodes(migratedCanvasImages.nodes)
     if (migratedCanvasImages.edges !== edges) setEdges(migratedCanvasImages.edges)
-  }, [bundledShakoImportPlan, edges, nodes, setEdges, setNodes])
+  }, [bundledStarterImportPlan, edges, nodes, setEdges, setNodes])
 
   // Older boards embedded camera data directly in their graph JSON. Move
   // those source pixels to object storage as the board is opened, without
@@ -4098,11 +4091,11 @@ function Flow() {
   /** Merges structured data into the latest graph, then opens its Assembly. */
   const addOsaImportPlan = useCallback((
     plan: OsaImportPlan,
-    options?: { refreshBundledShakoSlideReferences?: boolean },
+    options?: { refreshBundledStarterReferences?: boolean },
   ) => {
     const merge = mergeOsaImportPlan(latestNodes.current, latestEdges.current, plan)
-    const importedNodes = options?.refreshBundledShakoSlideReferences
-      ? refreshBundledShakoSlideReferences(merge.nodes, plan)
+    const importedNodes = options?.refreshBundledStarterReferences
+      ? bundledStarter.refreshImportedNodes(merge.nodes, plan)
       : merge.nodes
     setNodes(importedNodes)
     setEdges(merge.edges)
@@ -4135,25 +4128,21 @@ function Flow() {
     }
   }, [addOsaImportPlan])
 
-  /**
-   * The Shako package is bundled with this OSA build, so Julia can reopen the
-   * project without hunting for the original slide deck and workbook again.
-   * It is still parsed through the same validator as a normal imported file.
-   */
-  const openShakoLightWrapStarter = useCallback(() => {
+  /** Opens the configured starter through the same merge path as a file import. */
+  const openBundledStarter = useCallback(() => {
     try {
-      addOsaImportPlan(bundledShakoImportPlan, {
-        refreshBundledShakoSlideReferences: true,
+      addOsaImportPlan(bundledStarterImportPlan, {
+        refreshBundledStarterReferences: true,
       })
       setBoardName((currentName) => currentName === 'Untitled board'
-        ? SHAKO_LIGHT_WRAP_STARTER_NAME
+        ? bundledStarter.name
         : currentName)
     } catch (error) {
       setStorageStatus(error instanceof Error
         ? error.message
-        : 'Unable to open the bundled Shako Light Wrap project.')
+        : `Unable to open the bundled ${bundledStarter.name} project.`)
     }
-  }, [addOsaImportPlan, bundledShakoImportPlan])
+  }, [addOsaImportPlan, bundledStarterImportPlan])
 
   // Give the display component its UI callback without saving that callback
   // inside the underlying node state.
@@ -4825,7 +4814,11 @@ function Flow() {
               onPreviewInstructions={() => setAssemblyInstructionsPreview(true)}
               shareStatus={shareStatus}
               shareUrl={shareUrl}
-              onLoadShakoStarter={openShakoLightWrapStarter}
+              starterAction={{
+                label: bundledStarter.openActionLabel,
+                compactLabel: bundledStarter.compactOpenActionLabel,
+                onLoad: openBundledStarter,
+              }}
             />
           )}
         </div>

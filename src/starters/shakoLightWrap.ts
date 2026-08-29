@@ -11,9 +11,10 @@ import {
   planOsaImport,
   type OsaImportPlan,
 } from '../graph/osaImport'
+import type { OsaStarter } from './starter'
 
 /** Display name used when the bundled project becomes the active board. */
-export const SHAKO_LIGHT_WRAP_STARTER_NAME = 'Shako Light Wrap'
+const SHAKO_LIGHT_WRAP_STARTER_NAME = 'Shako Light Wrap'
 
 const LEGACY_SHAKO_VISUAL = /^\/import-assets\/shako-light-wrap\/operation-\d+\.png$/
 
@@ -282,3 +283,14 @@ export function refreshBundledShakoSlideReferences(
 
   return changed ? refreshedNodes : currentNodes
 }
+
+/** All Shako-specific behavior exposed through OSA's generic starter contract. */
+export const shakoLightWrapStarter = {
+  id: 'shako-light-wrap',
+  name: SHAKO_LIGHT_WRAP_STARTER_NAME,
+  openActionLabel: 'open Shako Light Wrap starter',
+  compactOpenActionLabel: 'open Shako starter',
+  createImportPlan: createShakoLightWrapImportPlan,
+  refreshImportedNodes: refreshBundledShakoSlideReferences,
+  migrateLegacyGraph: migrateLegacyShakoDrillBits,
+} satisfies OsaStarter

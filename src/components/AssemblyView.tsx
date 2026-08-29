@@ -148,8 +148,12 @@ type AssemblyViewProps = {
   shareStatus?: string | null
   /** The last generated read-only link, retained so it can be copied again. */
   shareUrl?: string | null
-  /** Opens OSA's bundled Shako Light Wrap starter board. */
-  onLoadShakoStarter?: () => void
+  /** Optional project starter presented when building an Assembly. */
+  starterAction?: {
+    label: string
+    compactLabel: string
+    onLoad: () => void
+  }
   /** Saves the current durable board before another device opens it. */
   onSaveBoard?: () => void
   /** Server-derived role; viewers may inspect this Assembly but cannot edit it. */
@@ -273,7 +277,7 @@ export function AssemblyView({
   onPreviewInstructions,
   shareStatus,
   shareUrl,
-  onLoadShakoStarter,
+  starterAction,
   onSaveBoard,
   boardAccess = 'owner',
   collaborators = [],
@@ -408,9 +412,9 @@ export function AssemblyView({
           ) : (
             <div className="assembly-view__empty-actions">
               <button className="text-action" type="button" onClick={createAssembly}>create assembly</button>
-              {onLoadShakoStarter ? (
-                <button className="text-action" type="button" onClick={onLoadShakoStarter}>
-                  open Shako Light Wrap starter
+              {starterAction ? (
+                <button className="text-action" type="button" onClick={starterAction.onLoad}>
+                  {starterAction.label}
                 </button>
               ) : null}
             </div>
@@ -462,9 +466,9 @@ export function AssemblyView({
           {!readOnly ? (
             <>
               <button className="text-action" type="button" onClick={createAssembly}>new assembly</button>
-              {onLoadShakoStarter ? (
-                <button className="text-action" type="button" onClick={onLoadShakoStarter}>
-                  open Shako starter
+              {starterAction ? (
+                <button className="text-action" type="button" onClick={starterAction.onLoad}>
+                  {starterAction.compactLabel}
                 </button>
               ) : null}
               <button className="text-action" type="button" onClick={addCard}>add card</button>
