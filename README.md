@@ -11,7 +11,8 @@ every relevant view.
 ## Where a board is saved
 
 - While you work, OSA writes a recovery draft to this browser's local storage after a short delay. That draft stays in this browser profile and does not sync to another device.
-- **Save board** sends the complete board snapshot to `/api/boards`. On the deployed site, that API stores the snapshot in the Cloudflare D1 database bound to the Pages project as `OSA_DB`.
+- On the signed-in deployed site, a new board is created automatically through `/api/boards`; later changes autosave to the same revision-guarded record in the Cloudflare D1 database bound as `OSA_DB`.
+- Plain `npm run dev` is local-only because Vite does not run or proxy the Cloudflare board API. It keeps the browser recovery draft without writing to production. The board panel retains a manual save control for recovery and diagnostics.
 - **Save JSON** downloads an independent copy of the current board that can be kept or imported later.
 
 Cloudflare Access supplies the signed-in email address. Each board is read and saved only for that email address.
@@ -22,7 +23,8 @@ Cloudflare Access supplies the signed-in email address. Each board is read and s
 assembly-instruction PowerPoint and BOM/expense workbook. Use **Import OSA
 Data** and choose that JSON file. The validated package adds ordinary nodes and
 edges to the current board, opens its Space, and shows its Assembly board. Use
-**Save board** when the imported information looks right.
+the deployed site when the imported information should sync; cloud creation and
+later saves then happen automatically.
 
 The Assembly view recognizes ordinary Projects connected to ordinary Actions,
 so an import does not need special assembly node classes. Each Action becomes

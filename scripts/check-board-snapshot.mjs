@@ -48,10 +48,97 @@ try {
     suggestedAssemblyShareSlug,
   } = await server.ssrLoadModule('/src/graph/sharedAssemblyRoute.ts')
   const {
+    isAcknowledgedAutomaticCloudCreate,
+    shouldCreateCloudBoardAutomatically,
+  } = await server.ssrLoadModule('/src/app/boardSession.ts')
+  const {
     onRequestGet: getSavedBoard,
     onRequestPatch: patchSavedBoard,
     onRequestPut: putSavedBoard,
   } = await server.ssrLoadModule('/functions/api/boards.ts')
+
+  const automaticCreationDefaults = {
+    cloudBoardListReady: true,
+    isSharedAssembly: false,
+    cloudRevision: null,
+    boardAccess: 'owner',
+    hasCloudConflict: false,
+    savedBoardCount: 0,
+    currentBoardIsUntouched: true,
+    alreadyAttempted: false,
+  }
+  assert.equal(
+    shouldCreateCloudBoardAutomatically(automaticCreationDefaults),
+    true,
+    'The first board is created automatically after cloud storage is confirmed.',
+  )
+  assert.equal(
+    shouldCreateCloudBoardAutomatically({
+      ...automaticCreationDefaults,
+      cloudBoardListReady: false,
+    }),
+    false,
+    'Plain localhost keeps its local draft when the cloud board list is unavailable.',
+  )
+  assert.equal(
+    shouldCreateCloudBoardAutomatically({
+      ...automaticCreationDefaults,
+      savedBoardCount: 2,
+    }),
+    false,
+    'An untouched startup board yields to an existing cloud board.',
+  )
+  assert.equal(
+    shouldCreateCloudBoardAutomatically({
+      ...automaticCreationDefaults,
+      savedBoardCount: 2,
+      currentBoardIsUntouched: false,
+    }),
+    true,
+    'An edited or imported local board is created even when other boards exist.',
+  )
+  assert.equal(
+    shouldCreateCloudBoardAutomatically({
+      ...automaticCreationDefaults,
+      cloudRevision: 1,
+    }),
+    false,
+    'An existing cloud board is updated by normal autosave, never recreated.',
+  )
+  assert.equal(
+    shouldCreateCloudBoardAutomatically({
+      ...automaticCreationDefaults,
+      alreadyAttempted: true,
+    }),
+    false,
+    'StrictMode and re-renders cannot repeat the same create attempt.',
+  )
+  const attemptedAutomaticCreate = {
+    id: 'automatic-board',
+    name: 'Automatic board',
+    updatedAt: '2026-08-29T12:00:00.000Z',
+    snapshot: createBoardSnapshot([], []),
+  }
+  assert.equal(
+    isAcknowledgedAutomaticCloudCreate(attemptedAutomaticCreate, {
+      ...attemptedAutomaticCreate,
+      updatedAt: '2026-08-29T12:00:01.000Z',
+      revision: 1,
+      access: 'owner',
+    }),
+    true,
+    'A lost create response can adopt the identical D1 document on retry.',
+  )
+  assert.equal(
+    isAcknowledgedAutomaticCloudCreate(attemptedAutomaticCreate, {
+      ...attemptedAutomaticCreate,
+      name: 'Different cloud board',
+      revision: 1,
+      access: 'owner',
+    }),
+    false,
+    'A genuinely different D1 document remains a conflict.',
+  )
   const {
     onRequestDelete: removeCollaborator,
     onRequestGet: getCollaborators,

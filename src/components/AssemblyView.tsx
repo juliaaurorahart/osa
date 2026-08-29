@@ -77,8 +77,6 @@ type AssemblyViewProps = {
     compactLabel: string
     onLoad: () => void
   }
-  /** Saves the current durable board before another device opens it. */
-  onSaveBoard?: () => void
   /** Server-derived role; viewers may inspect this Assembly but cannot edit it. */
   boardAccess?: 'owner' | 'editor' | 'viewer'
   /** The owner-managed people explicitly invited to this saved board. */
@@ -113,7 +111,6 @@ export function AssemblyView({
   shareStatus,
   shareUrl,
   starterAction,
-  onSaveBoard,
   boardAccess = 'owner',
   collaborators = [],
   onAddCollaborator,
@@ -271,7 +268,6 @@ export function AssemblyView({
         shareStatus={shareStatus}
         shareUrl={shareUrl}
         starterAction={starterAction}
-        onSaveBoard={onSaveBoard}
         boardAccess={boardAccess}
         collaborators={collaborators}
         onAddCollaborator={onAddCollaborator}

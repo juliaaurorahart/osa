@@ -150,6 +150,8 @@ import {
   CLOUD_REFRESH_INTERVAL_MS,
   boardNameAlreadyInUse,
   boardSummary,
+  isAcknowledgedAutomaticCloudCreate,
+  shouldCreateCloudBoardAutomatically,
 } from './app/boardSession'
 import {
   readLocalDraft,
@@ -295,6 +297,10 @@ function Flow() {
   // Pickers keep only compact cloud metadata. A full snapshot is fetched
   // only when opening or refreshing that one board.
   const [savedBoards, setSavedBoards] = useState<BoardSummary[]>([])
+  // A successful list read proves this origin has the authenticated board
+  // API. Plain Vite localhost deliberately stays local-first instead of
+  // accidentally writing through to the deployed production database.
+  const [cloudBoardListReady, setCloudBoardListReady] = useState(false)
   // Archived boards stay separate from the normal picker. They are only
   // shown when someone deliberately opens the archive, and can be restored.
   const [archivedBoards, setArchivedBoards] = useState<BoardSummary[]>([])
@@ -306,13 +312,15 @@ function Flow() {
   const [draftStatus, setDraftStatus] = useState(
     startupDraft ? 'Local draft restored' : '',
   )
-  // A revision exists only after a board has been deliberately saved to D1 or
-  // loaded from D1. Fresh/imported boards remain local until that first Save.
+  // A revision exists after D1 creates or loads the board. Fresh/imported
+  // boards begin locally, then receive a cloud record automatically whenever
+  // this origin proves the private board API is available.
   const [cloudRevision, setCloudRevision] = useState<number | null>(() => startupDraft?.revision ?? null)
   const cloudRevisionRef = useRef<number | null>(cloudRevision)
   cloudRevisionRef.current = cloudRevision
   // The database returns this role with every saved board. A fresh local
-  // draft has no remote role yet, so it stays editable until its first save.
+  // draft has no remote role yet, so it stays editable while cloud creation
+  // is pending or unavailable.
   const [boardAccess, setBoardAccess] = useState<BoardAccess>(() => startupDraft?.access ?? 'owner')
   const boardAccessRef = useRef<BoardAccess>(boardAccess)
   boardAccessRef.current = boardAccess
@@ -341,6 +349,9 @@ function Flow() {
   const cloudConflictRef = useRef<SavedBoard | null>(cloudConflictBoard)
   cloudConflictRef.current = cloudConflictBoard
   const cloudSaveInFlight = useRef(false)
+  // React StrictMode may run an effect twice. Keep creation idempotent in the
+  // browser as well as relying on D1's create-only ID guard.
+  const automaticCloudCreationAttempt = useRef<string | null>(null)
   // Each legacy base64 image is moved at most once during this browser
   // session. Once its URL reaches the graph, ordinary autosave persists the
   // small board document while the pixels remain in R2.
@@ -530,10 +541,13 @@ function Flow() {
 
   const suppressPaneCollapseUntil = useRef(0)
   const refreshSavedBoards = useCallback(async () => {
+    setCloudBoardListReady(false)
     setStorageStatus('Loading saved boards…')
     try {
       const boards = await fetchBoardSummaries()
       setNeedsSignIn(false)
+      automaticCloudCreationAttempt.current = null
+      setCloudBoardListReady(true)
       setSavedBoards(boards)
       setSelectedBoardId((currentId) => (
         boards.some((board) => board.id === currentId)
@@ -542,6 +556,7 @@ function Flow() {
       ))
       setStorageStatus(boards.length ? `${boards.length} saved board${boards.length === 1 ? '' : 's'}` : 'No saved boards yet')
     } catch (error) {
+      setCloudBoardListReady(false)
       setNeedsSignIn(error instanceof BoardAccessError)
       setStorageStatus(error instanceof BoardUnavailableError
         ? ''
@@ -2018,10 +2033,10 @@ function Flow() {
     // D1. An untouched startup draft is automatically written by the normal
     // local-draft timer, so it must not prevent a later sign-in from opening
     // the newest cloud board.
-    const recoveredLocalWork = startupDraft && (
-      startupDirtyDraft.current
-      || (startupDraft.revision === undefined && !untouchedInitialDocument)
-    )
+    const recoveredLocalWork = startupDraft
+      ? startupDirtyDraft.current
+        || (startupDraft.revision === undefined && !untouchedInitialDocument)
+      : !untouchedInitialDocument
     if (recoveredLocalWork) return
 
     openedInitialCloudBoard.current = true
@@ -2064,11 +2079,11 @@ function Flow() {
   }, [applyBoardSnapshot, setWorkspaceView, sharedAssemblyReference])
 
   /**
-   * The one cloud-write path: manual Save, share creation, and background
-   * saving all go through the same revision guard.
+   * The one cloud-write path: automatic creation, manual recovery actions,
+   * share creation, and background saving all use the same revision guard.
    */
   const saveCurrentBoard = useCallback(async (
-    mode: 'manual' | 'auto' = 'manual',
+    mode: 'manual' | 'auto' | 'create' = 'manual',
   ): Promise<SavedBoard | null> => {
     if (boardAccess === 'viewer') {
       const message = 'This board is shared with you for viewing only.'
@@ -2079,7 +2094,9 @@ function Flow() {
     const id = latestBoardId.current
     const name = latestBoardName.current.trim()
     if (!name) {
-      if (mode === 'manual') setStorageStatus('Enter a board name before saving.')
+      const message = 'Enter a board name before saving.'
+      if (mode !== 'auto') setCloudSyncStatus(message)
+      if (mode === 'manual') setStorageStatus(message)
       return null
     }
 
@@ -2098,8 +2115,10 @@ function Flow() {
     }
 
     const baseRevision = cloudRevisionRef.current
-    // Only an explicitly saved/loaded board may start background cloud saves.
+    // Ordinary autosave updates a known revision. The one automatic create
+    // pass is the only background path allowed to start at revision null.
     if (mode === 'auto' && (baseRevision === null || cloudConflictRef.current)) return null
+    if (mode === 'create' && cloudConflictRef.current) return null
     if (cloudSaveInFlight.current) return null
 
     const nodesAtSave = latestNodes.current
@@ -2112,14 +2131,13 @@ function Flow() {
     }
 
     cloudSaveInFlight.current = true
-    if (mode === 'auto') {
-      setCloudSyncStatus('Syncing…')
+    if (mode !== 'manual') {
+      setCloudSyncStatus(mode === 'create' ? 'Creating cloud board…' : 'Syncing…')
     } else {
       setStorageStatus('Saving…')
     }
 
-    try {
-      const savedBoard = await saveBoard(boardToSave, baseRevision)
+    const acknowledgeCloudSave = (savedBoard: SavedBoard) => {
       setNeedsSignIn(false)
       setSavedBoards((currentBoards) => [
         boardSummary(savedBoard),
@@ -2150,11 +2168,25 @@ function Flow() {
         setCloudConflictBoard(null)
         setCloudSyncStatus(changedDuringSave ? 'Saved locally' : 'Synced')
       }
+    }
+
+    try {
+      const savedBoard = await saveBoard(boardToSave, baseRevision)
+      acknowledgeCloudSave(savedBoard)
 
       if (mode === 'manual') setStorageStatus(`Saved “${savedBoard.name}”`)
       return savedBoard
     } catch (error) {
       if (error instanceof BoardConflictError) {
+        const matchesAcknowledgedCreate = mode === 'create'
+          && isAcknowledgedAutomaticCloudCreate(boardToSave, error.board)
+        // The server may have committed a create even if its response was
+        // lost. A retry then returns the existing row; if its exact document
+        // matches, adopt its revision rather than inventing a false conflict.
+        if (matchesAcknowledgedCreate) {
+          acknowledgeCloudSave(error.board)
+          return error.board
+        }
         if (latestBoardId.current === id) {
           setCloudConflictBoard(error.board)
           setCloudSyncStatus(error.board.archived ? 'Archived elsewhere' : 'Changed elsewhere')
@@ -2187,6 +2219,50 @@ function Flow() {
       setCloudSaveCycle((current) => current + 1)
     }
   }, [archivedBoards, boardAccess, savedBoards])
+
+  // Once this origin successfully reaches the private board list, give a
+  // local-first document its D1 identity automatically. An untouched startup
+  // canvas yields to an existing cloud board; an edited/imported draft does
+  // not. The attempt key prevents StrictMode and re-renders from creating the
+  // same board twice.
+  useEffect(() => {
+    const attemptKey = `${boardId}\u0000${boardName.trim().toLocaleLowerCase()}`
+    const currentBoardIsUntouched = boardDocumentFingerprint(
+      boardName,
+      createBoardSnapshot(nodes, edges),
+    ) === boardDocumentFingerprint(
+      'Untitled board',
+      createBoardSnapshot(initialNodes, initialEdges),
+    )
+    const shouldCreate = shouldCreateCloudBoardAutomatically({
+      cloudBoardListReady,
+      isSharedAssembly,
+      cloudRevision,
+      boardAccess,
+      hasCloudConflict: cloudConflictBoard !== null,
+      savedBoardCount: savedBoards.length,
+      currentBoardIsUntouched,
+      alreadyAttempted: automaticCloudCreationAttempt.current === attemptKey,
+    })
+    if (!shouldCreate) return
+    if (cloudSaveInFlight.current) return
+
+    automaticCloudCreationAttempt.current = attemptKey
+    void saveCurrentBoard('create')
+  }, [
+    boardAccess,
+    boardId,
+    boardName,
+    cloudBoardListReady,
+    cloudConflictBoard,
+    cloudRevision,
+    cloudSaveCycle,
+    edges,
+    isSharedAssembly,
+    nodes,
+    saveCurrentBoard,
+    savedBoards.length,
+  ])
 
   const saveBoardToDatabase = useCallback(async () => {
     await saveCurrentBoard('manual')
@@ -2452,8 +2528,8 @@ function Flow() {
     setStorageStatus(`Loaded “${remoteBoard.name}”`)
   }, [applyCloudBoard])
 
-  // After the first deliberate Save/Load, background changes go to the same
-  // D1 board. A fresh/imported Untitled board is intentionally local-only.
+  // After automatic creation or cloud load, background changes update the
+  // same revision-guarded D1 board.
   useEffect(() => {
     if (
       isSharedAssembly
@@ -2614,7 +2690,7 @@ function Flow() {
       setCloudSyncStatus('')
       setBoardId(crypto.randomUUID())
       setBoardName(file.name.replace(/\.json$/i, '') || 'Imported board')
-      setStorageStatus('Imported JSON; save to keep it in the database.')
+      setStorageStatus('Imported JSON; cloud sync starts automatically when available.')
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to load this board file.'
       window.alert(message)
@@ -3156,7 +3232,6 @@ function Flow() {
           </button>
           {([
             { id: 'assembly', label: 'Assembly' },
-            { id: 'projects', label: 'Actions' },
             { id: 'nodes', label: 'Space' },
           ] as const).map((view) => (
             <button
@@ -3305,7 +3380,6 @@ function Flow() {
               actions={assemblyViewActions}
               onOpenNode={openNodeInSpace}
               readOnly={boardAccess === 'viewer'}
-              onSaveBoard={() => void saveBoardToDatabase()}
               boardAccess={boardAccess}
               collaborators={boardCollaborators}
               onAddCollaborator={(email, role) => void addBoardCollaborator(email, role)}

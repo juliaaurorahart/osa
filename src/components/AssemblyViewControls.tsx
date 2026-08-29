@@ -23,7 +23,6 @@ type AssemblyViewControlsProps = {
     compactLabel: string
     onLoad: () => void
   }
-  onSaveBoard?: () => void
   boardAccess: 'owner' | 'editor' | 'viewer'
   collaborators: Array<{ email: string; role: 'editor' | 'viewer' }>
   onAddCollaborator?: (email: string, role: 'editor' | 'viewer') => void
@@ -51,7 +50,6 @@ export function AssemblyViewControls({
   shareStatus,
   shareUrl,
   starterAction,
-  onSaveBoard,
   boardAccess,
   collaborators,
   onAddCollaborator,
@@ -78,7 +76,6 @@ export function AssemblyViewControls({
         </div>
         <div className="assembly-view__header-actions">
           <label className="assembly-view__assembly-picker">
-            <span>assembly</span>
             <select
               aria-label="Choose assembly"
               value={selectedAssembly.id}
@@ -100,9 +97,6 @@ export function AssemblyViewControls({
                 </button>
               ) : null}
               <button className="text-action" type="button" onClick={onAddCard}>add card</button>
-              {onSaveBoard ? (
-                <button className="text-action" type="button" onClick={onSaveBoard}>save</button>
-              ) : null}
               {canManagePeople ? (
                 <button
                   className="text-action"
