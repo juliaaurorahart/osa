@@ -52,8 +52,11 @@ try {
     suggestedAssemblyShareSlug,
   } = await server.ssrLoadModule('/src/graph/sharedAssemblyRoute.ts')
   const {
+    boardNeedsSyncBeforeLoad,
     isAcknowledgedAutomaticCloudCreate,
+    prepareBoardForLoad,
     shouldCreateCloudBoardAutomatically,
+    syncCurrentBoardBeforeLoad,
   } = await server.ssrLoadModule('/src/app/boardSession.ts')
   const {
     onRequestGet: getSavedBoard,
@@ -132,6 +135,173 @@ try {
     currentBoardIsUntouched: true,
     alreadyAttempted: false,
   }
+  assert.equal(boardNeedsSyncBeforeLoad({
+    cloudRevision: null,
+    cloudDirty: false,
+    cloudBaseline: null,
+    currentDocument: 'untouched',
+    untouchedDocument: 'untouched',
+  }), false, 'An untouched local starter can yield to an existing saved board.')
+  assert.equal(boardNeedsSyncBeforeLoad({
+    cloudRevision: null,
+    cloudDirty: false,
+    cloudBaseline: null,
+    currentDocument: 'local work',
+    untouchedDocument: 'untouched',
+  }), true, 'A local-first board with real work must be created before loading another.')
+  assert.equal(boardNeedsSyncBeforeLoad({
+    cloudRevision: 4,
+    cloudDirty: false,
+    cloudBaseline: 'saved document',
+    currentDocument: 'new edit',
+    untouchedDocument: 'untouched',
+  }), true, 'A synchronous fingerprint catches edits before the dirty effect runs.')
+  assert.equal(boardNeedsSyncBeforeLoad({
+    cloudRevision: 4,
+    cloudDirty: false,
+    cloudBaseline: 'saved document',
+    currentDocument: 'saved document',
+    untouchedDocument: 'untouched',
+  }), false, 'A clean cloud board does not receive a needless save before loading.')
+
+  let boardLoadSaveCalls = 0
+  assert.equal(await syncCurrentBoardBeforeLoad({
+    getPendingSave: () => null,
+    hasUnsyncedChanges: () => false,
+    saveCurrentBoard: async () => {
+      boardLoadSaveCalls += 1
+      return true
+    },
+  }), true)
+  assert.equal(boardLoadSaveCalls, 0, 'Loading from a clean board skips the write.')
+
+  let finishPendingSave
+  let pendingBoardIsDirty = true
+  const pendingSave = new Promise((resolve) => {
+    finishPendingSave = () => {
+      pendingBoardIsDirty = false
+      resolve()
+    }
+  })
+  const loadAfterPendingSave = syncCurrentBoardBeforeLoad({
+    getPendingSave: () => pendingSave,
+    hasUnsyncedChanges: () => pendingBoardIsDirty,
+    saveCurrentBoard: async () => {
+      boardLoadSaveCalls += 1
+      return true
+    },
+  })
+  await Promise.resolve()
+  assert.equal(boardLoadSaveCalls, 0, 'An active autosave is awaited instead of duplicated.')
+  finishPendingSave()
+  assert.equal(await loadAfterPendingSave, true)
+  assert.equal(boardLoadSaveCalls, 0)
+
+  let retryAfterPendingSaveCalls = 0
+  let pendingFailureIsDirty = true
+  assert.equal(await syncCurrentBoardBeforeLoad({
+    // A failed autosave still completes its promise. The coordinator must
+    // inspect the document afterward and use the normal manual save path.
+    getPendingSave: () => Promise.resolve(),
+    hasUnsyncedChanges: () => pendingFailureIsDirty,
+    saveCurrentBoard: async () => {
+      retryAfterPendingSaveCalls += 1
+      pendingFailureIsDirty = false
+      return true
+    },
+  }), true)
+  assert.equal(retryAfterPendingSaveCalls, 1)
+
+  let editsRemain = true
+  let stableSaveCalls = 0
+  assert.equal(await syncCurrentBoardBeforeLoad({
+    getPendingSave: () => null,
+    hasUnsyncedChanges: () => editsRemain,
+    saveCurrentBoard: async () => {
+      stableSaveCalls += 1
+      // The first request observes an edit made while saving; the second
+      // captures that edit and produces the stable document allowed to switch.
+      editsRemain = stableSaveCalls === 1
+      return true
+    },
+  }), true)
+  assert.equal(stableSaveCalls, 2)
+
+  let failedSaveCalls = 0
+  assert.equal(await syncCurrentBoardBeforeLoad({
+    getPendingSave: () => null,
+    hasUnsyncedChanges: () => true,
+    saveCurrentBoard: async () => {
+      failedSaveCalls += 1
+      return false
+    },
+  }), false, 'A failed sync blocks the board load.')
+  assert.equal(failedSaveCalls, 1)
+
+  let neverStableSaveCalls = 0
+  assert.equal(await syncCurrentBoardBeforeLoad({
+    getPendingSave: () => null,
+    hasUnsyncedChanges: () => true,
+    saveCurrentBoard: async () => {
+      neverStableSaveCalls += 1
+      return true
+    },
+  }), false, 'A continuously changing board remains open after the bounded save passes.')
+  assert.equal(neverStableSaveCalls, 2)
+
+  const boardPreparationEvents = []
+  let targetRead = 0
+  let sourceDirty = true
+  const preparedBoard = await prepareBoardForLoad({
+    readTarget: async () => {
+      targetRead += 1
+      boardPreparationEvents.push(`read ${targetRead}`)
+      return { revision: targetRead }
+    },
+    sourceStillOpen: () => true,
+    secureSource: async () => {
+      boardPreparationEvents.push('secure source')
+      sourceDirty = false
+      return true
+    },
+    sourceNeedsSync: () => sourceDirty,
+  })
+  assert.deepEqual(boardPreparationEvents, ['read 1', 'secure source', 'read 2'])
+  assert.deepEqual(
+    preparedBoard,
+    { revision: 2 },
+    'The post-sync target read is the version that opens.',
+  )
+
+  let changedDuringFinalRead = false
+  let changedTargetReads = 0
+  assert.equal(await prepareBoardForLoad({
+    readTarget: async () => {
+      changedTargetReads += 1
+      if (changedTargetReads === 2) changedDuringFinalRead = true
+      return { revision: changedTargetReads }
+    },
+    sourceStillOpen: () => true,
+    secureSource: async () => true,
+    sourceNeedsSync: () => changedDuringFinalRead,
+  }), null, 'An edit made during the final target read cancels replacement.')
+
+  let secureUnavailableTargetCalls = 0
+  assert.equal(await prepareBoardForLoad({
+    readTarget: async () => null,
+    sourceStillOpen: () => true,
+    secureSource: async () => {
+      secureUnavailableTargetCalls += 1
+      return true
+    },
+    sourceNeedsSync: () => false,
+  }), null)
+  assert.equal(
+    secureUnavailableTargetCalls,
+    0,
+    'An unavailable destination does not trigger a needless source save.',
+  )
+
   assert.equal(
     shouldCreateCloudBoardAutomatically(automaticCreationDefaults),
     true,

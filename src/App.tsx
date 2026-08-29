@@ -152,10 +152,13 @@ import { downloadBoardSnapshot, readBoardSnapshotFile } from './app/boardFile'
 import {
   CLOUD_AUTOSAVE_DELAY_MS,
   CLOUD_REFRESH_INTERVAL_MS,
+  boardNeedsSyncBeforeLoad,
   boardNameAlreadyInUse,
   boardSummary,
   isAcknowledgedAutomaticCloudCreate,
+  prepareBoardForLoad,
   shouldCreateCloudBoardAutomatically,
+  syncCurrentBoardBeforeLoad,
 } from './app/boardSession'
 import {
   readLocalDraft,
@@ -379,6 +382,10 @@ function Flow() {
   const cloudConflictRef = useRef<SavedBoard | null>(cloudConflictBoard)
   cloudConflictRef.current = cloudConflictBoard
   const cloudSaveInFlight = useRef(false)
+  // Board switching awaits this completion instead of mistaking an active
+  // autosave for a failed save and replacing its source document too early.
+  const cloudSaveCompletion = useRef<Promise<void> | null>(null)
+  const boardLoadInFlight = useRef(false)
   // React StrictMode may run an effect twice. Keep creation idempotent in the
   // browser as well as relying on D1's create-only ID guard.
   const automaticCloudCreationAttempt = useRef<string | null>(null)
@@ -2062,11 +2069,8 @@ function Flow() {
     setShowingArchivedBoards(false)
   }, [applyBoardSnapshot])
 
-  /** Loads the one selected cloud board after a metadata-only picker read. */
-  const openSavedCloudBoard = useCallback(async (
-    id: string,
-    status = 'Synced',
-  ): Promise<SavedBoard | null> => {
+  /** Fetches one full board without replacing the document currently on screen. */
+  const readSavedCloudBoard = useCallback(async (id: string): Promise<SavedBoard | null> => {
     try {
       const savedBoard = await fetchBoard(id)
       if (!savedBoard) {
@@ -2074,7 +2078,6 @@ function Flow() {
         return null
       }
       setNeedsSignIn(false)
-      applyCloudBoard(savedBoard, status)
       return savedBoard
     } catch (error) {
       setNeedsSignIn(error instanceof BoardAccessError)
@@ -2083,7 +2086,17 @@ function Flow() {
         : error instanceof Error ? error.message : 'Unable to open this board.')
       return null
     }
-  }, [applyCloudBoard])
+  }, [])
+
+  /** Loads the one selected cloud board after a metadata-only picker read. */
+  const openSavedCloudBoard = useCallback(async (
+    id: string,
+    status = 'Synced',
+  ): Promise<SavedBoard | null> => {
+    const savedBoard = await readSavedCloudBoard(id)
+    if (savedBoard) applyCloudBoard(savedBoard, status)
+    return savedBoard
+  }, [applyCloudBoard, readSavedCloudBoard])
 
   // A signed-in device opens the newest saved board. A local draft only wins
   // when it contains unsynced work; a clean local copy is a recovery cache,
@@ -2249,6 +2262,11 @@ function Flow() {
     }
 
     cloudSaveInFlight.current = true
+    let finishCloudSave!: () => void
+    const saveCompletion = new Promise<void>((resolve) => {
+      finishCloudSave = resolve
+    })
+    cloudSaveCompletion.current = saveCompletion
     if (mode !== 'manual') {
       setCloudSyncStatus(mode === 'create' ? 'Creating cloud board…' : 'Syncing…')
     } else {
@@ -2334,6 +2352,10 @@ function Flow() {
       return null
     } finally {
       cloudSaveInFlight.current = false
+      finishCloudSave()
+      if (cloudSaveCompletion.current === saveCompletion) {
+        cloudSaveCompletion.current = null
+      }
       setCloudSaveCycle((current) => current + 1)
     }
   }, [archivedBoards, boardAccess, savedBoards])
@@ -2345,6 +2367,7 @@ function Flow() {
   // same board twice.
   useEffect(() => {
     if (nodeDragActive) return
+    if (boardLoadInFlight.current) return
 
     const attemptKey = `${boardId}\u0000${boardName.trim().toLocaleLowerCase()}`
     // Only an existing cloud board needs the relatively expensive untouched
@@ -2392,6 +2415,83 @@ function Flow() {
   const saveBoardToDatabase = useCallback(async () => {
     await saveCurrentBoard('manual')
   }, [saveCurrentBoard])
+
+  /** Detects edits synchronously, including before React's dirty effect runs. */
+  const currentBoardNeedsSyncBeforeLoad = useCallback(() => {
+    const currentDocument = boardDocumentFingerprint(
+      latestBoardName.current,
+      createBoardSnapshot(latestNodes.current, latestEdges.current),
+    )
+    const untouchedDocument = boardDocumentFingerprint(
+      'Untitled board',
+      createBoardSnapshot(initialNodes, initialEdges),
+    )
+    return boardNeedsSyncBeforeLoad({
+      cloudRevision: cloudRevisionRef.current,
+      cloudDirty: cloudDirtyRef.current,
+      cloudBaseline: cloudBaselineRef.current,
+      currentDocument,
+      untouchedDocument,
+    })
+  }, [])
+
+  /** Protects the source board before a fetched target is allowed to replace it. */
+  const secureCurrentBoardBeforeLoad = useCallback(async (sourceBoardId: string) => {
+    if (cloudSaveCompletion.current || currentBoardNeedsSyncBeforeLoad()) {
+      setStorageStatus('Syncing current board before opening…')
+    }
+
+    let saveFailed = false
+    const synced = await syncCurrentBoardBeforeLoad({
+      getPendingSave: () => cloudSaveCompletion.current,
+      hasUnsyncedChanges: () => (
+        latestBoardId.current === sourceBoardId
+        && currentBoardNeedsSyncBeforeLoad()
+      ),
+      saveCurrentBoard: async () => {
+        const savedBoard = await saveCurrentBoard('manual')
+        saveFailed = savedBoard === null
+        return savedBoard !== null
+      },
+    })
+
+    if (latestBoardId.current !== sourceBoardId) return false
+    if (!synced && !saveFailed) {
+      setStorageStatus('The current board changed while syncing. Try loading it again.')
+    }
+    return synced
+  }, [currentBoardNeedsSyncBeforeLoad, saveCurrentBoard])
+
+  /**
+   * Keeps the source visible while the destination is checked, saved around,
+   * and checked again. A last-moment source edit cancels this attempt; the
+   * normal autosave cycle then saves it and the person can load again.
+   */
+  const prepareCloudBoardForLoad = useCallback(async (
+    targetBoardId: string,
+    sourceBoardId: string,
+  ) => {
+    const targetBoard = await prepareBoardForLoad({
+      readTarget: () => readSavedCloudBoard(targetBoardId),
+      sourceStillOpen: () => latestBoardId.current === sourceBoardId,
+      secureSource: () => secureCurrentBoardBeforeLoad(sourceBoardId),
+      sourceNeedsSync: currentBoardNeedsSyncBeforeLoad,
+    })
+
+    if (
+      !targetBoard
+      && latestBoardId.current === sourceBoardId
+      && currentBoardNeedsSyncBeforeLoad()
+      && !cloudConflictRef.current
+    ) {
+      setStorageStatus('The current board changed while opening. Its autosave is still active; try loading again.')
+    }
+    return targetBoard
+  }, [
+    currentBoardNeedsSyncBeforeLoad,
+    readSavedCloudBoard,
+    secureCurrentBoardBeforeLoad,
+  ])
 
   /** Loads the small invitation list only for the owner of this saved board. */
   const refreshBoardCollaborators = useCallback(async () => {
@@ -2502,21 +2602,69 @@ function Flow() {
       setStorageStatus('Choose an archived board to restore.')
       return
     }
+    if (boardLoadInFlight.current) {
+      setStorageStatus('A board is already opening…')
+      return
+    }
 
-    setStorageStatus('Restoring…')
+    boardLoadInFlight.current = true
+    const sourceBoardId = latestBoardId.current
     try {
+      // Restoring another board mutates the remote list, so first ensure the
+      // current document is durable. Restoring the board already on screen is
+      // different: unarchive it first, then its local edits can be saved by
+      // the ordinary revision-guarded path before any remote copy is applied.
+      if (
+        board.id !== sourceBoardId
+        && !await secureCurrentBoardBeforeLoad(sourceBoardId)
+      ) return
+      if (latestBoardId.current !== sourceBoardId) return
+
+      setStorageStatus('Restoring…')
       const restoredBoard = await restoreBoardSummary(board.id)
       setNeedsSignIn(false)
       setArchivedBoards((currentBoards) => currentBoards.filter((savedBoard) => savedBoard.id !== board.id))
-      const openedBoard = await openSavedCloudBoard(restoredBoard.id, 'Synced')
-      if (openedBoard) setStorageStatus(`Restored “${openedBoard.name}”`)
+      setSavedBoards((currentBoards) => [
+        restoredBoard,
+        ...currentBoards.filter((savedBoard) => savedBoard.id !== restoredBoard.id),
+      ])
+      setSelectedBoardId(restoredBoard.id)
+      setShowingArchivedBoards(false)
+
+      // Restoring the document already on screen advances its server
+      // revision without changing its graph. Adopt that revision before the
+      // source-sync pass so any edits made while it was archived can save.
+      if (restoredBoard.id === sourceBoardId) {
+        cloudRevisionRef.current = restoredBoard.revision ?? null
+        setCloudRevision(restoredBoard.revision ?? null)
+        const access = restoredBoard.access ?? 'owner'
+        boardAccessRef.current = access
+        setBoardAccess(access)
+        setCloudConflictBoard(null)
+      }
+
+      const openedBoard = await prepareCloudBoardForLoad(restoredBoard.id, sourceBoardId)
+      if (!openedBoard) return
+      applyCloudBoard(openedBoard, 'Synced')
+      setStorageStatus(`Restored “${openedBoard.name}”`)
     } catch (error) {
       setNeedsSignIn(error instanceof BoardAccessError)
       setStorageStatus(error instanceof BoardUnavailableError
         ? ''
         : error instanceof Error ? error.message : 'Unable to restore this board.')
+    } finally {
+      boardLoadInFlight.current = false
+      // If a load failed while an existing autosave timer fired, give the
+      // still-open dirty board a fresh timer instead of silently stalling it.
+      setCloudSaveCycle((current) => current + 1)
     }
-  }, [archivedBoards, openSavedCloudBoard, selectedBoardId])
+  }, [
+    applyCloudBoard,
+    archivedBoards,
+    prepareCloudBoardForLoad,
+    secureCurrentBoardBeforeLoad,
+    selectedBoardId,
+  ])
 
   /** Saves first, then creates a public, read-only link to the selected assembly. */
   const createAssemblyShareLink = useCallback(async () => {
@@ -2566,11 +2714,35 @@ function Flow() {
       setStorageStatus('Choose a saved board to load.')
       return
     }
+    if (boardLoadInFlight.current) {
+      setStorageStatus('A board is already opening…')
+      return
+    }
 
-    setStorageStatus('Opening board…')
-    const openedBoard = await openSavedCloudBoard(selectedBoard.id)
-    if (openedBoard) setStorageStatus(`Loaded “${openedBoard.name}”`)
-  }, [openSavedCloudBoard, savedBoards, selectedBoardId])
+    boardLoadInFlight.current = true
+    const sourceBoardId = latestBoardId.current
+    try {
+      // The helper reads before and after the source sync. This applies to the
+      // already-open board too, so Load genuinely checks for a newer revision
+      // instead of merely reporting that the local copy is current.
+      setStorageStatus('Preparing board…')
+      const targetBoard = await prepareCloudBoardForLoad(selectedBoard.id, sourceBoardId)
+      if (!targetBoard) return
+
+      applyCloudBoard(targetBoard, 'Synced')
+      setStorageStatus(`Loaded “${targetBoard.name}”`)
+    } finally {
+      boardLoadInFlight.current = false
+      // Restart any dirty autosave whose timer elapsed while the source was
+      // deliberately held open during a failed or cancelled load.
+      setCloudSaveCycle((current) => current + 1)
+    }
+  }, [
+    applyCloudBoard,
+    prepareCloudBoardForLoad,
+    savedBoards,
+    selectedBoardId,
+  ])
 
   /** A compact conflict escape hatch: keep this device's work as a new board. */
   const saveCurrentBoardAsCopy = useCallback(async () => {
@@ -2595,6 +2767,11 @@ function Flow() {
     }
     setCloudSyncStatus('Saving copy…')
     cloudSaveInFlight.current = true
+    let finishCopySave!: () => void
+    const copySaveCompletion = new Promise<void>((resolve) => {
+      finishCopySave = resolve
+    })
+    cloudSaveCompletion.current = copySaveCompletion
     try {
       const savedCopy = await saveBoard(copy, null)
       setNeedsSignIn(false)
@@ -2641,6 +2818,10 @@ function Flow() {
           : error instanceof Error ? error.message : 'Unable to save a copy.')
     } finally {
       cloudSaveInFlight.current = false
+      finishCopySave()
+      if (cloudSaveCompletion.current === copySaveCompletion) {
+        cloudSaveCompletion.current = null
+      }
       setCloudSaveCycle((current) => current + 1)
     }
   }, [applyCloudBoard, savedBoards])
@@ -2664,6 +2845,7 @@ function Flow() {
     ) return
 
     const timer = window.setTimeout(() => {
+      if (boardLoadInFlight.current) return
       void saveCurrentBoard('auto')
     }, CLOUD_AUTOSAVE_DELAY_MS)
     return () => window.clearTimeout(timer)
