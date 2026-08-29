@@ -1,4 +1,5 @@
 import { NODE_KINDS } from '../graph/nodeKinds'
+import './SpaceToolbar.css'
 import {
   NO_SPACE_FILTER,
   type NodeConnectionFilter,

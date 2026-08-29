@@ -1,0 +1,314 @@
+.notebook-workspace {
+  display: grid;
+  grid-template-columns: minmax(150px, 210px) minmax(0, 1fr);
+  gap: clamp(28px, 6vw, 76px);
+}
+
+.notebook-pages__create {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.notebook-pages__create button,
+.notebook-page__connections button {
+  padding: 3px 0;
+  border: 0;
+  border-bottom: 1px solid var(--notebook-sketch-accent);
+  background: transparent;
+  cursor: pointer;
+}
+
+.notebook-pages nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.notebook-pages nav button {
+  display: grid;
+  gap: 3px;
+  padding: 8px 0 8px 10px;
+  border: 0;
+  border-left: 2px solid transparent;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.notebook-pages nav button.is-text-page:hover,
+.notebook-pages nav button.is-text-page.is-active {
+  border-left-color: var(--notebook-text-accent);
+}
+
+.notebook-pages nav button.is-sketch-page:hover,
+.notebook-pages nav button.is-sketch-page.is-active {
+  border-left-color: var(--notebook-sketch-accent);
+}
+
+.notebook-pages nav small {
+  color: var(--osa-muted);
+}
+
+.notebook-page {
+  min-width: 0;
+}
+
+.notebook-page__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.notebook-page__heading-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 16px;
+}
+
+.notebook-view.is-page-focused .work-view__header,
+.notebook-view.is-page-focused .notebook-pages,
+.notebook-view.is-page-focused .notebook-page__heading,
+.notebook-view.is-page-focused .notebook-page__connections,
+.notebook-view.is-page-focused .notebook-page__editor > .text-action,
+.notebook-view.is-page-focused .notebook-page__markdown > .text-action {
+  display: none;
+}
+
+.notebook-view.is-page-focused {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  overflow: auto;
+  padding: 30px max(28px, calc((100% - 980px) / 2));
+  background: var(--osa-bg);
+  color: var(--osa-text);
+}
+
+.notebook-view.is-page-focused .notebook-workspace {
+  display: block;
+}
+
+.notebook-view.is-page-focused .notebook-page {
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.notebook-view.is-page-focused .notebook-page__editor textarea,
+.notebook-view.is-page-focused .notebook-page__markdown .markdown-preview {
+  min-height: calc(100vh - 60px);
+  padding-top: 0;
+}
+
+.notebook-page__leave-focus {
+  position: fixed;
+  top: 10px;
+  right: 12px;
+  z-index: 1;
+  width: 26px;
+  height: 26px;
+  padding: 0 0 2px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--osa-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 1rem;
+}
+
+.notebook-page__leave-focus:hover,
+.notebook-page__leave-focus:focus-visible {
+  color: var(--osa-text);
+  outline: 0;
+}
+
+.notebook-page__heading > input {
+  width: 100%;
+  min-width: 0;
+  padding: 0 0 6px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 1.65rem;
+}
+
+.notebook-page__heading > input:focus {
+  outline: 0;
+  box-shadow: inset 0 -1px var(--osa-focus);
+}
+
+.notebook-page__editor,
+.notebook-page__markdown {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
+.notebook-page__editor textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 54vh;
+  padding: 16px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  line-height: 1.65;
+  resize: vertical;
+}
+
+.notebook-page__editor textarea:focus {
+  outline: 0;
+}
+
+.notebook-page__markdown .markdown-preview {
+  width: 100%;
+  min-height: 54vh;
+  padding: 16px 0;
+  line-height: 1.65;
+}
+
+.notebook-page__sketch .sketch-pad__canvas {
+  min-height: 460px;
+}
+
+.notebook-page .sketch-pad__tools button {
+  min-width: 22px;
+  min-height: 22px;
+  margin: 0;
+  padding: 2px 5px;
+  border: 0;
+  background: transparent;
+  color: #444;
+  cursor: pointer;
+}
+
+.notebook-page .sketch-pad__tools button:not(.sketch-pad__eraser):empty {
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+  min-height: 18px;
+  padding: 0;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+}
+
+.notebook-page .sketch-pad__tools button.is-selected {
+  box-shadow: 0 0 0 2px #222;
+}
+
+.notebook-page__connections {
+  margin-top: 32px;
+  padding-top: 18px;
+  border-top: 1px solid var(--osa-border);
+}
+
+.notebook-page__connections h2 {
+  margin: 0 0 10px;
+  font-size: 1rem;
+  font-weight: 400;
+}
+
+.notebook-page__connections p {
+  margin: 0;
+  color: var(--osa-muted);
+  font-size: 0.82rem;
+}
+
+.notebook-page__connections ul {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.notebook-page__connections li {
+  display: grid;
+  gap: 5px;
+}
+
+.notebook-page__connections li > div {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.notebook-page__connections li span {
+  color: var(--osa-muted);
+  font-size: 0.78rem;
+}
+
+.notebook-page__connections .notebook-page__anchor {
+  justify-self: start;
+  max-width: min(100%, 620px);
+  overflow: hidden;
+  padding: 3px 9px;
+  border: 0;
+  border-left: 2px solid #f5a9b8;
+  color: var(--osa-muted);
+  font-size: 0.8rem;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notebook-selection-actions {
+  box-sizing: border-box;
+  display: flex;
+  width: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--osa-border);
+  font-size: 0.78rem;
+}
+
+.notebook-selection-actions blockquote {
+  flex-basis: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  margin: 0;
+  padding-left: 10px;
+  border-left: 2px solid #5bcefa;
+  color: var(--osa-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notebook-selection-actions button {
+  padding: 3px 0;
+  border: 0;
+  border-bottom: 1px solid var(--notebook-sketch-accent);
+  background: transparent;
+  cursor: pointer;
+}
+
+.notebook-selection-actions select {
+  min-width: 150px;
+  padding: 3px 0;
+  border: 0;
+  border-bottom: 1px solid var(--osa-border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--osa-text);
+}
+
+@media (max-width: 700px) {
+  .notebook-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .notebook-pages nav {
+    flex-flow: row wrap;
+  }
+}

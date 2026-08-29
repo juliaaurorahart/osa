@@ -33,7 +33,7 @@ import { EdgeHoverCard } from './components/EdgeHoverCard'
 import { GraphTablePanel } from './components/GraphTablePanel'
 import {
   AssemblyView,
-  type OperationPartDirection,
+  type AssemblyViewActions,
 } from './components/AssemblyView'
 import { AssemblyInstructionsView } from './components/AssemblyInstructionsView'
 import {
@@ -70,9 +70,7 @@ import {
   canOwnOsaVisual,
   isImmutableVisual,
   isManagedOsaProperty,
-  isPartLike,
   normalizeVisualEmbedPlacement,
-  operationVisualDisplayOrder,
   OSA_PROPERTY,
   OSA_RELATION,
   osaRole,
@@ -111,7 +109,6 @@ import {
 import {
   boardDocumentFingerprint,
   createBoardSnapshot,
-  parseBoardSnapshot,
   restoreBoardSnapshot,
 } from './graph/boardSnapshot'
 import {
@@ -147,6 +144,25 @@ import {
   sharedAssemblyUrl,
   suggestedAssemblyShareSlug,
 } from './graph/sharedAssemblyRoute'
+import { downloadBoardSnapshot, readBoardSnapshotFile } from './app/boardFile'
+import {
+  CLOUD_AUTOSAVE_DELAY_MS,
+  CLOUD_REFRESH_INTERVAL_MS,
+  boardNameAlreadyInUse,
+  boardSummary,
+} from './app/boardSession'
+import {
+  readLocalDraft,
+  readSelectedAssemblyId,
+  writeSelectedAssemblyId,
+} from './app/browserSession'
+import {
+  useCanvasLabLocation,
+  useOsaTheme,
+  useWorkspaceView,
+} from './app/useBrowserSession'
+import { useLocalDraftPersistence } from './app/useLocalDraftPersistence'
+import { useAssemblyGraphActions } from './app/useAssemblyGraphActions'
 import { bundledStarter } from './starters'
 import './App.css'
 
@@ -173,42 +189,10 @@ const initialNodes: TextFlowNode[] = [
 
 const initialEdges: GraphEdge[] = []
 
-/** Saved board names are unique within the active list so a person can tell
- * exactly which board they will load. Archive names may safely overlap. */
-function boardNameAlreadyInUse(boards: readonly BoardSummary[], boardId: string, name: string) {
-  const normalizedName = name.trim().toLocaleLowerCase()
-  return boards.some((board) => (
-    board.id !== boardId
-    && board.name.trim().toLocaleLowerCase() === normalizedName
-  ))
-}
-
-/** Keeps board pickers small even after opening an image-heavy board. */
-function boardSummary(savedBoard: SavedBoard): BoardSummary {
-  return {
-    id: savedBoard.id,
-    name: savedBoard.name,
-    updatedAt: savedBoard.updatedAt,
-    archived: savedBoard.archived,
-    revision: savedBoard.revision,
-    access: savedBoard.access,
-  }
-}
-
-/** One deliberately saved cloud board is refreshed in the background while open. */
-const CLOUD_AUTOSAVE_DELAY_MS = 1_500
-const CLOUD_REFRESH_INTERVAL_MS = 15_000
-
-/** Local recovery data also remembers whether it contains unsynced cloud edits. */
-type LocalDraft = SavedBoard & {
-  cloudDirty?: boolean
-}
-
 type SelectedItem =
   | { type: 'node'; id: string }
   | { type: 'edge'; id: string }
 
-type WorkspaceView = 'notebook' | 'nodes' | 'projects' | 'assembly'
 type PointerPaletteState = {
   x: number
   y: number
@@ -216,133 +200,9 @@ type PointerPaletteState = {
   sourceNodeId: string | null
 }
 
-/** Finds the Assembly that contains a particular instruction operation. */
-function parentAssemblyIdForOperation(operationId: string, edges: GraphEdge[]) {
-  return edges.find((edge) => (
-    edge.target === operationId
-    && (
-      edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.assemblyOperation
-      || edge.data.relationKind === 'project-task'
-    )
-  ))?.source ?? null
-}
-
-/** True when adding child Assembly below parent Assembly would make a cycle. */
-function wouldCreateAssemblyMembershipCycle(
-  parentAssemblyId: string,
-  childAssemblyId: string,
-  edges: GraphEdge[],
-) {
-  if (parentAssemblyId === childAssemblyId) return true
-
-  const checked = new Set<string>()
-  const toCheck = [childAssemblyId]
-  while (toCheck.length) {
-    const currentId = toCheck.pop()!
-    if (currentId === parentAssemblyId) return true
-    if (checked.has(currentId)) continue
-    checked.add(currentId)
-    edges
-      .filter((edge) => (
-        edge.source === currentId
-        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.assemblyItem
-      ))
-      .forEach((edge) => toCheck.push(edge.target))
-  }
-  return false
-}
-
-const LOCAL_DRAFT_KEY = 'osa:current-draft'
-const WORKSPACE_VIEW_KEY = 'osa:workspace-view'
-const SELECTED_ASSEMBLY_KEY = 'osa:selected-assembly'
-const OSA_THEME_KEY = 'osa:theme'
-
-type OsaTheme = 'dark' | 'light'
-
-function readOsaTheme(): OsaTheme {
-  const savedTheme = window.localStorage.getItem(OSA_THEME_KEY)
-  return savedTheme === 'dark' || savedTheme === 'light' ? savedTheme : 'light'
-}
-
 /** A public share reference is either a friendly name or an old opaque token. */
 function readSharedAssemblyReference() {
   return sharedAssemblyReferenceFromLocation(window.location)
-}
-
-/** The editor comparison is a temporary dev-only overlay, never a saved view. */
-function readCanvasLabRequested() {
-  return new URLSearchParams(window.location.search).get('lab') === 'canvas'
-}
-
-function readWorkspaceView(): WorkspaceView {
-  // The graph workspace is called Space. Older Field/Cave/Notebook links still
-  // open the same durable graph instead of reviving an undefined product view.
-  const viewFromUrl = new URLSearchParams(window.location.search).get('view')
-  const urlViews: Record<string, WorkspaceView> = {
-    field: 'nodes',
-    notebook: 'nodes',
-    cave: 'nodes',
-    nodes: 'nodes',
-    space: 'nodes',
-    // Actions and projects share one Actions workspace. These older links
-    // stay useful, but no longer open a second competing tool.
-    tasks: 'projects',
-    actions: 'projects',
-    projects: 'projects',
-    assembly: 'assembly',
-  }
-  if (viewFromUrl && viewFromUrl in urlViews) return urlViews[viewFromUrl]
-
-  const savedView = window.localStorage.getItem(WORKSPACE_VIEW_KEY)
-  if (savedView === 'tasks') return 'projects'
-  return savedView === 'nodes'
-    || savedView === 'projects'
-    || savedView === 'assembly'
-    ? savedView
-    : 'nodes'
-}
-
-function readSelectedAssemblyId() {
-  return window.localStorage.getItem(SELECTED_ASSEMBLY_KEY)
-}
-
-function readLocalDraft(): LocalDraft | null {
-  try {
-    const rawDraft = window.localStorage.getItem(LOCAL_DRAFT_KEY)
-    if (!rawDraft) return null
-    const value: unknown = JSON.parse(rawDraft)
-    if (typeof value !== 'object' || value === null) return null
-    const candidate = value as Record<string, unknown>
-    if (
-      typeof candidate.id !== 'string'
-      || typeof candidate.name !== 'string'
-      || typeof candidate.updatedAt !== 'string'
-    ) return null
-    const snapshot = parseBoardSnapshot(candidate.snapshot)
-    return snapshot ? {
-      id: candidate.id,
-      name: candidate.name,
-      updatedAt: candidate.updatedAt,
-      snapshot,
-      revision: typeof candidate.revision === 'number'
-        && Number.isInteger(candidate.revision)
-        && candidate.revision > 0
-        ? candidate.revision
-        : undefined,
-      access: candidate.access === 'owner'
-        || candidate.access === 'editor'
-        || candidate.access === 'viewer'
-        ? candidate.access
-        : undefined,
-      cloudDirty: candidate.cloudDirty === true,
-    } : null
-  } catch {
-    return null
-  }
-}
-
-function writeLocalDraft(draft: LocalDraft) {
-  window.localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify(draft))
 }
 
 function localDay(date = new Date()) {
@@ -369,49 +229,14 @@ function getNextNodePosition(nodes: TextFlowNode[]) {
   }
 }
 
-/**
- * The order belongs to the card-to-Visual relationship. Old boards omit the
- * property, so their current edge sequence is used as the stable fallback.
- */
-function orderedOperationVisualEdges(operationId: string, edges: GraphEdge[]) {
-  return edges
-    .map((edge, edgeIndex) => ({ edge, edgeIndex }))
-    .filter(({ edge }) => (
-      edge.source === operationId
-      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationVisual
-    ))
-    .sort((left, right) => (
-      operationVisualDisplayOrder(
-        left.edge.data.properties[OSA_PROPERTY.operationVisualOrder],
-        left.edgeIndex,
-      )
-      - operationVisualDisplayOrder(
-        right.edge.data.properties[OSA_PROPERTY.operationVisualOrder],
-        right.edgeIndex,
-      )
-      || left.edgeIndex - right.edgeIndex
-    ))
-}
-
-/** Appends newly linked Visuals after the current card order, including legacy links. */
-function nextOperationVisualOrder(operationId: string, edges: GraphEdge[]) {
-  return orderedOperationVisualEdges(operationId, edges).reduce(
-    (highest, { edge, edgeIndex }) => Math.max(
-      highest,
-      operationVisualDisplayOrder(
-        edge.data.properties[OSA_PROPERTY.operationVisualOrder],
-        edgeIndex,
-      ),
-    ),
-    -1,
-  ) + 1
-}
-
 /** Owns the live React Flow node/edge state and responds to user actions. */
 function Flow() {
   const [startupDraft] = useState(readLocalDraft)
   const [sharedAssemblyReference] = useState(readSharedAssemblyReference)
-  const [theme, setTheme] = useState<OsaTheme>(readOsaTheme)
+  const isSharedAssembly = sharedAssemblyReference !== null
+  const { theme, toggleTheme } = useOsaTheme()
+  const { workspaceView, setWorkspaceView } = useWorkspaceView(isSharedAssembly)
+  const { canvasLabVisible, openCanvasLab, closeCanvasLab } = useCanvasLabLocation()
   const bundledStarterImportPlan = useMemo(
     () => bundledStarter.createImportPlan(),
     [],
@@ -435,14 +260,10 @@ function Flow() {
     text: boolean
     details: boolean
   } | null>(null)
-  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>(() => (
-    readSharedAssemblyReference() ? 'assembly' : readWorkspaceView()
-  ))
   // Local preview uses the same component as a shared team link, but stays
   // entirely inside this authoring session until someone explicitly shares it.
   const [assemblyInstructionsPreview, setAssemblyInstructionsPreview] = useState(false)
   const [workspaceMenuVisible, setWorkspaceMenuVisible] = useState(true)
-  const [canvasLabVisible, setCanvasLabVisible] = useState(readCanvasLabRequested)
   // Assembly's focus, lock, drawing, and draft controls are presentation
   // state. Keep them mounted here so switching to Actions or Space and back
   // returns the builder to the exact card state they deliberately left.
@@ -535,7 +356,6 @@ function Flow() {
   const [sharedAssemblyLoadState, setSharedAssemblyLoadState] = useState<
     'idle' | 'loading' | 'ready' | 'unavailable'
   >(() => sharedAssemblyReference ? 'loading' : 'idle')
-  const isSharedAssembly = sharedAssemblyReference !== null
   const latestBoardId = useRef(boardId)
   latestBoardId.current = boardId
   const latestBoardName = useRef(boardName)
@@ -563,39 +383,17 @@ function Flow() {
   const suppressPointerPaletteClickUntil = useRef(0)
   const suppressPointerContextMenuUntil = useRef(0)
 
-  useEffect(() => {
-    window.localStorage.setItem(WORKSPACE_VIEW_KEY, workspaceView)
-  }, [workspaceView])
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme
-    window.localStorage.setItem(OSA_THEME_KEY, theme)
-  }, [theme])
-
-  const toggleTheme = useCallback(() => {
-    setTheme((currentTheme) => currentTheme === 'dark' ? 'light' : 'dark')
-  }, [])
-
-  // Keep browser Back/Forward consistent with the temporary lab query flag.
-  useEffect(() => {
-    const syncCanvasLab = () => setCanvasLabVisible(readCanvasLabRequested())
-    window.addEventListener('popstate', syncCanvasLab)
-    return () => window.removeEventListener('popstate', syncCanvasLab)
-  }, [])
-
-  const openCanvasLab = useCallback(() => {
-    const url = new URL(window.location.href)
-    url.searchParams.set('lab', 'canvas')
-    window.history.pushState({}, '', `${url.pathname}${url.search}${url.hash}`)
-    setCanvasLabVisible(true)
-  }, [])
-
-  const closeCanvasLab = useCallback(() => {
-    const url = new URL(window.location.href)
-    url.searchParams.delete('lab')
-    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
-    setCanvasLabVisible(false)
-  }, [])
+  useLocalDraftPersistence({
+    enabled: !isSharedAssembly,
+    boardId,
+    boardName,
+    nodes,
+    edges,
+    cloudRevision,
+    boardAccess,
+    cloudDirty,
+    setDraftStatus,
+  })
 
   // Starter-specific upgrades remain behind the generic starter contract.
   // Generic Visual migrations run between its preparation and graph passes
@@ -701,67 +499,6 @@ function Flow() {
       attemptKeys.forEach((key) => migrationAttempts.delete(key))
     }
   }, [boardAccess, boardId, cloudRevision, isSharedAssembly, nodes, setNodes])
-
-  useEffect(() => {
-    if (isSharedAssembly) return
-    setDraftStatus('Saving local draft…')
-    const saveTimer = window.setTimeout(() => {
-      try {
-        writeLocalDraft({
-          id: boardId,
-          name: boardName,
-          updatedAt: new Date().toISOString(),
-          snapshot: createBoardSnapshot(nodes, edges),
-          ...(cloudRevision === null ? {} : { revision: cloudRevision }),
-          ...(cloudRevision === null ? {} : { access: boardAccess }),
-          cloudDirty,
-        })
-        setDraftStatus(`Draft saved ${new Date().toLocaleTimeString([], {
-          hour: 'numeric',
-          minute: '2-digit',
-          second: '2-digit',
-        })}`)
-      } catch {
-        setDraftStatus('Local draft is full — use Save board')
-      }
-    }, 900)
-    return () => window.clearTimeout(saveTimer)
-  }, [boardAccess, boardId, boardName, cloudDirty, cloudRevision, edges, isSharedAssembly, nodes])
-
-  // The ordinary autosave is debounced so drawing stays responsive. When the
-  // page is about to disappear, however, save the most recent graph
-  // immediately. This protects an in-progress canvas edit from a refresh or
-  // browser lifecycle pause before the debounce has elapsed.
-  useEffect(() => {
-    if (isSharedAssembly) return
-
-    const flushLocalDraft = () => {
-      try {
-        writeLocalDraft({
-          id: boardId,
-          name: boardName,
-          updatedAt: new Date().toISOString(),
-          snapshot: createBoardSnapshot(nodes, edges),
-          ...(cloudRevisionRef.current === null ? {} : { revision: cloudRevisionRef.current }),
-          ...(cloudRevisionRef.current === null ? {} : { access: boardAccessRef.current }),
-          cloudDirty: cloudDirtyRef.current,
-        })
-      } catch {
-        // The normal autosave status is where we report storage failures.
-      }
-    }
-
-    const flushWhenHidden = () => {
-      if (document.visibilityState === 'hidden') flushLocalDraft()
-    }
-
-    window.addEventListener('pagehide', flushLocalDraft)
-    document.addEventListener('visibilitychange', flushWhenHidden)
-    return () => {
-      window.removeEventListener('pagehide', flushLocalDraft)
-      document.removeEventListener('visibilitychange', flushWhenHidden)
-    }
-  }, [boardId, boardName, edges, isSharedAssembly, nodes])
 
   // React Flow and the Assembly editor both edit the same node/edge state.
   // Compare it with the last D1 acknowledgement rather than treating an
@@ -1296,11 +1033,7 @@ function Flow() {
   const activeAssembly = assemblies.find((assembly) => assembly.id === activeAssemblyId) ?? null
 
   useEffect(() => {
-    if (activeAssemblyId) {
-      window.localStorage.setItem(SELECTED_ASSEMBLY_KEY, activeAssemblyId)
-    } else {
-      window.localStorage.removeItem(SELECTED_ASSEMBLY_KEY)
-    }
+    writeSelectedAssemblyId(activeAssemblyId)
   }, [activeAssemblyId])
 
   // Each Assembly begins with a readable link name derived from its title.
@@ -1443,158 +1176,12 @@ function Flow() {
     linkTaskToProject(taskId, projectId)
   }, [createObjectNode, linkTaskToProject])
 
-  /** Creates a part-like Assembly object and opens it through Assembly view. */
-  const createAssembly = useCallback((title: string) => {
-    const assemblyId = createObjectNode(title, 'part', null, '', undefined, {
-      [OSA_PROPERTY.role]: 'assembly',
-    })
+  const handleAssemblyCreated = useCallback((assemblyId: string) => {
     setSelectedAssemblyId(assemblyId)
-    return assemblyId
-  }, [createObjectNode])
+  }, [])
 
-  const createAssemblyOperation = useCallback((assemblyId: string, title: string) => {
-    const assembly = nodes.find((node) => node.id === assemblyId)
-    const linkedActionIds = new Set(edges
-      .filter((edge) => (
-        edge.source === assemblyId
-        && (
-          edge.data.relationKind === 'project-task'
-          || edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.assemblyOperation
-        )
-      ))
-      .map((edge) => edge.target))
-    const greatestOrder = operations
-      .filter((operation) => linkedActionIds.has(operation.id))
-      .reduce((greatest, operation) => {
-        const order = Number(operation.data.properties[OSA_PROPERTY.order])
-        return Number.isFinite(order) ? Math.max(greatest, order) : greatest
-      }, 0)
-    const order = Math.floor(greatestOrder) + 1
-    const operationId = createObjectNode(
-      title,
-      'action',
-      null,
-      '',
-      undefined,
-      {
-        [OSA_PROPERTY.role]: 'operation',
-        [OSA_PROPERTY.order]: String(order),
-        [OSA_PROPERTY.operationEntrance]: '',
-        [OSA_PROPERTY.operationExit]: '',
-      },
-      assembly?.data.spaceIds,
-    )
-    // Every instruction begins with a real output object, even before we know
-    // its final name. This is the part/subassembly represented by the card.
-    const primaryOutputId = createObjectNode(
-      'Part to define',
-      'part',
-      null,
-      'Placeholder part represented by this instruction.',
-      undefined,
-      {
-        [OSA_PROPERTY.role]: 'bom-item',
-        [OSA_PROPERTY.itemStatus]: 'placeholder',
-        [OSA_PROPERTY.currency]: 'USD',
-      },
-      assembly?.data.spaceIds,
-    )
-    const operationEdgeId = `edge-${nextEdgeId.current}`
-    nextEdgeId.current += 1
-    const assemblyItemEdgeId = `edge-${nextEdgeId.current}`
-    nextEdgeId.current += 1
-    const primaryOutputEdgeId = `edge-${nextEdgeId.current}`
-    nextEdgeId.current += 1
-    setEdges((currentEdges) => [
-      ...currentEdges,
-      createProjectTaskEdge(operationEdgeId, assemblyId, operationId, {
-        [OSA_PROPERTY.relationRole]: OSA_RELATION.assemblyOperation,
-      }),
-      createGraphEdge({
-        id: assemblyItemEdgeId,
-        source: assemblyId,
-        target: primaryOutputId,
-        relationship: 'tracks part',
-        properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.assemblyItem },
-      }),
-      createGraphEdge({
-        id: primaryOutputEdgeId,
-        source: operationId,
-        target: primaryOutputId,
-        relationship: 'represents part',
-        properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.operationPrimaryOutput },
-      }),
-    ])
-    return operationId
-  }, [createObjectNode, edges, nodes, operations, setEdges])
-
-  /**
-   * An Assembly card's sequence belongs to its durable `osa:order` property.
-   * Renumbering the small affected set keeps authoring, shared instructions,
-   * and a saved board in the exact same order.
-   */
-  const reorderAssemblyOperation = useCallback((
-    assemblyId: string,
-    operationId: string,
-    direction: 'up' | 'down',
-  ) => {
-    const operationIds = latestEdges.current
-      .filter((edge) => (
-        edge.source === assemblyId
-        && (
-          edge.data.relationKind === 'project-task'
-          || edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.assemblyOperation
-        )
-      ))
-      .map((edge) => edge.target)
-    const edgePosition = new Map(operationIds.map((id, index) => [id, index]))
-    const orderedOperations = latestNodes.current
-      .filter((node) => operationIds.includes(node.id) && osaRole(node) === 'operation')
-      .sort((left, right) => {
-        const leftOrder = Number(left.data.properties[OSA_PROPERTY.order])
-        const rightOrder = Number(right.data.properties[OSA_PROPERTY.order])
-        const leftPosition = edgePosition.get(left.id) ?? Number.MAX_SAFE_INTEGER
-        const rightPosition = edgePosition.get(right.id) ?? Number.MAX_SAFE_INTEGER
-        return (Number.isFinite(leftOrder) ? leftOrder : leftPosition)
-          - (Number.isFinite(rightOrder) ? rightOrder : rightPosition)
-          || leftPosition - rightPosition
-      })
-    const currentIndex = orderedOperations.findIndex((operation) => operation.id === operationId)
-    const nextIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
-    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= orderedOperations.length) return
-
-    const reordered = [...orderedOperations]
-    ;[reordered[currentIndex], reordered[nextIndex]] = [reordered[nextIndex], reordered[currentIndex]]
-    const orderByOperationId = new Map(reordered.map((operation, index) => [
-      operation.id,
-      String(index + 1),
-    ]))
-    setNodes((currentNodes) => currentNodes.map((node) => {
-      const order = orderByOperationId.get(node.id)
-      if (order === undefined || node.data.properties[OSA_PROPERTY.order] === order) return node
-      return {
-        ...node,
-        data: {
-          ...node.data,
-          properties: { ...node.data.properties, [OSA_PROPERTY.order]: order },
-        },
-      }
-    }))
-  }, [setNodes])
-
-  /**
-   * Removes one Assembly card from the instruction sequence without deleting
-   * its parts, tools, Steps, or Visuals. Those are ordinary project objects
-   * and remain available in Space for relinking or recovery later.
-   */
-  const removeAssemblyOperation = useCallback((operationId: string) => {
-    const operation = latestNodes.current.find((node) => node.id === operationId)
-    if (!operation || osaRole(operation) !== 'operation') return
-
-    setEdges((currentEdges) => currentEdges.filter((edge) => (
-      edge.source !== operationId && edge.target !== operationId
-    )))
-    setNodes((currentNodes) => currentNodes.filter((node) => node.id !== operationId))
+  /** Clears only screen state that referred to a removed instruction card. */
+  const handleAssemblyOperationRemoved = useCallback((operationId: string) => {
     setSelectedItem((current) => (
       current?.type === 'node' && current.id === operationId ? null : current
     ))
@@ -1610,286 +1197,47 @@ function Flow() {
           : current.focusedCardId,
         openCardId: current.openCardId === operationId ? null : current.openCardId,
         lockedCardId: current.lockedCardId === operationId ? null : current.lockedCardId,
-        editingVisualId: current.editingOperationId === operationId ? null : current.editingVisualId,
+        editingVisualId: current.editingOperationId === operationId
+          ? null
+          : current.editingVisualId,
         editingOperationId: current.editingOperationId === operationId
           ? null
           : current.editingOperationId,
         hiddenVisualOwnerIdsByOperation: remainingHiddenFilters,
       }
     })
-  }, [setEdges, setNodes])
+  }, [])
 
-  /**
-   * A step is an ordinary, durable OSA object—not another line embedded in a
-   * card's text. That lets it carry its own Visual canvas, links, and future
-   * status without inventing a second instruction-only data format.
-   */
-  const createOperationStep = useCallback((operationId: string) => {
-    const operation = nodes.find((node) => node.id === operationId)
-    if (!operation) return ''
-
-    const linkedStepIds = new Set(edges
-      .filter((edge) => (
-        edge.source === operationId
-        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationStep
-      ))
-      .map((edge) => edge.target))
-    const greatestOrder = nodes
-      .filter((node) => linkedStepIds.has(node.id) && osaRole(node) === 'step')
-      .reduce((greatest, step) => {
-        const order = Number(step.data.properties[OSA_PROPERTY.order])
-        return Number.isFinite(order) ? Math.max(greatest, order) : greatest
-      }, 0)
-    const order = Math.floor(greatestOrder) + 1
-    const stepId = createObjectNode(
-      `Step ${order}`,
-      'note',
-      null,
-      '',
-      undefined,
-      {
-        [OSA_PROPERTY.role]: 'step',
-        [OSA_PROPERTY.order]: String(order),
-      },
-      operation.data.spaceIds,
-    )
-    const edgeId = `edge-${nextEdgeId.current}`
-    nextEdgeId.current += 1
-    setEdges((currentEdges) => [...currentEdges, createGraphEdge({
-      id: edgeId,
-      source: operationId,
-      target: stepId,
-      relationship: 'has step',
-      properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.operationStep },
-    })])
-    return stepId
-  }, [createObjectNode, edges, nodes, setEdges])
-
-  /**
-   * A step's order belongs to the step itself. Renumbering the small ordered
-   * set after a move keeps every other view able to render the same sequence.
-   */
-  const reorderOperationStep = useCallback((
-    operationId: string,
-    stepId: string,
-    direction: 'up' | 'down',
-  ) => {
-    const targetIds = latestEdges.current
-      .filter((edge) => (
-        edge.source === operationId
-        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationStep
-      ))
-      .map((edge) => edge.target)
-    const edgePosition = new Map(targetIds.map((id, index) => [id, index]))
-    const orderedSteps = latestNodes.current
-      .filter((node) => targetIds.includes(node.id) && osaRole(node) === 'step')
-      .sort((left, right) => {
-        const leftOrder = Number(left.data.properties[OSA_PROPERTY.order])
-        const rightOrder = Number(right.data.properties[OSA_PROPERTY.order])
-        return (Number.isFinite(leftOrder) ? leftOrder : edgePosition.get(left.id) ?? 0)
-          - (Number.isFinite(rightOrder) ? rightOrder : edgePosition.get(right.id) ?? 0)
-      })
-    const currentIndex = orderedSteps.findIndex((step) => step.id === stepId)
-    const nextIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
-    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= orderedSteps.length) return
-
-    const reordered = [...orderedSteps]
-    ;[reordered[currentIndex], reordered[nextIndex]] = [reordered[nextIndex], reordered[currentIndex]]
-    const orderByStepId = new Map(reordered.map((step, index) => [step.id, String(index + 1)]))
-    setNodes((currentNodes) => currentNodes.map((node) => {
-      const order = orderByStepId.get(node.id)
-      if (order === undefined || node.data.properties[OSA_PROPERTY.order] === order) return node
-      return {
-        ...node,
-        data: {
-          ...node.data,
-          properties: { ...node.data.properties, [OSA_PROPERTY.order]: order },
-        },
-      }
-    }))
-  }, [setNodes])
-
-  /**
-   * Removes one durable instruction step. A step-owned canvas exists only for
-   * that step, so remove it and every display/embed edge at the same time;
-   * then close the editor if that canvas was open and renumber what remains.
-   */
-  const removeOperationStep = useCallback((operationId: string, stepId: string) => {
-    const step = latestNodes.current.find((node) => node.id === stepId)
-    const belongsToOperation = latestEdges.current.some((edge) => (
-      edge.source === operationId
-      && edge.target === stepId
-      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationStep
-    ))
-    if (!step || osaRole(step) !== 'step' || !belongsToOperation) return
-
-    const visualId = latestEdges.current.find((edge) => (
-      edge.source === stepId
-      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
-    ))?.target
-    const removedIds = new Set([stepId, ...(visualId ? [visualId] : [])])
-
-    const remainingStepIds = latestEdges.current
-      .filter((edge) => (
-        edge.source === operationId
-        && edge.target !== stepId
-        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationStep
-      ))
-      .map((edge) => edge.target)
-    const edgePosition = new Map(remainingStepIds.map((id, index) => [id, index]))
-    const orderedRemainingSteps = latestNodes.current
-      .filter((node) => remainingStepIds.includes(node.id) && osaRole(node) === 'step')
-      .sort((left, right) => {
-        const leftOrder = Number(left.data.properties[OSA_PROPERTY.order])
-        const rightOrder = Number(right.data.properties[OSA_PROPERTY.order])
-        return (Number.isFinite(leftOrder) ? leftOrder : edgePosition.get(left.id) ?? 0)
-          - (Number.isFinite(rightOrder) ? rightOrder : edgePosition.get(right.id) ?? 0)
-      })
-    const orderByStepId = new Map(
-      orderedRemainingSteps.map((remainingStep, index) => [remainingStep.id, String(index + 1)]),
-    )
-
-    setEdges((currentEdges) => currentEdges.filter((edge) => (
-      !removedIds.has(edge.source) && !removedIds.has(edge.target)
-    )))
-    setNodes((currentNodes) => currentNodes
-      .filter((node) => !removedIds.has(node.id))
-      .map((node) => {
-        const order = orderByStepId.get(node.id)
-        if (order === undefined || node.data.properties[OSA_PROPERTY.order] === order) return node
-        return {
-          ...node,
-          data: {
-            ...node.data,
-            properties: { ...node.data.properties, [OSA_PROPERTY.order]: order },
-          },
-        }
-      }))
+  /** Closes the Visual editor if its Step and owned canvas were removed. */
+  const handleAssemblyStepCanvasRemoved = useCallback((visualId: string | null) => {
     setAssemblyViewState((current) => (
       visualId && current.editingVisualId === visualId
         ? { ...current, editingVisualId: null, editingOperationId: null }
         : current
     ))
-  }, [setEdges, setNodes])
+  }, [])
 
-  /**
-   * A step has one directly owned canvas. The ownership edge is the durable
-   * association; keeping its name synchronized happens in `onNameChange`.
-   */
-  const ensureStepCanvas = useCallback((stepId: string) => {
-    const step = latestNodes.current.find((node) => node.id === stepId)
-    if (!step || osaRole(step) !== 'step') return ''
+  const assemblyGraphActions = useAssemblyGraphActions({
+    nodes,
+    edges,
+    operations,
+    latestNodes,
+    latestEdges,
+    setNodes,
+    setEdges,
+    nextEdgeIdRef: nextEdgeId,
+    createObjectNode,
+    onAssemblyCreated: handleAssemblyCreated,
+    onOperationRemoved: handleAssemblyOperationRemoved,
+    onStepCanvasRemoved: handleAssemblyStepCanvasRemoved,
+  })
 
-    // A Step belongs to exactly one card. Its canvas is shown on that same
-    // card through a separate display edge, while this ownership edge keeps
-    // the canvas semantically attached to the Step.
-    const operationId = latestEdges.current.find((edge) => (
-      edge.target === stepId
-      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationStep
-    ))?.source
-    const showOnOperation = (currentEdges: GraphEdge[], visualId: string) => {
-      if (!operationId || currentEdges.some((edge) => (
-        edge.source === operationId
-        && edge.target === visualId
-        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationVisual
-      ))) {
-        return currentEdges
-      }
-
-      const operationEdgeId = `edge-${nextEdgeId.current}`
-      nextEdgeId.current += 1
-      return [...currentEdges, createGraphEdge({
-        id: operationEdgeId,
-        source: operationId,
-        target: visualId,
-        relationship: 'shows visual',
-        properties: {
-          [OSA_PROPERTY.relationRole]: OSA_RELATION.operationVisual,
-          [OSA_PROPERTY.operationVisualOrder]: String(
-            nextOperationVisualOrder(operationId, currentEdges),
-          ),
-        },
-      })]
-    }
-
-    const existingVisualId = latestEdges.current
-      .find((edge) => (
-        edge.source === stepId
-        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
-      ))?.target
-    const existingVisual = existingVisualId
-      ? latestNodes.current.find((node) => node.id === existingVisualId)
-      : undefined
-    if (existingVisual && isVisualNode(existingVisual)) {
-      // A canvas selected from the card's right column stays visible there.
-      // This also repairs an older Step canvas that was created before card
-      // placement was added.
-      setEdges((currentEdges) => showOnOperation(currentEdges, existingVisual.id))
-      return existingVisual.id
-    }
-
-    const visualId = createObjectNode(
-      step.data.name.trim() || `#${step.id}`,
-      'visual',
-      null,
-      '',
-      undefined,
-      {
-        [OSA_PROPERTY.role]: 'visual',
-        [OSA_PROPERTY.visualContent]: 'canvas',
-        [OSA_PROPERTY.visualIdentity]: 'untyped',
-      },
-      step.data.spaceIds,
-    )
-    const edgeId = `edge-${nextEdgeId.current}`
-    nextEdgeId.current += 1
-    setEdges((currentEdges) => showOnOperation([
-      // A malformed legacy edge should not let a new Step canvas create a
-      // second ownership relationship for this Step.
-      ...currentEdges.filter((edge) => !(
-        edge.source === stepId
-        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
-      )),
-      createGraphEdge({
-        id: edgeId,
-        source: stepId,
-        target: visualId,
-        relationship: 'owns visual',
-        properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.objectVisual },
-      }),
-    ], visualId))
-    return visualId
-  }, [createObjectNode, setEdges])
-
-  const createOperationTool = useCallback((
-    operationId: string,
-    name: string,
-    options?: { placeholder?: boolean },
-  ) => {
-    const operation = nodes.find((node) => node.id === operationId)
-    const toolId = createObjectNode(
-      name,
-      'tool',
-      null,
-      '',
-      undefined,
-      {
-        [OSA_PROPERTY.role]: 'tool',
-        ...(options?.placeholder ? { [OSA_PROPERTY.itemStatus]: 'placeholder' } : {}),
-      },
-      operation?.data.spaceIds,
-    )
-    const id = `edge-${nextEdgeId.current}`
-    nextEdgeId.current += 1
-    setEdges((currentEdges) => [...currentEdges, createGraphEdge({
-      id,
-      source: operationId,
-      target: toolId,
-      relationship: 'uses tool',
-      properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.operationTool },
-    })])
-    return toolId
-  }, [createObjectNode, nodes, setEdges])
+  const assemblyViewActions = useMemo<AssemblyViewActions>(() => ({
+    ...assemblyGraphActions,
+    onNameChange,
+    onTextChange,
+    onPropertyChange,
+  }), [assemblyGraphActions, onNameChange, onPropertyChange, onTextChange])
 
   /**
    * Creates one blank, reusable Visual canvas owned by a real Part, Assembly,
@@ -2306,226 +1654,6 @@ function Flow() {
     }))
   }, [])
 
-  /** Connects an existing tool from the shared inventory to one instruction. */
-  const linkToolToOperation = useCallback((operationId: string, toolId: string) => {
-    setEdges((currentEdges) => {
-      const alreadyLinked = currentEdges.some((edge) => (
-        edge.source === operationId && edge.target === toolId
-      ))
-      if (alreadyLinked) return currentEdges
-      const id = `edge-${nextEdgeId.current}`
-      nextEdgeId.current += 1
-      return [...currentEdges, createGraphEdge({
-        id,
-        source: operationId,
-        target: toolId,
-        relationship: 'uses tool',
-        properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.operationTool },
-      })]
-    })
-  }, [setEdges])
-
-  /**
-   * Removes only this instruction's tool relationship. The canonical tool
-   * node stays in the inventory and can be linked to this or another card
-   * again later.
-   */
-  const unlinkToolFromOperation = useCallback((operationId: string, toolId: string) => {
-    setEdges((currentEdges) => {
-      const nextEdges = currentEdges.filter((edge) => !(
-        edge.source === operationId
-        && edge.target === toolId
-        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationTool
-      ))
-      return nextEdges.length === currentEdges.length ? currentEdges : nextEdges
-    })
-  }, [setEdges])
-
-  /**
-   * Removes a material relationship from one instruction without deleting the
-   * shared Part or Assembly object. Older boards used `operation-item` for
-   * inputs, so an In removal clears that legacy relation for this exact
-   * operation/part pair too. An Out removal clears both normal and primary
-   * output roles, preventing a card's represented part from lingering in Out.
-   */
-  const unlinkOperationMaterial = useCallback((
-    operationId: string,
-    objectId: string,
-    direction: OperationPartDirection,
-  ) => {
-    setEdges((currentEdges) => {
-      const nextEdges = currentEdges.filter((edge) => {
-        if (edge.source !== operationId || edge.target !== objectId) return true
-
-        const relationRole = edge.data.properties[OSA_PROPERTY.relationRole]
-        if (direction === 'input') {
-          return relationRole !== OSA_RELATION.operationInput
-            && relationRole !== OSA_RELATION.operationItem
-        }
-
-        return relationRole !== OSA_RELATION.operationOutput
-          && relationRole !== OSA_RELATION.operationPrimaryOutput
-      })
-      return nextEdges.length === currentEdges.length ? currentEdges : nextEdges
-    })
-  }, [setEdges])
-
-  /**
-   * Links one canonical Part or Assembly to the material flow of an operation.
-   *
-   * A single physical item may appear on both sides of an operation when it is
-   * modified in place; input and output are therefore distinct edge meanings.
-   */
-  const linkOperationMaterial = useCallback((
-    operationId: string,
-    objectId: string,
-    direction: OperationPartDirection,
-  ) => {
-    const material = nodes.find((node) => node.id === objectId)
-    const assemblyId = parentAssemblyIdForOperation(operationId, edges)
-    const isPart = material !== undefined && isPartLike(material)
-    const isAssembly = material !== undefined && osaRole(material) === 'assembly'
-    if (!material || (!isPart && !isAssembly)) return
-
-    const relationRole = direction === 'input'
-      ? OSA_RELATION.operationInput
-      : OSA_RELATION.operationOutput
-    const materialLabel = isAssembly ? 'assembly' : 'part'
-
-    setEdges((currentEdges) => {
-      const alreadyLinked = currentEdges.some((edge) => (
-        edge.source === operationId
-        && edge.target === objectId
-        && edge.data.properties[OSA_PROPERTY.relationRole] === relationRole
-      ))
-      const newEdges: GraphEdge[] = []
-
-      if (!alreadyLinked) {
-        const id = `edge-${nextEdgeId.current}`
-        nextEdgeId.current += 1
-        newEdges.push(createGraphEdge({
-          id,
-          source: operationId,
-          target: objectId,
-          relationship: direction === 'input'
-            ? `requires ${materialLabel}`
-            : `produces ${materialLabel}`,
-          properties: { [OSA_PROPERTY.relationRole]: relationRole },
-        }))
-      }
-
-      // A chosen part-like object becomes part of the Assembly's shared
-      // inventory too. A self-output is valid (the final operation can
-      // represent its own Assembly), but it must not become a self-member.
-      // That gives it one canonical identity across its card, the Assembly
-      // index, Space, and any later BOM view.
-      const canJoinAssemblyInventory = Boolean(
-        assemblyId
-        && assemblyId !== objectId
-        && (!isAssembly || !wouldCreateAssemblyMembershipCycle(assemblyId, objectId, currentEdges))
-      )
-      const isAlreadyInAssembly = !canJoinAssemblyInventory || currentEdges.some((edge) => (
-        edge.source === assemblyId
-        && edge.target === objectId
-        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.assemblyItem
-      ))
-      if (isPart && assemblyId && !isAlreadyInAssembly) {
-        const id = `edge-${nextEdgeId.current}`
-        nextEdgeId.current += 1
-        newEdges.push(createGraphEdge({
-          id,
-          source: assemblyId,
-          target: objectId,
-          relationship: 'uses part',
-          properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.assemblyItem },
-        }))
-      }
-
-      return newEdges.length ? [...currentEdges, ...newEdges] : currentEdges
-    })
-  }, [edges, nodes, setEdges])
-
-  /** Backward-compatible inspector action: including a part means Parts In. */
-  const linkPartToOperation = useCallback((operationId: string, partId: string) => {
-    linkOperationMaterial(operationId, partId, 'input')
-  }, [linkOperationMaterial])
-
-  /**
-   * Creates one named-later Part placeholder and makes its two relationships
-   * immediately real: it belongs to the containing Assembly and it is either
-   * an input or an output of the instruction that created it.
-   */
-  const createPartForOperation = useCallback((
-    operationId: string,
-    direction: OperationPartDirection,
-    /**
-     * A caller may deliberately name an output after the instruction card
-     * while repairing a legacy card that has no addressable result yet.
-     * Ordinary add-part actions intentionally omit this and keep the neutral
-     * `Part to define` placeholder.
-     */
-    requestedName?: string,
-  ) => {
-    const operation = nodes.find((node) => node.id === operationId)
-    const assemblyId = parentAssemblyIdForOperation(operationId, edges)
-    const outputName = direction === 'output' ? requestedName?.trim() : ''
-    const partId = createObjectNode(
-      outputName || 'Part to define',
-      'part',
-      null,
-      direction === 'input'
-        ? 'Placeholder part needed before this operation.'
-        : 'Placeholder part produced by this operation.',
-      undefined,
-      {
-        [OSA_PROPERTY.role]: 'bom-item',
-        [OSA_PROPERTY.itemStatus]: 'placeholder',
-        [OSA_PROPERTY.currency]: 'USD',
-      },
-      operation?.data.spaceIds,
-    )
-    const alreadyHasPrimaryOutput = edges.some((edge) => (
-      edge.source === operationId
-      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationPrimaryOutput
-    ))
-    const relationRole = direction === 'input'
-      ? OSA_RELATION.operationInput
-      : (alreadyHasPrimaryOutput ? OSA_RELATION.operationOutput : OSA_RELATION.operationPrimaryOutput)
-
-    setEdges((currentEdges) => {
-      const newEdges: GraphEdge[] = []
-      if (assemblyId && !currentEdges.some((edge) => (
-        edge.source === assemblyId
-        && edge.target === partId
-        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.assemblyItem
-      ))) {
-        const assemblyEdgeId = `edge-${nextEdgeId.current}`
-        nextEdgeId.current += 1
-        newEdges.push(createGraphEdge({
-          id: assemblyEdgeId,
-          source: assemblyId,
-          target: partId,
-          relationship: 'uses part',
-          properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.assemblyItem },
-        }))
-      }
-      const operationEdgeId = `edge-${nextEdgeId.current}`
-      nextEdgeId.current += 1
-      newEdges.push(createGraphEdge({
-        id: operationEdgeId,
-        source: operationId,
-        target: partId,
-        relationship: direction === 'input'
-          ? 'requires part'
-          : (relationRole === OSA_RELATION.operationPrimaryOutput ? 'represents part' : 'produces part'),
-        properties: { [OSA_PROPERTY.relationRole]: relationRole },
-      }))
-      return [...currentEdges, ...newEdges]
-    })
-
-    return partId
-  }, [createObjectNode, edges, nodes, setEdges])
-
   const createNotebookPage = useCallback((kind: 'note' | 'sketch') => {
     const pageId = createObjectNode('', kind)
     setSelectedNotebookPageId(pageId)
@@ -2556,7 +1684,7 @@ function Flow() {
         { zoom: 0.9, duration: 450 },
       )
     })
-  }, [nodes, setCenter])
+  }, [nodes, setCenter, setWorkspaceView])
 
   const openNotebookPage = useCallback((nodeId: string) => {
     const node = nodes.find((candidate) => candidate.id === nodeId)
@@ -2933,7 +2061,7 @@ function Flow() {
     return () => {
       cancelled = true
     }
-  }, [applyBoardSnapshot, sharedAssemblyReference])
+  }, [applyBoardSnapshot, setWorkspaceView, sharedAssemblyReference])
 
   /**
    * The one cloud-write path: manual Save, share creation, and background
@@ -3457,24 +2585,7 @@ function Flow() {
   }, [cloudRevision, isSharedAssembly, refreshCurrentCloudBoard])
 
   const saveBoardAsJson = useCallback(() => {
-    const board = createBoardSnapshot(nodes, edges)
-
-    const json = JSON.stringify(board, null, 2)
-    const blob = new Blob([json], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-
-    const link = document.createElement('a')
-    link.href = url
-    link.download = 'react-flow-board.json'
-    link.style.display = 'none'
-    document.body.append(link)
-    link.click()
-
-    // Let the browser begin the download before releasing the Blob URL.
-    window.setTimeout(() => {
-      link.remove()
-      URL.revokeObjectURL(url)
-    }, 0)
+    downloadBoardSnapshot(createBoardSnapshot(nodes, edges))
   }, [nodes, edges])
 
   /**
@@ -3486,9 +2597,7 @@ function Flow() {
     if (!file) return
 
     try {
-      const candidate: unknown = JSON.parse(await file.text())
-      const snapshot = parseBoardSnapshot(candidate)
-      if (!snapshot) throw new Error('This is not a valid OSA board file.')
+      const snapshot = await readBoardSnapshotFile(file)
 
       applyBoardSnapshot(snapshot)
       startupDirtyDraft.current = false
@@ -3536,7 +2645,7 @@ function Flow() {
         ? `Opened “${plan.name}”.`
         : `Added ${merge.addedNodeCount} objects and ${merge.addedEdgeCount} connections from “${plan.name}”.`,
     )
-  }, [setEdges, setNodes])
+  }, [setEdges, setNodes, setWorkspaceView])
 
   /** Adds a compact OSA data package without replacing the current board. */
   const importOsaDataFromJson = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
@@ -3960,7 +3069,7 @@ function Flow() {
               operation.data.properties[OSA_PROPERTY.role] === 'operation'
             ))}
             onSpaceIdsChange={onSpaceIdsChange}
-            onIncludeInInstruction={linkPartToOperation}
+            onIncludeInInstruction={assemblyGraphActions.onLinkPart}
             onPropertyChange={onPropertyChange}
             onPropertyRename={onPropertyRename}
             onPropertyRemove={onPropertyRemove}
@@ -4193,30 +3302,7 @@ function Flow() {
               ))}
               selectedAssemblyId={activeAssemblyId}
               onSelectAssembly={setSelectedAssemblyId}
-              actions={{
-                onCreateAssembly: createAssembly,
-                onCreateOperation: createAssemblyOperation,
-                onReorderOperation: reorderAssemblyOperation,
-                onRemoveOperation: removeAssemblyOperation,
-                onCreateStep: createOperationStep,
-                onReorderStep: reorderOperationStep,
-                onRemoveStep: removeOperationStep,
-                onEnsureStepCanvas: ensureStepCanvas,
-                onCreateTool: createOperationTool,
-                onLinkPart: linkPartToOperation,
-                onLinkPartInput: (operationId, partId) => (
-                  linkOperationMaterial(operationId, partId, 'input')
-                ),
-                onUnlinkPartInput: (operationId, partId) => (
-                  unlinkOperationMaterial(operationId, partId, 'input')
-                ),
-                onCreatePartForOperation: createPartForOperation,
-                onLinkTool: linkToolToOperation,
-                onUnlinkTool: unlinkToolFromOperation,
-                onNameChange,
-                onTextChange,
-                onPropertyChange,
-              }}
+              actions={assemblyViewActions}
               onOpenNode={openNodeInSpace}
               readOnly={boardAccess === 'viewer'}
               onSaveBoard={() => void saveBoardToDatabase()}

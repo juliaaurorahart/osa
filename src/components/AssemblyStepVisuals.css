@@ -1,0 +1,102 @@
+/* A compact authoring card keeps the same Step -> Canvas projection that a
+   teammate sees in Assembly Instructions. */
+.assembly-card__summary-view {
+  display: grid;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #d8d8d8;
+  border-radius: 3px;
+  background: #fafafa;
+}
+
+.assembly-card__summary-view-header {
+  display: block;
+  padding: 8px 10px;
+  border-bottom: 1px solid #e4e4e4;
+  background: #fff;
+  color: #262626;
+  font-size: clamp(0.82rem, 1.5vw, 1.1rem);
+  font-weight: 600;
+}
+
+.assembly-card__summary-canvas-list {
+  display: grid;
+  gap: 12px;
+  padding: clamp(10px, 1.5vw, 18px);
+}
+
+.assembly-card__summary-step-canvas {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.assembly-card__summary-step-canvas-label {
+  display: grid;
+  gap: 1px;
+  color: #656565;
+  font-size: 0.78rem;
+  line-height: 1.3;
+}
+
+.assembly-card__summary-step-canvas-label b {
+  color: #262626;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.assembly-card__summary-canvas-preview {
+  pointer-events: none;
+}
+
+.assembly-instructions-view__canvas-list {
+  display: grid;
+  gap: 12px;
+  padding: clamp(10px, 1.5vw, 18px);
+}
+
+.assembly-instructions-view__step-canvas {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+}
+
+.assembly-instructions-view__step-canvas + .assembly-instructions-view__step-canvas {
+  padding-top: 12px;
+  border-top: 1px solid var(--osa-border-subtle);
+}
+
+.assembly-instructions-view__step-canvas figcaption {
+  display: flex;
+  gap: 8px;
+  color: var(--osa-text);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.assembly-instructions-view__step-canvas figcaption strong {
+  color: var(--osa-text);
+}
+
+/* A canvas preview opens a deliberately read-only full view. */
+.assembly-instructions-view__open-canvas {
+  display: block;
+  width: 100%;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+.assembly-instructions-view__open-canvas:hover,
+.assembly-instructions-view__open-canvas:focus-visible {
+  border-color: var(--osa-focus);
+  outline: 0;
+}
+
+.assembly-instructions-view__open-canvas .assembly-card__visual-preview {
+  pointer-events: none;
+}

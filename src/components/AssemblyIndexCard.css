@@ -1,0 +1,19 @@
+/* The cover is deliberately only a title and an ordered table of contents. */
+.assembly-index-card__title-list {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* The collapsed cover mirrors a simple first slide: project title plus the
+   ordered instruction names, without inventory or editor terminology. */
+.assembly-index-card__summary-index {
+  display: grid;
+  gap: 4px;
+  margin: 4px 0 0;
+  padding-left: 1.35em;
+  color: var(--osa-text);
+  font-size: clamp(0.84rem, 1.45vw, 1.05rem);
+  line-height: 1.4;
+}

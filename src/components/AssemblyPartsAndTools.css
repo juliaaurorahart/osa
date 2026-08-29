@@ -1,0 +1,65 @@
+.assembly-linked-object-list {
+  overflow-wrap: anywhere;
+}
+
+.assembly-operation-card .assembly-linked-object-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 0.2em;
+}
+
+/* A card owns links, not the linked objects themselves. */
+.assembly-object-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.2em;
+  max-width: 100%;
+}
+
+.assembly-object-unlink {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.16em;
+  padding: 0 0.22em;
+  border: 1px solid var(--osa-border);
+  border-radius: 999px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78em;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.assembly-object-unlink:hover,
+.assembly-object-unlink:focus-visible {
+  border-color: var(--osa-danger-border);
+  background: var(--osa-danger-surface);
+  color: var(--osa-danger-text);
+  outline: 0;
+}
+
+.assembly-operation-card select {
+  width: 100%;
+  min-width: 0;
+  color: inherit;
+  font: inherit;
+}
+
+.assembly-object-link {
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.assembly-object-link:hover,
+.assembly-object-link:focus-visible {
+  border-bottom-color: currentColor;
+  outline: 0;
+}

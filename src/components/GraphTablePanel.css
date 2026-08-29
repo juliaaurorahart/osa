@@ -1,0 +1,60 @@
+.graph-table-panel {
+  width: min(720px, calc(100vw - 480px));
+  max-height: 230px;
+  overflow: hidden;
+}
+
+.graph-table-panel__tabs {
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+}
+
+.graph-table-tab--active {
+  background: var(--osa-hover-surface);
+}
+
+.graph-table-tab {
+  box-sizing: border-box;
+  height: 26px;
+}
+
+.graph-table-panel__scroll {
+  max-height: 180px;
+  overflow: auto;
+}
+
+.graph-table-panel table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.graph-table-panel th,
+.graph-table-panel td {
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.graph-table-panel th {
+  position: sticky;
+  top: 0;
+  background: var(--osa-surface-raised);
+  color: var(--osa-muted);
+  font-weight: 400;
+}
+
+.graph-table-panel tbody tr {
+  cursor: pointer;
+}
+
+.graph-table-panel tbody tr:hover,
+.graph-table-panel tbody tr.is-selected {
+  background: var(--osa-hover-surface);
+}
+
+@media (max-width: 800px) {
+  .graph-table-panel {
+    width: calc(100vw - 32px);
+  }
+}

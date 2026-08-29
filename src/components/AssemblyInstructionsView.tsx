@@ -20,6 +20,8 @@ import {
   visualHasInstructionContent,
 } from './assemblyProjection'
 import './AssemblyView.css'
+import './AssemblyStepVisuals.css'
+import './AssemblyInstructionsView.css'
 
 type AssemblyInstructionsViewProps = {
   assembly: TextFlowNode | undefined

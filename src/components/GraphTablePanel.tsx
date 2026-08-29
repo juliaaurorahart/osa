@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import './GraphTablePanel.css'
 import type { GraphEdge } from '../graph/graphEdge'
 import type { TextFlowNode } from '../graph/textNode'
 

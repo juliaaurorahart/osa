@@ -1,14 +1,10 @@
 import {
   useMemo,
-  useState,
-  type CSSProperties,
   type Dispatch,
-  type KeyboardEvent,
   type SetStateAction,
 } from 'react'
 import type { GraphEdge } from '../graph/graphEdge'
 import {
-  appearanceAccentColor,
   OSA_PROPERTY,
   OSA_RELATION,
   isPartLike,
@@ -16,9 +12,10 @@ import {
 } from '../graph/osaData'
 import type { TextFlowNode } from '../graph/textNode'
 import { annotationTargetsForNodes } from '../graph/sketchAnnotation'
-import {
-  visualEmbedsForCanvas,
-} from '../graph/visualEmbed'
+import { visualEmbedsForCanvas } from '../graph/visualEmbed'
+import { AssemblyIndexCard } from './AssemblyIndexCard'
+import { AssemblyOperationCard } from './AssemblyOperationCard'
+import { AssemblyViewControls } from './AssemblyViewControls'
 import type { AssemblyToolDraft, AssemblyViewUiState } from './assemblyViewState'
 import {
   canvasOwnedByStep,
@@ -28,39 +25,19 @@ import {
   stepsForOperation,
   visualHasInstructionContent,
 } from './assemblyProjection'
-import { VisualCanvasPreview } from './VisualCanvas'
+import {
+  ASSEMBLY_INDEX_CARD_ID,
+  uniqueNodes,
+} from './assemblyViewPresentation'
+import type { AssemblyStepCanvas, AssemblyViewActions } from './assemblyViewTypes'
 import './AssemblyView.css'
 
-const INDEX_CARD_ID = 'assembly-index'
-
-export type AssemblyViewActions = {
-  onCreateAssembly: (title: string) => string
-  onCreateOperation: (assemblyId: string, title: string) => string
-  onReorderOperation: (assemblyId: string, operationId: string, direction: 'up' | 'down') => void
-  onRemoveOperation: (operationId: string) => void
-  onCreateStep: (operationId: string) => string
-  onReorderStep: (operationId: string, stepId: string, direction: 'up' | 'down') => void
-  onRemoveStep: (operationId: string, stepId: string) => void
-  onEnsureStepCanvas: (stepId: string) => string
-  onCreateTool: (
-    operationId: string,
-    name: string,
-    options?: { placeholder?: boolean },
-  ) => string
-  onLinkPart: (operationId: string, partId: string) => void
-  onLinkPartInput?: (operationId: string, partId: string) => void
-  onUnlinkPartInput?: (operationId: string, partId: string) => void
-  onCreatePartForOperation?: (
-    operationId: string,
-    direction: OperationPartDirection,
-    requestedName?: string,
-  ) => string
-  onLinkTool?: (operationId: string, toolId: string) => void
-  onUnlinkTool?: (operationId: string, toolId: string) => void
-  onNameChange: (nodeId: string, name: string) => void
-  onTextChange: (nodeId: string, text: string) => void
-  onPropertyChange?: (nodeId: string, propertyName: string, value: string) => void
-}
+// Preserve the public type API used by App while keeping component types in a
+// small dependency-free module that extracted Assembly components can share.
+export type {
+  AssemblyViewActions,
+  OperationPartDirection,
+} from './assemblyViewTypes'
 
 type AssemblyViewProps = {
   assemblies: TextFlowNode[]
@@ -111,82 +88,11 @@ type AssemblyViewProps = {
   collaborationStatus?: string
 }
 
-/** Preserves the first relationship order while avoiding duplicate chips. */
-function uniqueNodes(...groups: TextFlowNode[][]) {
-  const unique = new Map<string, TextFlowNode>()
-  groups.flat().forEach((node) => {
-    if (!unique.has(node.id)) unique.set(node.id, node)
-  })
-  return [...unique.values()]
-}
-
-function cardKeyDown(event: KeyboardEvent<HTMLElement>, onFocus: () => void) {
-  if (event.target !== event.currentTarget) return
-  if (event.key === 'Enter' || event.key === ' ') {
-    event.preventDefault()
-    onFocus()
-  }
-}
-
-const cardShell: CSSProperties = {
-  boxSizing: 'border-box',
-  width: '100%',
-  minWidth: 0,
-  padding: 'clamp(16px, 3vw, 34px)',
-  // A card is an instruction document, not a fixed-height viewport. Let it
-  // grow with its criteria, visual, and steps so the browser page is the only
-  // place someone needs to scroll.
-  overflow: 'visible',
-  border: '1px solid var(--osa-border)',
-  borderRadius: 4,
-  background: 'var(--osa-surface)',
-  color: 'var(--osa-text)',
-  boxShadow: '0 8px 22px rgb(0 0 0 / 7%)',
-}
-
-const transparentInput: CSSProperties = {
-  boxSizing: 'border-box',
-  width: '100%',
-  minWidth: 0,
-  padding: 0,
-  border: 0,
-  outline: 0,
-  background: 'transparent',
-  color: 'inherit',
-  font: 'inherit',
-}
-
-const fieldLabel: CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'minmax(72px, 0.26fr) minmax(0, 1fr)',
-  alignItems: 'start',
-  gap: 8,
-  minWidth: 0,
-  fontSize: 'clamp(0.62rem, 1.15vw, 0.9rem)',
-  lineHeight: 1.3,
-}
-
-const NEW_TOOL_OPTION = '__new-tool__'
-const PLACEHOLDER_TOOL_OPTION = '__placeholder-tool__'
-const NEW_PART_OPTION = '__new-part__'
-
-export type OperationPartDirection = 'input' | 'output'
-
-/** A small, derived view hint that never rewrites the canonical object. */
-function semanticAccentStyleFromColor(accent: string | undefined): CSSProperties | undefined {
-  // Use a direct text color as well as the shared CSS variable. The direct
-  // value keeps the in/tools labels reliable even when another style layer
-  // supplies a default button color.
-  return accent
-    ? { '--osa-semantic-accent': accent, color: accent } as CSSProperties
-    : undefined
-}
-
-function semanticAccentStyle(node: TextFlowNode | undefined) {
-  return semanticAccentStyleFromColor(appearanceAccentColor(node))
-}
-
-/** A printable card board projected from the ordinary objects in one Space. */
+/**
+ * Projects one Assembly from the canonical graph, then delegates each visible
+ * document region to a focused component. Durable graph state remains owned by
+ * App and all relationship queries remain here at the projection boundary.
+ */
 export function AssemblyView({
   assemblies,
   nodes,
@@ -214,31 +120,8 @@ export function AssemblyView({
   onRemoveCollaborator,
   collaborationStatus,
 }: AssemblyViewProps) {
-  const {
-    onCreateAssembly,
-    onCreateOperation,
-    onReorderOperation,
-    onRemoveOperation,
-    onCreateStep,
-    onReorderStep,
-    onRemoveStep,
-    onEnsureStepCanvas,
-    onCreateTool,
-    onLinkPart,
-    onLinkPartInput,
-    onUnlinkPartInput,
-    onCreatePartForOperation,
-    onLinkTool,
-    onUnlinkTool,
-    onNameChange,
-    onTextChange,
-    onPropertyChange,
-  } = actions
   const selectedAssembly = assemblies.find((assembly) => assembly.id === selectedAssemblyId)
     ?? assemblies[0]
-  const [peopleOpen, setPeopleOpen] = useState(false)
-  const [collaboratorEmail, setCollaboratorEmail] = useState('')
-  const [collaboratorRole, setCollaboratorRole] = useState<'editor' | 'viewer'>('editor')
   // Every card and its open canvas resolve annotation references from the
   // canonical project graph rather than from just that card's local objects.
   const annotationTargets = useMemo(() => annotationTargetsForNodes(nodes), [nodes])
@@ -264,6 +147,7 @@ export function AssemblyView({
       .filter((tool) => tool.data.kind === 'tool' || osaRole(tool) === 'tool')
       .sort((left, right) => nodeTitle(left).localeCompare(nodeTitle(right)))
   }, [nodes, tools])
+
   const {
     focusedCardId,
     // Older in-memory state can survive a hot reload. A missing open card is
@@ -273,10 +157,9 @@ export function AssemblyView({
     toolDraft,
     toolDraftFor,
   } = uiState
-  // These small setters keep the card code readable while routing every
-  // presentation change through App. App stays mounted when Assembly is
-  // hidden, so this state comes back intact after Assembly -> another view ->
-  // Assembly. It is intentionally not part of the saved graph.
+
+  // These small setters keep presentation changes routed through App. App
+  // stays mounted when Assembly is hidden, so the state comes back intact.
   const setFocusedCardId = (nextCardId: string) => {
     onUiStateChange((current) => ({ ...current, focusedCardId: nextCardId }))
   }
@@ -304,24 +187,20 @@ export function AssemblyView({
   const setToolDraftFor = (nextDraft: AssemblyToolDraft | null) => {
     onUiStateChange((current) => ({ ...current, toolDraftFor: nextDraft }))
   }
-  const activeFocusedCardId = focusedCardId === INDEX_CARD_ID
+
+  const activeFocusedCardId = focusedCardId === ASSEMBLY_INDEX_CARD_ID
     || assemblyOperations.some((operation) => operation.id === focusedCardId)
     ? focusedCardId
-    : INDEX_CARD_ID
-  // Opening a card is a presentational choice, just like focus and lock. A
-  // stale card ID must never leave the author with a blank page after a card
-  // has been removed or the selected Assembly changes.
-  const activeOpenCardId = openCardId === INDEX_CARD_ID
+    : ASSEMBLY_INDEX_CARD_ID
+  const activeOpenCardId = openCardId === ASSEMBLY_INDEX_CARD_ID
     || assemblyOperations.some((operation) => operation.id === openCardId)
     ? openCardId
     : null
-  // A card can disappear when its source data changes or the selected
-  // assembly changes. In that case, quietly fall back to the normal board
-  // rather than leaving the builder with an empty locked pane.
-  const activeLockedCardId = lockedCardId === INDEX_CARD_ID
+  const activeLockedCardId = lockedCardId === ASSEMBLY_INDEX_CARD_ID
     || assemblyOperations.some((operation) => operation.id === lockedCardId)
     ? lockedCardId
     : null
+
   const toggleCardLock = (cardId: string) => {
     setLockedCardId((currentCardId) => currentCardId === cardId ? null : cardId)
   }
@@ -332,17 +211,9 @@ export function AssemblyView({
   const closeCard = () => setOpenCardId(null)
   const createAssembly = () => {
     if (readOnly) return
-    const assemblyId = onCreateAssembly(`Assembly ${assemblies.length + 1}`)
+    const assemblyId = actions.onCreateAssembly(`Assembly ${assemblies.length + 1}`)
     onSelectAssembly(assemblyId)
-    openCard(INDEX_CARD_ID)
-  }
-
-  const canManagePeople = !readOnly && boardAccess === 'owner' && onAddCollaborator !== undefined
-  const addCollaborator = () => {
-    const email = collaboratorEmail.trim()
-    if (!email || !onAddCollaborator) return
-    onAddCollaborator(email, collaboratorRole)
-    setCollaboratorEmail('')
+    openCard(ASSEMBLY_INDEX_CARD_ID)
   }
 
   if (!selectedAssembly) {
@@ -375,346 +246,72 @@ export function AssemblyView({
 
   const addCard = () => {
     if (readOnly) return
-    const cardId = onCreateOperation(
+    const cardId = actions.onCreateOperation(
       selectedAssembly.id,
       `Instruction ${assemblyOperations.length + 1}`,
     )
     openCard(cardId)
   }
 
-  const cardFocusStyle = (focused: boolean): CSSProperties => focused
-    ? {
-        gridColumn: '1 / -1',
-        outline: '3px solid rgb(91 206 250 / 58%)',
-        outlineOffset: 4,
-      }
-    : { cursor: 'pointer' }
-  const isIndexOpen = activeOpenCardId === INDEX_CARD_ID
-
   return (
     <section className="work-view assembly-view" aria-labelledby="assembly-view-title">
-      <header className="work-view__header assembly-view__header">
-        <div>
-          <h1 id="assembly-view-title">Assembly</h1>
-        </div>
-        <div className="assembly-view__header-actions">
-          <label className="assembly-view__assembly-picker">
-            <span>assembly</span>
-            <select
-              aria-label="Choose assembly"
-              value={selectedAssembly.id}
-              disabled={readOnly}
-              onChange={(event) => onSelectAssembly(event.target.value)}
-            >
-              {assemblies.map((assembly) => (
-                <option value={assembly.id} key={assembly.id}>{nodeTitle(assembly)}</option>
-              ))}
-            </select>
-          </label>
-          {readOnly ? <span className="assembly-view__shared-label">shared assembly · read-only</span> : null}
-          {!readOnly ? (
-            <>
-              <button className="text-action" type="button" onClick={createAssembly}>new assembly</button>
-              {starterAction ? (
-                <button className="text-action" type="button" onClick={starterAction.onLoad}>
-                  {starterAction.compactLabel}
-                </button>
-              ) : null}
-              <button className="text-action" type="button" onClick={addCard}>add card</button>
-              {onSaveBoard ? (
-                <button className="text-action" type="button" onClick={onSaveBoard}>save</button>
-              ) : null}
-              {canManagePeople ? (
-                <button
-                  className="text-action"
-                  type="button"
-                  aria-expanded={peopleOpen}
-                  onClick={() => setPeopleOpen((isOpen) => !isOpen)}
-                >
-                  people
-                </button>
-              ) : null}
-              {onPreviewInstructions ? (
-                <button className="text-action" type="button" onClick={onPreviewInstructions}>
-                  preview instructions
-                </button>
-              ) : null}
-              {onShare && boardAccess === 'owner' ? (
-                <>
-                  <input
-                    className="assembly-view__share-slug"
-                    aria-label="Public link name"
-                    value={shareSlug ?? ''}
-                    placeholder="public-link-name"
-                    onChange={(event) => onShareSlugChange?.(event.target.value)}
-                  />
-                  <button className="text-action" type="button" onClick={onShare}>share</button>
-                </>
-              ) : null}
-            </>
-          ) : null}
-          <button className="text-action" type="button" onClick={() => window.print()}>print</button>
-        </div>
-      </header>
-
-      {activeLockedCardId ? (
-        <div className="assembly-view__lock-status" aria-live="polite">
-          <span>single-card view locked</span>
-          <button
-            className="text-action"
-            type="button"
-            aria-pressed={true}
-            aria-label="unlock the Assembly card board and show all cards"
-            onClick={() => setLockedCardId(null)}
-          >
-            unlock card view
-          </button>
-        </div>
-      ) : null}
-
-      {shareStatus || shareUrl ? (
-        <div className="assembly-view__share-status" aria-live="polite">
-          {shareStatus ? <span>{shareStatus}</span> : null}
-          {shareUrl ? (
-            <input
-              aria-label="Read-only assembly share link"
-              readOnly
-              value={shareUrl}
-              onFocus={(event) => event.currentTarget.select()}
-            />
-          ) : null}
-        </div>
-      ) : null}
-
-      {peopleOpen && canManagePeople ? (
-        <section className="assembly-view__people" aria-label="People with board access">
-          <strong>people</strong>
-          <form
-            onSubmit={(event) => {
-              event.preventDefault()
-              addCollaborator()
-            }}
-          >
-            <input
-              aria-label="Email to add to this board"
-              type="email"
-              placeholder="email@example.com"
-              value={collaboratorEmail}
-              onChange={(event) => setCollaboratorEmail(event.target.value)}
-            />
-            <select
-              aria-label="Board access role"
-              value={collaboratorRole}
-              onChange={(event) => setCollaboratorRole(event.target.value as 'editor' | 'viewer')}
-            >
-              <option value="editor">can edit</option>
-              <option value="viewer">can view</option>
-            </select>
-            <button className="text-action" type="submit" disabled={!collaboratorEmail.trim()}>add</button>
-          </form>
-          {collaborators.length ? (
-            <ul>
-              {collaborators.map((collaborator) => (
-                <li key={collaborator.email}>
-                  <span>{collaborator.email}</span>
-                  <small>{collaborator.role === 'editor' ? 'can edit' : 'can view'}</small>
-                  {onRemoveCollaborator ? (
-                    <button
-                      className="text-action"
-                      type="button"
-                      onClick={() => onRemoveCollaborator(collaborator.email)}
-                    >
-                      remove
-                    </button>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          ) : <p>no one added yet.</p>}
-          {collaborationStatus ? <p role="status">{collaborationStatus}</p> : null}
-        </section>
-      ) : null}
+      <AssemblyViewControls
+        assemblies={assemblies}
+        selectedAssembly={selectedAssembly}
+        readOnly={readOnly}
+        activeLockedCardId={activeLockedCardId}
+        onSelectAssembly={onSelectAssembly}
+        onCreateAssembly={createAssembly}
+        onAddCard={addCard}
+        onUnlockCardView={() => setLockedCardId(null)}
+        onShare={onShare}
+        shareSlug={shareSlug}
+        onShareSlugChange={onShareSlugChange}
+        onPreviewInstructions={onPreviewInstructions}
+        shareStatus={shareStatus}
+        shareUrl={shareUrl}
+        starterAction={starterAction}
+        onSaveBoard={onSaveBoard}
+        boardAccess={boardAccess}
+        collaborators={collaborators}
+        onAddCollaborator={onAddCollaborator}
+        onRemoveCollaborator={onRemoveCollaborator}
+        collaborationStatus={collaborationStatus}
+      />
 
       <div
         className={`assembly-card-board${activeLockedCardId ? ' is-locked' : ''}`}
         style={{
           display: 'grid',
-          // Assembly instructions are read and performed in sequence. Keep
-          // every card on its own row instead of turning the instructions
-          // into a dashboard-style grid at wider screen sizes.
           gridTemplateColumns: 'minmax(0, 1fr)',
           alignItems: 'start',
           gap: 'clamp(22px, 4vw, 42px)',
         }}
       >
-        {!activeLockedCardId || activeLockedCardId === INDEX_CARD_ID ? <article
-          className={`assembly-card assembly-index-card${isIndexOpen ? ' is-focused is-open' : ' is-summary'}`}
-          style={{ ...cardShell, ...(isIndexOpen ? {} : { padding: 0 }), ...cardFocusStyle(isIndexOpen) }}
-          tabIndex={0}
-          aria-label="assembly index card"
-          onClick={() => {
-            if (!isIndexOpen) openCard(INDEX_CARD_ID)
-          }}
-          onKeyDown={(event) => cardKeyDown(event, () => openCard(INDEX_CARD_ID))}
-        >
-          {isIndexOpen ? (
-            <>
-            <div className="assembly-card__focus-controls">
-              <button
-                className="assembly-card__lock-button"
-                type="button"
-                aria-pressed={activeLockedCardId === INDEX_CARD_ID}
-                aria-label={activeLockedCardId === INDEX_CARD_ID
-                  ? 'unlock Assembly index and show all cards'
-                  : 'lock Assembly index in a single-card view'}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  toggleCardLock(INDEX_CARD_ID)
-                }}
-              >
-                {activeLockedCardId === INDEX_CARD_ID ? 'unlock card view' : 'lock this card'}
-              </button>
-              <button
-                className="assembly-card__close-button"
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation()
-                  closeCard()
-                }}
-              >
-                close details
-              </button>
-            </div>
-
-          <input
-            aria-label="assembly title"
-            placeholder="assembly title"
-            value={selectedAssembly.data.name}
+        {!activeLockedCardId || activeLockedCardId === ASSEMBLY_INDEX_CARD_ID ? (
+          <AssemblyIndexCard
+            assembly={selectedAssembly}
+            operations={assemblyOperations}
             readOnly={readOnly}
-            onFocus={() => setFocusedCardId(INDEX_CARD_ID)}
-            onChange={(event) => {
-              if (!readOnly) onNameChange(selectedAssembly.id, event.target.value)
-            }}
-            style={{
-              ...transparentInput,
-              marginBottom: 'clamp(18px, 3vw, 34px)',
-              fontSize: 'clamp(1.5rem, 4vw, 3.1rem)',
-              lineHeight: 1.08,
-            }}
+            isOpen={activeOpenCardId === ASSEMBLY_INDEX_CARD_ID}
+            isLocked={activeLockedCardId === ASSEMBLY_INDEX_CARD_ID}
+            onOpen={() => openCard(ASSEMBLY_INDEX_CARD_ID)}
+            onClose={closeCard}
+            onToggleLock={() => toggleCardLock(ASSEMBLY_INDEX_CARD_ID)}
+            onFocusCard={setFocusedCardId}
+            onNameChange={actions.onNameChange}
+            onReorderOperation={(operationId, direction) => (
+              actions.onReorderOperation(selectedAssembly.id, operationId, direction)
+            )}
+            onRemoveOperation={actions.onRemoveOperation}
+            onAddCard={addCard}
           />
-          <div className="assembly-index-card__title-list">
-            <div style={{ display: 'grid', alignContent: 'start', gap: 8 }}>
-              <ol style={{ margin: 0, paddingLeft: '1.45em', fontSize: 'clamp(0.8rem, 1.8vw, 1.35rem)', lineHeight: 1.55 }}>
-                {assemblyOperations.length ? assemblyOperations.map((operation, operationIndex) => (
-                  <li key={operation.id}>
-                    {readOnly ? (
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          setFocusedCardId(operation.id)
-                        }}
-                        style={{ padding: 0, border: 0, background: 'transparent', color: 'inherit', font: 'inherit', textAlign: 'left', cursor: 'pointer' }}
-                      >
-                        {nodeTitle(operation)}
-                      </button>
-                    ) : (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, width: '100%', minWidth: 0 }}>
-                        <input
-                          aria-label={`Card ${nodeTitle(operation)} name`}
-                          value={operation.data.name}
-                          placeholder="card name"
-                          onClick={(event) => event.stopPropagation()}
-                          onFocus={() => setFocusedCardId(operation.id)}
-                          onChange={(event) => onNameChange(operation.id, event.target.value)}
-                          style={{ ...transparentInput, flex: '1 1 auto', minWidth: 0, font: 'inherit' }}
-                        />
-                        <span style={{ display: 'inline-flex', gap: 2 }}>
-                          <button
-                            className="text-action"
-                            type="button"
-                            aria-label={`move ${nodeTitle(operation)} card up`}
-                            title="Move card up"
-                            disabled={operationIndex === 0}
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              onReorderOperation(selectedAssembly.id, operation.id, 'up')
-                            }}
-                          >
-                            ↑
-                          </button>
-                          <button
-                            className="text-action"
-                            type="button"
-                            aria-label={`move ${nodeTitle(operation)} card down`}
-                            title="Move card down"
-                            disabled={operationIndex === assemblyOperations.length - 1}
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              onReorderOperation(selectedAssembly.id, operation.id, 'down')
-                            }}
-                          >
-                            ↓
-                          </button>
-                        </span>
-                        <button
-                          className="text-action"
-                          type="button"
-                          aria-label={`remove ${nodeTitle(operation)} card`}
-                          title="Remove card"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            onRemoveOperation(operation.id)
-                          }}
-                          style={{ paddingInline: 4 }}
-                        >
-                          ×
-                        </button>
-                      </span>
-                    )}
-                  </li>
-                )) : <li style={{ color: 'var(--osa-muted)' }}>add the first instruction card.</li>}
-              </ol>
-              {!readOnly ? (
-                <button
-                  className="text-action"
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    addCard()
-                  }}
-                  style={{ justifySelf: 'start' }}
-                >
-                  + card
-                </button>
-              ) : null}
-            </div>
-          </div>
-            </>
-          ) : (
-            <button
-              className="assembly-card__summary"
-              type="button"
-              aria-label={`Open ${nodeTitle(selectedAssembly)} details`}
-              aria-expanded={false}
-              onClick={() => openCard(INDEX_CARD_ID)}
-            >
-              <strong className="assembly-card__summary-title">{nodeTitle(selectedAssembly)}</strong>
-              {assemblyOperations.length ? (
-                <ol className="assembly-index-card__summary-index" aria-label="instruction cards">
-                  {assemblyOperations.map((operation) => (
-                    <li key={operation.id}>{nodeTitle(operation)}</li>
-                  ))}
-                </ol>
-              ) : null}
-            </button>
-          )}
-        </article> : null}
+        ) : null}
 
         {assemblyOperations.map((operation) => {
           if (activeLockedCardId && activeLockedCardId !== operation.id) return null
-          const focused = activeFocusedCardId === operation.id
-          const tools = connectedTargets(
+
+          const operationTools = connectedTargets(
             operation.id,
             nodes,
             edges,
@@ -722,25 +319,25 @@ export function AssemblyView({
             /\b(tool|tools)\b/i,
           )
           const steps = stepsForOperation(operation.id, nodes, edges)
-          // Compact Assembly cards use precisely the same visual contract as
-          // the team-facing instructions: a Step contributes its one
-          // deliberately published canvas. Source slides and other
-          // authoring-only Visual links stay out of the instruction.
-          const stepCanvases = steps.flatMap((step) => {
-            const canvas = canvasOwnedByStep(step.id, nodes, edges)
-            // A team-facing instruction is intentionally opt-in. Authoring
-            // canvases, source slides, and empty work surfaces stay in the
-            // Assembly workbench until the author chooses to publish a
-            // finished, non-empty Step canvas.
+          const stepCanvasByStepId = new Map(steps.map((step) => [
+            step.id,
+            canvasOwnedByStep(step.id, nodes, edges),
+          ]))
+          // Compact Assembly cards use the same deliberately published Step
+          // canvas contract as the team-facing instructions.
+          const stepCanvases = steps.flatMap((step): AssemblyStepCanvas[] => {
+            const canvas = stepCanvasByStepId.get(step.id)
             return canvas
               && canvas.data.properties[OSA_PROPERTY.visualIncludeInInstructions] === 'true'
               && visualHasInstructionContent(canvas, nodes, edges)
-              ? [{ step, canvas }]
+              ? [{
+                  step,
+                  canvas,
+                  embeddedVisuals: visualEmbedsForCanvas(canvas.id, nodes, edges),
+                }]
               : []
           })
-          // Older OSA boards used one undirected "operation item" relation.
-          // Treat those as inputs so opening an existing board does not make
-          // its parts disappear alongside the newer structured in/out edges.
+          // Older boards used one undirected operation-item relationship.
           const legacyInputParts = connectedTargets(
             operation.id,
             nodes,
@@ -755,16 +352,10 @@ export function AssemblyView({
             OSA_RELATION.operationInput,
             /\b(parts? in|input|inputs|requires?|needs?)\b/i,
           )
-          // Once an operation has an explicit In list, it is authoritative.
-          // Keep old `operation-item` links as a display fallback only for
-          // boards that have not yet gained any structured input data.
           const inputParts = structuredInputParts.length
             ? structuredInputParts
             : legacyInputParts
           const availableParts = uniqueNodes(
-            // An Assembly is a part-like object too. Keep the current parent
-            // in the picker so someone can explicitly use it as an input or
-            // output when that is the real relationship for their work.
             [selectedAssembly],
             assemblyParts,
             nodes.filter(isPartLike),
@@ -772,540 +363,35 @@ export function AssemblyView({
           const toolDraftForOperation = toolDraftFor?.operationId === operation.id
             ? toolDraftFor
             : null
-          const isOpen = activeOpenCardId === operation.id
-          const focusCard = () => {
-            setFocusedCardId(operation.id)
-          }
-          const openOperation = () => openCard(operation.id)
 
           return (
-            <article
-              className={`assembly-card assembly-operation-card${isOpen ? ' is-focused is-open' : ' is-summary'}`}
-              style={{ ...cardShell, ...(isOpen ? {} : { padding: 0 }), ...cardFocusStyle(isOpen) }}
-              tabIndex={0}
+            <AssemblyOperationCard
               key={operation.id}
-              aria-label={`${nodeTitle(operation)} card`}
-              onClick={() => {
-                if (!isOpen) openOperation()
-              }}
-              onKeyDown={(event) => cardKeyDown(event, openOperation)}
-            >
-              {isOpen ? (
-                <>
-                <div className="assembly-card__focus-controls">
-                  <button
-                    className="assembly-card__close-button"
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      closeCard()
-                    }}
-                  >
-                    close details
-                  </button>
-                  <button
-                    className="assembly-card__lock-button"
-                    type="button"
-                    aria-pressed={activeLockedCardId === operation.id}
-                    aria-label={activeLockedCardId === operation.id
-                      ? `unlock ${nodeTitle(operation)} and show all cards`
-                      : `lock ${nodeTitle(operation)} in a single-card view`}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      toggleCardLock(operation.id)
-                    }}
-                  >
-                    {activeLockedCardId === operation.id ? 'unlock card view' : 'lock this card'}
-                  </button>
-                </div>
-
-              <div className="assembly-card__columns">
-                <div className="assembly-card__details">
-                  <input
-                    className="assembly-card__title"
-                    aria-label={`${nodeTitle(operation)} title`}
-                    placeholder="card title"
-                    value={operation.data.name}
-                    readOnly={readOnly}
-                    onFocus={focusCard}
-                    onChange={(event) => {
-                      if (!readOnly) onNameChange(operation.id, event.target.value)
-                    }}
-                    style={{
-                      ...transparentInput,
-                      // The View intentionally receives more width than the
-                      // editable facts column. Keep ordinary operation titles
-                      // fully legible in that narrower column instead of
-                      // letting a large display size clip their final words.
-                      fontSize: 'clamp(1.15rem, 2.25vw, 2.1rem)',
-                      lineHeight: 1.05,
-                    }}
-                  />
-                  <section
-                    aria-label={`${nodeTitle(operation)} parts and tools`}
-                    style={{ display: 'grid', gap: 8, minWidth: 0 }}
-                  >
-                    <strong style={{ fontSize: 'clamp(0.76rem, 1.5vw, 1.15rem)', fontWeight: 500 }}>
-                      parts &amp; tools
-                    </strong>
-
-                  <div style={fieldLabel}>
-                    <span>parts in</span>
-                    <div style={{ minWidth: 0 }}>
-                      <div className="assembly-linked-object-list" style={{ minHeight: '1.3em' }}>
-                        {inputParts.length
-                          ? inputParts.map((part, index) => (
-                            <span className="assembly-object-chip" key={part.id}>
-                              {index ? <span aria-hidden="true"> · </span> : null}
-                              <button
-                                className={appearanceAccentColor(part)
-                                  ? 'assembly-object-link assembly-object-link--accented'
-                                  : 'assembly-object-link'}
-                                type="button"
-                                style={semanticAccentStyle(part)}
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  onOpenNode(part.id)
-                                }}
-                              >
-                                {nodeTitle(part)}
-                              </button>
-                              {focused && !readOnly && onUnlinkPartInput ? (
-                                <button
-                                  className="assembly-object-unlink"
-                                  type="button"
-                                  title="remove from this instruction's in list"
-                                  aria-label={`remove ${nodeTitle(part)} from this instruction's in list`}
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    onUnlinkPartInput(operation.id, part.id)
-                                  }}
-                                >
-                                  <span aria-hidden="true">×</span> remove
-                                </button>
-                              ) : null}
-                            </span>
-                          ))
-                          : <span className="assembly-card__empty-link-list">link the parts or assemblies needed.</span>}
-                      </div>
-                      {focused && !readOnly ? (
-                        <select
-                          aria-label="link or add a part coming into this instruction"
-                          defaultValue=""
-                          onChange={(event) => {
-                            const partId = event.currentTarget.value
-                            event.currentTarget.value = ''
-                            if (partId === NEW_PART_OPTION) {
-                              onCreatePartForOperation?.(operation.id, 'input')
-                              return
-                            }
-                            if (partId) (onLinkPartInput ?? onLinkPart)(operation.id, partId)
-                          }}
-                          style={{ ...transparentInput, marginTop: 5, borderBottom: '1px solid var(--osa-border)' }}
-                        >
-                          <option value="">link or add a part or assembly…</option>
-                          {availableParts.map((part) => {
-                            const isLinked = inputParts.some((linkedPart) => linkedPart.id === part.id)
-                            return (
-                              <option value={part.id} disabled={isLinked} key={part.id}>
-                                {isLinked
-                                  ? `${nodeTitle(part)} · already in this instruction`
-                                  : nodeTitle(part)}
-                              </option>
-                            )
-                          })}
-                          {onCreatePartForOperation ? (
-                            <optgroup label="create">
-                              <option value={NEW_PART_OPTION}>+ add a part placeholder…</option>
-                            </optgroup>
-                          ) : null}
-                        </select>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  <div style={fieldLabel}>
-                    <span>tools</span>
-                    <div style={{ minWidth: 0 }}>
-                      <div className="assembly-linked-object-list" style={{ minHeight: '1.3em' }}>
-                        {tools.length
-                          ? tools.map((tool, index) => (
-                            <span className="assembly-object-chip" key={tool.id}>
-                              {index ? <span aria-hidden="true"> · </span> : null}
-                              <button
-                                className={appearanceAccentColor(tool)
-                                  ? 'assembly-object-link assembly-object-link--accented'
-                                  : 'assembly-object-link'}
-                                type="button"
-                                style={semanticAccentStyle(tool)}
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  onOpenNode(tool.id)
-                                }}
-                              >
-                                {nodeTitle(tool)}
-                              </button>
-                              {focused && !readOnly && onUnlinkTool ? (
-                                <button
-                                  className="assembly-object-unlink"
-                                  type="button"
-                                  title="remove from this instruction's tools list"
-                                  aria-label={`remove ${nodeTitle(tool)} from this instruction's tools list`}
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    onUnlinkTool(operation.id, tool.id)
-                                  }}
-                                >
-                                  <span aria-hidden="true">×</span> remove
-                                </button>
-                              ) : null}
-                            </span>
-                          ))
-                          : <span style={{ color: 'var(--osa-muted)' }}>add the tools needed here.</span>}
-                      </div>
-                      {focused && !readOnly ? (
-                        <select
-                          aria-label="link or add a tool for this instruction"
-                          defaultValue=""
-                          onChange={(event) => {
-                            const selectedValue = event.currentTarget.value
-                            event.currentTarget.value = ''
-                            if (selectedValue === NEW_TOOL_OPTION || selectedValue === PLACEHOLDER_TOOL_OPTION) {
-                              setToolDraftFor({
-                                operationId: operation.id,
-                                placeholder: selectedValue === PLACEHOLDER_TOOL_OPTION,
-                              })
-                              setToolDraft('')
-                              return
-                            }
-                            if (selectedValue) onLinkTool?.(operation.id, selectedValue)
-                          }}
-                          style={{ ...transparentInput, marginTop: 5, borderBottom: '1px solid var(--osa-border)' }}
-                        >
-                          <option value="">link or add a tool…</option>
-                          {toolInventory.length ? (
-                            <optgroup label="tool inventory">
-                              {toolInventory.map((tool) => {
-                                const isLinked = tools.some((linkedTool) => linkedTool.id === tool.id)
-                                return (
-                                  <option value={tool.id} disabled={isLinked} key={tool.id}>
-                                    {isLinked ? `${nodeTitle(tool)} · already in this instruction` : nodeTitle(tool)}
-                                  </option>
-                                )
-                              })}
-                            </optgroup>
-                          ) : null}
-                          <optgroup label="create">
-                            <option value={NEW_TOOL_OPTION}>+ add a tool…</option>
-                            <option value={PLACEHOLDER_TOOL_OPTION}>+ placeholder tool…</option>
-                          </optgroup>
-                        </select>
-                      ) : null}
-                      {toolDraftForOperation && !readOnly ? (
-                        <form
-                          style={{ display: 'flex', gap: 8, marginTop: 5 }}
-                          onSubmit={(event) => {
-                            event.preventDefault()
-                            const name = toolDraft.trim()
-                            if (!name) return
-                            onCreateTool(operation.id, name, {
-                              placeholder: toolDraftForOperation.placeholder,
-                            })
-                            setToolDraft('')
-                            setToolDraftFor(null)
-                          }}
-                        >
-                          <input
-                            aria-label={toolDraftForOperation.placeholder ? 'new tool placeholder' : 'new linked tool'}
-                            placeholder={toolDraftForOperation.placeholder ? 'tool to determine' : 'tool name'}
-                            value={toolDraft}
-                            onChange={(event) => setToolDraft(event.target.value)}
-                            style={{ ...transparentInput, borderBottom: '1px solid var(--osa-border)' }}
-                          />
-                          <button className="text-action" type="submit">add</button>
-                          <button
-                            className="text-action"
-                            type="button"
-                            onClick={() => {
-                              setToolDraft('')
-                              setToolDraftFor(null)
-                            }}
-                          >
-                            cancel
-                          </button>
-                        </form>
-                      ) : null}
-                    </div>
-                  </div>
-                  </section>
-
-                  <section style={{ display: 'grid', gap: 5, minWidth: 0 }} aria-label={`${nodeTitle(operation)} steps`}>
-                    <strong style={{ fontSize: 'clamp(0.76rem, 1.5vw, 1.15rem)', fontWeight: 500 }}>steps</strong>
-                    {steps.length === 0 ? (
-                      <textarea
-                        aria-label={`${nodeTitle(operation)} steps`}
-                        placeholder="write the first instruction here."
-                        rows={focused ? 6 : 3}
-                        value={operation.data.text}
-                        readOnly={readOnly}
-                        onFocus={focusCard}
-                        onChange={(event) => {
-                          if (!readOnly) onTextChange(operation.id, event.target.value)
-                        }}
-                        style={{ ...transparentInput, minHeight: focused ? '7.5em' : '3.9em', resize: 'none', lineHeight: 1.35 }}
-                      />
-                    ) : null}
-                    {steps.length ? (
-                      <ol style={{ display: 'grid', gap: 14, margin: 0, padding: 0, listStyle: 'none' }}>
-                        {steps.map((step, stepIndex) => {
-                          const stepCanvas = canvasOwnedByStep(step.id, nodes, edges)
-                          const includeStepCanvas = stepCanvas?.data.properties[
-                            OSA_PROPERTY.visualIncludeInInstructions
-                          ] === 'true'
-                          return (
-                            <li key={step.id} style={{ display: 'grid', gap: 7, minWidth: 0 }}>
-                              <div style={{ display: 'grid', gap: 4, minWidth: 0 }}>
-                                <span style={{ color: 'var(--osa-muted)', fontSize: '0.76rem', fontWeight: 600 }}>
-                                  Step {stepIndex + 1}
-                                </span>
-                                <input
-                                  aria-label={`Step ${stepIndex + 1} name`}
-                                  value={step.data.name}
-                                  readOnly={readOnly}
-                                  onClick={(event) => event.stopPropagation()}
-                                  onFocus={focusCard}
-                                  onChange={(event) => {
-                                    if (!readOnly) onNameChange(step.id, event.target.value)
-                                  }}
-                                  style={{ ...transparentInput, width: '100%', fontSize: '1rem', fontWeight: 600 }}
-                                />
-                              </div>
-                              {!readOnly ? (
-                                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                                  <span style={{ display: 'inline-flex', gap: 2 }}>
-                                    <button
-                                      className="text-action"
-                                      type="button"
-                                      aria-label={`move ${nodeTitle(step)} up`}
-                                      title="Move up"
-                                      disabled={stepIndex === 0}
-                                      onClick={(event) => {
-                                        event.stopPropagation()
-                                        onReorderStep(operation.id, step.id, 'up')
-                                      }}
-                                    >
-                                      ↑
-                                    </button>
-                                    <button
-                                      className="text-action"
-                                      type="button"
-                                      aria-label={`move ${nodeTitle(step)} down`}
-                                      title="Move down"
-                                      disabled={stepIndex === steps.length - 1}
-                                      onClick={(event) => {
-                                        event.stopPropagation()
-                                        onReorderStep(operation.id, step.id, 'down')
-                                      }}
-                                    >
-                                      ↓
-                                    </button>
-                                  </span>
-                                  <button
-                                    className="text-action"
-                                    type="button"
-                                    onClick={(event) => {
-                                      event.stopPropagation()
-                                      const visualId = onEnsureStepCanvas(step.id)
-                                      if (visualId) setEditingVisual(visualId, operation.id)
-                                    }}
-                                  >
-                                    {stepCanvas ? 'canvas' : '+ canvas'}
-                                  </button>
-                                  <button
-                                    className="text-action"
-                                    type="button"
-                                    aria-label={`remove ${nodeTitle(step)}`}
-                                    onClick={(event) => {
-                                      event.stopPropagation()
-                                      onRemoveStep(operation.id, step.id)
-                                    }}
-                                  >
-                                    remove
-                                  </button>
-                                  {stepCanvas && onPropertyChange ? (
-                                    <label
-                                      style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: '0.72rem', whiteSpace: 'nowrap' }}
-                                      onClick={(event) => event.stopPropagation()}
-                                    >
-                                      <input
-                                        type="checkbox"
-                                        aria-label={`Show ${nodeTitle(step)} canvas in Assembly Instructions`}
-                                        checked={includeStepCanvas}
-                                        onChange={(event) => onPropertyChange(
-                                          stepCanvas.id,
-                                          OSA_PROPERTY.visualIncludeInInstructions,
-                                          event.currentTarget.checked ? 'true' : 'false',
-                                        )}
-                                      />
-                                      show
-                                    </label>
-                                  ) : null}
-                                </div>
-                              ) : null}
-                              <textarea
-                                aria-label={`${nodeTitle(step)} instructions`}
-                                placeholder="describe this step."
-                                rows={focused ? 3 : 2}
-                                value={step.data.text}
-                                readOnly={readOnly}
-                                onClick={(event) => event.stopPropagation()}
-                                onFocus={focusCard}
-                                onChange={(event) => {
-                                  if (!readOnly) onTextChange(step.id, event.target.value)
-                                }}
-                                style={{
-                                  ...transparentInput,
-                                  minHeight: focused ? '3.9em' : '2.7em',
-                                  resize: 'none',
-                                  color: 'var(--osa-text)',
-                                  fontSize: '0.95rem',
-                                  lineHeight: 1.45,
-                                }}
-                              />
-                            </li>
-                          )
-                        })}
-                      </ol>
-                    ) : null}
-                    {focused && !readOnly ? (
-                      <button
-                        className="text-action"
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          onCreateStep(operation.id)
-                        }}
-                        style={{ justifySelf: 'start' }}
-                      >
-                        add step
-                      </button>
-                    ) : null}
-                  </section>
-                </div>
-
-                <section className="assembly-card__view" aria-label={`${nodeTitle(operation)} visuals`}>
-                  <header className="assembly-card__view-header">
-                    <h2>visuals</h2>
-                  </header>
-                  {stepCanvases.length ? (
-                    <div className="assembly-instructions-view__canvas-list">
-                      {stepCanvases.map(({ step, canvas }, index) => (
-                        <figure className="assembly-instructions-view__step-canvas" key={canvas.id}>
-                          <figcaption>
-                            <strong>Step {index + 1}</strong>
-                            <span>{nodeTitle(step)}</span>
-                          </figcaption>
-                          <button
-                            className="assembly-instructions-view__open-canvas"
-                            type="button"
-                            aria-label={`open ${nodeTitle(step)} visual`}
-                            title="Open visual"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              setEditingVisual(canvas.id, operation.id)
-                            }}
-                          >
-                            <VisualCanvasPreview
-                              visual={canvas}
-                              embeddedVisuals={visualEmbedsForCanvas(canvas.id, nodes, edges)}
-                              annotationTargets={annotationTargets}
-                              className="assembly-card__visual-preview"
-                            />
-                          </button>
-                        </figure>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="assembly-card__empty-link-list">publish a step canvas to show it here.</p>
-                  )}
-                </section>
-              </div>
-                </>
-              ) : (
-                <button
-                  className={stepCanvases.length
-                    ? 'assembly-card__summary assembly-card__summary--with-canvases'
-                    : 'assembly-card__summary'}
-                  type="button"
-                  aria-label={`Open ${nodeTitle(operation)} details`}
-                  aria-expanded={false}
-                  onClick={openOperation}
-                >
-                  <span className="assembly-card__summary-content">
-                    <strong className="assembly-card__summary-title">{nodeTitle(operation)}</strong>
-                    <span className="assembly-card__summary-parts-tools">
-                      <b>parts &amp; tools</b>
-                      <span className="assembly-card__summary-fields">
-                        {inputParts.length ? (
-                          <span>
-                            <b>parts in</b>
-                            {inputParts.map(nodeTitle).join(' · ')}
-                          </span>
-                        ) : null}
-                        {tools.length ? (
-                          <span>
-                            <b>tools</b>
-                            {tools.map(nodeTitle).join(' · ')}
-                          </span>
-                        ) : null}
-                      </span>
-                    </span>
-                    {steps.length ? (
-                      <span className="assembly-card__summary-steps">
-                        <b>steps</b>
-                        {steps.map((step, stepIndex) => (
-                          <span className="assembly-card__summary-step" key={step.id}>
-                            <strong>Step {stepIndex + 1} · {nodeTitle(step)}</strong>
-                            {step.data.text.trim() ? <span>{step.data.text}</span> : null}
-                          </span>
-                        ))}
-                      </span>
-                    ) : operation.data.text.trim() ? (
-                      <span className="assembly-card__summary-steps">
-                        <b>steps</b>
-                        <span className="assembly-card__summary-notes">
-                          {operation.data.text}
-                        </span>
-                      </span>
-                    ) : null}
-                  </span>
-                  {stepCanvases.length ? (
-                    <span
-                      className="assembly-card__summary-view"
-                      aria-label={`${nodeTitle(operation)} visuals`}
-                    >
-                      <span className="assembly-card__summary-view-header">visuals</span>
-                      <span className="assembly-card__summary-canvas-list">
-                        {stepCanvases.map(({ step, canvas }, stepCanvasIndex) => (
-                          <span className="assembly-card__summary-step-canvas" key={canvas.id}>
-                            <span className="assembly-card__summary-step-canvas-label">
-                              <b>Step {stepCanvasIndex + 1}</b>
-                              <span>{nodeTitle(step)}</span>
-                            </span>
-                            <VisualCanvasPreview
-                              visual={canvas}
-                              embeddedVisuals={visualEmbedsForCanvas(canvas.id, nodes, edges)}
-                              annotationTargets={annotationTargets}
-                              className="assembly-card__visual-preview assembly-card__summary-canvas-preview"
-                            />
-                          </span>
-                        ))}
-                      </span>
-                    </span>
-                  ) : null}
-                </button>
-              )}
-            </article>
+              operation={operation}
+              inputParts={inputParts}
+              tools={operationTools}
+              availableParts={availableParts}
+              toolInventory={toolInventory}
+              steps={steps}
+              stepCanvasByStepId={stepCanvasByStepId}
+              stepCanvases={stepCanvases}
+              annotationTargets={annotationTargets}
+              focused={activeFocusedCardId === operation.id}
+              isOpen={activeOpenCardId === operation.id}
+              isLocked={activeLockedCardId === operation.id}
+              readOnly={readOnly}
+              toolDraft={toolDraft}
+              toolDraftFor={toolDraftForOperation}
+              actions={actions}
+              onOpenNode={onOpenNode}
+              onOpen={() => openCard(operation.id)}
+              onClose={closeCard}
+              onToggleLock={() => toggleCardLock(operation.id)}
+              onFocusCard={() => setFocusedCardId(operation.id)}
+              onEditVisual={(visualId) => setEditingVisual(visualId, operation.id)}
+              onToolDraftChange={setToolDraft}
+              onToolDraftForChange={setToolDraftFor}
+            />
           )
         })}
       </div>

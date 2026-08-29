@@ -2,6 +2,7 @@ import {
   useId,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
+import './SketchRendering.css'
 import type {
   SketchAnnotationTarget,
   SketchDocument,
@@ -672,4 +673,3 @@ export function SketchPreview({
     </svg>
   )
 }
-

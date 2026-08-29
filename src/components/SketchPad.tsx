@@ -6,6 +6,7 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
+import './SketchPad.css'
 import {
   cloneSketchDocument,
   type SketchCompoundPart,

@@ -1,0 +1,68 @@
+.space-toolbar {
+  position: absolute;
+  top: 58px;
+  left: 50%;
+  z-index: 25;
+  display: flex;
+  box-sizing: border-box;
+  max-width: calc(100vw - 32px);
+  align-items: center;
+  gap: clamp(34px, 5vw, 64px);
+  overflow-x: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--osa-text);
+  font-size: 0.84rem;
+  font-weight: 500;
+  letter-spacing: 0.012em;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.space-toolbar__control {
+  display: flex;
+  flex: none;
+  align-items: center;
+}
+
+.space-toolbar__control select {
+  appearance: none;
+  -webkit-appearance: none;
+  field-sizing: content;
+  max-width: 190px;
+  padding: 6px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  line-height: 1.2;
+  text-align: center;
+  transition: color 120ms ease;
+}
+
+.space-toolbar__control select:hover {
+  color: var(--osa-text);
+}
+
+.space-toolbar__control select:focus-visible {
+  border-radius: 3px;
+  outline: 1px solid var(--osa-focus);
+  outline-offset: 3px;
+}
+
+@media (max-width: 700px) {
+  .space-toolbar {
+    top: 78px;
+    width: calc(100% - 28px);
+    max-width: none;
+    justify-content: center;
+    gap: clamp(26px, 7vw, 42px);
+  }
+
+  .workspace-menu-hidden .space-toolbar {
+    top: 24px;
+  }
+}

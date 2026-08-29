@@ -1,4 +1,5 @@
 import type { GraphEdge } from '../graph/graphEdge'
+import './EdgeHoverCard.css'
 
 type EdgeHoverCardProps = {
   edge: GraphEdge

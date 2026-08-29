@@ -1,14 +1,10 @@
+/* Assembly page shell and styles shared by more than one card component. */
 .assembly-view {
   max-width: 1240px;
 }
 
 .assembly-view .work-view__header {
   padding-inline: clamp(4px, 1vw, 14px);
-}
-
-/* A quiet page label, intentionally lighter than the editable assembly name. */
-.assembly-view .assembly-view__context-label {
-  color: #9a9a9a;
 }
 
 .assembly-view__header {
@@ -23,92 +19,28 @@
   gap: 10px 18px;
 }
 
-.assembly-view__assembly-picker {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: #555;
-  font-size: 0.78rem;
-}
-
-.assembly-view__assembly-picker select {
-  max-width: min(260px, 42vw);
-  padding: 4px 8px;
-  border: 1px solid #b9b9b9;
-  border-radius: 4px;
-  background: #fff;
-  color: #171717;
-  font: inherit;
-}
-
-/* The author chooses the human-readable portion of /assembly/<name>. */
-.assembly-view__share-slug {
-  box-sizing: border-box;
-  width: min(21ch, 40vw);
-  min-width: 11ch;
-  padding: 3px 6px;
-  border: 1px solid var(--osa-border);
-  border-radius: 4px;
-  background: var(--osa-input);
-  color: var(--osa-text);
-  font: inherit;
-  font-size: 0.84rem;
-}
-
-.assembly-view__shared-label {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 8px;
-  border: 1px solid #9dcdb8;
-  border-radius: 999px;
-  background: #effaf3;
-  color: #276340;
-  font-size: 0.75rem;
-  white-space: nowrap;
-}
-
-.assembly-view__share-status {
+.assembly-view__empty-state {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 10px;
-  margin: -10px 0 18px;
-  padding: 9px 12px;
-  border: 1px solid #c5d9ce;
-  border-radius: 6px;
-  background: #f6fcf8;
-  color: #24563a;
-  font-size: 0.86rem;
-}
-
-.assembly-view__share-status input {
-  width: 100%;
-  min-width: 0;
-  padding: 5px 7px;
-  border: 1px solid #a7c5b3;
-  border-radius: 4px;
-  background: #fff;
-  color: #171717;
-  font: inherit;
-}
-
-/* Locking is a temporary reading/working mode. It changes neither the
-   instruction data nor which card is focused; it only hides the other cards
-   until the builder deliberately unlocks this one. */
-.assembly-view__lock-status {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  justify-items: start;
   gap: 12px;
-  margin: 0 0 18px;
-  padding: 8px 12px;
-  border: 1px solid #8eb9a0;
-  border-radius: 6px;
-  background: #f3faf5;
-  color: #24563a;
-  font-size: 0.85rem;
+  padding: 28px;
+  border: 1px solid var(--osa-border);
+  border-radius: 8px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
 }
 
+.assembly-view__empty-state p {
+  margin: 0;
+}
+
+.assembly-view__empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+}
+
+/* Shared open-card controls used by the index and instruction cards. */
 .assembly-card__focus-controls {
   display: flex;
   justify-content: flex-end;
@@ -117,16 +49,20 @@
   margin: -3px 0 8px;
 }
 
-.assembly-card__close-button {
+.assembly-card__close-button,
+.assembly-card__lock-button {
   min-height: 27px;
   padding: 4px 8px;
-  border: 1px solid var(--osa-border);
   border-radius: 999px;
-  background: var(--osa-surface);
-  color: var(--osa-muted);
   cursor: pointer;
   font: inherit;
   font-size: 0.78rem;
+}
+
+.assembly-card__close-button {
+  border: 1px solid var(--osa-border);
+  background: var(--osa-surface);
+  color: var(--osa-muted);
 }
 
 .assembly-card__close-button:hover,
@@ -137,323 +73,17 @@
 }
 
 .assembly-card__lock-button {
-  min-height: 27px;
-  padding: 4px 8px;
-  border: 1px solid #8eb9a0;
-  border-radius: 999px;
-  background: #fff;
-  color: #24563a;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.78rem;
+  border: 1px solid var(--osa-positive-border);
+  background: var(--osa-surface-raised);
+  color: var(--osa-positive-text);
 }
 
 .assembly-card__lock-button:hover,
 .assembly-card__lock-button:focus-visible,
 .assembly-card__lock-button[aria-pressed='true'] {
-  border-color: #4d8b66;
-  background: #e6f5eb;
+  border-color: var(--osa-positive-border);
+  background: var(--osa-positive-surface);
   outline: 0;
-}
-
-.assembly-view__empty-state {
-  display: grid;
-  justify-items: start;
-  gap: 12px;
-  padding: 28px;
-  border: 1px solid #d2d2d2;
-  border-radius: 8px;
-  background: #fff;
-}
-
-.assembly-view__empty-state p {
-  margin: 0;
-}
-
-.assembly-view__empty-actions,
-.assembly-index-card__create-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px 18px;
-}
-
-/* The cover is deliberately only a title and an ordered table of contents. */
-.assembly-index-card__title-list {
-  display: grid;
-  align-content: start;
-  gap: 8px;
-  min-width: 0;
-}
-
-.assembly-index-card__objects {
-  display: grid;
-  grid-template-columns: minmax(110px, 0.25fr) minmax(0, 1fr);
-  gap: 8px;
-  margin-top: 20px;
-  padding-top: 12px;
-  border-top: 1px solid #e0e0e0;
-  color: #555;
-  font-size: clamp(0.72rem, 1.25vw, 0.95rem);
-}
-
-.assembly-index-card__objects > div {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 12px;
-}
-
-/* The main Assembly card is an overview of the real ordered Step objects.
-   It stays compact, but it no longer hides the work beneath each card. */
-.assembly-index-card__steps {
-  display: grid;
-  gap: 8px;
-  margin-top: 18px;
-  padding-top: 14px;
-  border-top: 1px solid var(--osa-border-subtle);
-}
-
-.assembly-index-card__steps > strong,
-.assembly-index-card__summary-steps-label {
-  color: var(--osa-text);
-  font-size: 0.84rem;
-  font-weight: 600;
-  text-transform: lowercase;
-}
-
-.assembly-index-card__steps ol {
-  display: grid;
-  gap: 9px;
-  margin: 0;
-  padding-left: 1.35em;
-}
-
-.assembly-index-card__steps li {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.assembly-index-card__steps li > span,
-.assembly-index-card__steps li > p {
-  margin: 0;
-  color: var(--osa-muted);
-  font-size: 0.84rem;
-  line-height: 1.35;
-}
-
-.assembly-index-card__summary-steps {
-  display: grid;
-  gap: 5px;
-  margin-top: 5px;
-  padding-top: 9px;
-  border-top: 1px solid var(--osa-border-subtle);
-}
-
-.assembly-index-card__summary-step {
-  display: grid;
-  gap: 1px;
-  min-width: 0;
-  color: var(--osa-muted);
-  font-size: 0.8rem;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-}
-
-.assembly-index-card__summary-step b {
-  color: var(--osa-text);
-  font-size: 0.9em;
-  font-weight: 600;
-}
-
-/* The collapsed Assembly cover deliberately matches a simple first slide:
-   project title plus the ordered instruction card names, without inventory,
-   import provenance, or editor terminology. */
-.assembly-index-card__summary-index {
-  display: grid;
-  gap: 4px;
-  margin: 4px 0 0;
-  padding-left: 1.35em;
-  color: var(--osa-text);
-  font-size: clamp(0.84rem, 1.45vw, 1.05rem);
-  line-height: 1.4;
-}
-
-/* Project-wide meaning belongs beside the Assembly's real inventory. The
-   table only designates data here; individual views choose how to use it. */
-.assembly-semantic-table {
-  display: grid;
-  grid-template-columns: minmax(110px, 0.25fr) minmax(0, 1fr);
-  gap: 8px;
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px solid var(--osa-border-subtle, #e0e0e0);
-  color: var(--osa-muted);
-  font-size: clamp(0.72rem, 1.25vw, 0.95rem);
-}
-
-.assembly-semantic-table table {
-  width: 100%;
-  border-collapse: collapse;
-  color: inherit;
-  font: inherit;
-}
-
-.assembly-semantic-table th,
-.assembly-semantic-table td {
-  padding: 5px 8px 5px 0;
-  border-bottom: 1px solid var(--osa-border-subtle, #ececec);
-  text-align: left;
-  vertical-align: middle;
-}
-
-.assembly-semantic-table th {
-  color: var(--osa-muted);
-  font-size: 0.78em;
-  font-weight: 600;
-  text-transform: lowercase;
-}
-
-.assembly-semantic-table__color-control {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-}
-
-.assembly-semantic-table__color-control input[type='color'] {
-  width: 22px;
-  height: 22px;
-  padding: 1px;
-  border: 1px solid var(--osa-border, #bdbdbd);
-  border-radius: 3px;
-  background: transparent;
-  cursor: pointer;
-}
-
-.assembly-semantic-table__color-control output {
-  min-width: 3.3em;
-  overflow: hidden;
-  color: inherit;
-  font: inherit;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.assembly-semantic-table__default {
-  padding: 1px 5px;
-  border: 1px solid var(--osa-border, #bdbdbd);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--osa-muted);
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.86em;
-  line-height: 1.25;
-}
-
-.assembly-semantic-table__default:hover,
-.assembly-semantic-table__default:focus-visible,
-.assembly-semantic-table__default[aria-pressed='true'] {
-  border-color: var(--osa-text);
-  color: var(--osa-text);
-  outline: 0;
-}
-
-.assembly-index-card__create-actions {
-  margin-top: 14px;
-}
-
-.assembly-linked-object-list {
-  overflow-wrap: anywhere;
-}
-
-/* A relation is deliberately more prominent than an empty prose field: it
-   invites the builder to link or create the real project object. */
-.assembly-card__empty-link-list {
-  color: #888;
-  font-style: italic;
-}
-
-.assembly-operation-card .assembly-linked-object-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 0.2em;
-}
-
-/* A card owns links, not the linked objects themselves. Keep that distinction
-   visible: open the object by clicking its name, or remove only this card's
-   relationship with the compact adjacent control. */
-.assembly-object-chip {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.2em;
-  max-width: 100%;
-}
-
-.assembly-object-unlink {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.16em;
-  padding: 0 0.22em;
-  border: 1px solid #c9c9c9;
-  border-radius: 999px;
-  background: #fff;
-  color: #5d5d5d;
-  font: inherit;
-  font-size: 0.78em;
-  line-height: 1.35;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.assembly-object-unlink:hover,
-.assembly-object-unlink:focus-visible {
-  border-color: #a84b4b;
-  background: #fff3f3;
-  color: #8d2525;
-  outline: 0;
-}
-
-.assembly-operation-card select {
-  width: 100%;
-  min-width: 0;
-  color: inherit;
-  font: inherit;
-}
-
-.assembly-object-link {
-  padding: 0;
-  border: 0;
-  border-bottom: 1px solid transparent;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.assembly-object-link:hover,
-.assembly-object-link:focus-visible {
-  border-bottom-color: currentColor;
-  outline: 0;
-}
-
-/* A semantic accent comes from the canonical Part/Tool (or an intentional
-   Visual override). It coordinates labels and visual cards without tinting
-   source pixels or changing a reusable canvas's authored content. */
-.assembly-object-link--accented,
-.assembly-visual-label--accented {
-  color: var(--osa-semantic-accent);
-}
-
-.assembly-card__visual-accent {
-  padding-left: 8px;
-  border-left: 3px solid var(--osa-semantic-accent);
-}
-
-.assembly-card input[readonly],
-.assembly-card textarea[readonly] {
-  cursor: default;
 }
 
 .assembly-card-board {
@@ -461,8 +91,8 @@
   padding: clamp(20px, 4vw, 52px);
   border-radius: 14px;
   background:
-    linear-gradient(rgb(255 255 255 / 54%), rgb(255 255 255 / 54%)),
-    #ececea;
+    linear-gradient(var(--osa-board-overlay), var(--osa-board-overlay)),
+    var(--osa-surface);
 }
 
 .assembly-card-board.is-locked {
@@ -476,7 +106,7 @@
 
 .assembly-card:not(.is-focused):hover,
 .assembly-card:not(.is-focused):focus-visible {
-  box-shadow: 0 12px 28px rgb(0 0 0 / 11%) !important;
+  box-shadow: 0 12px 28px rgb(0 0 0 / 38%) !important;
   outline: 2px solid rgb(91 206 250 / 42%);
   outline-offset: 3px;
   transform: translateY(-2px);
@@ -487,19 +117,16 @@
   justify-self: center;
 }
 
-/* Assembly begins as a light, preview-like document. A compact card exposes
-   only the facts that help someone choose it; clicking it opens the same
-   authoring card and callbacks that have always backed this view. */
 .assembly-card.is-summary {
   overflow: hidden;
 }
 
 .assembly-card__summary {
   display: grid;
+  box-sizing: border-box;
   width: 100%;
   min-width: 0;
   gap: 7px;
-  box-sizing: border-box;
   padding: clamp(15px, 2.5vw, 26px) clamp(16px, 3vw, 34px);
   border: 0;
   background: transparent;
@@ -509,30 +136,11 @@
   text-align: left;
 }
 
-.assembly-card__summary--with-canvases {
-  grid-template-columns: minmax(0, 0.78fr) minmax(0, 1.22fr);
-  align-items: start;
-  gap: clamp(18px, 4vw, 48px);
-}
-
-.assembly-card__summary-content {
-  display: grid;
-  min-width: 0;
-  gap: 7px;
-}
-
 .assembly-card__summary:hover,
 .assembly-card__summary:focus-visible {
   background: var(--osa-hover-surface);
   outline: 2px solid var(--osa-focus);
   outline-offset: -2px;
-}
-
-.assembly-card__summary-kicker {
-  color: var(--osa-muted);
-  font-size: 0.74rem;
-  line-height: 1.2;
-  text-transform: lowercase;
 }
 
 .assembly-card__summary-title {
@@ -544,146 +152,24 @@
   overflow-wrap: anywhere;
 }
 
-.assembly-card__summary-meta,
-.assembly-card__summary-notes {
+.assembly-card__empty-link-list {
   color: var(--osa-muted);
-  font-size: 0.86rem;
-  line-height: 1.4;
+  font-style: italic;
 }
 
-.assembly-card__summary-notes {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+/* A semantic accent comes from the canonical Part or Tool. */
+.assembly-object-link--accented {
+  color: var(--osa-semantic-accent);
 }
 
-.assembly-card__summary-fields {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
-  gap: 8px 18px;
-  color: var(--osa-muted);
-  font-size: 0.82rem;
-  line-height: 1.35;
-}
-
-.assembly-card__summary-fields > span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.assembly-card__summary-fields b {
-  display: block;
-  margin-bottom: 1px;
-  color: var(--osa-text);
-  font-size: 0.88em;
-  font-weight: 600;
-  text-transform: lowercase;
-}
-
-.assembly-card__summary-parts-tools {
-  display: grid;
-  gap: 5px;
-  margin-top: 3px;
-  padding-top: 10px;
-  border-top: 1px solid var(--osa-border-subtle);
-}
-
-.assembly-card__summary-parts-tools > b {
-  color: var(--osa-text);
-  font-size: 0.82rem;
-  font-weight: 600;
-  text-transform: lowercase;
-}
-
-.assembly-card__summary-steps {
-  display: grid;
-  gap: 7px;
-  margin-top: 3px;
-  padding-top: 10px;
-  border-top: 1px solid var(--osa-border-subtle);
-}
-
-.assembly-card__summary-steps > b {
-  color: var(--osa-text);
-  font-size: 0.82rem;
-  font-weight: 600;
-  text-transform: lowercase;
-}
-
-.assembly-card__summary-step {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-  color: var(--osa-muted);
-  font-size: 0.88rem;
-  line-height: 1.4;
-  overflow-wrap: anywhere;
-}
-
-.assembly-card__summary-step strong {
-  color: var(--osa-text);
-  font-weight: 600;
-}
-
-/* A compact authoring card keeps the exact Step -> Canvas projection that a
-   teammate sees in Assembly Instructions. It is a readable preview only;
-   clicking it opens the card's full authoring controls. */
-.assembly-card__summary-view {
-  display: grid;
-  min-width: 0;
-  border: 1px solid #d8d8d8;
-  border-radius: 3px;
-  overflow: hidden;
-  background: #fafafa;
-}
-
-.assembly-card__summary-view-header {
-  display: block;
-  padding: 8px 10px;
-  border-bottom: 1px solid #e4e4e4;
-  background: #fff;
-  /* The preview itself is deliberately a light paper surface in either OSA
-     theme, so its labels need an explicit ink color rather than dark-mode
-     application text. */
-  color: #262626;
-  font-size: clamp(0.82rem, 1.5vw, 1.1rem);
-  font-weight: 600;
-}
-
-.assembly-card__summary-canvas-list {
-  display: grid;
-  gap: 12px;
-  padding: clamp(10px, 1.5vw, 18px);
-}
-
-.assembly-card__summary-step-canvas {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-}
-
-.assembly-card__summary-step-canvas-label {
-  display: grid;
-  gap: 1px;
-  color: #656565;
-  font-size: 0.78rem;
-  line-height: 1.3;
-}
-
-.assembly-card__summary-step-canvas-label b {
-  color: #262626;
-  font-size: 0.86rem;
-  font-weight: 600;
-}
-
-.assembly-card__summary-canvas-preview {
-  pointer-events: none;
+.assembly-card input[readonly],
+.assembly-card textarea[readonly] {
+  cursor: default;
 }
 
 .assembly-card input::placeholder,
 .assembly-card textarea::placeholder {
-  color: #8a8a8a;
+  color: var(--osa-muted);
   opacity: 1;
 }
 
@@ -696,24 +182,7 @@
   max-width: 100%;
 }
 
-/* A card only shows a live window onto a Visual. Clicking it opens the
-   in-place editor; the source image and every vector/pen layer are composed
-   from the same Visual data used by other cards. */
-.assembly-card__visual-preview {
-  display: block;
-  width: 100%;
-  /* Every card canvas gets the same preview slot. The SVG keeps its own
-     aspect ratio inside this viewport instead of making a tall drawing take
-     over the whole card. */
-  height: clamp(180px, 24vw, 260px);
-  min-height: 0;
-  border: 1px solid #d8d8d8;
-  background: #fff;
-}
-
-/* The instruction document keeps its editable facts on the left and gives the
-   View more room. A View is a projection: it can show the source slide and
-   images owned by linked parts or tools without copying them. */
+/* Shared two-column document layout used by authoring and read-only output. */
 .assembly-card__columns {
   display: grid;
   grid-template-columns: minmax(0, 0.78fr) minmax(0, 1.22fr);
@@ -729,19 +198,16 @@
   min-width: 0;
 }
 
-.assembly-card__title {
-  margin-bottom: clamp(12px, 2vw, 24px);
-}
-
 .assembly-card__view {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   min-width: 0;
   min-height: 0;
-  border: 1px solid #d8d8d8;
-  border-radius: 3px;
   overflow: hidden;
-  background: #fafafa;
+  border: 1px solid var(--osa-border);
+  border-radius: 3px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
 }
 
 .assembly-card__view-header {
@@ -750,8 +216,8 @@
   justify-content: space-between;
   gap: 12px;
   padding: 8px 10px;
-  border-bottom: 1px solid #e4e4e4;
-  background: #fff;
+  border-bottom: 1px solid var(--osa-border);
+  background: var(--osa-surface);
 }
 
 .assembly-card__view-header h2,
@@ -759,531 +225,24 @@
   margin: 0;
 }
 
-/* Assembly is a document authoring surface, not the project inventory.
-   A card keeps one calm Visuals section: only non-empty canvases owned by its
-   own Steps. Part/tool libraries remain available in Space without becoming
-   a second, confusing visual catalog inside every instruction. */
-
 .assembly-card__view-header h2 {
   font-size: clamp(0.82rem, 1.5vw, 1.1rem);
   font-weight: 600;
 }
 
 .assembly-card__view-header p {
-  color: #777;
+  color: var(--osa-muted);
   font-size: clamp(0.64rem, 1.05vw, 0.8rem);
   line-height: 1.35;
   text-align: right;
 }
 
-/*
- * The right column is a vertical collection of intentionally bounded canvas
- * sections, not one ever-growing overlay. The operation's existing source
- * slide gets its own square first section. Later square sections are created
- * explicitly, then populated only with the reusable project visuals a person
- * selects for that section.
- */
-.assembly-card__canvas-stack {
-  display: grid;
-  min-width: 0;
-  padding: clamp(5px, 1vw, 12px);
-  background: #f8f8f6;
-}
-
-.assembly-card__canvas-stack-item {
-  display: grid;
-  min-width: 0;
-}
-
-.assembly-card__canvas-divider {
-  height: 1px;
-  margin: clamp(18px, 3vw, 34px) clamp(2px, 1vw, 10px);
-  background: #d9d9d5;
-}
-
-.assembly-card__canvas-section {
-  min-width: 0;
-}
-
-/* Every current canvas section is square. This gives a predictable, visible
-   work area while leaving a future variable-height section model possible. */
-.assembly-card__canvas-section-surface {
-  position: relative;
-  isolation: isolate;
-  width: 100%;
-  aspect-ratio: 1 / 1;
-  overflow: hidden;
-  border: 1px solid #c9c9c4;
-  background:
-    radial-gradient(circle at 1px 1px, rgb(90 90 90 / 14%) 1px, transparent 0) 0 0 / 14px 14px,
-    #f4f4f2;
-}
-
-.assembly-card__canvas-section.is-source .assembly-card__canvas-section-surface {
-  background: #fff;
-}
-
-.assembly-card__canvas-section-heading {
-  position: absolute;
-  z-index: 4;
-  top: 0;
-  right: 0;
-  left: 0;
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  margin: 0;
-  padding: 6px 8px;
-  border-bottom: 1px solid rgb(204 204 198 / 82%);
-  background: rgb(255 255 255 / 84%);
-  color: #4f4f4c;
-  font-size: clamp(0.62rem, 1vw, 0.78rem);
-  line-height: 1.2;
-  pointer-events: none;
-}
-
-.assembly-card__canvas-section-heading h3 {
-  margin: 0;
-  color: #3e3e3b;
-  font: inherit;
-  font-weight: 650;
-}
-
-.assembly-card__canvas-section-heading span {
-  color: #747470;
-  text-align: right;
-}
-
-/* The imported slide remains an intact source item. `contain` deliberately
-   leaves room around a non-square slide instead of cropping its content. */
-.assembly-card__canvas-source {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  display: grid;
-  place-items: center;
-  margin: 0;
-  background: #fff;
-  pointer-events: none;
-}
-
-.assembly-card__canvas-source img {
+.assembly-card__visual-preview {
   display: block;
   width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.assembly-card__canvas-object figcaption {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 2;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 4px 7px;
-  box-sizing: border-box;
-  min-height: 1.7em;
-  margin: 0;
-  padding: 3px 5px;
-  background: rgb(255 255 255 / 90%);
-  color: #454545;
-  font-size: clamp(0.6rem, 1vw, 0.78rem);
-  line-height: 1.25;
-  pointer-events: none;
-}
-
-.assembly-card__canvas-object {
-  position: absolute;
-  z-index: 2;
-  box-sizing: border-box;
-  min-width: 0;
+  height: clamp(180px, 24vw, 260px);
   min-height: 0;
-  margin: 0;
-  padding: 0;
-  overflow: visible;
-  border: 2px solid #8b8b86;
-  border-radius: 4px;
-  background: rgb(255 255 255 / 96%);
-  box-shadow: 0 4px 12px rgb(0 0 0 / 17%);
-  transform: translate(-50%, -50%);
-}
-
-.assembly-card__canvas-object img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  pointer-events: none;
-}
-
-/* This small lower-right grip makes it explicit that this is a *placed image
-   box*, not the original project visual. Resizing only changes the reference
-   edge's presentation geometry. */
-.assembly-card__canvas-object-resize {
-  position: absolute;
-  z-index: 4;
-  right: -9px;
-  bottom: -9px;
-  display: grid;
-  width: 18px;
-  height: 18px;
-  place-items: center;
-  padding: 0;
-  border: 1px solid #4d7790;
-  border-radius: 2px;
-  background: #eaf6fb;
-  color: #22556f;
-  cursor: nwse-resize;
-  touch-action: none;
-}
-
-.assembly-card__canvas-object-resize span {
-  display: block;
-  width: 7px;
-  height: 7px;
-  border-right: 2px solid currentColor;
-  border-bottom: 2px solid currentColor;
-}
-
-.assembly-card__canvas-object-resize:hover,
-.assembly-card__canvas-object-resize:focus-visible {
-  border-color: #1d617f;
-  background: #d9f0f9;
-  outline: 2px solid rgb(44 120 155 / 36%);
-  outline-offset: 2px;
-}
-
-.assembly-card__canvas-object figcaption .assembly-object-unlink {
-  position: relative;
-  z-index: 1;
-  pointer-events: auto;
-}
-
-.assembly-card__canvas-object.is-draggable {
-  cursor: grab;
-  touch-action: none;
-  user-select: none;
-}
-
-.assembly-card__canvas-object.is-draggable:focus-visible {
-  outline: 2px solid #2c789b;
-  outline-offset: 3px;
-}
-
-.assembly-card__canvas-object.is-dragging {
-  z-index: 4;
-  cursor: grabbing;
-  box-shadow: 0 9px 22px rgb(0 0 0 / 26%);
-  transform: translate(-50%, -50%) scale(1.035);
-}
-
-.assembly-card__canvas-object.is-resizing {
-  z-index: 4;
-  cursor: nwse-resize;
-  box-shadow: 0 9px 22px rgb(0 0 0 / 26%);
-}
-
-.assembly-card__canvas-empty {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  display: grid;
-  place-items: center;
-  max-width: none;
-  margin: 0;
-  padding: clamp(34px, 9vw, 92px) 28px 28px;
-  color: #777;
-  font-size: clamp(0.7rem, 1.15vw, 0.9rem);
-  line-height: 1.45;
-  text-align: center;
-  pointer-events: none;
-}
-
-.assembly-card__canvas-section-controls,
-.assembly-card__canvas-add-section {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 8px;
-  border: 1px solid #e4e4e4;
-  border-top: 0;
-  background: #fff;
-}
-
-.assembly-card__canvas-section-controls select {
-  flex: 1 1 185px;
-  min-width: 0;
-  padding: 3px 0;
-  border: 0;
-  border-bottom: 1px solid #ccc;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: 0.76rem;
-}
-
-.assembly-card__canvas-add-section {
-  margin: 0 clamp(5px, 1vw, 12px) clamp(5px, 1vw, 12px);
-  border-top: 1px solid #e4e4e4;
-}
-
-.assembly-card__canvas-add-section span {
-  color: #70706c;
-  font-size: clamp(0.64rem, 1vw, 0.78rem);
-  line-height: 1.35;
-}
-
-/* The shared page deliberately uses the same card vocabulary as Assembly,
-   while presenting the lean, performable instruction sequence only. */
-.assembly-instructions-view__board {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: clamp(18px, 3vw, 32px);
-}
-
-.assembly-instructions-view__assembly-title,
-.assembly-instructions-view__card-title {
-  margin: 0;
-}
-
-.assembly-instructions-view__assembly-title {
-  font-size: clamp(1.5rem, 4vw, 3.1rem);
-  font-weight: 400;
-  line-height: 1.08;
-}
-
-.assembly-instructions-view__overview,
-.assembly-instructions-view__operation-notes {
-  margin: 0;
-  color: var(--osa-muted);
-  line-height: 1.45;
-  white-space: pre-wrap;
-}
-
-.assembly-instructions-view__steps p {
-  margin: 0;
-  color: var(--osa-text);
-  line-height: 1.45;
-  white-space: pre-wrap;
-}
-
-.assembly-instructions-view__index {
-  display: grid;
-  gap: 4px;
-  margin: clamp(18px, 3vw, 30px) 0 0;
-  padding-left: 1.45em;
-  font-size: clamp(0.8rem, 1.8vw, 1.35rem);
-  line-height: 1.45;
-}
-
-.assembly-instructions-view__card-title {
-  margin-bottom: clamp(12px, 2vw, 24px);
-  font-size: clamp(1.15rem, 2.25vw, 2.1rem);
-  font-weight: 400;
-  line-height: 1.05;
-}
-
-/* A card without a step canvas remains a readable full-width instruction,
-   rather than reserving an empty visual column. */
-.assembly-instructions-view__columns--details-only {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.assembly-instructions-view__parts-tools {
-  display: grid;
-  gap: 8px;
-  min-width: 0;
-}
-
-.assembly-instructions-view__parts-tools > strong {
-  font-size: clamp(0.76rem, 1.5vw, 1.15rem);
-  font-weight: 500;
-}
-
-.assembly-instructions__object-list {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.assembly-instructions__object {
-  color: var(--osa-text);
-}
-
-.assembly-instructions__empty {
-  color: var(--osa-muted);
-  font-style: italic;
-}
-
-.assembly-instructions-view__steps {
-  display: grid;
-  gap: 8px;
-  min-width: 0;
-}
-
-.assembly-instructions-view__steps > strong {
-  font-size: clamp(0.76rem, 1.5vw, 1.15rem);
-  font-weight: 500;
-}
-
-.assembly-instructions-view__steps ol {
-  display: grid;
-  gap: 12px;
-  margin: 0;
-  padding-left: 1.35em;
-}
-
-.assembly-instructions-view__steps li {
-  display: grid;
-  gap: 4px;
-}
-
-.assembly-instructions-view__canvas-list {
-  display: grid;
-  gap: 12px;
-  padding: clamp(10px, 1.5vw, 18px);
-}
-
-/* The team-facing sheet labels its single visual column once, then keeps the
-   selected step visuals directly beside their matching instructions. */
-.assembly-instructions-view__step-visuals {
-  grid-template-rows: auto minmax(0, 1fr);
-}
-
-.assembly-instructions-view__step-canvas {
-  display: grid;
-  gap: 8px;
-  margin: 0;
-  min-width: 0;
-}
-
-.assembly-instructions-view__step-canvas + .assembly-instructions-view__step-canvas {
-  padding-top: 12px;
-  border-top: 1px solid var(--osa-border-subtle);
-}
-
-.assembly-instructions-view__step-canvas figcaption {
-  display: flex;
-  gap: 8px;
-  color: var(--osa-text);
-  font-size: 0.86rem;
-  font-weight: 600;
-}
-
-.assembly-instructions-view__step-canvas figcaption strong {
-  color: var(--osa-text);
-}
-
-/* A clickable canvas preview opens a deliberately read-only full view. */
-.assembly-instructions-view__open-canvas {
-  display: block;
-  width: 100%;
-  padding: 0;
-  overflow: hidden;
-  border: 1px solid transparent;
-  border-radius: 3px;
-  background: transparent;
-  cursor: zoom-in;
-}
-
-.assembly-instructions-view__open-canvas:hover,
-.assembly-instructions-view__open-canvas:focus-visible {
-  border-color: var(--osa-focus);
-  outline: 0;
-}
-
-.assembly-instructions-view__open-canvas .assembly-card__visual-preview {
-  pointer-events: none;
-}
-
-.assembly-instructions-view__canvas-viewer-scrim {
-  position: fixed;
-  z-index: 90;
-  inset: 0;
-  display: grid;
-  place-items: stretch;
-  padding: clamp(8px, 2vw, 24px);
-  background: rgb(20 24 25 / 58%);
-}
-
-.assembly-instructions-view__canvas-viewer {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  width: min(1460px, 100%);
-  height: 100%;
-  margin: auto;
-  overflow: hidden;
   border: 1px solid var(--osa-border);
-  border-radius: 7px;
-  background: var(--osa-surface);
-  box-shadow: 0 20px 70px rgb(0 0 0 / 36%);
-}
-
-.assembly-instructions-view__canvas-viewer > header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  min-width: 0;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--osa-border);
-}
-
-.assembly-instructions-view__canvas-viewer > header > div {
-  min-width: 0;
-}
-
-.assembly-instructions-view__canvas-viewer > header span {
-  display: block;
-  color: var(--osa-muted);
-  font-size: 0.76rem;
-}
-
-.assembly-instructions-view__canvas-viewer > header h2 {
-  margin: 0;
-  color: var(--osa-text);
-  font-size: 1rem;
-  line-height: 1.2;
-}
-
-.assembly-instructions-view__canvas-viewer > header button {
-  flex: 0 0 auto;
-  padding: 4px 7px;
-  border: 1px solid var(--osa-border);
-  border-radius: 4px;
-  background: var(--osa-surface-raised);
-  color: var(--osa-text);
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.78rem;
-}
-
-.assembly-instructions-view__canvas-viewer > header button:hover,
-.assembly-instructions-view__canvas-viewer > header button:focus-visible {
-  border-color: var(--osa-focus);
-  background: var(--osa-hover-surface);
-  outline: 0;
-}
-
-.assembly-instructions-view__canvas-viewer-body {
-  display: grid;
-  min-height: 0;
-  place-items: center;
-  overflow: auto;
-  padding: clamp(10px, 1.8vw, 22px);
-  background: var(--osa-bg);
-}
-
-.assembly-instructions-view__canvas-viewer-preview {
-  width: 100%;
-  max-width: 100%;
-  max-height: 100%;
-  height: auto;
   background: #fff;
 }
 
@@ -1294,14 +253,6 @@
 
   .assembly-view__header-actions {
     justify-content: flex-start;
-  }
-
-  .assembly-view__share-status {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .assembly-index-card__objects {
-    grid-template-columns: 1fr;
   }
 
   .assembly-card-board {
@@ -1322,10 +273,6 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .assembly-card__summary--with-canvases {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   .assembly-card__view-header {
     align-items: flex-start;
     flex-direction: column;
@@ -1334,276 +281,6 @@
   .assembly-card__view-header p {
     text-align: left;
   }
-
-  .assembly-card__canvas-object-resize {
-    width: 20px;
-    height: 20px;
-  }
-}
-
-/* The application chrome follows OSA's selected theme. Source slides and
-   image contents stay exactly as authored. */
-.assembly-view .assembly-view__context-label,
-.assembly-view__assembly-picker,
-.assembly-index-card__objects,
-.assembly-card__empty-link-list,
-.assembly-card__canvas-empty,
-.assembly-card__canvas-add-section span {
-  color: var(--osa-muted);
-}
-
-.assembly-view__assembly-picker select,
-.assembly-view__share-status input {
-  border-color: var(--osa-border);
-  background: var(--osa-input);
-  color: var(--osa-text);
-}
-
-.assembly-view__shared-label,
-.assembly-view__share-status,
-.assembly-view__lock-status {
-  border-color: var(--osa-positive-border);
-  background: var(--osa-positive-surface);
-  color: var(--osa-positive-text);
-}
-
-.assembly-card__lock-button {
-  border-color: var(--osa-positive-border);
-  background: var(--osa-surface-raised);
-  color: var(--osa-positive-text);
-}
-
-.assembly-card__lock-button:hover,
-.assembly-card__lock-button:focus-visible,
-.assembly-card__lock-button[aria-pressed='true'] {
-  border-color: var(--osa-positive-border);
-  background: var(--osa-positive-surface);
-}
-
-.assembly-view__empty-state,
-.assembly-card__view,
-.assembly-card__canvas-stack,
-.assembly-card__canvas-section-controls,
-.assembly-card__canvas-add-section {
-  border-color: var(--osa-border);
-  background: var(--osa-surface-raised);
-  color: var(--osa-text);
-}
-
-.assembly-index-card__objects,
-.assembly-card__view-header,
-.assembly-card__canvas-section-controls,
-.assembly-card__canvas-add-section {
-  border-color: var(--osa-border-subtle);
-}
-
-.assembly-object-unlink {
-  border-color: var(--osa-border);
-  background: var(--osa-surface-raised);
-  color: var(--osa-muted);
-}
-
-.assembly-object-unlink:hover,
-.assembly-object-unlink:focus-visible {
-  border-color: var(--osa-danger-border);
-  background: var(--osa-danger-surface);
-  color: var(--osa-danger-text);
-}
-
-.assembly-card-board {
-  background:
-    linear-gradient(var(--osa-board-overlay), var(--osa-board-overlay)),
-    var(--osa-surface);
-}
-
-.assembly-card:not(.is-focused):hover,
-.assembly-card:not(.is-focused):focus-visible {
-  box-shadow: 0 12px 28px rgb(0 0 0 / 38%) !important;
-}
-
-.assembly-card input::placeholder,
-.assembly-card textarea::placeholder {
-  color: var(--osa-muted);
-}
-
-.assembly-card__visual-preview {
-  border-color: var(--osa-border);
-}
-
-.assembly-card__visual-filter {
-  position: relative;
-  margin-left: auto;
-  font-size: 0.76rem;
-  color: var(--osa-muted);
-}
-
-.assembly-card__visual-filter summary {
-  cursor: pointer;
-  user-select: none;
-}
-
-.assembly-card__visual-filter-options {
-  position: absolute;
-  z-index: 4;
-  top: calc(100% + 4px);
-  right: 0;
-  display: grid;
-  gap: 5px;
-  width: max-content;
-  max-width: min(260px, 72vw);
-  padding: 8px;
-  border: 1px solid var(--osa-border);
-  border-radius: 4px;
-  background: var(--osa-surface);
-  box-shadow: 0 8px 18px rgb(0 0 0 / 24%);
-}
-
-.assembly-card__visual-filter-options label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  color: var(--osa-text);
-  cursor: pointer;
-}
-
-/* A direct object photo is a projection of that object's asset:image.
-   It is deliberately not an editable canvas and has no canvas owner picker. */
-.assembly-card__direct-photo {
-  display: grid;
-  gap: 8px;
-  min-width: 0;
-  margin: 0;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--osa-border-subtle);
-}
-
-.assembly-card__direct-photo-header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.assembly-card__direct-photo-image {
-  display: block;
-  width: 100%;
-  height: auto;
-  max-height: 460px;
-  border: 1px solid var(--osa-border);
-  background: #fff;
-  object-fit: contain;
-}
-
-.assembly-card__photo-unavailable {
-  padding: 10px 0;
-  border-top: 1px solid var(--osa-border-subtle);
-  color: var(--osa-muted);
-  font-size: 0.8rem;
-}
-
-.assembly-card__view-header {
-  border-bottom-color: var(--osa-border);
-  background: var(--osa-surface);
-}
-
-.assembly-card__view-header p {
-  color: var(--osa-muted);
-}
-
-.assembly-card__canvas-divider {
-  background: var(--osa-border);
-}
-
-.assembly-card__canvas-section-surface {
-  border-color: var(--osa-border);
-  background:
-    radial-gradient(circle at 1px 1px, var(--osa-grid-dot) 1px, transparent 0) 0 0 / 14px 14px,
-    var(--osa-bg);
-}
-
-.assembly-card__canvas-section.is-source .assembly-card__canvas-section-surface,
-.assembly-card__canvas-source {
-  background: #fff;
-}
-
-.assembly-card__canvas-section-heading {
-  border-bottom-color: var(--osa-border);
-  background: var(--osa-surface);
-  color: var(--osa-muted);
-}
-
-.assembly-card__canvas-section-heading h3 {
-  color: var(--osa-text);
-}
-
-.assembly-card__canvas-section-heading span {
-  color: var(--osa-muted);
-}
-
-.assembly-card__canvas-object,
-.assembly-card__canvas-object figcaption {
-  border-color: var(--osa-border);
-  background: var(--osa-surface);
-  color: var(--osa-text);
-}
-
-.assembly-card__canvas-object-resize {
-  border-color: var(--osa-focus);
-  background: var(--osa-hover-surface);
-  color: var(--osa-hover-text);
-}
-
-.assembly-card__canvas-object-resize:hover,
-.assembly-card__canvas-object-resize:focus-visible {
-  border-color: var(--osa-focus);
-  background: var(--osa-hover-surface);
-}
-
-.assembly-card__canvas-section-controls select {
-  border-bottom-color: var(--osa-border);
-}
-
-/* The owner manages people from the same small header used for save/share.
-   Keeping this panel compact avoids a second settings screen for one board. */
-.assembly-view__people {
-  display: grid;
-  gap: 0.55rem;
-  max-width: 48rem;
-  margin: 0 0 1.25rem;
-  padding: 0.8rem 1rem;
-  border: 1px solid var(--osa-border);
-  background: var(--osa-surface);
-  color: var(--osa-text);
-}
-
-.assembly-view__people form,
-.assembly-view__people li {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.45rem;
-}
-
-.assembly-view__people input,
-.assembly-view__people select {
-  min-width: min(15rem, 100%);
-  border: 1px solid var(--osa-border);
-  background: var(--osa-input);
-  color: var(--osa-text);
-}
-
-.assembly-view__people ul {
-  display: grid;
-  gap: 0.35rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.assembly-view__people small,
-.assembly-view__people p {
-  color: var(--osa-muted-text);
 }
 
 @media print {

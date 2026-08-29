@@ -1,0 +1,13 @@
+.edge-hover-card {
+  position: fixed;
+  z-index: 1000;
+  width: 210px;
+  padding: 9px;
+  font-size: 0.82rem;
+  pointer-events: none;
+}
+
+.edge-hover-card__properties-label {
+  display: block;
+  margin-top: 7px;
+}

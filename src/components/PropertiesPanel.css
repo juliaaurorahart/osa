@@ -1,0 +1,404 @@
+.properties-panel {
+  width: min(340px, calc(100vw - 32px));
+  padding: 14px;
+}
+
+.properties-panel__eyebrow,
+.properties-panel__kind,
+.properties-panel__empty {
+  margin: 0;
+  color: var(--osa-muted);
+  font-size: 0.8rem;
+}
+
+.properties-panel h2 {
+  margin: 4px 0;
+  overflow-wrap: anywhere;
+  font-size: 1rem;
+}
+
+/* A semantic accent belongs to the selected OSA object, not to a particular
+   drawing. Assembly, Space, and future views can all derive the same quiet
+   cue from this durable property. */
+.properties-panel__appearance {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 14px;
+  padding: 0;
+  border: 0;
+}
+
+.properties-panel__appearance legend {
+  padding: 0;
+  color: var(--osa-muted);
+  font-size: 0.78rem;
+}
+
+.properties-panel__accent-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  color: var(--osa-muted);
+  font-size: 0.8rem;
+}
+
+.properties-panel__accent-control input[type='color'] {
+  box-sizing: border-box;
+  width: 28px;
+  height: 24px;
+  padding: 2px;
+  border: 1px solid var(--osa-border);
+  border-radius: 4px;
+  background: var(--osa-input);
+  cursor: pointer;
+}
+
+.properties-panel__accent-control output {
+  min-width: 52px;
+  color: var(--osa-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.76rem;
+}
+
+/* Compact direct-photo entry for Parts and Tools. The detailed Image section
+   below remains the place to inspect, describe, or remove that same photo. */
+.properties-panel__quick-photo {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: fit-content;
+  margin: 8px 0 12px;
+  padding: 4px 6px;
+  border: 1px dashed var(--osa-border);
+  border-radius: 6px;
+  color: var(--osa-muted);
+  font-size: 0.76rem;
+}
+
+.properties-panel__quick-photo:hover {
+  border-color: var(--osa-focus);
+  background: var(--osa-hover-surface);
+  color: var(--osa-hover-text);
+}
+
+.properties-panel__quick-photo-button {
+  position: relative;
+  white-space: nowrap;
+}
+
+.properties-panel__quick-photo-button input {
+  position: absolute;
+  display: block;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.properties-panel__rows {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.property-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.property-row input {
+  min-width: 0;
+  border: 0;
+  background: var(--osa-input);
+  color: var(--osa-text);
+}
+
+.properties-panel__spaces {
+  display: grid;
+  gap: 7px;
+  padding: 0;
+  margin: 0 0 18px;
+  border: 0;
+}
+
+.properties-panel__instruction-link {
+  display: grid;
+  gap: 7px;
+  margin: 0 0 18px;
+  padding: 0;
+  border: 0;
+}
+
+.properties-panel__instruction-link legend {
+  padding: 0;
+  color: var(--osa-muted);
+  font-size: 0.78rem;
+}
+
+.properties-panel__instruction-link select {
+  min-width: 0;
+  padding: 6px 7px;
+  border: 1px solid var(--osa-border);
+  border-radius: 5px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
+  font: inherit;
+}
+
+.properties-panel__asset-image {
+  display: grid;
+  gap: 9px;
+  margin: 0 0 18px;
+  padding: 0;
+  border: 0;
+}
+
+.properties-panel__asset-image legend {
+  padding: 0;
+  color: var(--osa-muted);
+  font-size: 0.78rem;
+}
+
+.properties-panel__asset-help {
+  margin: -2px 0 0;
+  color: var(--osa-muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.properties-panel__asset-preview {
+  display: grid;
+  gap: 5px;
+  width: min(100%, 300px);
+  margin: 0;
+}
+
+.properties-panel__asset-preview img {
+  display: block;
+  width: 100%;
+  max-height: 190px;
+  border: 1px solid var(--osa-border);
+  border-radius: 6px;
+  background: #fff;
+  object-fit: contain;
+}
+
+.properties-panel__asset-preview figcaption {
+  color: var(--osa-muted);
+  font-size: 0.72rem;
+}
+
+.properties-panel__asset-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.properties-panel__asset-dropzone {
+  margin: 0;
+  padding: 7px 9px;
+  border: 1px dashed var(--osa-border);
+  border-radius: 6px;
+  color: var(--osa-muted);
+  font-size: 0.76rem;
+  text-align: center;
+}
+
+.properties-panel__asset-dropzone:hover {
+  border-color: var(--osa-focus);
+  background: var(--osa-hover-surface);
+  color: var(--osa-hover-text);
+}
+
+/* The existing board file button hides its file control. Here it stays
+   keyboard-focusable while remaining visually compact. */
+.properties-panel__asset-actions .board-file-button input {
+  position: absolute;
+  display: block;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.properties-panel__asset-alt {
+  display: grid;
+  gap: 5px;
+  color: var(--osa-muted);
+  font-size: 0.78rem;
+}
+
+.properties-panel__asset-alt input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 7px;
+  border: 1px solid var(--osa-border);
+  border-radius: 5px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
+  font: inherit;
+}
+
+.properties-panel__asset-alt input:focus-visible,
+.properties-panel__asset-actions .board-button:focus-visible,
+.properties-panel__asset-actions .board-file-button:focus-within {
+  outline: 2px solid #5bcefa;
+  outline-offset: 2px;
+}
+
+.properties-panel__owned-visuals {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 18px;
+  padding: 0;
+  border: 0;
+}
+
+.properties-panel__owned-visuals legend {
+  padding: 0;
+  color: var(--osa-muted);
+  font-size: 0.78rem;
+}
+
+.properties-panel__owned-visual-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.properties-panel__owned-visual-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px;
+}
+
+.properties-panel__owned-visual-link {
+  width: 100%;
+  padding: 5px 7px;
+  overflow: hidden;
+  border: 1px solid var(--osa-border);
+  border-radius: 5px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.properties-panel__owned-visual-link:hover:not(:disabled),
+.properties-panel__owned-visual-link:focus-visible:not(:disabled) {
+  border-color: var(--osa-focus);
+  background: var(--osa-hover-surface);
+  color: var(--osa-hover-text);
+  outline: 0;
+}
+
+.properties-panel__owned-visual-link:disabled {
+  color: #888;
+  cursor: default;
+}
+
+.properties-panel__owned-visual-remove {
+  padding: 4px 0;
+  border: 0;
+  border-bottom: 1px solid var(--osa-border);
+  background: transparent;
+  color: var(--osa-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.properties-panel__owned-visual-remove:hover:not(:disabled),
+.properties-panel__owned-visual-remove:focus-visible:not(:disabled) {
+  border-bottom-color: #ef8a8a;
+  color: #8a3232;
+  outline: 0;
+}
+
+.properties-panel__owned-visual-remove:disabled {
+  color: #aaa;
+  cursor: default;
+}
+
+.properties-panel__managed {
+  margin: -5px 0 16px;
+  color: var(--osa-muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.properties-panel__managed-data {
+  margin-top: 14px;
+  padding-top: 9px;
+  border-top: 1px solid var(--osa-border);
+  color: var(--osa-muted);
+  font-size: 0.75rem;
+}
+
+.properties-panel__managed-data summary {
+  cursor: pointer;
+}
+
+.properties-panel__managed-data summary span {
+  float: right;
+  color: #888;
+  font-variant-numeric: tabular-nums;
+}
+
+.properties-panel__managed-data dl {
+  display: grid;
+  gap: 7px;
+  margin: 10px 0 0;
+}
+
+.managed-property-row {
+  display: grid;
+  grid-template-columns: minmax(82px, 0.8fr) minmax(0, 1.2fr);
+  gap: 8px;
+}
+
+.managed-property-row dt,
+.managed-property-row dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.managed-property-row dt {
+  color: var(--osa-muted);
+}
+
+.managed-property-row dd {
+  color: var(--osa-text);
+  white-space: pre-wrap;
+}
+
+.properties-panel__spaces legend {
+  padding: 0;
+  margin-bottom: 5px;
+  color: var(--osa-muted);
+  font-size: 0.78rem;
+}
+
+.properties-panel__spaces label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--osa-muted);
+  font-size: 0.82rem;
+}

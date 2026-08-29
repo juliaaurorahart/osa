@@ -1,0 +1,199 @@
+/* Match React Flow's default node treatment for the custom text node. */
+.text-node {
+  position: relative;
+  width: 190px;
+  padding: 10px;
+  border: 1px solid var(--osa-border);
+  border-radius: 3px;
+  color: var(--osa-text);
+  background: var(--osa-surface-raised);
+  font-size: 12px;
+}
+
+.text-node__body {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 16px;
+  text-align: center;
+}
+
+.text-node__body > span {
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.text-node__kind-vowel.is-text {
+  color: var(--notebook-text-accent);
+}
+
+.text-node__kind-vowel.is-sketch {
+  color: var(--notebook-sketch-accent);
+}
+
+.text-node__body textarea {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  min-height: 120px;
+  border: 0;
+  background: transparent;
+  color: var(--osa-text);
+  resize: vertical;
+  text-align: left;
+}
+
+.markdown-editor {
+  width: 100%;
+  text-align: right;
+}
+
+.text-node .markdown-editor__preview {
+  margin: 4px 0 0;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--osa-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.text-node .markdown-editor__preview:hover,
+.text-node .markdown-editor__preview:focus-visible {
+  color: var(--osa-text);
+}
+
+.text-node__details {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 10px;
+}
+
+.text-node__details.is-expanded {
+  position: static;
+  height: auto;
+  min-height: 54px;
+  margin-top: 10px;
+  border-top: 1px solid var(--osa-border);
+  font-size: 16px;
+}
+
+.text-node__details-toggle {
+  height: 10px;
+  cursor: pointer;
+}
+
+.text-node__details:not(.is-expanded) .text-node__details-toggle {
+  position: absolute;
+  right: 0;
+  bottom: -20px;
+  left: 0;
+  z-index: 1;
+  height: 40px;
+}
+
+.text-node__details.is-expanded .text-node__details-toggle {
+  height: 24px;
+  margin-bottom: 4px;
+}
+
+.text-node > .react-flow__handle {
+  z-index: 2;
+}
+
+.text-node__detail-fields {
+  display: grid;
+  gap: 5px;
+}
+
+.text-node__detail-fields label {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: min(150px, 100%);
+  align-items: center;
+  justify-items: center;
+  justify-self: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.text-node__detail-fields input,
+.text-node__detail-fields select {
+  border: 0;
+  background: transparent;
+  color: var(--osa-text);
+  font: inherit;
+}
+
+.text-node__detail-fields input,
+.text-node__detail-fields select {
+  width: 100%;
+  min-width: 0;
+  text-align: center;
+}
+
+.text-node button {
+  margin-left: 6px;
+}
+
+.text-node .text-node__width-control {
+  position: absolute;
+  top: 10%;
+  bottom: 10%;
+  z-index: 3;
+  width: 30px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: ew-resize;
+}
+
+.text-node__width-control.is-narrower {
+  left: -24px;
+}
+
+.text-node__width-control.is-wider {
+  right: -24px;
+}
+
+.text-node__width-control:disabled {
+  cursor: default;
+}
+
+.node-attributes {
+  position: fixed;
+  z-index: 1000;
+  width: 190px;
+  padding: 10px;
+  border: 1px solid var(--osa-border);
+  border-radius: 3px;
+  color: var(--osa-text);
+  background: var(--osa-surface-raised);
+  pointer-events: none;
+}
+
+.node-attributes__properties-label {
+  display: block;
+  margin-top: 8px;
+}
+
+.text-node__body textarea,
+.text-node__detail-fields input,
+.text-node__detail-fields select {
+  position: relative;
+  z-index: 2;
+}
+
+.text-node .react-flow__handle {
+  z-index: 1;
+  width: 4px;
+  min-width: 4px;
+  height: 4px;
+  min-height: 4px;
+  opacity: 1;
+}

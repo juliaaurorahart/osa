@@ -1,4 +1,5 @@
 import { useState, type ChangeEvent, type DragEvent } from 'react'
+import './PropertiesPanel.css'
 import type { TextFlowNode } from '../graph/textNode'
 import { storeImageFile } from '../graph/imageAsset'
 import { NODE_KINDS } from '../graph/nodeKinds'

@@ -1,0 +1,16 @@
+/* Shared SVG affordances used by both the editor and read-only previews. */
+.sketch-element {
+  cursor: move;
+}
+
+.sketch-element__resize-handle {
+  cursor: nwse-resize;
+}
+
+.sketch-preview {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  background: #fff;
+  object-fit: contain;
+}

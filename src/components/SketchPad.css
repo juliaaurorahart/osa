@@ -1,0 +1,392 @@
+/* Editing controls and interactive canvas layout owned by SketchPad. */
+.sketch-pad {
+  width: 100%;
+  cursor: crosshair;
+}
+
+.sketch-pad__tools {
+  display: flex;
+  min-height: 24px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.text-node .sketch-pad__tools button {
+  min-width: 22px;
+  min-height: 22px;
+  margin: 0;
+  padding: 2px 5px;
+  border: 0;
+  background: transparent;
+  color: var(--osa-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.text-node .sketch-pad__tools button:not(.sketch-pad__eraser):empty {
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+  min-height: 18px;
+  padding: 0;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+}
+
+.text-node .sketch-pad__tools button.is-selected {
+  box-shadow: 0 0 0 2px #222;
+}
+
+.sketch-pad__canvas {
+  min-height: 140px;
+  max-height: 600px;
+  overflow: hidden;
+  resize: vertical;
+}
+
+.sketch-pad__surface {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #fff;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.sketch-pad__surface.is-erasing {
+  cursor: cell;
+}
+
+.sketch-pad__surface polyline {
+  pointer-events: stroke;
+}
+
+.sketch-editor {
+  width: 100%;
+  color: var(--osa-text);
+}
+
+.sketch-editor button,
+.sketch-editor input,
+.sketch-editor textarea {
+  font: inherit;
+}
+
+.sketch-editor__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--osa-border);
+  font-size: 0.78rem;
+}
+
+.sketch-editor__tool-group,
+.sketch-editor__colors,
+.sketch-editor__fill,
+.sketch-editor__toolbar > label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.sketch-editor__tool-group + .sketch-editor__tool-group {
+  padding-left: 12px;
+  border-left: 1px solid var(--osa-border);
+}
+
+.sketch-editor__toolbar button,
+.sketch-editor__settings button {
+  padding: 3px 1px;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+}
+
+.sketch-editor__toolbar button:hover,
+.sketch-editor__toolbar button.is-selected,
+.sketch-editor__settings button:hover {
+  border-bottom-color: currentColor;
+}
+
+.sketch-editor button:disabled {
+  color: #aaa;
+  cursor: default;
+}
+
+.sketch-editor__colors button {
+  box-sizing: border-box;
+  width: 17px;
+  height: 17px;
+  padding: 0;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.sketch-editor__colors button.is-selected {
+  box-shadow: 0 0 0 2px var(--osa-surface), 0 0 0 3px var(--osa-text);
+}
+
+.sketch-editor__colors input[type='color'] {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.sketch-editor__fill {
+  padding-left: 12px;
+  border-left: 1px solid var(--osa-border);
+}
+
+.sketch-editor__fill button,
+.sketch-editor__fill-control button {
+  min-height: 22px;
+  padding: 2px 5px;
+  border: 1px solid var(--osa-border);
+  border-radius: 3px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
+}
+
+.sketch-editor__fill button.is-selected,
+.sketch-editor__fill-control button.is-selected {
+  border-color: var(--osa-focus);
+  background: var(--osa-hover-surface);
+  color: var(--osa-hover-text);
+}
+
+.sketch-editor__fill input[type='color'] {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.sketch-editor__toolbar input[type='range'] {
+  width: 90px;
+}
+
+.sketch-editor__toolbar output {
+  min-width: 32px;
+  color: var(--osa-muted);
+}
+
+.sketch-editor__workspace {
+  display: grid;
+  /* The inspector has real controls, not just labels. Give it enough room
+     for its action row and numeric fields instead of squeezing them off both
+     sides of a narrow 160px column. */
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 300px);
+  gap: 20px;
+  align-items: start;
+}
+
+.sketch-editor__viewport {
+  width: 100%;
+  height: 62vh;
+  min-height: 460px;
+  overflow: auto;
+  background: var(--osa-bg);
+  overscroll-behavior: contain;
+}
+
+.sketch-editor__viewport.is-pen,
+.sketch-editor__viewport.is-eraser,
+.sketch-editor__viewport.is-rectangle,
+.sketch-editor__viewport.is-rounded-rectangle,
+.sketch-editor__viewport.is-ellipse,
+.sketch-editor__viewport.is-diamond,
+.sketch-editor__viewport.is-triangle,
+.sketch-editor__viewport.is-line,
+.sketch-editor__viewport.is-arrow,
+.sketch-editor__viewport.is-text {
+  cursor: crosshair;
+}
+
+.sketch-editor__viewport.is-select {
+  cursor: default;
+}
+
+.sketch-editor__viewport.is-pan {
+  cursor: grab;
+}
+
+.sketch-editor__viewport.is-pan:active {
+  cursor: grabbing;
+}
+
+.sketch-editor__surface {
+  display: block;
+  box-shadow: 0 2px 12px rgb(0 0 0 / 10%);
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.sketch-editor__settings {
+  display: grid;
+  min-width: 0;
+  gap: 24px;
+  color: var(--osa-muted);
+  font-size: 0.78rem;
+}
+
+.sketch-editor__settings section {
+  display: grid;
+  gap: 8px;
+}
+
+.sketch-editor__settings h3 {
+  margin: 0;
+  color: var(--osa-text);
+  font-size: 0.82rem;
+  font-weight: 400;
+}
+
+.sketch-editor__settings label {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.sketch-editor__settings input[type='number'] {
+  width: 100%;
+  min-width: 0;
+  padding: 3px 0;
+  border: 0;
+  border-bottom: 1px solid var(--osa-border);
+  color: var(--osa-text);
+  background: transparent;
+}
+
+.sketch-editor__settings input[type='color'] {
+  width: 28px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.sketch-editor__settings input[type='range'] {
+  width: 100%;
+  min-width: 0;
+}
+
+.sketch-editor__zoom,
+.sketch-editor__section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sketch-editor__object-actions,
+.sketch-editor__fill-control {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.sketch-editor__object-actions {
+  justify-content: flex-end;
+}
+
+.sketch-editor__layers {
+  display: grid;
+  gap: 3px;
+}
+
+.sketch-editor__layers > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 4px;
+  padding-left: 6px;
+  border-left: 2px solid transparent;
+}
+
+.sketch-editor__layers > div.is-active {
+  border-left-color: #5bcefa;
+}
+
+.sketch-editor__layers > div > button:first-child {
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+/* Temporary region selection only; this never becomes part of a saved canvas. */
+.sketch-selection-marquee {
+  fill: rgb(91 206 250 / 14%);
+  stroke: #26799b;
+  stroke-width: 2px;
+  stroke-dasharray: 8 5;
+}
+
+.sketch-editor__selected-object textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 5em;
+  resize: vertical;
+  padding: 4px;
+  border: 1px solid var(--osa-border);
+  border-radius: 3px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
+}
+
+/* A text box can show one live project value without exposing raw template syntax. */
+.sketch-editor__annotation {
+  display: grid;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--osa-border);
+}
+
+.sketch-editor__annotation h3 {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.sketch-editor__annotation select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 4px;
+  border: 1px solid var(--osa-border);
+  border-radius: 3px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
+  font: inherit;
+}
+
+.sketch-editor__annotation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+
+@media (max-width: 820px) {
+  .sketch-editor__workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .sketch-editor__settings {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

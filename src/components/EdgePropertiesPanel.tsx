@@ -1,4 +1,5 @@
 import type { GraphEdge } from '../graph/graphEdge'
+import './PropertiesPanel.css'
 import { isManagedOsaProperty } from '../graph/osaData'
 
 type EdgePropertiesPanelProps = {

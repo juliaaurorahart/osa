@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import Markdown from 'react-markdown'
 import { Handle, type NodeProps } from '@xyflow/react'
+import './TextNode.css'
 import {
   DEFAULT_CONNECTOR_POSITIONS,
   type TextFlowNode,

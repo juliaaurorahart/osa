@@ -1,4 +1,5 @@
 import { useRef, useState, type SyntheticEvent } from 'react'
+import './NotebookView.css'
 import Markdown from 'react-markdown'
 import type { GraphEdge, TextConnectionAnchor } from '../graph/graphEdge'
 import { nodeTitle } from '../graph/taskProject'
