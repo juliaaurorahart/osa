@@ -180,10 +180,6 @@ try {
       onPropertyChange: noop,
     },
     onOpenNode: noop,
-    onShare: noop,
-    shareSlug: 'shako',
-    onShareSlugChange: noop,
-    onPreviewInstructions: noop,
   }))
 
   const authorMarkup = renderAssembly()
@@ -191,6 +187,11 @@ try {
   assert.match(authorMarkup, /assembly-index-card/)
   assert.match(authorMarkup, /Shako Hat Assembly Instructions/)
   assert.match(authorMarkup, /<h1 id="assembly-view-title">Assembly<\/h1>/)
+  assert.doesNotMatch(
+    authorMarkup,
+    /Choose assembly|new assembly|open Shako starter|preview instructions|Public link name|>people<|>share<|>print</,
+    'The Assembly document header stays focused on the instruction cards; workspace settings own global controls.',
+  )
   assert.match(authorMarkup, /aria-label="Connector Box Drill card"/)
   const authorTitleCardStart = authorMarkup.indexOf('aria-label="assembly index card"')
   const authorTitleCardEnd = authorMarkup.indexOf('</article>', authorTitleCardStart)
@@ -218,6 +219,11 @@ try {
     openCardId: 'assembly-index',
   })
   assert.match(openedIndexMarkup, /aria-label="move Connector Box Drill card down"/)
+  assert.match(
+    openedIndexMarkup,
+    />\+ card<\/button>/,
+    'Card creation remains available where the Assembly card list is edited.',
+  )
 
   const connectorStart = authorMarkup.indexOf('aria-label="Connector Box Drill card"')
   const connectorEnd = authorMarkup.indexOf('</article>', connectorStart)

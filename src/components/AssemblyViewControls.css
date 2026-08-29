@@ -5,38 +5,6 @@
   gap: 18px;
 }
 
-.assembly-view__assembly-picker {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--osa-muted);
-  font-size: 0.78rem;
-}
-
-.assembly-view__assembly-picker select {
-  max-width: min(260px, 42vw);
-  padding: 4px 8px;
-  border: 1px solid var(--osa-border);
-  border-radius: 4px;
-  background: var(--osa-input);
-  color: var(--osa-text);
-  font: inherit;
-}
-
-/* The author chooses the human-readable portion of /assembly/<name>. */
-.assembly-view__share-slug {
-  box-sizing: border-box;
-  width: min(21ch, 40vw);
-  min-width: 11ch;
-  padding: 3px 6px;
-  border: 1px solid var(--osa-border);
-  border-radius: 4px;
-  background: var(--osa-input);
-  color: var(--osa-text);
-  font: inherit;
-  font-size: 0.84rem;
-}
-
 .assembly-view__shared-label {
   display: inline-flex;
   align-items: center;
@@ -47,31 +15,6 @@
   color: var(--osa-positive-text);
   font-size: 0.75rem;
   white-space: nowrap;
-}
-
-.assembly-view__share-status {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 10px;
-  margin: -10px 0 18px;
-  padding: 9px 12px;
-  border: 1px solid var(--osa-positive-border);
-  border-radius: 6px;
-  background: var(--osa-positive-surface);
-  color: var(--osa-positive-text);
-  font-size: 0.86rem;
-}
-
-.assembly-view__share-status input {
-  width: 100%;
-  min-width: 0;
-  padding: 5px 7px;
-  border: 1px solid var(--osa-border);
-  border-radius: 4px;
-  background: var(--osa-input);
-  color: var(--osa-text);
-  font: inherit;
 }
 
 /* Locking changes only which cards are visible, never instruction data. */
@@ -87,51 +30,4 @@
   background: var(--osa-positive-surface);
   color: var(--osa-positive-text);
   font-size: 0.85rem;
-}
-
-/* The owner manages people beside the existing save/share controls. */
-.assembly-view__people {
-  display: grid;
-  gap: 0.55rem;
-  max-width: 48rem;
-  margin: 0 0 1.25rem;
-  padding: 0.8rem 1rem;
-  border: 1px solid var(--osa-border);
-  background: var(--osa-surface);
-  color: var(--osa-text);
-}
-
-.assembly-view__people form,
-.assembly-view__people li {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.45rem;
-}
-
-.assembly-view__people input,
-.assembly-view__people select {
-  min-width: min(15rem, 100%);
-  border: 1px solid var(--osa-border);
-  background: var(--osa-input);
-  color: var(--osa-text);
-}
-
-.assembly-view__people ul {
-  display: grid;
-  gap: 0.35rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.assembly-view__people small,
-.assembly-view__people p {
-  color: var(--osa-muted-text);
-}
-
-@media (max-width: 700px) {
-  .assembly-view__share-status {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }

@@ -65,6 +65,8 @@ export const CURRENT_SOURCE_PATHS = [
   "src/components/VegaLab.tsx",
   "src/components/VisualCanvas.css",
   "src/components/VisualCanvas.tsx",
+  "src/components/WorkspaceSettingsMenu.css",
+  "src/components/WorkspaceSettingsMenu.tsx",
   "src/graph/boardSnapshot.ts",
   "src/graph/boardStorage.ts",
   "src/graph/currentSourceHierarchy.ts",

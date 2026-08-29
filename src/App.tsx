@@ -44,6 +44,7 @@ import { NotebookView } from './components/NotebookView'
 import { ProjectsView } from './components/ProjectsView'
 import { PointerToolPalette, type PointerToolAction } from './components/PointerToolPalette'
 import { SpaceToolbar } from './components/SpaceToolbar'
+import { WorkspaceSettingsMenu } from './components/WorkspaceSettingsMenu'
 import { VisualCanvasEditor } from './components/VisualCanvas'
 import {
   createGraphEdge,
@@ -282,7 +283,6 @@ function Flow() {
   const [nodeKindFilter, setNodeKindFilter] = useState<NodeKindFilter>('all')
   const [nodeSpaceFilter, setNodeSpaceFilter] = useState('')
   const [nodeConnectionFilter, setNodeConnectionFilter] = useState<NodeConnectionFilter>('all')
-  const [showBoardControls, setShowBoardControls] = useState(false)
   const [miniMapExpanded, setMiniMapExpanded] = useState(false)
   const [showTable, setShowTable] = useState(false)
   // A selected object always gets an inspector. The person can close it, but
@@ -2966,14 +2966,6 @@ function Flow() {
       {workspaceView === 'nodes' && (
         <Panel position="top-left" className="space-canvas-toolbar" aria-label="Space tools">
           <button type="button" onClick={addNode}>+ Node</button>
-          <button
-            type="button"
-            aria-pressed={showBoardControls}
-            aria-controls="board-controls"
-            onClick={() => setShowBoardControls((isVisible) => !isVisible)}
-          >
-            Boards
-          </button>
           <button type="button" onClick={importCurrentSourceHierarchy}>Import src</button>
           <button
             type="button"
@@ -3011,114 +3003,6 @@ function Flow() {
             setMiniMapExpanded(false)
           }}
         />
-      )}
-      {workspaceView === 'nodes' && showBoardControls && (
-      <Panel
-        position="top-left"
-        id="board-controls"
-        className="board-dock is-pinned"
-        style={{ top: 56 }}
-      >
-        <button
-          className="board-dock__toggle"
-          type="button"
-          onClick={() => setShowBoardControls((isVisible) => !isVisible)}
-        >
-          Close boards
-        </button>
-        <div className="board-panel">
-        <div className="board-panel__storage">
-          <input
-            className="board-name-input"
-            aria-label="Board name"
-            placeholder="board name"
-            value={boardName}
-            onChange={(event) => setBoardName(event.target.value)}
-          />
-          <button className="board-button" onClick={() => void saveBoardToDatabase()}>
-            Save
-          </button>
-          <select
-            className="board-select"
-            aria-label={showingArchivedBoards ? 'Archived boards' : 'Saved boards'}
-            value={selectedBoardId}
-            onChange={(event) => setSelectedBoardId(event.target.value)}
-            disabled={showingArchivedBoards ? !archivedBoards.length : !savedBoards.length}
-          >
-            {showingArchivedBoards
-              ? !archivedBoards.length && <option value="">Archive is empty</option>
-              : !savedBoards.length && <option value="">No saved boards</option>}
-            {(showingArchivedBoards ? archivedBoards : savedBoards).map((board) => (
-              <option key={board.id} value={board.id}>{board.name}</option>
-            ))}
-          </select>
-          <button
-            className="board-button"
-            onClick={showingArchivedBoards
-              ? () => void restoreSelectedBoard()
-              : () => void loadSelectedBoard()}
-            disabled={!selectedBoardId}
-          >
-            {showingArchivedBoards ? 'Restore' : 'Load'}
-          </button>
-          <div className="board-panel__archive-actions">
-            <button
-              className="board-button"
-              type="button"
-              aria-label={showingArchivedBoards ? 'Show saved boards' : 'Show archived boards'}
-              aria-pressed={showingArchivedBoards}
-              onClick={() => {
-                if (showingArchivedBoards) {
-                  showActiveBoardList()
-                } else {
-                  void showArchivedBoardList()
-                }
-              }}
-            >
-              {showingArchivedBoards ? 'Saved' : 'Archived'}
-            </button>
-            {!showingArchivedBoards && (
-              <button
-                className="board-button"
-                type="button"
-                aria-label="Archive current board"
-                onClick={() => void archiveCurrentBoard()}
-                disabled={!savedBoards.some((board) => board.id === boardId)}
-              >
-                Archive
-              </button>
-            )}
-          </div>
-        </div>
-        <div className="board-panel__actions">
-          <button className="board-button" onClick={addNode}>Add Node</button>
-          <button className="board-button" onClick={importCurrentSourceHierarchy}>Import SRC Tree</button>
-          <label className="board-button board-file-button">
-            Import OSA Data
-            <input
-              type="file"
-              accept="application/json,.json"
-              onChange={importOsaDataFromJson}
-            />
-          </label>
-          <button className="board-button" onClick={saveBoardAsJson}>Save JSON</button>
-          <label className="board-button board-file-button">
-            Load JSON
-            <input
-              type="file"
-              accept="application/json,.json"
-              onChange={loadBoardFromJson}
-            />
-          </label>
-        </div>
-        <div className="board-panel__status">
-          <span className="board-storage-status" role="status">{storageStatus}</span>
-          {needsSignIn && (
-            <a className="board-sign-in" href="/api/login">Sign in</a>
-          )}
-        </div>
-        </div>
-      </Panel>
       )}
       {workspaceView === 'nodes' && selectedNode && inspectorExpanded && (
         <Panel
@@ -3256,14 +3140,48 @@ function Flow() {
               Lab
             </button>
           ) : null}
-          <button
-            className="workspace-switcher__theme"
-            type="button"
-            aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
-            onClick={toggleTheme}
-          >
-            {theme === 'dark' ? 'light' : 'dark'}
-          </button>
+          <WorkspaceSettingsMenu
+            theme={theme}
+            onToggleTheme={toggleTheme}
+            boardId={boardId}
+            boardName={boardName}
+            boardAccess={boardAccess}
+            savedBoards={savedBoards}
+            archivedBoards={archivedBoards}
+            selectedBoardId={selectedBoardId}
+            showingArchivedBoards={showingArchivedBoards}
+            canArchiveCurrentBoard={savedBoards.some((board) => board.id === boardId)}
+            onBoardNameChange={setBoardName}
+            onSelectedBoardIdChange={setSelectedBoardId}
+            onShowSavedBoards={showActiveBoardList}
+            onShowArchivedBoards={showArchivedBoardList}
+            onLoadSelectedBoard={loadSelectedBoard}
+            onArchiveCurrentBoard={archiveCurrentBoard}
+            onRestoreSelectedBoard={restoreSelectedBoard}
+            onManualSync={saveBoardToDatabase}
+            storageStatus={storageStatus}
+            cloudSyncStatus={cloudSyncStatus}
+            localDraftStatus={draftStatus}
+            cloudRevision={cloudRevision}
+            needsSignIn={needsSignIn}
+            cloudConflictBoard={cloudConflictBoard}
+            onReloadCloudBoard={reloadCloudBoard}
+            onSaveBoardAsCopy={saveCurrentBoardAsCopy}
+            collaborators={boardCollaborators}
+            collaborationStatus={collaborationStatus}
+            onAddCollaborator={boardAccess === 'owner' ? addBoardCollaborator : undefined}
+            onRemoveCollaborator={boardAccess === 'owner' ? removeBoardCollaboratorAccess : undefined}
+            activeAssemblyLabel={activeAssembly ? nodeTitle(activeAssembly) : null}
+            shareSlug={shareSlug}
+            shareStatus={shareStatus}
+            shareUrl={shareUrl}
+            onShareSlugChange={setShareSlug}
+            onCreateAssemblyShare={boardAccess === 'owner' ? createAssemblyShareLink : undefined}
+            onPreviewAssembly={activeAssembly ? () => setAssemblyInstructionsPreview(true) : undefined}
+            onDownloadJsonBackup={saveBoardAsJson}
+            onLoadJsonBackup={loadBoardFromJson}
+            onImportOsaData={importOsaDataFromJson}
+          />
           </nav>
         ) : !isSharedAssembly ? (
           <button
@@ -3285,22 +3203,7 @@ function Flow() {
       {!canvasLabVisible && !isSharedAssembly ? (
         <div className="local-draft-status" role="status">
           <span>{cloudSyncStatus || draftStatus}</span>
-          {cloudConflictBoard && !cloudConflictBoard.archived && (
-            <span className="local-draft-status__actions">
-              <button type="button" onClick={reloadCloudBoard}>Reload</button>
-              <button type="button" onClick={() => void saveCurrentBoardAsCopy()}>Save copy</button>
-            </span>
-          )}
         </div>
-      ) : null}
-      {!canvasLabVisible && !isSharedAssembly && needsSignIn && workspaceView !== 'nodes' ? (
-        <a
-          className="osa-sign-in-reveal"
-          href="/api/login"
-          aria-label="Sign in to open saved boards"
-        >
-          <span>Sign in to saved boards</span>
-        </a>
       ) : null}
       {!canvasLabVisible && !isSharedAssembly && workspaceView === 'nodes' ? (
         <SpaceToolbar
@@ -3380,20 +3283,8 @@ function Flow() {
               actions={assemblyViewActions}
               onOpenNode={openNodeInSpace}
               readOnly={boardAccess === 'viewer'}
-              boardAccess={boardAccess}
-              collaborators={boardCollaborators}
-              onAddCollaborator={(email, role) => void addBoardCollaborator(email, role)}
-              onRemoveCollaborator={(email) => void removeBoardCollaboratorAccess(email)}
-              collaborationStatus={collaborationStatus}
-              onShare={boardAccess === 'owner' ? () => void createAssemblyShareLink() : undefined}
-              shareSlug={shareSlug}
-              onShareSlugChange={setShareSlug}
-              onPreviewInstructions={() => setAssemblyInstructionsPreview(true)}
-              shareStatus={shareStatus}
-              shareUrl={shareUrl}
               starterAction={{
                 label: bundledStarter.openActionLabel,
-                compactLabel: bundledStarter.compactOpenActionLabel,
                 onLoad: openBundledStarter,
               }}
             />

@@ -12,7 +12,7 @@ every relevant view.
 
 - While you work, OSA writes a recovery draft to this browser's local storage after a short delay. That draft stays in this browser profile and does not sync to another device.
 - On the signed-in deployed site, a new board is created automatically through `/api/boards`; later changes autosave to the same revision-guarded record in the Cloudflare D1 database bound as `OSA_DB`.
-- Plain `npm run dev` is local-only because Vite does not run or proxy the Cloudflare board API. It keeps the browser recovery draft without writing to production. The board panel retains a manual save control for recovery and diagnostics.
+- Plain `npm run dev` is local-only because Vite does not run or proxy the Cloudflare board API. It keeps the browser recovery draft without writing to production. Settings retains a manual sync control plus database status for recovery and diagnostics.
 - **Save JSON** downloads an independent copy of the current board that can be kept or imported later.
 
 Cloudflare Access supplies the signed-in email address. Each board is read and saved only for that email address.

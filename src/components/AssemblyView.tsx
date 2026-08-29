@@ -60,30 +60,11 @@ type AssemblyViewProps = {
   onOpenNode: (nodeId: string) => void
   /** A shared link can project a board without exposing editing controls. */
   readOnly?: boolean
-  /** Creates/copies a read-only link for the current assembly. */
-  onShare?: () => void
-  /** The compact public path segment placed beside the Share button. */
-  shareSlug?: string
-  onShareSlugChange?: (slug: string) => void
-  /** Opens the team-facing instructions projection locally without sharing it. */
-  onPreviewInstructions?: () => void
-  /** Brief feedback from the host while a share link is being prepared. */
-  shareStatus?: string | null
-  /** The last generated read-only link, retained so it can be copied again. */
-  shareUrl?: string | null
   /** Optional project starter presented when building an Assembly. */
   starterAction?: {
     label: string
-    compactLabel: string
     onLoad: () => void
   }
-  /** Server-derived role; viewers may inspect this Assembly but cannot edit it. */
-  boardAccess?: 'owner' | 'editor' | 'viewer'
-  /** The owner-managed people explicitly invited to this saved board. */
-  collaborators?: Array<{ email: string; role: 'editor' | 'viewer' }>
-  onAddCollaborator?: (email: string, role: 'editor' | 'viewer') => void
-  onRemoveCollaborator?: (email: string) => void
-  collaborationStatus?: string
 }
 
 /**
@@ -104,18 +85,7 @@ export function AssemblyView({
   actions,
   onOpenNode,
   readOnly = false,
-  onShare,
-  shareSlug,
-  onShareSlugChange,
-  onPreviewInstructions,
-  shareStatus,
-  shareUrl,
   starterAction,
-  boardAccess = 'owner',
-  collaborators = [],
-  onAddCollaborator,
-  onRemoveCollaborator,
-  collaborationStatus,
 }: AssemblyViewProps) {
   const selectedAssembly = assemblies.find((assembly) => assembly.id === selectedAssemblyId)
     ?? assemblies[0]
@@ -253,26 +223,9 @@ export function AssemblyView({
   return (
     <section className="work-view assembly-view" aria-labelledby="assembly-view-title">
       <AssemblyViewControls
-        assemblies={assemblies}
-        selectedAssembly={selectedAssembly}
         readOnly={readOnly}
         activeLockedCardId={activeLockedCardId}
-        onSelectAssembly={onSelectAssembly}
-        onCreateAssembly={createAssembly}
-        onAddCard={addCard}
         onUnlockCardView={() => setLockedCardId(null)}
-        onShare={onShare}
-        shareSlug={shareSlug}
-        onShareSlugChange={onShareSlugChange}
-        onPreviewInstructions={onPreviewInstructions}
-        shareStatus={shareStatus}
-        shareUrl={shareUrl}
-        starterAction={starterAction}
-        boardAccess={boardAccess}
-        collaborators={collaborators}
-        onAddCollaborator={onAddCollaborator}
-        onRemoveCollaborator={onRemoveCollaborator}
-        collaborationStatus={collaborationStatus}
       />
 
       <div
