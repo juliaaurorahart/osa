@@ -291,9 +291,7 @@
     margin: 0.35in;
   }
 
-  .workspace-switcher,
-  .workspace-switcher-reveal,
-  .local-draft-status,
+  .workspace-top-chrome,
   .assembly-view > .work-view__header,
   .assembly-card .text-action,
   .assembly-object-unlink,

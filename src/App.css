@@ -15,22 +15,35 @@
   color: var(--osa-text);
 }
 
-.workspace-switcher {
+.workspace-top-chrome {
   position: absolute;
-  top: 12px;
-  left: 50%;
+  top: 0;
+  right: 0;
+  left: 0;
   z-index: 40;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 8px 12px 0;
+  pointer-events: none;
+}
+
+.workspace-switcher {
   display: flex;
-  max-width: calc(100vw - 24px);
+  box-sizing: border-box;
+  max-width: 100%;
   align-items: center;
   gap: clamp(10px, 2.5vw, 18px);
   justify-content: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
   padding: 4px 12px;
   background: var(--osa-surface);
   color: var(--osa-text);
   box-shadow: 0 12px 34px #FF00FF;
-  transform: translateX(-50%);
+  pointer-events: auto;
+  scrollbar-width: thin;
+  white-space: nowrap;
 }
 
 .workspace-switcher button,
@@ -56,16 +69,21 @@
 }
 
 .workspace-switcher .workspace-switcher__hide {
+  flex: none;
   margin-right: 4px;
   color: var(--osa-muted);
   font-size: 0.72rem;
 }
 
+.workspace-switcher__status {
+  flex: none;
+  padding-left: 10px;
+  border-left: 1px solid var(--osa-border);
+  color: var(--osa-muted);
+  font-size: 0.68rem;
+}
+
 .workspace-switcher-reveal {
-  position: absolute;
-  top: 0;
-  left: 50%;
-  z-index: 40;
   width: 42px;
   height: 18px;
   padding: 0;
@@ -77,7 +95,7 @@
   cursor: pointer;
   font: inherit;
   line-height: 14px;
-  transform: translateX(-50%);
+  pointer-events: auto;
 }
 
 .workspace-switcher-reveal:hover,
@@ -180,18 +198,6 @@
   outline: 0;
 }
 
-.local-draft-status {
-  position: absolute;
-  top: 18px;
-  right: 18px;
-  z-index: 40;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--osa-muted);
-  font-size: 0.72rem;
-}
-
 .work-view-shell {
   position: absolute;
   z-index: 30;
@@ -204,10 +210,6 @@
 
 .workspace-menu-hidden .work-view-shell {
   padding-top: 38px;
-}
-
-.workspace-menu-hidden .space-canvas-toolbar {
-  top: 18px;
 }
 
 .work-view {
@@ -1038,10 +1040,14 @@
   height: 0;
 }
 
-.react-flow__edge-path {
+.space-canvas:not(.is-dense) .react-flow__edge-path {
   filter: url('#hand-drawn-line');
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+.space-canvas.is-dense .react-flow__edge-path {
+  filter: none;
 }
 
 .board-dock.is-preview,
@@ -1448,18 +1454,31 @@
   display: none;
 }
 
-/* Visible Space controls replace the previous hidden reveal zones. */
-.space-canvas-toolbar {
-  z-index: 35;
+.space-command-bar {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  max-width: min(560px, calc(100vw - 32px));
+  box-sizing: border-box;
+  width: max-content;
+  max-width: 100%;
+  align-items: center;
+  gap: 12px;
+  overflow-x: auto;
   padding: 7px;
   border: 1px solid var(--osa-border);
   border-radius: 8px;
   background: var(--osa-surface);
   box-shadow: 0 12px 34px var(--osa-shadow);
+  color: var(--osa-text);
+  pointer-events: auto;
+  scrollbar-width: thin;
+}
+
+/* Action buttons and filters now share one Space command bar. */
+.space-canvas-toolbar {
+  display: flex;
+  flex: none;
+  flex-wrap: nowrap;
+  gap: 6px;
+  padding: 0;
   color: var(--osa-text);
 }
 
@@ -1564,22 +1583,29 @@
 
 
 @media (max-width: 700px) {
+  .workspace-top-chrome {
+    gap: 6px;
+    padding: 6px 6px 0;
+  }
+
   .workspace-switcher {
-    width: calc(100% - 28px);
-    justify-content: space-between;
-    gap: 8px;
+    width: 100%;
+    justify-content: flex-start;
+    gap: 16px;
+    padding-inline: 10px;
   }
 
   .workspace-switcher .workspace-switcher__hide {
     margin-left: 0;
   }
 
-  .local-draft-status {
-    top: 52px;
+  .workspace-switcher button,
+  .workspace-settings-menu > .workspace-settings-menu__trigger {
+    min-height: 36px;
   }
 
   .work-view-shell {
-    padding-top: 92px;
+    padding-top: 74px;
   }
 
   .workspace-menu-hidden .work-view-shell {

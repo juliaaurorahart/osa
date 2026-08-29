@@ -2883,7 +2883,7 @@ function Flow() {
       onPointerCancelCapture={canvasLabVisible ? undefined : finishPointerPalettePress}
     >
       <ReactFlow
-      className="space-canvas"
+      className={`space-canvas${visibleEdges.length > 150 ? ' is-dense' : ''}`}
       inert={workspaceView !== 'nodes' || canvasLabVisible}
       aria-hidden={workspaceView !== 'nodes' || canvasLabVisible}
       nodesFocusable={workspaceView === 'nodes' && !canvasLabVisible}
@@ -2921,6 +2921,7 @@ function Flow() {
       }}
       fitView
       fitViewOptions={{ padding: 0.45, maxZoom: 0.78 }}
+      onlyRenderVisibleElements
       minZoom={0.05}
       maxZoom={8}
       colorMode={theme}
@@ -2963,27 +2964,6 @@ function Flow() {
         </defs>
       </svg>
       <Background />
-      {workspaceView === 'nodes' && (
-        <Panel position="top-left" className="space-canvas-toolbar" aria-label="Space tools">
-          <button type="button" onClick={addNode}>+ Node</button>
-          <button type="button" onClick={importCurrentSourceHierarchy}>Import src</button>
-          <button
-            type="button"
-            aria-pressed={showTable}
-            aria-controls="board-table"
-            onClick={() => setShowTable((isVisible) => !isVisible)}
-          >
-            Table
-          </button>
-          <button
-            type="button"
-            aria-pressed={miniMapExpanded}
-            onClick={() => setMiniMapExpanded((isVisible) => !isVisible)}
-          >
-            Map
-          </button>
-        </Panel>
-      )}
       {workspaceView === 'nodes' && (
         <Controls
           className="canvas-corner-tools"
@@ -3104,117 +3084,138 @@ function Flow() {
         </Suspense>
       ) : null}
       {!canvasLabVisible ? (
-        !isSharedAssembly && workspaceMenuVisible ? (
-          <nav className="workspace-switcher" aria-label="OSA tools">
-          <button
-            className="workspace-switcher__hide"
-            type="button"
-            aria-label="Hide top menu"
-            onClick={() => setWorkspaceMenuVisible(false)}
-          >
-            Hide
-          </button>
-          {([
-            { id: 'assembly', label: 'Assembly' },
-            { id: 'nodes', label: 'Space' },
-          ] as const).map((view) => (
-            <button
-              className={workspaceView === view.id ? 'is-active' : undefined}
-              type="button"
-              key={view.id}
-              aria-current={workspaceView === view.id ? 'page' : undefined}
-              onClick={() => {
-                setAssemblyInstructionsPreview(false)
-                setWorkspaceView(view.id)
-              }}
-            >
-              {view.label}
-            </button>
-          ))}
-          {import.meta.env.DEV ? (
-            <button
-              type="button"
-              aria-label="Open Canvas Lab"
-              onClick={openCanvasLab}
-            >
-              Lab
-            </button>
-          ) : null}
-          <WorkspaceSettingsMenu
-            theme={theme}
-            onToggleTheme={toggleTheme}
-            boardId={boardId}
-            boardName={boardName}
-            boardAccess={boardAccess}
-            savedBoards={savedBoards}
-            archivedBoards={archivedBoards}
-            selectedBoardId={selectedBoardId}
-            showingArchivedBoards={showingArchivedBoards}
-            canArchiveCurrentBoard={savedBoards.some((board) => board.id === boardId)}
-            onBoardNameChange={setBoardName}
-            onSelectedBoardIdChange={setSelectedBoardId}
-            onShowSavedBoards={showActiveBoardList}
-            onShowArchivedBoards={showArchivedBoardList}
-            onLoadSelectedBoard={loadSelectedBoard}
-            onArchiveCurrentBoard={archiveCurrentBoard}
-            onRestoreSelectedBoard={restoreSelectedBoard}
-            onManualSync={saveBoardToDatabase}
-            storageStatus={storageStatus}
-            cloudSyncStatus={cloudSyncStatus}
-            localDraftStatus={draftStatus}
-            cloudRevision={cloudRevision}
-            needsSignIn={needsSignIn}
-            cloudConflictBoard={cloudConflictBoard}
-            onReloadCloudBoard={reloadCloudBoard}
-            onSaveBoardAsCopy={saveCurrentBoardAsCopy}
-            collaborators={boardCollaborators}
-            collaborationStatus={collaborationStatus}
-            onAddCollaborator={boardAccess === 'owner' ? addBoardCollaborator : undefined}
-            onRemoveCollaborator={boardAccess === 'owner' ? removeBoardCollaboratorAccess : undefined}
-            activeAssemblyLabel={activeAssembly ? nodeTitle(activeAssembly) : null}
-            shareSlug={shareSlug}
-            shareStatus={shareStatus}
-            shareUrl={shareUrl}
-            onShareSlugChange={setShareSlug}
-            onCreateAssemblyShare={boardAccess === 'owner' ? createAssemblyShareLink : undefined}
-            onPreviewAssembly={activeAssembly ? () => setAssemblyInstructionsPreview(true) : undefined}
-            onDownloadJsonBackup={saveBoardAsJson}
-            onLoadJsonBackup={loadBoardFromJson}
-            onImportOsaData={importOsaDataFromJson}
-          />
-          </nav>
-        ) : !isSharedAssembly ? (
-          <button
-            className="workspace-switcher-reveal"
-            type="button"
-            aria-label="Show top menu"
-            onClick={() => setWorkspaceMenuVisible(true)}
-          >
-            <span aria-hidden="true">⌄</span>
-          </button>
+        !isSharedAssembly ? (
+          <div className="workspace-top-chrome">
+            {workspaceMenuVisible ? (
+              <nav className="workspace-switcher" aria-label="OSA tools">
+                <button
+                  className="workspace-switcher__hide"
+                  type="button"
+                  aria-label="Hide top menu"
+                  onClick={() => setWorkspaceMenuVisible(false)}
+                >
+                  Hide
+                </button>
+                {([
+                  { id: 'assembly', label: 'Assembly' },
+                  { id: 'nodes', label: 'Space' },
+                ] as const).map((view) => (
+                  <button
+                    className={workspaceView === view.id ? 'is-active' : undefined}
+                    type="button"
+                    key={view.id}
+                    aria-current={workspaceView === view.id ? 'page' : undefined}
+                    onClick={() => {
+                      setAssemblyInstructionsPreview(false)
+                      setWorkspaceView(view.id)
+                    }}
+                  >
+                    {view.label}
+                  </button>
+                ))}
+                {import.meta.env.DEV ? (
+                  <button
+                    type="button"
+                    aria-label="Open Canvas Lab"
+                    onClick={openCanvasLab}
+                  >
+                    Lab
+                  </button>
+                ) : null}
+                <WorkspaceSettingsMenu
+                  theme={theme}
+                  onToggleTheme={toggleTheme}
+                  boardId={boardId}
+                  boardName={boardName}
+                  boardAccess={boardAccess}
+                  savedBoards={savedBoards}
+                  archivedBoards={archivedBoards}
+                  selectedBoardId={selectedBoardId}
+                  showingArchivedBoards={showingArchivedBoards}
+                  canArchiveCurrentBoard={savedBoards.some((board) => board.id === boardId)}
+                  onBoardNameChange={setBoardName}
+                  onSelectedBoardIdChange={setSelectedBoardId}
+                  onShowSavedBoards={showActiveBoardList}
+                  onShowArchivedBoards={showArchivedBoardList}
+                  onLoadSelectedBoard={loadSelectedBoard}
+                  onArchiveCurrentBoard={archiveCurrentBoard}
+                  onRestoreSelectedBoard={restoreSelectedBoard}
+                  onManualSync={saveBoardToDatabase}
+                  storageStatus={storageStatus}
+                  cloudSyncStatus={cloudSyncStatus}
+                  localDraftStatus={draftStatus}
+                  cloudRevision={cloudRevision}
+                  needsSignIn={needsSignIn}
+                  cloudConflictBoard={cloudConflictBoard}
+                  onReloadCloudBoard={reloadCloudBoard}
+                  onSaveBoardAsCopy={saveCurrentBoardAsCopy}
+                  collaborators={boardCollaborators}
+                  collaborationStatus={collaborationStatus}
+                  onAddCollaborator={boardAccess === 'owner' ? addBoardCollaborator : undefined}
+                  onRemoveCollaborator={boardAccess === 'owner' ? removeBoardCollaboratorAccess : undefined}
+                  activeAssemblyLabel={activeAssembly ? nodeTitle(activeAssembly) : null}
+                  shareSlug={shareSlug}
+                  shareStatus={shareStatus}
+                  shareUrl={shareUrl}
+                  onShareSlugChange={setShareSlug}
+                  onCreateAssemblyShare={boardAccess === 'owner' ? createAssemblyShareLink : undefined}
+                  onPreviewAssembly={activeAssembly ? () => setAssemblyInstructionsPreview(true) : undefined}
+                  onDownloadJsonBackup={saveBoardAsJson}
+                  onLoadJsonBackup={loadBoardFromJson}
+                  onImportOsaData={importOsaDataFromJson}
+                />
+                <span className="workspace-switcher__status" role="status">
+                  {cloudSyncStatus || draftStatus}
+                </span>
+              </nav>
+            ) : (
+              <button
+                className="workspace-switcher-reveal"
+                type="button"
+                aria-label="Show top menu"
+                onClick={() => setWorkspaceMenuVisible(true)}
+              >
+                <span aria-hidden="true">⌄</span>
+              </button>
+            )}
+            {workspaceView === 'nodes' ? (
+              <div className="space-command-bar" aria-label="Space controls">
+                <div className="space-canvas-toolbar" role="group" aria-label="Space tools">
+                  <button type="button" onClick={addNode}>+ Node</button>
+                  <button type="button" onClick={importCurrentSourceHierarchy}>Import src</button>
+                  <button
+                    type="button"
+                    aria-pressed={showTable}
+                    aria-controls="board-table"
+                    onClick={() => setShowTable((isVisible) => !isVisible)}
+                  >
+                    Table
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={miniMapExpanded}
+                    onClick={() => setMiniMapExpanded((isVisible) => !isVisible)}
+                  >
+                    Map
+                  </button>
+                </div>
+                <SpaceToolbar
+                  spaces={allSpaces}
+                  selectedSpaceId={selectedSpaceId}
+                  kindFilter={nodeKindFilter}
+                  connectionFilter={nodeConnectionFilter}
+                  onSpaceChange={setNodeSpaceFilter}
+                  onKindChange={setNodeKindFilter}
+                  onConnectionChange={setNodeConnectionFilter}
+                />
+              </div>
+            ) : null}
+          </div>
         ) : (
           <p className="shared-assembly-status" role="status">
             {shareStatus || 'Loading shared assembly…'}
           </p>
         )
-      ) : (
-        null
-      )}
-      {!canvasLabVisible && !isSharedAssembly ? (
-        <div className="local-draft-status" role="status">
-          <span>{cloudSyncStatus || draftStatus}</span>
-        </div>
-      ) : null}
-      {!canvasLabVisible && !isSharedAssembly && workspaceView === 'nodes' ? (
-        <SpaceToolbar
-          spaces={allSpaces}
-          selectedSpaceId={selectedSpaceId}
-          kindFilter={nodeKindFilter}
-          connectionFilter={nodeConnectionFilter}
-          onSpaceChange={setNodeSpaceFilter}
-          onKindChange={setNodeKindFilter}
-          onConnectionChange={setNodeConnectionFilter}
-        />
       ) : null}
       {!canvasLabVisible && workspaceView !== 'nodes' ? (
         <div className="work-view-shell">
