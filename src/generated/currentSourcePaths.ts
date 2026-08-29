@@ -54,5 +54,6 @@ export const CURRENT_SOURCE_PATHS = [
   "src/graph/visualEmbed.ts",
   "src/graph/visualVersion.ts",
   "src/index.css",
-  "src/main.tsx"
+  "src/main.tsx",
+  "src/starters/shakoLightWrap.ts"
 ] as const

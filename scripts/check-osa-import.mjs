@@ -17,6 +17,9 @@ const server = await createServer({
 
 try {
   const { mergeOsaImportPlan, parseOsaImportPackage, planOsaImport } = await server.ssrLoadModule('/src/graph/osaImport.ts')
+  const { createShakoLightWrapImportPlan } = await server.ssrLoadModule(
+    '/src/starters/shakoLightWrap.ts',
+  )
   const {
     OSA_PROPERTY,
     OSA_RELATION,
@@ -39,7 +42,13 @@ try {
   const { createBoardSnapshot, parseBoardSnapshot } = await server.ssrLoadModule('/src/graph/boardSnapshot.ts')
   const raw = await readFile(new URL('../imports/shako-light-wrap.osa.json', import.meta.url), 'utf8')
   const importPackage = parseOsaImportPackage(JSON.parse(raw))
-  const plan = planOsaImport(importPackage)
+  const directlyPlannedImport = planOsaImport(importPackage)
+  const plan = createShakoLightWrapImportPlan()
+  assert.deepEqual(
+    plan,
+    directlyPlannedImport,
+    'The bundled starter uses the normal validated OSA import path.',
+  )
 
   assert.equal(plan.nodes.length, 63)
   assert.equal(plan.edges.length, 86)
