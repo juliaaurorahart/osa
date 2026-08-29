@@ -1,5 +1,7 @@
 @import url('@xyflow/react/dist/style.css');
 
+/* Semantic application colors. Components consume these variables directly;
+   switching data-theme changes the palette without a second override layer. */
 :root {
   color-scheme: dark;
   --osa-bg: #0d1117;

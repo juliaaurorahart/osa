@@ -13,7 +13,6 @@ import {
   OSA_RELATION,
   isPartLike,
   osaRole,
-  type OperationVisualPlacement,
 } from '../graph/osaData'
 import type { TextFlowNode } from '../graph/textNode'
 import { annotationTargetsForNodes } from '../graph/sketchAnnotation'
@@ -34,6 +33,35 @@ import './AssemblyView.css'
 
 const INDEX_CARD_ID = 'assembly-index'
 
+export type AssemblyViewActions = {
+  onCreateAssembly: (title: string) => string
+  onCreateOperation: (assemblyId: string, title: string) => string
+  onReorderOperation: (assemblyId: string, operationId: string, direction: 'up' | 'down') => void
+  onRemoveOperation: (operationId: string) => void
+  onCreateStep: (operationId: string) => string
+  onReorderStep: (operationId: string, stepId: string, direction: 'up' | 'down') => void
+  onRemoveStep: (operationId: string, stepId: string) => void
+  onEnsureStepCanvas: (stepId: string) => string
+  onCreateTool: (
+    operationId: string,
+    name: string,
+    options?: { placeholder?: boolean },
+  ) => string
+  onLinkPart: (operationId: string, partId: string) => void
+  onLinkPartInput?: (operationId: string, partId: string) => void
+  onUnlinkPartInput?: (operationId: string, partId: string) => void
+  onCreatePartForOperation?: (
+    operationId: string,
+    direction: OperationPartDirection,
+    requestedName?: string,
+  ) => string
+  onLinkTool?: (operationId: string, toolId: string) => void
+  onUnlinkTool?: (operationId: string, toolId: string) => void
+  onNameChange: (nodeId: string, name: string) => void
+  onTextChange: (nodeId: string, text: string) => void
+  onPropertyChange?: (nodeId: string, propertyName: string, value: string) => void
+}
+
 type AssemblyViewProps = {
   assemblies: TextFlowNode[]
   nodes: TextFlowNode[]
@@ -50,90 +78,8 @@ type AssemblyViewProps = {
   tools?: TextFlowNode[]
   selectedAssemblyId: string | null
   onSelectAssembly: (assemblyId: string) => void
-  onCreateAssembly: (title: string) => string
-  onCreateOperation: (assemblyId: string, title: string) => string
-  /** Moves one card in the durable Assembly instruction sequence. */
-  onReorderOperation: (assemblyId: string, operationId: string, direction: 'up' | 'down') => void
-  /** Removes one card from this Assembly without deleting its project objects. */
-  onRemoveOperation: (operationId: string) => void
-  /** Adds one named, ordered durable step beneath an instruction card. */
-  onCreateStep: (operationId: string) => string
-  /** Moves one durable step without rewriting the rest of the card text. */
-  onReorderStep: (operationId: string, stepId: string, direction: 'up' | 'down') => void
-  /** Removes one step and its one step-owned canvas from this instruction. */
-  onRemoveStep: (operationId: string, stepId: string) => void
-  /** Returns the one canvas owned by a step, creating it only when needed. */
-  onEnsureStepCanvas: (stepId: string) => string
-  onCreatePart: (assemblyId: string) => string
-  onCreateExpense: (assemblyId: string) => string
-  /** Removes one Part from this Assembly's shared inventory only. */
-  onUnlinkAssemblyPart: (assemblyId: string, partId: string) => void
-  /** Removes one Expense from this Assembly's shared inventory only. */
-  onUnlinkAssemblyExpense: (assemblyId: string, expenseId: string) => void
-  onCreateTool: (
-    operationId: string,
-    name: string,
-    options?: { placeholder?: boolean },
-  ) => string
-  /**
-   * Legacy input-only relation. It remains as a compatibility fallback while
-   * existing boards use `operation-item`; new hosts should pass the explicit
-   * input/output callbacks below.
-   */
-  onLinkPart: (operationId: string, partId: string) => void
-  /** Links an existing canonical part as something this operation needs. */
-  onLinkPartInput?: (operationId: string, partId: string) => void
-  /** Unlinks one part or assembly from this instruction's In list only. */
-  onUnlinkPartInput?: (operationId: string, partId: string) => void
-  /** Sets the one part or subassembly represented by an instruction card. */
-  onSetPrimaryOutput?: (operationId: string, partId: string) => void
-  /**
-   * Creates one canonical placeholder part and links it to the operation in
-   * the supplied direction. The host also owns linking it into the assembly's
-   * shared parts list, so it becomes available everywhere immediately.
-   */
-  onCreatePartForOperation?: (
-    operationId: string,
-    direction: OperationPartDirection,
-    /** Optional deliberate name for a legacy-card primary-output repair. */
-    requestedName?: string,
-  ) => string
-  onLinkTool?: (operationId: string, toolId: string) => void
-  /** Unlinks one tool from this instruction without deleting the tool record. */
-  onUnlinkTool?: (operationId: string, toolId: string) => void
-  /** Places an existing reusable Visual in this card without copying it. */
-  onLinkObjectVisual?: (operationId: string, objectId: string, sectionId: string) => void
-  /** Removes only this card's View link; the object's reusable visual remains. */
-  onUnlinkObjectVisual?: (operationId: string, objectId: string) => void
-  /** Moves one editable canvas up or down in this card's visual column. */
-  onReorderOperationVisual?: (
-    operationId: string,
-    visualId: string,
-    direction: 'up' | 'down',
-  ) => void
-  /** Legacy placement editor callback retained for hosts that still provide it. */
-  onObjectVisualPlacementChange?: (
-    operationId: string,
-    objectId: string,
-    placement: OperationVisualPlacement,
-  ) => void
-  /** Legacy section callback retained for host compatibility; Assembly does not call it. */
-  onCreateCanvasSection?: (operationId: string) => string
-  /**
-   * Creates one generic canvas owned by the card's represented part (with a
-   * parent-Assembly fallback), then references it from this operation. The
-   * canvas chooses its own permanent identity only after it is opened.
-   */
-  onCreateOwnedVisualForOperation?: (
-    operationId: string,
-    initialIdentity?: 'osa-draw' | 'untyped',
-  ) => string | undefined
-  /** Reassigns a Visual to a Part, Assembly, or Tool without changing its card references. */
-  onChangeVisualOwner?: (visualId: string, ownerId: string) => void
-  onNameChange: (nodeId: string, name: string) => void
-  onTextChange: (nodeId: string, text: string) => void
-  /** Updates durable Visual metadata chosen inside the canvas editor. */
-  onPropertyChange?: (nodeId: string, propertyName: string, value: string) => void
+  /** Durable graph mutations are grouped separately from view/navigation props. */
+  actions: AssemblyViewActions
   onOpenNode: (nodeId: string) => void
   /** A shared link can project a board without exposing editing controls. */
   readOnly?: boolean
@@ -251,24 +197,7 @@ export function AssemblyView({
   tools,
   selectedAssemblyId,
   onSelectAssembly,
-  onCreateAssembly,
-  onCreateOperation,
-  onReorderOperation,
-  onRemoveOperation,
-  onCreateStep,
-  onReorderStep,
-  onRemoveStep,
-  onEnsureStepCanvas,
-  onCreateTool,
-  onLinkPart,
-  onLinkPartInput,
-  onUnlinkPartInput,
-  onCreatePartForOperation,
-  onLinkTool,
-  onUnlinkTool,
-  onNameChange,
-  onTextChange,
-  onPropertyChange,
+  actions,
   onOpenNode,
   readOnly = false,
   onShare,
@@ -285,6 +214,26 @@ export function AssemblyView({
   onRemoveCollaborator,
   collaborationStatus,
 }: AssemblyViewProps) {
+  const {
+    onCreateAssembly,
+    onCreateOperation,
+    onReorderOperation,
+    onRemoveOperation,
+    onCreateStep,
+    onReorderStep,
+    onRemoveStep,
+    onEnsureStepCanvas,
+    onCreateTool,
+    onLinkPart,
+    onLinkPartInput,
+    onUnlinkPartInput,
+    onCreatePartForOperation,
+    onLinkTool,
+    onUnlinkTool,
+    onNameChange,
+    onTextChange,
+    onPropertyChange,
+  } = actions
   const selectedAssembly = assemblies.find((assembly) => assembly.id === selectedAssemblyId)
     ?? assemblies[0]
   const [peopleOpen, setPeopleOpen] = useState(false)

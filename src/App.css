@@ -11,6 +11,8 @@
   width: 100%;
   height: 100%;
   overflow: hidden;
+  background: var(--osa-bg);
+  color: var(--osa-text);
 }
 
 .workspace-switcher {
@@ -25,7 +27,9 @@
   justify-content: center;
   flex-wrap: wrap;
   padding: 4px 12px;
-  background: rgb(255 255 255 / 92%);
+  background: var(--osa-surface);
+  color: var(--osa-text);
+  box-shadow: 0 12px 34px var(--osa-shadow);
   transform: translateX(-50%);
 }
 
@@ -34,7 +38,7 @@
 .work-view input,
 .work-view select,
 .work-view textarea {
-  color: #171717;
+  color: var(--osa-text);
   font: inherit;
 }
 
@@ -48,12 +52,12 @@
 
 .workspace-switcher button:hover,
 .workspace-switcher button.is-active {
-  border-bottom-color: #171717;
+  border-bottom-color: var(--osa-text);
 }
 
 .workspace-switcher .workspace-switcher__hide {
   margin-right: 4px;
-  color: #777;
+  color: var(--osa-muted);
   font-size: 0.72rem;
 }
 
@@ -67,8 +71,9 @@
   padding: 0;
   border: 0;
   border-radius: 0 0 18px 18px;
-  background: rgb(255 255 255 / 90%);
-  color: #555;
+  background: var(--osa-surface);
+  box-shadow: 0 12px 34px var(--osa-shadow);
+  color: var(--osa-text);
   cursor: pointer;
   font: inherit;
   line-height: 14px;
@@ -77,7 +82,7 @@
 
 .workspace-switcher-reveal:hover,
 .workspace-switcher-reveal:focus-visible {
-  color: #111;
+  color: var(--osa-text);
   outline: 0;
 }
 
@@ -95,13 +100,14 @@
   width: 210px;
   height: 210px;
   transform: translate(-50%, -50%);
+  color: var(--osa-text);
 }
 
 .pointer-tool-palette__label {
   position: absolute;
   top: calc(50% + 21px);
   left: 50%;
-  color: #777;
+  color: var(--osa-muted);
   font-size: 0.65rem;
   letter-spacing: 0.04em;
   pointer-events: none;
@@ -124,10 +130,10 @@
   width: 62px;
   height: 62px;
   padding: 6px;
-  border: 1px solid rgb(23 23 23 / 72%);
-  background: rgb(255 255 255 / 96%);
-  box-shadow: 0 3px 15px rgb(0 0 0 / 9%);
-  color: #171717;
+  border: 1px solid var(--osa-border);
+  background: var(--osa-surface);
+  box-shadow: 0 12px 34px var(--osa-shadow);
+  color: var(--osa-text);
   font-size: 0.75rem;
   line-height: 1.05;
   transform: translate(-50%, -50%);
@@ -161,16 +167,16 @@
   height: 30px;
   padding: 0 0 2px;
   border: 0;
-  background: #fff;
-  box-shadow: 0 1px 7px rgb(0 0 0 / 13%);
-  color: #555;
+  background: var(--osa-surface);
+  box-shadow: 0 12px 34px var(--osa-shadow);
+  color: var(--osa-text);
   font-size: 1rem;
   transform: translate(-50%, -50%);
 }
 
 .pointer-tool-palette__close:hover,
 .pointer-tool-palette__close:focus-visible {
-  color: #111;
+  color: var(--osa-text);
   outline: 0;
 }
 
@@ -182,7 +188,7 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  color: #777;
+  color: var(--osa-muted);
   font-size: 0.72rem;
 }
 
@@ -218,7 +224,7 @@
   border-radius: 24px 0 0 24px;
   background: transparent;
   box-shadow: none;
-  color: #444;
+  color: var(--osa-text);
   font-size: 0.76rem;
   text-decoration: none;
   transform: translateY(-50%);
@@ -247,8 +253,9 @@
 .osa-sign-in-reveal:hover,
 .osa-sign-in-reveal:focus-visible {
   width: 178px;
-  background: rgb(255 255 255 / 96%);
-  box-shadow: 0 3px 15px rgb(0 0 0 / 9%);
+  border-color: var(--osa-border);
+  background: var(--osa-surface);
+  box-shadow: 0 12px 34px var(--osa-shadow);
   outline: 0;
 }
 
@@ -271,7 +278,8 @@
   inset: 0;
   overflow: auto;
   padding: 74px max(24px, calc((100% - 980px) / 2)) 48px;
-  background: rgb(255 255 255 / 97%);
+  background: var(--osa-bg);
+  color: var(--osa-text);
 }
 
 .workspace-menu-hidden .work-view-shell {
@@ -286,7 +294,7 @@
   width: 100%;
   max-width: 980px;
   margin: 0 auto;
-  color: #171717;
+  color: var(--osa-text);
 }
 
 .work-view__header {
@@ -311,14 +319,14 @@
 .work-view__header > span,
 .project-detail__task-heading span,
 .work-view__eyebrow {
-  color: #666;
+  color: var(--osa-muted);
   font-size: 0.78rem;
 }
 
 .work-view__divider {
   height: 1px;
   margin: 0 0 28px;
-  background: #b8b8b8;
+  background: var(--osa-border);
 }
 
 .work-view__eyebrow {
@@ -372,7 +380,7 @@
 .project-detail select:focus,
 .project-detail textarea:focus {
   outline: 0;
-  box-shadow: inset 0 -1px #171717;
+  box-shadow: inset 0 -1px var(--osa-focus);
 }
 
 .work-view__create {
@@ -381,7 +389,7 @@
   gap: 16px;
   margin-bottom: 28px;
   padding-bottom: 8px;
-  border-bottom: 1px solid #b8b8b8;
+  border-bottom: 1px solid var(--osa-border);
 }
 
 .work-view__create input {
@@ -394,13 +402,13 @@
 .project-task-create button {
   padding: 5px 0;
   border: 0;
-  border-bottom: 1px solid #171717;
+  border-bottom: 1px solid var(--osa-text);
   background: transparent;
   cursor: pointer;
 }
 
 .work-view__empty {
-  color: #666;
+  color: var(--osa-muted);
 }
 
 .object-list {
@@ -414,7 +422,7 @@
   grid-template-columns: 22px minmax(0, 1fr);
   gap: 12px;
   padding: 17px 0;
-  border-bottom: 1px solid #e4e4e4;
+  border-bottom: 1px solid var(--osa-border);
 }
 
 .task-row__check,
@@ -422,7 +430,7 @@
   width: 15px;
   height: 15px;
   margin-top: 4px;
-  accent-color: #171717;
+  accent-color: var(--osa-focus);
 }
 
 .task-row__content {
@@ -443,7 +451,7 @@
 .task-row__name {
   padding-left: 7px;
   border-left: 2px solid #5bcefa;
-  color: #777;
+  color: var(--osa-muted);
 }
 
 .task-row__facts,
@@ -456,7 +464,7 @@
 
 .task-row__facts {
   margin-top: 5px;
-  color: #555;
+  color: var(--osa-muted);
   font-size: 0.82rem;
 }
 
@@ -467,7 +475,7 @@
 }
 
 .task-row__facts input {
-  color: #555;
+  color: var(--osa-muted);
 }
 
 .context-links {
@@ -479,7 +487,7 @@
 .context-link {
   display: inline-flex;
   align-items: center;
-  border-bottom: 1px solid #f5a9b8;
+  border-bottom: 1px solid var(--notebook-sketch-accent);
 }
 
 .context-link button,
@@ -491,11 +499,11 @@
 }
 
 .context-link button:last-child {
-  color: #777;
+  color: var(--osa-muted);
 }
 
 .context-links__empty {
-  color: #777;
+  color: var(--osa-muted);
 }
 
 .assembly-workspace {
@@ -506,8 +514,8 @@
 
 .assembly-start {
   padding: 24px 0;
-  border-top: 1px solid #e4e4e4;
-  border-bottom: 1px solid #e4e4e4;
+  border-top: 1px solid var(--osa-border);
+  border-bottom: 1px solid var(--osa-border);
 }
 
 .assembly-start h2,
@@ -523,7 +531,7 @@
 
 .assembly-start p {
   max-width: 560px;
-  color: #666;
+  color: var(--osa-muted);
   line-height: 1.45;
 }
 
@@ -546,15 +554,15 @@
   width: 100%;
   padding: 0 0 6px;
   border: 0;
-  border-bottom: 1px solid #b8b8b8;
+  border-bottom: 1px solid var(--osa-border);
   background: transparent;
-  color: #171717;
+  color: var(--osa-text);
   font-size: 1.65rem;
 }
 
 .assembly-detail__heading input:focus {
   outline: 0;
-  box-shadow: inset 0 -1px #171717;
+  box-shadow: inset 0 -1px var(--osa-focus);
 }
 
 .assembly-detail__overview {
@@ -564,9 +572,9 @@
   margin: 16px 0 26px;
   padding: 0 0 12px;
   border: 0;
-  border-bottom: 1px solid #e4e4e4;
+  border-bottom: 1px solid var(--osa-border);
   background: transparent;
-  color: #555;
+  color: var(--osa-muted);
   line-height: 1.5;
   resize: vertical;
 }
@@ -578,7 +586,7 @@
 .assembly-record-editor input:focus,
 .assembly-record-editor textarea:focus {
   outline: 0;
-  box-shadow: inset 0 -1px #171717;
+  box-shadow: inset 0 -1px var(--osa-focus);
 }
 
 .assembly-section-heading {
@@ -596,7 +604,7 @@
 }
 
 .assembly-section-heading > span {
-  color: #666;
+  color: var(--osa-muted);
   font-size: 0.78rem;
 }
 
@@ -604,7 +612,7 @@
   display: flex;
   gap: 24px;
   margin-bottom: 28px;
-  border-bottom: 1px solid #d9d9d9;
+  border-bottom: 1px solid var(--osa-border);
 }
 
 .assembly-tabs button {
@@ -612,14 +620,14 @@
   border: 0;
   border-bottom: 2px solid transparent;
   background: transparent;
-  color: #666;
+  color: var(--osa-muted);
   cursor: pointer;
 }
 
 .assembly-tabs button:hover,
 .assembly-tabs button.is-active {
   border-bottom-color: #f06a9b;
-  color: #171717;
+  color: var(--osa-text);
 }
 
 .assembly-authoring {
@@ -653,7 +661,7 @@
 }
 
 .assembly-outline > button small {
-  color: #777;
+  color: var(--osa-muted);
   font-variant-numeric: tabular-nums;
 }
 
@@ -663,7 +671,7 @@
   gap: 10px;
   margin-bottom: 9px;
   padding-bottom: 8px;
-  border-bottom: 1px solid #b8b8b8;
+  border-bottom: 1px solid var(--osa-border);
 }
 
 .assembly-step-create input {
@@ -676,13 +684,13 @@
 
 .assembly-step-create input:focus {
   outline: 0;
-  box-shadow: inset 0 -1px #171717;
+  box-shadow: inset 0 -1px var(--osa-focus);
 }
 
 .assembly-step-create button {
   padding: 5px 0;
   border: 0;
-  border-bottom: 1px solid #171717;
+  border-bottom: 1px solid var(--osa-text);
   background: transparent;
   cursor: pointer;
 }
@@ -706,7 +714,7 @@
   display: grid;
   gap: 7px;
   min-width: 0;
-  color: #666;
+  color: var(--osa-muted);
   font-size: 0.78rem;
 }
 
@@ -729,10 +737,10 @@
   width: 100%;
   padding: 7px 0;
   border: 0;
-  border-bottom: 1px solid #d9d9d9;
+  border-bottom: 1px solid var(--osa-border);
   border-radius: 0;
   background: transparent;
-  color: #171717;
+  color: var(--osa-text);
   font: inherit;
 }
 
@@ -754,7 +762,7 @@
 
 .operation-field--steps textarea {
   min-height: 190px;
-  color: #171717;
+  color: var(--osa-text);
   font-size: 1rem;
 }
 
@@ -773,9 +781,9 @@
 .assembly-record-editor__actions a {
   padding: 3px 0;
   border: 0;
-  border-bottom: 1px solid #f5a9b8;
+  border-bottom: 1px solid var(--notebook-sketch-accent);
   background: transparent;
-  color: #171717;
+  color: var(--osa-text);
   cursor: pointer;
   text-decoration: none;
 }
@@ -793,21 +801,21 @@
   max-width: 100%;
   padding: 6px 24px 6px 0;
   border: 0;
-  border-bottom: 1px solid #d9d9d9;
+  border-bottom: 1px solid var(--osa-border);
   border-radius: 0;
-  color: #555;
+  color: var(--osa-muted);
   background-color: transparent;
   font: inherit;
   cursor: pointer;
 }
 
 .operation-tools > select:focus {
-  border-bottom-color: #171717;
+  border-bottom-color: var(--osa-focus);
   outline: 0;
 }
 
 .assembly-source-note {
-  color: #777;
+  color: var(--osa-muted);
 }
 
 .assembly-ledger {
@@ -832,12 +840,12 @@
 .assembly-table th,
 .assembly-table td {
   padding: 9px 8px;
-  border-bottom: 1px solid #e4e4e4;
+  border-bottom: 1px solid var(--osa-border-subtle);
   text-align: left;
 }
 
 .assembly-table th {
-  color: #666;
+  color: var(--osa-muted);
   font-size: 0.72rem;
   font-weight: 400;
   letter-spacing: 0.04em;
@@ -850,7 +858,7 @@
 
 .assembly-table tbody tr:hover,
 .assembly-table tbody tr.is-selected {
-  background: rgb(91 206 250 / 8%);
+  background: var(--osa-hover-surface);
 }
 
 .assembly-table input {
@@ -878,7 +886,7 @@
 
 .assembly-table__cost small {
   margin-top: 2px;
-  color: #777;
+  color: var(--osa-muted);
 }
 
 .assembly-record-editor {
@@ -887,7 +895,7 @@
   gap: 18px 28px;
   margin-top: 26px;
   padding-top: 22px;
-  border-top: 1px solid #171717;
+  border-top: 1px solid var(--osa-border);
 }
 
 .assembly-record-editor label:first-child {
@@ -906,8 +914,8 @@
   gap: 10px 18px;
   margin-top: 34px;
   padding-top: 15px;
-  border-top: 1px solid #e4e4e4;
-  color: #666;
+  border-top: 1px solid var(--osa-border);
+  color: var(--osa-muted);
   font-size: 0.78rem;
 }
 
@@ -937,7 +945,7 @@
 
 .project-list button:hover,
 .project-list button.is-active {
-  border-left-color: #f5a9b8;
+  border-left-color: var(--notebook-sketch-accent);
 }
 
 .project-list__today {
@@ -948,11 +956,11 @@
   width: 100%;
   height: 1px;
   margin: 4px 0;
-  background: #b8b8b8;
+  background: var(--osa-border);
 }
 
 .project-list small {
-  color: #777;
+  color: var(--osa-muted);
 }
 
 .tasks-view--compact {
@@ -1005,7 +1013,7 @@
   grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 12px;
   padding-bottom: 8px;
-  border-bottom: 1px solid #b8b8b8;
+  border-bottom: 1px solid var(--osa-border);
 }
 
 .project-link-existing {
@@ -1013,7 +1021,7 @@
   align-items: center;
   gap: 12px;
   margin: 14px 0;
-  color: #666;
+  color: var(--osa-muted);
   font-size: 0.82rem;
 }
 
@@ -1027,7 +1035,7 @@
   align-items: center;
   gap: 12px;
   padding: 12px 0;
-  border-bottom: 1px solid #e4e4e4;
+  border-bottom: 1px solid var(--osa-border);
 }
 
 .project-task-row__content {
@@ -1047,7 +1055,7 @@
 .project-task-row__content small {
   display: block;
   margin-top: 3px;
-  color: #777;
+  color: var(--osa-muted);
 }
 
 @media (max-width: 700px) {
@@ -1431,10 +1439,10 @@
   position: relative;
   width: 190px;
   padding: 10px;
-  border: 1px solid #1a192b;
+  border: 1px solid var(--osa-border);
   border-radius: 3px;
-  color: #222;
-  background: #fff;
+  color: var(--osa-text);
+  background: var(--osa-surface-raised);
   font-size: 12px;
 }
 
@@ -1467,6 +1475,8 @@
   width: 100%;
   min-height: 120px;
   border: 0;
+  background: transparent;
+  color: var(--osa-text);
   resize: vertical;
   text-align: left;
 }
@@ -1481,14 +1491,14 @@
   padding: 2px 0;
   border: 0;
   background: transparent;
-  color: #666;
+  color: var(--osa-text);
   font: inherit;
   cursor: pointer;
 }
 
 .text-node .markdown-editor__preview:hover,
 .text-node .markdown-editor__preview:focus-visible {
-  color: #111;
+  color: var(--osa-text);
 }
 
 .markdown-preview {
@@ -1521,17 +1531,17 @@
 .markdown-preview pre {
   overflow: visible;
   padding: 8px;
-  background: #f5f5f5;
+  background: var(--osa-bg);
 }
 
 .markdown-preview blockquote {
   margin-left: 0;
   padding-left: 10px;
-  border-left: 2px solid #bbb;
+  border-left: 2px solid var(--osa-border);
 }
 
 .markdown-preview__empty {
-  color: #777;
+  color: var(--osa-muted);
 }
 
 .sketch-pad {
@@ -1555,7 +1565,7 @@
   padding: 2px 5px;
   border: 0;
   background: transparent;
-  color: #444;
+  color: var(--osa-text);
   font: inherit;
   cursor: pointer;
 }
@@ -1611,7 +1621,7 @@
   height: auto;
   min-height: 54px;
   margin-top: 10px;
-  border-top: 1px solid #d9d9d9;
+  border-top: 1px solid var(--osa-border);
   font-size: 16px;
 }
 
@@ -1658,6 +1668,7 @@
 .text-node__detail-fields select {
   border: 0;
   background: transparent;
+  color: var(--osa-text);
   font: inherit;
 }
 
@@ -1702,10 +1713,10 @@
   z-index: 1000;
   width: 190px;
   padding: 10px;
-  border: 1px solid #1a192b;
+  border: 1px solid var(--osa-border);
   border-radius: 3px;
-  color: #222;
-  background: #fff;
+  color: var(--osa-text);
+  background: var(--osa-surface-raised);
   pointer-events: none;
 }
 
@@ -1716,7 +1727,7 @@
 
 .node-attributes__empty,
 .edge-hover-card__empty {
-  color: #777;
+  color: var(--osa-muted);
   font-style: italic;
 }
 
@@ -1746,10 +1757,11 @@
   width: min(380px, calc(100vw - 32px));
   gap: 12px;
   padding: 14px;
-  border: 0;
+  border: 1px solid var(--osa-border);
   border-radius: 16px;
-  background: rgb(255 255 255 / 97%);
-  box-shadow: 0 12px 34px rgb(24 23 35 / 10%);
+  background: var(--osa-surface);
+  box-shadow: 0 12px 34px var(--osa-shadow);
+  color: var(--osa-text);
   font-size: 12px;
 }
 
@@ -1762,7 +1774,7 @@
 .board-dock__toggle {
   padding: 3px 8px;
   border: 0;
-  color: #555;
+  color: var(--osa-muted);
   background: transparent;
   cursor: pointer;
   font-size: 12px;
@@ -1802,16 +1814,17 @@
   height: 28px;
   min-width: 0;
   border: 0;
-  background: transparent;
+  background: var(--osa-input);
+  color: var(--osa-text);
 }
 
 .board-storage-status {
-  color: #666;
+  color: var(--osa-muted);
   font-size: 0.8rem;
 }
 
 .board-sign-in {
-  color: #06c;
+  color: var(--osa-link);
 }
 
 .board-button,
@@ -1821,8 +1834,8 @@
   padding: 3px 7px;
   border: 0;
   border-radius: 2px;
-  color: #222;
-  background: #fff;
+  color: var(--osa-text);
+  background: var(--osa-surface-raised);
   font-size: 12px;
   font-weight: 400;
   line-height: 1.25;
@@ -1865,19 +1878,20 @@
   gap: 6px;
   max-width: min(560px, calc(100vw - 32px));
   padding: 7px;
-  border: 1px solid #c8c8c8;
+  border: 1px solid var(--osa-border);
   border-radius: 8px;
-  background: rgb(255 255 255 / 96%);
-  box-shadow: 0 7px 18px rgb(0 0 0 / 10%);
+  background: var(--osa-surface);
+  box-shadow: 0 12px 34px var(--osa-shadow);
+  color: var(--osa-text);
 }
 
 .space-canvas-toolbar button {
   min-height: 30px;
   padding: 5px 9px;
-  border: 1px solid #bcbcbc;
+  border: 1px solid var(--osa-border);
   border-radius: 5px;
-  background: #fff;
-  color: #222;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
   cursor: pointer;
   font: inherit;
   font-size: 0.82rem;
@@ -1886,8 +1900,9 @@
 .space-canvas-toolbar button:hover,
 .space-canvas-toolbar button:focus-visible,
 .space-canvas-toolbar button[aria-pressed='true'] {
-  border-color: #6d9d82;
-  background: #effaf3;
+  border-color: var(--osa-focus);
+  background: var(--osa-hover-surface);
+  color: var(--osa-hover-text);
   outline: 0;
 }
 
@@ -1909,11 +1924,11 @@
 .properties-panel,
 .graph-table-panel,
 .edge-hover-card {
-  border: 0;
+  border: 1px solid var(--osa-border);
   border-radius: 14px;
-  color: #222;
-  background: rgb(255 255 255 / 97%);
-  box-shadow: 0 12px 34px rgb(24 23 35 / 10%);
+  color: var(--osa-text);
+  background: var(--osa-surface);
+  box-shadow: 0 12px 34px var(--osa-shadow);
 }
 
 .properties-panel {
@@ -1932,7 +1947,7 @@
 .inspector-dock__toggle {
   padding: 3px 8px;
   border: 0;
-  color: #555;
+  color: var(--osa-muted);
   background: transparent;
   cursor: pointer;
   font-size: 12px;
@@ -1942,7 +1957,7 @@
 .properties-panel__kind,
 .properties-panel__empty {
   margin: 0;
-  color: #666;
+  color: var(--osa-muted);
   font-size: 0.8rem;
 }
 
@@ -1965,7 +1980,7 @@
 
 .properties-panel__appearance legend {
   padding: 0;
-  color: #666;
+  color: var(--osa-muted);
   font-size: 0.78rem;
 }
 
@@ -1974,7 +1989,7 @@
   align-items: center;
   gap: 6px;
   width: fit-content;
-  color: #555;
+  color: var(--osa-muted);
   font-size: 0.8rem;
 }
 
@@ -1983,15 +1998,15 @@
   width: 28px;
   height: 24px;
   padding: 2px;
-  border: 1px solid #c8c8c8;
+  border: 1px solid var(--osa-border);
   border-radius: 4px;
-  background: #fff;
+  background: var(--osa-input);
   cursor: pointer;
 }
 
 .properties-panel__accent-control output {
   min-width: 52px;
-  color: #777;
+  color: var(--osa-muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.76rem;
 }
@@ -2005,16 +2020,16 @@
   width: fit-content;
   margin: 8px 0 12px;
   padding: 4px 6px;
-  border: 1px dashed #b4b4b4;
+  border: 1px dashed var(--osa-border);
   border-radius: 6px;
-  color: #777;
+  color: var(--osa-muted);
   font-size: 0.76rem;
 }
 
 .properties-panel__quick-photo:hover {
-  border-color: #5bcefa;
-  background: #f1fbff;
-  color: #276b87;
+  border-color: var(--osa-focus);
+  background: var(--osa-hover-surface);
+  color: var(--osa-hover-text);
 }
 
 .properties-panel__quick-photo-button {
@@ -2049,6 +2064,8 @@
 .property-row input {
   min-width: 0;
   border: 0;
+  background: var(--osa-input);
+  color: var(--osa-text);
 }
 
 .graph-table-panel {
@@ -2065,7 +2082,7 @@
 
 .table-dock__toggle {
   border: 0;
-  color: #555;
+  color: var(--osa-muted);
   background: transparent;
   cursor: pointer;
   font-size: 12px;
@@ -2088,7 +2105,7 @@
 }
 
 .graph-table-tab--active {
-  background: #eee;
+  background: var(--osa-hover-surface);
 }
 
 .graph-table-tab {
@@ -2116,7 +2133,8 @@
 .graph-table-panel th {
   position: sticky;
   top: 0;
-  background: #fff;
+  background: var(--osa-surface-raised);
+  color: var(--osa-muted);
   font-weight: 400;
 }
 
@@ -2126,7 +2144,7 @@
 
 .graph-table-panel tbody tr:hover,
 .graph-table-panel tbody tr.is-selected {
-  background: #f4f4f4;
+  background: var(--osa-hover-surface);
 }
 
 .edge-hover-card {
@@ -2148,7 +2166,7 @@
   margin: 9px 0;
   padding-left: 9px;
   border-left: 2px solid #5bcefa;
-  color: #555;
+  color: var(--osa-muted);
   overflow-wrap: anywhere;
 }
 
@@ -2170,17 +2188,17 @@
 
 .properties-panel__instruction-link legend {
   padding: 0;
-  color: #666;
+  color: var(--osa-muted);
   font-size: 0.78rem;
 }
 
 .properties-panel__instruction-link select {
   min-width: 0;
   padding: 6px 7px;
-  border: 1px solid #c8c8c8;
+  border: 1px solid var(--osa-border);
   border-radius: 5px;
-  background: #fff;
-  color: #333;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
   font: inherit;
 }
 
@@ -2194,13 +2212,13 @@
 
 .properties-panel__asset-image legend {
   padding: 0;
-  color: #666;
+  color: var(--osa-muted);
   font-size: 0.78rem;
 }
 
 .properties-panel__asset-help {
   margin: -2px 0 0;
-  color: #666;
+  color: var(--osa-muted);
   font-size: 0.78rem;
   line-height: 1.4;
 }
@@ -2216,13 +2234,14 @@
   display: block;
   width: 100%;
   max-height: 190px;
-  border: 1px solid #d4d4d4;
+  border: 1px solid var(--osa-border);
   border-radius: 6px;
+  background: #fff;
   object-fit: contain;
 }
 
 .properties-panel__asset-preview figcaption {
-  color: #777;
+  color: var(--osa-muted);
   font-size: 0.72rem;
 }
 
@@ -2235,17 +2254,17 @@
 .properties-panel__asset-dropzone {
   margin: 0;
   padding: 7px 9px;
-  border: 1px dashed #b4b4b4;
+  border: 1px dashed var(--osa-border);
   border-radius: 6px;
-  color: #777;
+  color: var(--osa-muted);
   font-size: 0.76rem;
   text-align: center;
 }
 
 .properties-panel__asset-dropzone:hover {
-  border-color: #5bcefa;
-  background: #f1fbff;
-  color: #276b87;
+  border-color: var(--osa-focus);
+  background: var(--osa-hover-surface);
+  color: var(--osa-hover-text);
 }
 
 /* The existing board file button hides its file control. Here it stays
@@ -2265,7 +2284,7 @@
 .properties-panel__asset-alt {
   display: grid;
   gap: 5px;
-  color: #666;
+  color: var(--osa-muted);
   font-size: 0.78rem;
 }
 
@@ -2273,10 +2292,10 @@
   box-sizing: border-box;
   width: 100%;
   padding: 6px 7px;
-  border: 1px solid #c8c8c8;
+  border: 1px solid var(--osa-border);
   border-radius: 5px;
-  background: #fff;
-  color: #333;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
   font: inherit;
 }
 
@@ -2297,7 +2316,7 @@
 
 .properties-panel__owned-visuals legend {
   padding: 0;
-  color: #666;
+  color: var(--osa-muted);
   font-size: 0.78rem;
 }
 
@@ -2319,10 +2338,10 @@
   width: 100%;
   padding: 5px 7px;
   overflow: hidden;
-  border: 1px solid #d6d6d6;
+  border: 1px solid var(--osa-border);
   border-radius: 5px;
-  background: #fff;
-  color: #333;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
   cursor: pointer;
   font: inherit;
   font-size: 0.78rem;
@@ -2333,8 +2352,9 @@
 
 .properties-panel__owned-visual-link:hover:not(:disabled),
 .properties-panel__owned-visual-link:focus-visible:not(:disabled) {
-  border-color: #5bcefa;
-  background: #f1fbff;
+  border-color: var(--osa-focus);
+  background: var(--osa-hover-surface);
+  color: var(--osa-hover-text);
   outline: 0;
 }
 
@@ -2346,9 +2366,9 @@
 .properties-panel__owned-visual-remove {
   padding: 4px 0;
   border: 0;
-  border-bottom: 1px solid #d6d6d6;
+  border-bottom: 1px solid var(--osa-border);
   background: transparent;
-  color: #777;
+  color: var(--osa-muted);
   cursor: pointer;
   font: inherit;
   font-size: 0.72rem;
@@ -2369,7 +2389,7 @@
 
 .properties-panel__managed {
   margin: -5px 0 16px;
-  color: #666;
+  color: var(--osa-muted);
   font-size: 0.78rem;
   line-height: 1.4;
 }
@@ -2377,8 +2397,8 @@
 .properties-panel__managed-data {
   margin-top: 14px;
   padding-top: 9px;
-  border-top: 1px solid #e4e4e4;
-  color: #555;
+  border-top: 1px solid var(--osa-border);
+  color: var(--osa-muted);
   font-size: 0.75rem;
 }
 
@@ -2412,18 +2432,18 @@
 }
 
 .managed-property-row dt {
-  color: #777;
+  color: var(--osa-muted);
 }
 
 .managed-property-row dd {
-  color: #333;
+  color: var(--osa-text);
   white-space: pre-wrap;
 }
 
 .properties-panel__spaces legend {
   padding: 0;
   margin-bottom: 5px;
-  color: #666;
+  color: var(--osa-muted);
   font-size: 0.78rem;
 }
 
@@ -2431,7 +2451,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #444;
+  color: var(--osa-muted);
   font-size: 0.82rem;
 }
 
@@ -2449,7 +2469,7 @@
   padding: 0;
   border: 0;
   background: transparent;
-  color: #3f3f3f;
+  color: var(--osa-text);
   font-size: 0.84rem;
   font-weight: 500;
   letter-spacing: 0.012em;
@@ -2481,12 +2501,12 @@
 }
 
 .space-toolbar__control select:hover {
-  color: #111;
+  color: var(--osa-text);
 }
 
 .space-toolbar__control select:focus-visible {
   border-radius: 3px;
-  outline: 1px solid rgb(23 23 23 / 28%);
+  outline: 1px solid var(--osa-focus);
   outline-offset: 3px;
 }
 
@@ -2507,7 +2527,7 @@
 .notebook-page__connections button {
   padding: 3px 0;
   border: 0;
-  border-bottom: 1px solid #171717;
+  border-bottom: 1px solid var(--notebook-sketch-accent);
   background: transparent;
   cursor: pointer;
 }
@@ -2540,7 +2560,7 @@
 }
 
 .notebook-pages nav small {
-  color: #777;
+  color: var(--osa-muted);
 }
 
 .notebook-page {
@@ -2580,7 +2600,8 @@
   max-width: none;
   overflow: auto;
   padding: 30px max(28px, calc((100% - 980px) / 2));
-  background: #fff;
+  background: var(--osa-bg);
+  color: var(--osa-text);
 }
 
 .notebook-view.is-page-focused .notebook-workspace {
@@ -2610,7 +2631,7 @@
   border: 0;
   border-radius: 50%;
   background: transparent;
-  color: #999;
+  color: var(--osa-muted);
   cursor: pointer;
   font: inherit;
   font-size: 1rem;
@@ -2618,7 +2639,7 @@
 
 .notebook-page__leave-focus:hover,
 .notebook-page__leave-focus:focus-visible {
-  color: #171717;
+  color: var(--osa-text);
   outline: 0;
 }
 
@@ -2634,7 +2655,7 @@
 
 .notebook-page__heading > input:focus {
   outline: 0;
-  box-shadow: inset 0 -1px #171717;
+  box-shadow: inset 0 -1px var(--osa-focus);
 }
 
 .notebook-page__editor,
@@ -2699,7 +2720,7 @@
 .notebook-page__connections {
   margin-top: 32px;
   padding-top: 18px;
-  border-top: 1px solid #e4e4e4;
+  border-top: 1px solid var(--osa-border);
 }
 
 .notebook-page__connections h2 {
@@ -2710,7 +2731,7 @@
 
 .notebook-page__connections p {
   margin: 0;
-  color: #777;
+  color: var(--osa-muted);
   font-size: 0.82rem;
 }
 
@@ -2734,7 +2755,7 @@
 }
 
 .notebook-page__connections li span {
-  color: #777;
+  color: var(--osa-muted);
   font-size: 0.78rem;
 }
 
@@ -2745,7 +2766,7 @@
   padding: 3px 9px;
   border: 0;
   border-left: 2px solid #f5a9b8;
-  color: #555;
+  color: var(--osa-muted);
   font-size: 0.8rem;
   text-align: left;
   text-overflow: ellipsis;
@@ -2760,7 +2781,7 @@
   align-items: center;
   gap: 8px 12px;
   padding: 12px 0;
-  border-top: 1px solid #e4e4e4;
+  border-top: 1px solid var(--osa-border);
   font-size: 0.78rem;
 }
 
@@ -2771,7 +2792,7 @@
   margin: 0;
   padding-left: 10px;
   border-left: 2px solid #5bcefa;
-  color: #444;
+  color: var(--osa-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2779,7 +2800,7 @@
 .notebook-selection-actions button {
   padding: 3px 0;
   border: 0;
-  border-bottom: 1px solid #171717;
+  border-bottom: 1px solid var(--notebook-sketch-accent);
   background: transparent;
   cursor: pointer;
 }
@@ -2788,9 +2809,10 @@
   min-width: 150px;
   padding: 3px 0;
   border: 0;
-  border-bottom: 1px solid #bbb;
+  border-bottom: 1px solid var(--osa-border);
   border-radius: 0;
   background: transparent;
+  color: var(--osa-text);
 }
 
 @media (max-width: 700px) {
@@ -2839,6 +2861,7 @@
 
 .sketch-editor {
   width: 100%;
+  color: var(--osa-text);
 }
 
 .sketch-editor button,
@@ -2854,7 +2877,7 @@
   gap: 10px 18px;
   margin-bottom: 12px;
   padding-bottom: 10px;
-  border-bottom: 1px solid #e4e4e4;
+  border-bottom: 1px solid var(--osa-border);
   font-size: 0.78rem;
 }
 
@@ -2869,7 +2892,7 @@
 
 .sketch-editor__tool-group + .sketch-editor__tool-group {
   padding-left: 12px;
-  border-left: 1px solid #e4e4e4;
+  border-left: 1px solid var(--osa-border);
 }
 
 .sketch-editor__toolbar button,
@@ -2903,7 +2926,7 @@
 }
 
 .sketch-editor__colors button.is-selected {
-  box-shadow: 0 0 0 2px #fff, 0 0 0 3px #222;
+  box-shadow: 0 0 0 2px var(--osa-surface), 0 0 0 3px var(--osa-text);
 }
 
 .sketch-editor__colors input[type='color'] {
@@ -2916,24 +2939,24 @@
 
 .sketch-editor__fill {
   padding-left: 12px;
-  border-left: 1px solid #e4e4e4;
+  border-left: 1px solid var(--osa-border);
 }
 
 .sketch-editor__fill button,
 .sketch-editor__fill-control button {
   min-height: 22px;
   padding: 2px 5px;
-  border: 1px solid #bbb;
+  border: 1px solid var(--osa-border);
   border-radius: 3px;
-  background: #fff;
-  color: #555;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
 }
 
 .sketch-editor__fill button.is-selected,
 .sketch-editor__fill-control button.is-selected {
-  border-color: #26799b;
-  background: #eaf6fb;
-  color: #173e4e;
+  border-color: var(--osa-focus);
+  background: var(--osa-hover-surface);
+  color: var(--osa-hover-text);
 }
 
 .sketch-editor__fill input[type='color'] {
@@ -2950,7 +2973,7 @@
 
 .sketch-editor__toolbar output {
   min-width: 32px;
-  color: #666;
+  color: var(--osa-muted);
 }
 
 .sketch-editor__workspace {
@@ -2968,7 +2991,7 @@
   height: 62vh;
   min-height: 460px;
   overflow: auto;
-  background: #f3f3f3;
+  background: var(--osa-bg);
   overscroll-behavior: contain;
 }
 
@@ -3009,7 +3032,7 @@
   display: grid;
   min-width: 0;
   gap: 24px;
-  color: #444;
+  color: var(--osa-muted);
   font-size: 0.78rem;
 }
 
@@ -3020,7 +3043,7 @@
 
 .sketch-editor__settings h3 {
   margin: 0;
-  color: #171717;
+  color: var(--osa-text);
   font-size: 0.82rem;
   font-weight: 400;
 }
@@ -3037,7 +3060,8 @@
   min-width: 0;
   padding: 3px 0;
   border: 0;
-  border-bottom: 1px solid #bbb;
+  border-bottom: 1px solid var(--osa-border);
+  color: var(--osa-text);
   background: transparent;
 }
 
@@ -3121,10 +3145,10 @@
   min-height: 5em;
   resize: vertical;
   padding: 4px;
-  border: 1px solid #bbb;
+  border: 1px solid var(--osa-border);
   border-radius: 3px;
-  background: #fff;
-  color: #171717;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
 }
 
 /* A text box can show one live project value without exposing raw template syntax. */
@@ -3132,7 +3156,7 @@
   display: grid;
   gap: 6px;
   padding-top: 6px;
-  border-top: 1px solid #ddd;
+  border-top: 1px solid var(--osa-border);
 }
 
 .sketch-editor__annotation h3 {
@@ -3146,10 +3170,10 @@
   width: 100%;
   min-width: 0;
   padding: 4px;
-  border: 1px solid #bbb;
+  border: 1px solid var(--osa-border);
   border-radius: 3px;
-  background: #fff;
-  color: #171717;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
   font: inherit;
 }
 
@@ -3173,8 +3197,8 @@
   inset: 0;
   display: grid;
   place-items: center;
-  background: #f4f4f0;
-  color: #52514c;
+  background: var(--osa-bg);
+  color: var(--osa-muted);
   font-size: 0.9rem;
 }
 
@@ -3186,416 +3210,4 @@
   .sketch-editor__settings {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
-}
-
-/* Application theme ---------------------------------------------------------
-   Dark is the initial preference, but the same semantic layer also supplies
-   the light theme. Source images and drawing paper remain authored content. */
-.osa-workspace,
-.work-view-shell,
-.notebook-view.is-page-focused,
-.canvas-lab-loading {
-  background: var(--osa-bg);
-  color: var(--osa-text);
-}
-
-.work-view,
-.workspace-switcher,
-.pointer-tool-palette,
-.space-toolbar,
-.sketch-editor,
-.text-node,
-.node-attributes,
-.properties-panel,
-.graph-table-panel,
-.edge-hover-card,
-.board-panel {
-  color: var(--osa-text);
-}
-
-.workspace-switcher,
-.workspace-switcher-reveal,
-.pointer-tool-palette__action,
-.pointer-tool-palette__close,
-.osa-sign-in-reveal:hover,
-.board-panel,
-.space-canvas-toolbar,
-.properties-panel,
-.graph-table-panel,
-.edge-hover-card {
-  border-color: var(--osa-border);
-  background: var(--osa-surface);
-  box-shadow: 0 12px 34px var(--osa-shadow);
-}
-
-.workspace-switcher button,
-.work-view button,
-.work-view input,
-.work-view select,
-.work-view textarea,
-.workspace-switcher-reveal,
-.pointer-tool-palette__action,
-.pointer-tool-palette__close,
-.osa-sign-in-reveal,
-.space-toolbar,
-.board-panel,
-.space-canvas-toolbar,
-.properties-panel,
-.graph-table-panel,
-.edge-hover-card,
-.text-node,
-.node-attributes,
-.sketch-editor {
-  color: var(--osa-text);
-}
-
-.workspace-switcher button:hover,
-.workspace-switcher button.is-active,
-.task-filter button:hover,
-.task-filter button.is-active,
-.text-action:hover,
-.workspace-switcher-reveal:hover,
-.workspace-switcher-reveal:focus-visible,
-.pointer-tool-palette__close:hover,
-.pointer-tool-palette__close:focus-visible,
-.osa-sign-in-reveal:hover,
-.osa-sign-in-reveal:focus-visible,
-.space-toolbar__control select:hover {
-  color: var(--osa-text);
-}
-
-.workspace-switcher button:hover,
-.workspace-switcher button.is-active {
-  border-bottom-color: var(--osa-text);
-}
-
-.workspace-switcher .workspace-switcher__hide,
-.pointer-tool-palette__label,
-.local-draft-status,
-.work-view__header > span,
-.project-detail__task-heading span,
-.work-view__eyebrow,
-.work-view__empty,
-.task-row__facts,
-.task-row__facts input,
-.context-links__empty,
-.assembly-start p,
-.assembly-detail__overview,
-.assembly-section-heading > span,
-.assembly-tabs button,
-.assembly-outline > button small,
-.operation-editor__heading label,
-.operation-field,
-.assembly-record-editor label,
-.operation-tools > select,
-.assembly-source-note,
-.assembly-sources,
-.project-link-existing,
-.project-list small,
-.project-task-row__content small,
-.notebook-pages nav small,
-.notebook-page__connections p,
-.notebook-page__connections li span,
-.notebook-page__connections .notebook-page__anchor,
-.notebook-selection-actions blockquote,
-.sketch-editor__toolbar output,
-.sketch-editor__settings {
-  color: var(--osa-muted);
-}
-
-.work-view__divider,
-.work-view__create,
-.task-row,
-.assembly-start,
-.assembly-tabs,
-.assembly-step-create,
-.assembly-record-editor,
-.assembly-sources,
-.project-list__divider,
-.project-task-create,
-.project-task-row,
-.notebook-page__connections,
-.notebook-selection-actions,
-.sketch-editor__toolbar,
-.sketch-editor__tool-group + .sketch-editor__tool-group,
-.sketch-editor__fill {
-  border-color: var(--osa-border);
-}
-
-.task-filter input:focus,
-.work-view__create input:focus,
-.task-row input:focus,
-.task-row textarea:focus,
-.task-row select:focus,
-.project-detail input:focus,
-.project-detail select:focus,
-.project-detail textarea:focus,
-.assembly-detail__heading input:focus,
-.assembly-detail__overview:focus,
-.operation-editor input:focus,
-.operation-editor textarea:focus,
-.assembly-table input:focus,
-.assembly-record-editor input:focus,
-.assembly-record-editor textarea:focus,
-.assembly-step-create input:focus,
-.notebook-page__heading > input:focus {
-  box-shadow: inset 0 -1px var(--osa-focus);
-}
-
-.task-row__check,
-.project-task-row > input[type='checkbox'] {
-  accent-color: var(--osa-focus);
-}
-
-.context-link,
-.operation-tools__list button,
-.operation-tools form button,
-.assembly-add-row,
-.assembly-sources button,
-.assembly-record-editor__actions a,
-.notebook-pages__create button,
-.notebook-page__connections button,
-.notebook-selection-actions button {
-  border-color: var(--notebook-sketch-accent);
-}
-
-.assembly-detail__heading input,
-.operation-editor input,
-.operation-editor textarea,
-.assembly-record-editor input,
-.assembly-record-editor textarea,
-.operation-tools > select,
-.notebook-selection-actions select,
-.sketch-editor__settings input[type='number'] {
-  border-color: var(--osa-border);
-  color: var(--osa-text);
-}
-
-.assembly-tabs button:hover,
-.assembly-tabs button.is-active {
-  color: var(--osa-text);
-}
-
-.assembly-table th,
-.assembly-table__cost small,
-.task-row__name,
-.context-link button:last-child,
-.assembly-source-note,
-.notebook-page__connections p,
-.notebook-page__connections li span,
-.notebook-page__connections .notebook-page__anchor,
-.notebook-page__leave-focus {
-  color: var(--osa-muted);
-}
-
-.assembly-table th,
-.assembly-table td {
-  border-color: var(--osa-border-subtle);
-}
-
-.assembly-table tbody tr:hover,
-.assembly-table tbody tr.is-selected {
-  background: var(--osa-hover-surface);
-}
-
-.project-list button:hover,
-.project-list button.is-active {
-  border-left-color: var(--notebook-sketch-accent);
-}
-
-.text-node,
-.node-attributes {
-  border-color: var(--osa-border);
-  background: var(--osa-surface-raised);
-}
-
-.text-node__body textarea,
-.text-node__detail-fields input,
-.text-node__detail-fields select,
-.text-node .markdown-editor__preview,
-.text-node .sketch-pad__tools button,
-.text-node .markdown-editor__preview:hover,
-.text-node .markdown-editor__preview:focus-visible {
-  color: var(--osa-text);
-  background: transparent;
-}
-
-.text-node__details.is-expanded {
-  border-top-color: var(--osa-border);
-}
-
-.markdown-preview pre {
-  background: var(--osa-bg);
-}
-
-.markdown-preview blockquote {
-  border-left-color: var(--osa-border);
-}
-
-.markdown-preview__empty,
-.node-attributes__empty,
-.edge-hover-card__empty {
-  color: var(--osa-muted);
-}
-
-.board-panel,
-.space-canvas-toolbar,
-.properties-panel,
-.graph-table-panel,
-.edge-hover-card {
-  border: 1px solid var(--osa-border);
-}
-
-.board-name-input,
-.board-select,
-.property-row input,
-.properties-panel__instruction-link select,
-.properties-panel__asset-alt input,
-.properties-panel__owned-visual-link {
-  border-color: var(--osa-border);
-  background: var(--osa-input);
-  color: var(--osa-text);
-}
-
-.board-storage-status,
-.board-dock__toggle,
-.inspector-dock__toggle,
-.table-dock__toggle,
-.properties-panel__eyebrow,
-.properties-panel__kind,
-.properties-panel__empty,
-.properties-panel__instruction-link legend,
-.properties-panel__appearance legend,
-.properties-panel__accent-control,
-.properties-panel__accent-control output,
-.properties-panel__asset-image legend,
-.properties-panel__asset-help,
-.properties-panel__asset-preview figcaption,
-.properties-panel__asset-dropzone,
-.properties-panel__asset-alt,
-.properties-panel__owned-visuals legend,
-.properties-panel__managed,
-.properties-panel__managed-data,
-.managed-property-row dt,
-.properties-panel__spaces legend,
-.properties-panel__spaces label,
-.edge-hover-card__anchor,
-.properties-panel__anchor {
-  color: var(--osa-muted);
-}
-
-.board-sign-in {
-  color: var(--osa-link);
-}
-
-.board-button,
-.board-file-button,
-.graph-table-tab,
-.property-row__remove,
-.space-canvas-toolbar button,
-.properties-panel__instruction-link select,
-.properties-panel__asset-alt input,
-.properties-panel__owned-visual-link,
-.sketch-editor__fill button,
-.sketch-editor__fill-control button,
-.sketch-editor__selected-object textarea,
-.sketch-editor__annotation select {
-  border-color: var(--osa-border);
-  background: var(--osa-surface-raised);
-  color: var(--osa-text);
-}
-
-.properties-panel__accent-control input[type='color'] {
-  border-color: var(--osa-border);
-  background: var(--osa-input);
-}
-
-.space-canvas-toolbar button:hover,
-.space-canvas-toolbar button:focus-visible,
-.space-canvas-toolbar button[aria-pressed='true'],
-.properties-panel__owned-visual-link:hover:not(:disabled),
-.properties-panel__owned-visual-link:focus-visible:not(:disabled),
-.properties-panel__asset-dropzone:hover,
-.sketch-editor__fill button.is-selected,
-.sketch-editor__fill-control button.is-selected {
-  border-color: var(--osa-focus);
-  background: var(--osa-hover-surface);
-  color: var(--osa-hover-text);
-}
-
-.graph-table-tab--active,
-.graph-table-panel tbody tr:hover,
-.graph-table-panel tbody tr.is-selected {
-  background: var(--osa-hover-surface);
-}
-
-.graph-table-panel th {
-  background: var(--osa-surface-raised);
-  color: var(--osa-muted);
-}
-
-.properties-panel__asset-preview img {
-  border-color: var(--osa-border);
-  background: #fff;
-}
-
-.properties-panel__asset-dropzone,
-.properties-panel__quick-photo,
-.properties-panel__owned-visual-link,
-.properties-panel__owned-visual-remove,
-.properties-panel__managed-data {
-  border-color: var(--osa-border);
-}
-
-.properties-panel__quick-photo {
-  color: var(--osa-muted);
-}
-
-.properties-panel__quick-photo:hover {
-  border-color: var(--osa-focus);
-  background: var(--osa-hover-surface);
-  color: var(--osa-hover-text);
-}
-
-.managed-property-row dd {
-  color: var(--osa-text);
-}
-
-.space-toolbar__control select:focus-visible {
-  outline-color: var(--osa-focus);
-}
-
-.notebook-view.is-page-focused {
-  color: var(--osa-text);
-}
-
-.notebook-page__leave-focus:hover,
-.notebook-page__leave-focus:focus-visible {
-  color: var(--osa-text);
-}
-
-.sketch-editor__viewport {
-  background: var(--osa-bg);
-}
-
-.sketch-editor__settings h3 {
-  color: var(--osa-text);
-}
-
-.sketch-editor__settings input[type='number'],
-.sketch-editor__selected-object textarea {
-  border-color: var(--osa-border);
-  color: var(--osa-text);
-}
-
-.sketch-editor__annotation {
-  border-color: var(--osa-border);
-}
-
-.sketch-editor__colors button.is-selected {
-  box-shadow: 0 0 0 2px var(--osa-surface), 0 0 0 3px var(--osa-text);
-}
-
-.canvas-lab-loading {
-  color: var(--osa-muted);
 }

@@ -22,28 +22,61 @@ import {
 import {
   annotationFieldsForTarget,
   annotationTargetLabel,
-  resolveSketchAnnotationColor,
-  resolveSketchSemanticColor,
   resolveSketchTextAnnotation,
   resolvedSketchText,
 } from '../graph/sketchAnnotation'
 import {
   isImmutableVisual,
   normalizeVisualEmbedCrop,
-  OSA_PROPERTY,
   visualIdentity,
   type VisualEmbedCrop,
   type VisualEmbedPlacement,
 } from '../graph/osaData'
 import type { VisualEmbedInstance } from '../graph/visualEmbed'
+import {
+  EmbeddedVisualGraphic,
+  SketchLayerElementGraphics,
+  Stroke,
+} from './SketchRendering'
+import {
+  MAX_PAGE_SIZE,
+  MIN_PAGE_SIZE,
+  MIN_VISUAL_EMBED_SIZE,
+  axisLockedPoint,
+  clamp,
+  cloneSketchElement,
+  cloneVisualEmbed,
+  combinedBounds,
+  combinedElementBounds,
+  createElement,
+  displayedCornerRadius,
+  elementBounds,
+  formatCanvasDimension,
+  isCompoundPartKind,
+  isFillableElement,
+  isLineElement,
+  isResizableShape,
+  marqueeMatchesBounds,
+  maximumCornerRadius,
+  normalizedBox,
+  parseVisualEmbedDimension,
+  placementForEmbedCrop,
+  proportionalDimensions,
+  replaceLayer,
+  resizeCompoundElement,
+  sizedElementUpdate,
+  sizedEmbedPlacementUpdate,
+  uncroppedEmbedFrame,
+  withEmbedPlacement,
+  withEmbedPlacements,
+  type ElementBounds,
+  type MarqueeSelectionMode,
+} from './sketchPadGeometry'
+
+// Preserve the established public import path used by TextNode and VisualCanvas.
+export { SketchPreview } from './SketchRendering'
 
 const PEN_COLORS = ['#222222', '#f5a9b8', '#5bcefa', '#9b59d0', '#ff8c00'] as const
-const MIN_PAGE_SIZE = 100
-const MAX_PAGE_SIZE = 20_000
-/** A placed Visual may be genuinely tiny; only a zero-size placement is invalid. */
-const MIN_VISUAL_EMBED_SIZE = 1
-/** Tiny Visuals retain this invisible target so they remain easy to select. */
-const MIN_VISUAL_EMBED_HIT_SIZE = 24
 const MIN_ZOOM = 0.1
 const MAX_ZOOM = 8
 
@@ -66,34 +99,6 @@ type SketchTool = 'select' | 'pen' | ShapeTool | 'text' | 'eraser' | 'pan'
 
 function isShapeTool(tool: SketchTool): tool is ShapeTool {
   return SHAPE_TOOLS.some((shapeTool) => shapeTool === tool)
-}
-
-function formatCanvasDimension(value: number) {
-  return String(Math.round(value * 1000) / 1000)
-}
-
-/** A blank or partial field is not geometry yet, so leave the canvas alone. */
-function parseVisualEmbedDimension(value: string) {
-  if (!value.trim()) return null
-  const numeric = Number(value)
-  if (
-    !Number.isFinite(numeric)
-    || numeric < MIN_VISUAL_EMBED_SIZE
-    || numeric > MAX_PAGE_SIZE
-  ) return null
-  return numeric
-}
-
-/** Selection is forgiving even when a placed Visual itself is only a few pixels. */
-function visualEmbedHitBounds(placement: Pick<VisualEmbedPlacement, 'x' | 'y' | 'width' | 'height'>) {
-  const width = Math.max(placement.width, MIN_VISUAL_EMBED_HIT_SIZE)
-  const height = Math.max(placement.height, MIN_VISUAL_EMBED_HIT_SIZE)
-  return {
-    x: placement.x - (width - placement.width) / 2,
-    y: placement.y - (height - placement.height) / 2,
-    width,
-    height,
-  }
 }
 
 type SketchPadProps = {
@@ -172,9 +177,6 @@ type ActiveRegionSelection = {
   toggleSelection: boolean
 }
 
-/** The Select toolbar lets a person choose precise or forgiving marquee picks. */
-type MarqueeSelectionMode = 'inside' | 'touching'
-
 /** A canvas-local copy buffer remembers each selected shape and its layer. */
 type ShapeClipboardItem = {
   layerId: string
@@ -248,1003 +250,7 @@ type ActiveSelectionMove = {
   }>
 }
 
-type ElementBounds = { x: number; y: number; width: number; height: number }
 
-function isLineElement(kind: SketchElement['kind']): kind is 'line' | 'arrow' {
-  return kind === 'line' || kind === 'arrow'
-}
-
-function isFillableElement(kind: SketchElement['kind']) {
-  return kind !== 'line' && kind !== 'arrow' && kind !== 'text'
-}
-
-/** Shapes with a rectangular drawing box can be sized exactly in the inspector. */
-function isResizableShape(kind: SketchElement['kind']) {
-  return kind !== 'line' && kind !== 'arrow' && kind !== 'text'
-}
-
-/**
- * Preserve an object's current proportions while resizing from its lower-right
- * handle. The pointer dimension that moved farther, relative to the original
- * shape, determines the shared scale.
- */
-function proportionalDimensions(
-  original: Pick<ElementBounds, 'width' | 'height'>,
-  requestedWidth: number,
-  requestedHeight: number,
-  minimum = 1,
-) {
-  const width = Math.max(minimum, requestedWidth)
-  const height = Math.max(minimum, requestedHeight)
-  if (original.width <= 0 || original.height <= 0) return { width, height }
-
-  const widthScale = width / original.width
-  const heightScale = height / original.height
-  const scale = Math.abs(widthScale - 1) >= Math.abs(heightScale - 1)
-    ? widthScale
-    : heightScale
-  const minimumScale = Math.max(minimum / original.width, minimum / original.height)
-  const safeScale = Math.max(minimumScale, scale)
-
-  return {
-    width: original.width * safeScale,
-    height: original.height * safeScale,
-  }
-}
-
-/** Use one dimension field to update both dimensions when an object is locked. */
-function sizedElementUpdate(
-  element: SketchElement,
-  dimension: 'width' | 'height',
-  requestedValue: number,
-): Pick<SketchElement, 'width' | 'height'> {
-  const value = Math.max(1, requestedValue)
-  if (!element.aspectRatioLocked || element.width <= 0 || element.height <= 0) {
-    return dimension === 'width' ? { width: value, height: element.height } : { width: element.width, height: value }
-  }
-
-  const ratio = element.width / element.height
-  return dimension === 'width'
-    ? { width: value, height: Math.max(1, value / ratio) }
-    : { width: Math.max(1, value * ratio), height: value }
-}
-
-/** Use one placed Visual dimension to update both values when its link is locked. */
-function sizedEmbedPlacementUpdate(
-  placement: VisualEmbedPlacement,
-  dimension: 'width' | 'height',
-  requestedValue: number,
-): Pick<VisualEmbedPlacement, 'width' | 'height'> {
-  const value = Math.max(MIN_VISUAL_EMBED_SIZE, requestedValue)
-  if (placement.aspectRatioLocked === false || placement.width <= 0 || placement.height <= 0) {
-    return dimension === 'width'
-      ? { width: value, height: placement.height }
-      : { width: placement.width, height: value }
-  }
-
-  const ratio = placement.width / placement.height
-  if (dimension === 'width') {
-    // Keep both dimensions above the real Visual minimum without breaking ratio.
-    const width = Math.max(value, MIN_VISUAL_EMBED_SIZE * ratio)
-    return { width, height: width / ratio }
-  }
-
-  // Keep both dimensions above the real Visual minimum without breaking ratio.
-  const height = Math.max(value, MIN_VISUAL_EMBED_SIZE / ratio)
-  return { width: height * ratio, height }
-}
-
-/** Recover the full-source frame from a cropped parent-side placement. */
-function uncroppedEmbedFrame(
-  placement: VisualEmbedPlacement,
-): Pick<VisualEmbedPlacement, 'x' | 'y' | 'width' | 'height'> {
-  const crop = placement.crop
-  if (!crop) {
-    return {
-      x: placement.x,
-      y: placement.y,
-      width: placement.width,
-      height: placement.height,
-    }
-  }
-
-  const width = placement.width / crop.width
-  const height = placement.height / crop.height
-  return {
-    x: placement.x - crop.x * width,
-    y: placement.y - crop.y * height,
-    width,
-    height,
-  }
-}
-
-function clamp(value: number, minimum: number, maximum: number) {
-  return Math.min(maximum, Math.max(minimum, value))
-}
-
-/** Resolve one normalized crop into the visible parent-canvas placement. */
-function placementForEmbedCrop(
-  original: VisualEmbedPlacement,
-  sourceFrame: Pick<VisualEmbedPlacement, 'x' | 'y' | 'width' | 'height'>,
-  crop: VisualEmbedCrop | undefined,
-): VisualEmbedPlacement {
-  if (!crop) {
-    const placement = { ...original, ...sourceFrame }
-    delete placement.crop
-    return placement
-  }
-  return {
-    ...original,
-    x: sourceFrame.x + crop.x * sourceFrame.width,
-    y: sourceFrame.y + crop.y * sourceFrame.height,
-    width: sourceFrame.width * crop.width,
-    height: sourceFrame.height * crop.height,
-    crop,
-  }
-}
-
-function isCompoundPartKind(kind: SketchElement['kind']): kind is SketchCompoundPart['kind'] {
-  return ['rectangle', 'rounded-rectangle', 'ellipse', 'diamond', 'triangle'].includes(kind)
-}
-
-function cloneSketchElement(element: SketchElement): SketchElement {
-  return {
-    ...element,
-    ...(element.compoundParts
-      ? { compoundParts: element.compoundParts.map((part) => ({ ...part })) }
-      : {}),
-  }
-}
-
-/** A history record copies only mutable placement data; source Visuals stay canonical. */
-function cloneVisualEmbed(embed: VisualEmbedInstance): VisualEmbedInstance {
-  return {
-    ...embed,
-    placement: { ...embed.placement },
-    ...(embed.embeddedVisuals?.length
-      ? { embeddedVisuals: embed.embeddedVisuals.map(cloneVisualEmbed) }
-      : {}),
-  }
-}
-
-function withEmbedPlacement(
-  embeds: readonly VisualEmbedInstance[],
-  id: string,
-  placement: VisualEmbedPlacement,
-) {
-  return embeds.map((embed) => (
-    embed.id === id
-      ? { ...cloneVisualEmbed(embed), placement: { ...placement } }
-      : cloneVisualEmbed(embed)
-  ))
-}
-
-function withEmbedPlacements(
-  embeds: readonly VisualEmbedInstance[],
-  placements: ReadonlyMap<string, VisualEmbedPlacement>,
-) {
-  return embeds.map((embed) => {
-    const placement = placements.get(embed.id)
-    return placement
-      ? { ...cloneVisualEmbed(embed), placement: { ...placement } }
-      : cloneVisualEmbed(embed)
-  })
-}
-
-/** Resize a compound's local geometry so its exterior remains a true shape. */
-function resizeCompoundElement(element: SketchElement, update: Partial<SketchElement>): SketchElement {
-  const nextElement = { ...element, ...update }
-  if (element.kind !== 'compound' || !element.compoundParts) return nextElement
-  // Imported zero-size shapes are legal data. Avoid letting a later resize
-  // turn their saved component geometry into NaN.
-  const scaleX = element.width === 0 ? 1 : nextElement.width / element.width
-  const scaleY = element.height === 0 ? 1 : nextElement.height / element.height
-  const radiusScale = Math.min(Math.abs(scaleX), Math.abs(scaleY))
-  return {
-    ...nextElement,
-    compoundParts: element.compoundParts.map((part) => ({
-      ...part,
-      x: part.x * scaleX,
-      y: part.y * scaleY,
-      width: part.width * scaleX,
-      height: part.height * scaleY,
-      ...(typeof part.cornerRadius === 'number' ? { cornerRadius: part.cornerRadius * radiusScale } : {}),
-    })),
-  }
-}
-
-/** The maximum SVG corner radius that still fits inside this shape's bounds. */
-function maximumCornerRadius(element: SketchElement) {
-  return Math.max(0, Math.min(Math.abs(element.width), Math.abs(element.height)) / 2)
-}
-
-/**
- * Older boards did not store corner radii. Preserve their original appearance
- * until someone intentionally adjusts the selected rounded rectangle.
- */
-function displayedCornerRadius(element: SketchElement) {
-  const legacyDefault = Math.min(24, Math.abs(element.width) / 5, Math.abs(element.height) / 5)
-  const requested = typeof element.cornerRadius === 'number' && Number.isFinite(element.cornerRadius)
-    ? element.cornerRadius
-    : legacyDefault
-  return Math.min(Math.max(0, requested), maximumCornerRadius(element))
-}
-
-function replaceLayer(
-  document: SketchDocument,
-  layerId: string,
-  update: (layer: SketchLayer) => SketchLayer,
-): SketchDocument {
-  return {
-    ...document,
-    layers: document.layers.map((layer) => layer.id === layerId ? update(layer) : layer),
-  }
-}
-
-function visibleLayers(document: SketchDocument) {
-  return document.layers.filter((layer) => layer.visible)
-}
-
-function elementBounds(element: SketchElement): ElementBounds {
-  if (isLineElement(element.kind)) {
-    return {
-      x: Math.min(element.x, element.x + element.width),
-      y: Math.min(element.y, element.y + element.height),
-      width: Math.abs(element.width),
-      height: Math.abs(element.height),
-    }
-  }
-  return {
-    x: element.x,
-    y: element.y,
-    width: element.width,
-    height: element.height,
-  }
-}
-
-/** The smallest canvas box that contains every supplied shape. */
-function combinedElementBounds(elements: readonly SketchElement[]): ElementBounds {
-  return combinedBounds(elements.map(elementBounds))
-}
-
-/** Tight bounding box for any mixture of shapes and placed Visuals. */
-function combinedBounds(bounds: readonly ElementBounds[]): ElementBounds {
-  const left = Math.min(...bounds.map((box) => box.x))
-  const top = Math.min(...bounds.map((box) => box.y))
-  const right = Math.max(...bounds.map((box) => box.x + box.width))
-  const bottom = Math.max(...bounds.map((box) => box.y + box.height))
-  return {
-    x: left,
-    y: top,
-    width: right - left,
-    height: bottom - top,
-  }
-}
-
-function normalizedBox(start: SketchPoint, end: SketchPoint): ElementBounds {
-  return {
-    x: Math.min(start.x, end.x),
-    y: Math.min(start.y, end.y),
-    width: Math.abs(end.x - start.x),
-    height: Math.abs(end.y - start.y),
-  }
-}
-
-/**
- * Decide whether a drawing or placed Visual belongs in the current marquee.
- * `inside` is deliberately the default: an item must fit completely inside
- * the rectangle. `touching` includes every item whose drawing box overlaps
- * or touches the marquee boundary.
- */
-function marqueeMatchesBounds(
-  marquee: ElementBounds,
-  item: ElementBounds,
-  mode: MarqueeSelectionMode,
-) {
-  if (mode === 'inside') {
-    return (
-      item.x >= marquee.x
-      && item.y >= marquee.y
-      && item.x + item.width <= marquee.x + marquee.width
-      && item.y + item.height <= marquee.y + marquee.height
-    )
-  }
-
-  return (
-    item.x <= marquee.x + marquee.width
-    && item.x + item.width >= marquee.x
-    && item.y <= marquee.y + marquee.height
-    && item.y + item.height >= marquee.y
-  )
-}
-
-/** Keep a line or move on the dominant horizontal/vertical axis while Shift is held. */
-function axisLockedPoint(start: SketchPoint, end: SketchPoint): SketchPoint {
-  const dx = end.x - start.x
-  const dy = end.y - start.y
-  return Math.abs(dx) >= Math.abs(dy)
-    ? { ...end, y: start.y }
-    : { ...end, x: start.x }
-}
-
-function createElement(
-  kind: Exclude<SketchElement['kind'], 'text'>,
-  start: SketchPoint,
-  end: SketchPoint,
-  color: string,
-  fill: string,
-  strokeWidth: number,
-  opacity: number,
-  strokeStyle: SketchStrokeStyle = 'solid',
-): SketchElement {
-  const box = normalizedBox(start, end)
-  return {
-    id: crypto.randomUUID(),
-    kind,
-    // Lines and arrows retain their signed vectors so they can point in any
-    // direction. Enclosed shapes use a normalized drawing box.
-    x: isLineElement(kind) ? start.x : box.x,
-    y: isLineElement(kind) ? start.y : box.y,
-    width: isLineElement(kind) ? end.x - start.x : box.width,
-    height: isLineElement(kind) ? end.y - start.y : box.height,
-    stroke: color,
-    fill,
-    strokeWidth,
-    ...(strokeStyle !== 'solid' ? { strokeStyle } : {}),
-    opacity,
-    ...(kind === 'rounded-rectangle'
-      ? { cornerRadius: Math.min(24, box.width / 5, box.height / 5) }
-      : {}),
-  }
-}
-
-function strokeDasharray(style: SketchStrokeStyle | undefined) {
-  if (style === 'dashed') return '12 8'
-  if (style === 'dotted') return '2 7'
-  return undefined
-}
-
-function SketchElementGraphic({
-  element,
-  interactive = false,
-  selected = false,
-  onPointerDown,
-  markerNamespace,
-  strokeVisible = true,
-  fillVisible = true,
-  annotationTargets = [],
-}: {
-  element: SketchElement
-  interactive?: boolean
-  selected?: boolean
-  onPointerDown?: (event: ReactPointerEvent<SVGGElement>) => void
-  /** Prevent arrow marker IDs from colliding when a Visual is reused twice. */
-  markerNamespace?: string
-  /** Compound shapes render their shared outer stroke separately. */
-  strokeVisible?: boolean
-  /** An interactive compound overlay needs hit targets, not a second fill. */
-  fillVisible?: boolean
-  /** Project data is supplied by the containing view, never copied here. */
-  annotationTargets?: readonly SketchAnnotationTarget[]
-}) {
-  const bounds = elementBounds(element)
-  const hitStroke = Math.max(16, element.strokeWidth + 10)
-  const text = resolvedSketchText(element, annotationTargets) || 'Text'
-  // A bound label coordinates with its Part or Tool automatically. Literal
-  // text keeps the drawing's manually selected stroke color.
-  const annotationColor = resolveSketchAnnotationColor(element.annotation, annotationTargets)
-  const semanticStroke = resolveSketchSemanticColor(element.semanticColors?.stroke, annotationTargets)
-  const semanticFill = resolveSketchSemanticColor(element.semanticColors?.fill, annotationTargets)
-  // The saved stroke/fill remain the durable manual fallback if a selected
-  // project item is removed or has no semantic color yet.
-  const stroke = strokeVisible ? semanticStroke ?? element.stroke : 'transparent'
-  const fill = fillVisible ? semanticFill ?? element.fill : 'transparent'
-  const arrowMarkerId = `sketch-arrow-head-${markerNamespace ? `${markerNamespace}-` : ''}${element.id}`
-    .replace(/[^a-zA-Z0-9_-]/g, '-')
-  const compoundFilterId = `sketch-compound-outline-${markerNamespace ? `${markerNamespace}-` : ''}${element.id}`
-    .replace(/[^a-zA-Z0-9_-]/g, '-')
-
-  return (
-    <g
-      className={selected ? 'sketch-element is-selected' : 'sketch-element'}
-      data-sketch-element-id={element.id}
-      opacity={element.opacity}
-      strokeDasharray={strokeDasharray(element.strokeStyle)}
-      strokeLinecap={element.strokeStyle === 'dotted' ? 'round' : undefined}
-      pointerEvents={interactive ? 'all' : 'none'}
-      onPointerDown={onPointerDown}
-    >
-      {(element.kind === 'rectangle' || element.kind === 'rounded-rectangle') ? (
-        <>
-          <rect
-            x={element.x}
-            y={element.y}
-            width={element.width}
-            height={element.height}
-            rx={element.kind === 'rounded-rectangle' ? displayedCornerRadius(element) : undefined}
-            ry={element.kind === 'rounded-rectangle' ? displayedCornerRadius(element) : undefined}
-            fill={fill}
-            stroke={stroke}
-            strokeWidth={element.strokeWidth}
-          />
-          {interactive ? (
-            <rect
-              x={element.x}
-              y={element.y}
-              width={element.width}
-              height={element.height}
-              fill="transparent"
-              stroke="transparent"
-              strokeWidth={hitStroke}
-            />
-          ) : null}
-        </>
-      ) : null}
-      {element.kind === 'diamond' ? (
-        <>
-          <polygon
-            points={`${element.x + element.width / 2},${element.y} ${element.x + element.width},${element.y + element.height / 2} ${element.x + element.width / 2},${element.y + element.height} ${element.x},${element.y + element.height / 2}`}
-            fill={fill}
-            stroke={stroke}
-            strokeWidth={element.strokeWidth}
-          />
-          {interactive ? (
-            <rect
-              x={element.x}
-              y={element.y}
-              width={element.width}
-              height={element.height}
-              fill="transparent"
-              stroke="transparent"
-              strokeWidth={hitStroke}
-            />
-          ) : null}
-        </>
-      ) : null}
-      {element.kind === 'triangle' ? (
-        <>
-          <polygon
-            points={`${element.x + element.width / 2},${element.y} ${element.x + element.width},${element.y + element.height} ${element.x},${element.y + element.height}`}
-            fill={fill}
-            stroke={stroke}
-            strokeWidth={element.strokeWidth}
-            strokeLinejoin="round"
-          />
-          {interactive ? (
-            <rect
-              x={element.x}
-              y={element.y}
-              width={element.width}
-              height={element.height}
-              fill="transparent"
-              stroke="transparent"
-              strokeWidth={hitStroke}
-            />
-          ) : null}
-        </>
-      ) : null}
-      {element.kind === 'ellipse' ? (
-        <>
-          <ellipse
-            cx={element.x + element.width / 2}
-            cy={element.y + element.height / 2}
-            rx={element.width / 2}
-            ry={element.height / 2}
-            fill={fill}
-            stroke={stroke}
-            strokeWidth={element.strokeWidth}
-          />
-          {interactive ? (
-            <ellipse
-              cx={element.x + element.width / 2}
-              cy={element.y + element.height / 2}
-              rx={Math.max(element.width / 2, hitStroke / 2)}
-              ry={Math.max(element.height / 2, hitStroke / 2)}
-              fill="transparent"
-              stroke="transparent"
-              strokeWidth={hitStroke}
-            />
-          ) : null}
-        </>
-      ) : null}
-      {element.kind === 'line' ? (
-        <>
-          <line
-            x1={element.x}
-            y1={element.y}
-            x2={element.x + element.width}
-            y2={element.y + element.height}
-            fill="none"
-            stroke={stroke}
-            strokeWidth={element.strokeWidth}
-            strokeLinecap="round"
-          />
-          {interactive ? (
-            <line
-              x1={element.x}
-              y1={element.y}
-              x2={element.x + element.width}
-              y2={element.y + element.height}
-              fill="none"
-              stroke="transparent"
-              strokeWidth={hitStroke}
-              strokeLinecap="round"
-            />
-          ) : null}
-        </>
-      ) : null}
-      {element.kind === 'arrow' ? (
-        <>
-          <defs>
-            <marker
-              id={arrowMarkerId}
-              markerWidth="10"
-              markerHeight="8"
-              refX="9"
-              refY="4"
-              orient="auto"
-              markerUnits="strokeWidth"
-            >
-              <path d="M 0 0 L 10 4 L 0 8 z" fill={stroke} />
-            </marker>
-          </defs>
-          <line
-            x1={element.x}
-            y1={element.y}
-            x2={element.x + element.width}
-            y2={element.y + element.height}
-            fill="none"
-            stroke={stroke}
-            strokeWidth={element.strokeWidth}
-            strokeLinecap="round"
-            markerEnd={`url(#${arrowMarkerId})`}
-          />
-          {interactive ? (
-            <line
-              x1={element.x}
-              y1={element.y}
-              x2={element.x + element.width}
-              y2={element.y + element.height}
-              fill="none"
-              stroke="transparent"
-              strokeWidth={hitStroke}
-              strokeLinecap="round"
-            />
-          ) : null}
-        </>
-      ) : null}
-      {element.kind === 'compound' && element.compoundParts ? (
-        <>
-          <defs>
-            <filter id={compoundFilterId} x="-20%" y="-20%" width="140%" height="140%" colorInterpolationFilters="sRGB">
-              <feMorphology
-                in="SourceAlpha"
-                operator="dilate"
-                radius={Math.max(1, element.strokeWidth / 2)}
-                result="expanded"
-              />
-              <feComposite in="expanded" in2="SourceAlpha" operator="out" result="outside" />
-              <feFlood floodColor={stroke} result="outlineColor" />
-              <feComposite in="outlineColor" in2="outside" operator="in" result="outerOutline" />
-              <feMerge>
-                <feMergeNode in="outerOutline" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-          </defs>
-          <g transform={`translate(${element.x} ${element.y})`} filter={`url(#${compoundFilterId})`} pointerEvents="none">
-            {element.compoundParts.map((part) => (
-              <SketchElementGraphic
-                key={`${element.id}-${part.id}`}
-                element={{
-                  id: `${element.id}-${part.id}`,
-                  kind: part.kind,
-                  x: part.x,
-                  y: part.y,
-                  width: part.width,
-                  height: part.height,
-                  stroke,
-                  fill,
-                  strokeWidth: element.strokeWidth,
-                  opacity: 1,
-                  ...(typeof part.cornerRadius === 'number' ? { cornerRadius: part.cornerRadius } : {}),
-                }}
-                markerNamespace={markerNamespace}
-                strokeVisible={false}
-              />
-            ))}
-          </g>
-          {interactive ? (
-            <rect
-              x={element.x}
-              y={element.y}
-              width={element.width}
-              height={element.height}
-              fill="transparent"
-              stroke="transparent"
-              strokeWidth={hitStroke}
-            />
-          ) : null}
-        </>
-      ) : null}
-      {element.kind === 'text' ? (
-        <>
-          <rect
-            x={element.x}
-            y={element.y}
-            width={Math.max(element.width, 30)}
-            height={Math.max(element.height, 24)}
-            fill="transparent"
-            stroke="transparent"
-            pointerEvents={interactive ? 'all' : 'none'}
-          />
-          <text
-            x={element.x}
-            y={element.y}
-            fill={semanticStroke ?? annotationColor ?? stroke}
-            fontSize={element.fontSize ?? 26}
-            fontFamily="inherit"
-            dominantBaseline="hanging"
-            pointerEvents="none"
-          >
-            {text}
-          </text>
-        </>
-      ) : null}
-      {selected ? (
-        <rect
-          className="sketch-element__selection"
-          x={bounds.x - 5}
-          y={bounds.y - 5}
-          width={Math.max(bounds.width + 10, 16)}
-          height={Math.max(bounds.height + 10, 16)}
-          fill="none"
-          stroke="#26799b"
-          strokeWidth={2}
-          strokeDasharray="7 5"
-          pointerEvents="none"
-        />
-      ) : null}
-    </g>
-  )
-}
-
-/** Preserves ordinary elements and their durable compound-shape records. */
-function SketchLayerElementGraphics({
-  layer,
-  interactive = false,
-  selectedElementIds = [],
-  onElementPointerDown,
-  markerNamespace,
-  annotationTargets = [],
-}: {
-  layer: SketchLayer
-  interactive?: boolean
-  selectedElementIds?: readonly string[]
-  onElementPointerDown?: (event: ReactPointerEvent<SVGGElement>, element: SketchElement) => void
-  markerNamespace?: string
-  annotationTargets?: readonly SketchAnnotationTarget[]
-}) {
-  const elements = layer.elements ?? []
-
-  return (
-    <>
-      {elements.map((element) => (
-          <SketchElementGraphic
-            key={element.id}
-            element={element}
-            interactive={interactive}
-            selected={selectedElementIds.includes(element.id)}
-            markerNamespace={markerNamespace}
-            annotationTargets={annotationTargets}
-            onPointerDown={(event) => onElementPointerDown?.(event, element)}
-          />
-      ))}
-    </>
-  )
-}
-
-/**
- * A placed Visual is rendered directly from its canonical node. Nothing is
- * copied into the parent sketch document: the parent owns only `placement`.
- */
-function EmbeddedVisualGraphic({
-  embed,
-  interactive = false,
-  selected = false,
-  onPointerDown,
-  annotationTargets = [],
-}: {
-  embed: VisualEmbedInstance
-  interactive?: boolean
-  selected?: boolean
-  onPointerDown?: (event: ReactPointerEvent<SVGGElement>) => void
-  annotationTargets?: readonly SketchAnnotationTarget[]
-}) {
-  const { placement, visual } = embed
-  const hitBounds = interactive ? visualEmbedHitBounds(placement) : null
-  // A semantic shade is a parent-side presentation choice. The canonical
-  // drawing/photo and its owner color remain unchanged for every other use.
-  const semanticShadeColor = placement.semanticShade ? embed.accentColor : undefined
-  const childDocument = visual.data.sketch
-  const directImage = visual.data.properties[OSA_PROPERTY.assetImage]?.trim() ?? ''
-  // Pre-Visual boards can keep an image directly on an otherwise editable
-  // canvas. Preserve it in nested previews while the normal migration runs.
-  const hasLegacyBackground = !visual.data.properties[OSA_PROPERTY.visualContent]
-    && Boolean(directImage)
-  const image = isImmutableVisual(visual) || hasLegacyBackground
-    ? directImage
-    : ''
-  // The placement is the Visual itself, not a separate container. A locked
-  // placement keeps its source proportions; unlocking deliberately lets the
-  // photo/drawing fill the independently chosen width and height.
-  const preserveAspectRatio = placement.aspectRatioLocked === false
-    ? 'none'
-    : 'xMidYMid meet'
-  const crop = placement.crop
-  const childViewBox = crop
-    ? `${crop.x * childDocument.width} ${crop.y * childDocument.height} ${crop.width * childDocument.width} ${crop.height * childDocument.height}`
-    : `0 0 ${childDocument.width} ${childDocument.height}`
-
-  return (
-    <g
-      className={selected ? 'sketch-visual-embed is-selected' : 'sketch-visual-embed'}
-      data-visual-embed-id={embed.id}
-      pointerEvents={interactive ? 'all' : 'none'}
-      onPointerDown={onPointerDown}
-    >
-      {image && crop ? (
-        // The crop window is resolved in source fractions, then scaled into
-        // this one parent-side placement. The original photo stays unchanged.
-        <svg
-          x={placement.x}
-          y={placement.y}
-          width={placement.width}
-          height={placement.height}
-          viewBox={`${crop.x} ${crop.y} ${crop.width} ${crop.height}`}
-          preserveAspectRatio={preserveAspectRatio}
-          overflow="hidden"
-          pointerEvents="none"
-        >
-          <image href={image} x={0} y={0} width={1} height={1} preserveAspectRatio="none" />
-        </svg>
-      ) : image ? (
-        // A photo is an image asset, not a 1000 × 700 OSA drawing page. Draw
-        // it directly in this parent-side placement so no blank paper or
-        // permanent frame travels with the photo.
-        <image
-          href={image}
-          x={placement.x}
-          y={placement.y}
-          width={placement.width}
-          height={placement.height}
-          preserveAspectRatio={preserveAspectRatio}
-          pointerEvents="none"
-        />
-      ) : (
-        <svg
-          x={placement.x}
-          y={placement.y}
-          width={placement.width}
-          height={placement.height}
-          viewBox={childViewBox}
-          preserveAspectRatio={preserveAspectRatio}
-          overflow="hidden"
-          pointerEvents="none"
-        >
-          <rect width={childDocument.width} height={childDocument.height} fill={childDocument.background} />
-          {(embed.embeddedVisuals ?? []).map((childEmbed) => (
-            <EmbeddedVisualGraphic
-              key={childEmbed.id}
-              embed={childEmbed}
-              annotationTargets={annotationTargets}
-            />
-          ))}
-          {visibleLayers(childDocument).flatMap((layer) => [
-            <SketchLayerElementGraphics
-              key={`${embed.id}-${layer.id}-elements`}
-              layer={layer}
-              markerNamespace={embed.id}
-              annotationTargets={annotationTargets}
-            />,
-            ...layer.strokes.map((stroke) => (
-              <Stroke key={`${embed.id}-${stroke.id}`} stroke={stroke} erase={false} />
-            )),
-          ])}
-        </svg>
-      )}
-      {semanticShadeColor ? (
-        // An opted-in shade tints this one placement without changing its
-        // canonical source. Light areas take on the owner's semantic color
-        // while the actual drawing or photo remains visible underneath.
-        <rect
-          className="sketch-visual-embed__accent"
-          x={placement.x}
-          y={placement.y}
-          width={placement.width}
-          height={placement.height}
-          fill={semanticShadeColor}
-          fillOpacity={0.22}
-          pointerEvents="none"
-        />
-      ) : null}
-      {interactive ? (
-        // A Visual can be smaller than a comfortable mouse target. Keep the
-        // selection target roomy without making its visible selection frame
-        // larger than the actual placed Visual.
-        <>
-          <rect
-            x={hitBounds?.x}
-            y={hitBounds?.y}
-            width={hitBounds?.width}
-            height={hitBounds?.height}
-            fill="transparent"
-            pointerEvents="all"
-          />
-          {selected ? (
-            <rect
-              x={placement.x}
-              y={placement.y}
-              width={placement.width}
-              height={placement.height}
-              fill="none"
-              stroke="#26799b"
-              strokeWidth={3}
-              strokeDasharray="7 5"
-              pointerEvents="none"
-            />
-          ) : null}
-        </>
-      ) : null}
-    </g>
-  )
-}
-
-function Stroke({
-  stroke,
-  erase,
-  onErase,
-}: {
-  stroke: SketchStroke
-  erase: boolean
-  onErase?: (event: ReactPointerEvent<SVGElement>) => void
-}) {
-  const points = stroke.points.map((point) => `${point.x},${point.y}`).join(' ')
-  const pressureWidth = (pressure = 0.5) => (
-    stroke.width * (0.35 + 1.3 * Math.min(Math.max(pressure, 0), 1))
-  )
-  const pressureVaries = stroke.points.some((point) => (
-    point.pressure !== undefined && Math.abs(point.pressure - 0.5) > 0.03
-  ))
-  const firstPoint = stroke.points[0]
-
-  return (
-    <>
-      {stroke.points.length === 1 && firstPoint ? (
-        <circle
-          cx={firstPoint.x}
-          cy={firstPoint.y}
-          r={pressureWidth(firstPoint.pressure) / 2}
-          fill={stroke.color}
-          fillOpacity={stroke.opacity}
-          pointerEvents="none"
-        />
-      ) : pressureVaries ? (
-        <g opacity={stroke.opacity} pointerEvents="none">
-          {stroke.points.slice(1).map((point, index) => {
-            const previous = stroke.points[index]
-            return (
-              <line
-                key={`${stroke.id}-${index}`}
-                x1={previous.x}
-                y1={previous.y}
-                x2={point.x}
-                y2={point.y}
-                stroke={stroke.color}
-                strokeWidth={pressureWidth(((previous.pressure ?? 0.5) + (point.pressure ?? 0.5)) / 2)}
-                strokeLinecap="round"
-              />
-            )
-          })}
-        </g>
-      ) : (
-        <polyline
-          points={points}
-          fill="none"
-          stroke={stroke.color}
-          strokeWidth={stroke.width}
-          strokeOpacity={stroke.opacity}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          pointerEvents="none"
-        />
-      )}
-      {erase ? (
-        stroke.points.length === 1 && firstPoint ? (
-          <circle
-            cx={firstPoint.x}
-            cy={firstPoint.y}
-            r={Math.max(7, stroke.width / 2 + 4)}
-            fill="transparent"
-            pointerEvents="all"
-            onPointerDown={onErase}
-          />
-        ) : (
-          <polyline
-            points={points}
-            fill="none"
-            stroke="transparent"
-            strokeWidth={Math.max(14, stroke.width + 8)}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            pointerEvents="stroke"
-            onPointerDown={onErase}
-          />
-        )
-      ) : null}
-    </>
-  )
-}
-
-export function SketchPreview({
-  document,
-  height,
-  backgroundImage,
-  embeddedVisuals = [],
-  annotationTargets = [],
-  ariaLabel = 'Sketch preview',
-  className,
-}: {
-  document: SketchDocument
-  height?: number | string
-  backgroundImage?: string
-  /** Direct child Visuals placed in this preview's parent canvas. */
-  embeddedVisuals?: VisualEmbedInstance[]
-  /** Live project data used by any bound text annotations in this preview. */
-  annotationTargets?: readonly SketchAnnotationTarget[]
-  ariaLabel?: string
-  className?: string
-}) {
-  // Arrowheads use SVG marker IDs. Give every rendered canvas its own prefix
-  // so an editor cannot accidentally reuse a stale marker from its preview
-  // behind the dialog (which made a newly semantic arrowhead stay black).
-  const markerNamespace = useId()
-
-  return (
-    <svg
-      className={className ? `sketch-preview ${className}` : 'sketch-preview'}
-      viewBox={`0 0 ${document.width} ${document.height}`}
-      aria-label={ariaLabel}
-      style={height === undefined ? undefined : { height }}
-    >
-      <rect width={document.width} height={document.height} fill={document.background} />
-      {backgroundImage ? (
-        <image
-          href={backgroundImage}
-          x={0}
-          y={0}
-          width={document.width}
-          height={document.height}
-          preserveAspectRatio="xMidYMid meet"
-        />
-      ) : null}
-      {embeddedVisuals.map((embed) => (
-        <EmbeddedVisualGraphic key={embed.id} embed={embed} annotationTargets={annotationTargets} />
-      ))}
-      {visibleLayers(document).flatMap((layer) => [
-        <SketchLayerElementGraphics
-          key={`${layer.id}-elements`}
-          layer={layer}
-          markerNamespace={markerNamespace}
-          annotationTargets={annotationTargets}
-        />,
-        ...layer.strokes.map((stroke) => (
-          <Stroke key={stroke.id} stroke={stroke} erase={false} />
-        )),
-      ])}
-    </svg>
-  )
-}
 
 export function SketchPad({
   document,
@@ -3396,6 +2402,16 @@ export function SketchPad({
     if (!selectedEmbedForRender) return
     startEmbedInteraction(event, selectedEmbedForRender, 'resize')
   }
+  const onSelectedEmbedCropMovePointerDown = (event: ReactPointerEvent<SVGGElement>) => {
+    if (!selectedEmbedForRender) return
+    startEmbedCropInteraction(event, selectedEmbedForRender, 'move')
+  }
+  const onSelectedEmbedCropHandlePointerDown = (event: ReactPointerEvent<SVGGElement>) => {
+    if (!selectedEmbedForRender) return
+    const handle = event.currentTarget.dataset.cropHandle as EmbedCropHandle | undefined
+    if (!handle || handle === 'move') return
+    startEmbedCropInteraction(event, selectedEmbedForRender, handle)
+  }
 
   return (
     <div className="sketch-editor">
@@ -3720,7 +2736,7 @@ export function SketchPad({
                     strokeDasharray="5 4"
                     pointerEvents="none"
                   />
-                  <g onPointerDown={(event) => startEmbedCropInteraction(event, selectedEmbedForRender, 'move')}>
+                  <g onPointerDown={onSelectedEmbedCropMovePointerDown}>
                     <rect
                       x={placement.x}
                       y={placement.y}
@@ -3736,7 +2752,8 @@ export function SketchPad({
                   {handles.map(([handle, x, y]) => (
                     <g
                       key={handle}
-                      onPointerDown={(event) => startEmbedCropInteraction(event, selectedEmbedForRender, handle)}
+                      data-crop-handle={handle}
+                      onPointerDown={onSelectedEmbedCropHandlePointerDown}
                     >
                       <rect
                         x={x - handleSize / 2}
