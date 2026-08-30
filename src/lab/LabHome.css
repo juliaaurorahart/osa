@@ -289,6 +289,45 @@
   --cluster-radius: 43% 57% 47% 53% / 55% 45% 55% 45%;
 }
 
+/* Two broad, human-made brush impressions break up the round splatter shapes.
+   These are decorative layers, so they never intercept an instrument click. */
+.lab-home__group--cluster-1::after,
+.lab-home__group--cluster-3::after {
+  position: absolute;
+  z-index: 0;
+  top: 54%;
+  left: 50%;
+  width: 144%;
+  height: 54%;
+  background-image:
+    linear-gradient(110deg, #ff75bd, #e53e95 58%, #b353d8),
+    url('./assets/gouache-wash.jpg');
+  background-position: center, 52% 48%;
+  background-size: cover, 155% auto;
+  background-blend-mode: color;
+  content: '';
+  filter: saturate(1.2) brightness(1.3);
+  mask: url('./assets/paint-dry-brush-mask.png') center / 100% 100% no-repeat;
+  opacity: 0.42;
+  pointer-events: none;
+  transform: translate(-50%, -50%) rotate(-14deg);
+  -webkit-mask: url('./assets/paint-dry-brush-mask.png') center / 100% 100% no-repeat;
+}
+
+.lab-home__group--cluster-3::after {
+  top: 60%;
+  width: 130%;
+  height: 50%;
+  background-image:
+    linear-gradient(110deg, #d981f1, #b149d2 60%, #f562b6),
+    url('./assets/gouache-wash.jpg');
+  background-position: center, 40% 58%;
+  mask-image: url('./assets/paint-smear-mask.svg');
+  opacity: 0.32;
+  transform: translate(-50%, -50%) rotate(8deg);
+  -webkit-mask-image: url('./assets/paint-smear-mask.svg');
+}
+
 .lab-home__rooms {
   --group-accent: #f09bce;
   --cluster-radius: 50% 50% 46% 54% / 55% 45% 55% 45%;
@@ -310,6 +349,15 @@
   --paint-photo: url('./assets/blue-purple-watercolor-splatter.jpg');
   --paint-width: 218%;
   --paint-height: 194%;
+  --paint-start: #ff79c9;
+  --paint-end: #c550e1;
+  --paint-opacity: 0.2;
+  --paint-hover-opacity: 0.94;
+  --paint-brightness: 1.2;
+  --paint-saturation: 1.25;
+  --paint-blend: color;
+  --paint-crop: cover;
+  --paint-position: center;
   position: absolute;
   top: var(--station-y);
   left: var(--station-x);
@@ -326,8 +374,14 @@
 .lab-home__station[data-paint='1'] {
   --paint-mask: url('./assets/paint-smear-mask.svg');
   --paint-photo: url('./assets/gouache-wash.jpg');
-  --paint-width: 250%;
-  --paint-height: 138%;
+  --paint-width: 290%;
+  --paint-height: 120%;
+  --paint-start: #ff8ac6;
+  --paint-end: #e845a2;
+  --paint-opacity: 0.24;
+  --paint-hover-opacity: 0.9;
+  --paint-crop: 155% auto;
+  --paint-position: 52% 48%;
 }
 
 .lab-home__station[data-paint='2'] {
@@ -335,13 +389,27 @@
   --paint-photo: url('./assets/table-paint-splatter.jpg');
   --paint-width: 202%;
   --paint-height: 198%;
+  --paint-start: #dd8cc9;
+  --paint-end: #8f76c8;
+  --paint-opacity: 0.1;
+  --paint-hover-opacity: 0.72;
+  --paint-brightness: 1.05;
+  --paint-saturation: 1.05;
+  --paint-blend: multiply;
 }
 
 .lab-home__station[data-paint='3'] {
   --paint-mask: url('./assets/paint-dry-brush-mask.png');
   --paint-photo: url('./assets/wall-paint-drips.jpg');
-  --paint-width: 270%;
-  --paint-height: 142%;
+  --paint-width: 300%;
+  --paint-height: 145%;
+  --paint-start: #f98ec9;
+  --paint-end: #bb72d0;
+  --paint-opacity: 0.14;
+  --paint-hover-opacity: 0.82;
+  --paint-brightness: 1.1;
+  --paint-blend: multiply;
+  --paint-crop: 165% auto;
 }
 
 .lab-home__station[data-paint='4'] {
@@ -349,6 +417,10 @@
   --paint-photo: url('./assets/purple-watercolor-texture.jpg');
   --paint-width: 216%;
   --paint-height: 208%;
+  --paint-start: #ff74d3;
+  --paint-end: #d747cf;
+  --paint-opacity: 0.22;
+  --paint-hover-opacity: 0.96;
 }
 
 .lab-home__station::before {
@@ -358,18 +430,21 @@
   left: 50%;
   width: var(--paint-width);
   height: var(--paint-height);
-  background-image: var(--paint-photo);
-  background-position: center;
-  background-size: cover;
+  background-image:
+    linear-gradient(125deg, var(--paint-start), var(--paint-end)),
+    var(--paint-photo);
+  background-position: center, var(--paint-position);
+  background-size: cover, var(--paint-crop);
+  background-blend-mode: var(--paint-blend);
   content: '';
-  filter: saturate(0.94) contrast(1.08) drop-shadow(0 10px 10px rgb(0 0 0 / 34%));
+  filter: saturate(var(--paint-saturation)) brightness(var(--paint-brightness)) contrast(1.08) drop-shadow(0 10px 10px rgb(0 0 0 / 34%));
   mask-image: var(--paint-mask);
   mask-position: center;
   mask-repeat: no-repeat;
   mask-size: contain;
-  opacity: 0.08;
+  opacity: var(--paint-opacity);
   pointer-events: none;
-  transform: translate(-50%, -50%) rotate(var(--paint-turn)) scale(0.72);
+  transform: translate(-50%, -50%) rotate(var(--paint-turn)) scale(0.82);
   transition:
     opacity 190ms ease-out,
     transform 230ms cubic-bezier(0.2, 0.75, 0.25, 1);
@@ -387,7 +462,7 @@
 
 .lab-home__station:hover::before,
 .lab-home__station:focus-within::before {
-  opacity: 0.72;
+  opacity: var(--paint-hover-opacity);
   transform: translate(-50%, -50%) rotate(var(--paint-turn)) scale(1.04);
 }
 
@@ -413,6 +488,7 @@
   cursor: pointer;
   font: inherit;
   text-align: center;
+  text-shadow: 0 1px 4px rgb(0 0 0 / 75%);
   transition:
     background-color 170ms ease,
     border-color 170ms ease,
@@ -427,7 +503,6 @@
 .lab-home__station button:hover,
 .lab-home__station button:focus-visible {
   border-color: color-mix(in srgb, var(--group-accent) 58%, white);
-  background-color: color-mix(in srgb, var(--group-accent) 17%, transparent);
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 20%),
     0 12px 28px rgb(0 0 0 / 22%),
@@ -457,6 +532,12 @@
   background:
     linear-gradient(138deg, rgb(255 255 255 / 11%), transparent 56%),
     rgb(151 77 139 / 12%);
+}
+
+.lab-home__station:hover button,
+.lab-home__station:focus-within button {
+  /* Keep the label legible while the pigment underneath becomes brighter. */
+  background-color: color-mix(in srgb, var(--group-accent) 12%, rgb(20 15 25 / 80%));
 }
 
 .lab-home__readout {
@@ -565,6 +646,13 @@
     inset: 5px max(3%, calc((100% - 560px) / 2));
     opacity: 0.48;
     transform: none;
+  }
+
+  .lab-home__group--cluster-1::after,
+  .lab-home__group--cluster-3::after {
+    width: min(114%, 540px);
+    height: 42%;
+    opacity: 0.28;
   }
 
   .lab-home__group h3,
