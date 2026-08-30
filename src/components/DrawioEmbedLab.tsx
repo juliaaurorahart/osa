@@ -1,5 +1,6 @@
 import { useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { LabCaptureButton } from '../lab/LabCaptureButton'
+import { LabFileActions } from '../lab/LabFileActions'
 import { LabCaptureContext } from '../lab/LabCaptureContext'
 import { dataUrlToBlob } from '../lab/labCaptureUtils'
 import type { LabCapture, LabProjectSource } from '../lab/labTypes'
@@ -369,7 +370,7 @@ export function DrawioEmbedLab({
           <LabCaptureContext.Provider value={contextSave ? saveCapture : null}>
             <LabCaptureButton capture={capture} disabled={saving || !['loaded', 'autosaved', 'saved'].includes(status.kind)} />
           </LabCaptureContext.Provider>
-          <button type="button" disabled={saving} onClick={resetSample}>reset sample</button>
+          <LabFileActions><button type="button" disabled={saving} onClick={resetSample}>reset sample</button></LabFileActions>
         </div>
       </header>
 

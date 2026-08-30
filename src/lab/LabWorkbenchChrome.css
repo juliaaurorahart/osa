@@ -1,0 +1,71 @@
+/* Shared chrome is deliberately scoped to the Lab, not standalone editors. */
+.lab-shell > [hidden] { display: none; }
+.lab-shell__body { grid-row: 3; }
+.lab-shell__workbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  min-width: 0; padding: 6px 10px; border-bottom: 1px solid var(--osa-border);
+  background: var(--osa-surface); z-index: 5;
+}
+.lab-shell__workbar :is(button, select, input, summary), .lab-shell__workbar-notices button {
+  box-sizing: border-box; min-height: 40px; border: 1px solid var(--osa-border); border-radius: 7px;
+  padding: 7px 10px; background: var(--osa-surface-raised); color: var(--osa-text); font: inherit; font-size: .82rem;
+}
+.lab-shell__workbar :is(button, summary) { cursor: pointer; }
+.lab-shell__workbar button:disabled { opacity: .5; cursor: not-allowed; }
+.lab-shell__workbar :is(button, select, input, summary):focus-visible { outline: 2px solid var(--osa-focus); outline-offset: 2px; }
+.lab-shell__workbar .lab-shell__home-link { font-weight: 750; background: transparent; border-color: transparent; }
+.lab-shell__workbench-picker { width: 125px; min-width: 0; }
+.lab-shell__workbar-name { flex: 1; width: 170px; min-width: 100px; max-width: 380px; }
+.lab-shell__save-slot { margin-left: auto; }
+.lab-shell__save-slot .lab-capture > button { border-color: var(--osa-focus); font-weight: 700; }
+.lab-shell__save-slot .lab-capture { position: relative; }
+.lab-shell__save-slot .lab-capture .is-error {
+  position: absolute; top: calc(100% + 8px); right: 0; width: min(340px, 85vw); padding: 12px;
+  border: 1px solid var(--osa-danger-text); border-radius: 8px; background: var(--osa-surface); z-index: 10;
+}
+.lab-menu { position: relative; }
+.lab-menu > summary { list-style: none; white-space: nowrap; }
+.lab-menu > summary::after { content: ' ▾'; opacity: .65; }
+.lab-menu > summary::-webkit-details-marker { display: none; }
+.lab-menu[open] > summary { border-color: var(--osa-focus); }
+.lab-menu__panel {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; display: grid; gap: 6px;
+  width: min(310px, calc(100vw - 24px)); max-height: 70dvh; overflow: auto;
+  padding: 12px; border: 1px solid var(--osa-border); border-radius: 10px;
+  background: var(--osa-surface); color: var(--osa-text); box-shadow: 0 12px 38px var(--osa-shadow);
+  font-size: .82rem; line-height: 1.5;
+}
+.lab-menu__panel button { display: block; width: 100%; text-align: left; }
+.lab-menu__panel p { margin: 3px 0 8px; color: var(--osa-muted); overflow-wrap: anywhere; }
+.lab-menu__panel hr { width: 100%; border: 0; border-top: 1px solid var(--osa-border); margin: 4px 0; }
+.lab-menu__panel > div, .lab-menu__file-actions { display: grid; gap: 6px; }
+.lab-menu__panel .lab-menu__file-actions:empty { display: none; }
+.lab-menu__panel .ink-lab__downloads > div { position: static; width: auto; padding: 6px 0; border: 0; box-shadow: none; background: transparent; }
+.lab-menu__panel .lab-shell__versions { display: grid; }
+.lab-shell__save-details > summary { color: var(--osa-muted); border-color: transparent; background: transparent; font-size: .76rem; }
+.lab-shell__workbar-notices { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 7px 12px; color: var(--osa-danger-text); background: var(--osa-surface); font-size: .8rem; }
+.lab-shell.is-workbench .lab-shell__body { padding: 6px; }
+.lab-shell.is-workbench .lab-shell__body > * { min-height: 100%; }
+.lab-shell.is-workbench :is(.p5-lab, .mermaid-lab) { padding: 10px; }
+.lab-shell.is-workbench :is(.p5-lab__header, .ink-lab__header, .drawio-embed-lab__header, .klecks-lab__header, .fabric-lab__header, .paper-lab__header, .konva-lab__header, .pixi-lab__header, .three-lab__header, .vega-lab__header, .mermaid-lab__header, .code-editor-lab__header) {
+  min-height: 0; padding: 6px 10px; margin-bottom: 6px; gap: 8px;
+}
+.lab-shell.is-workbench :is(.p5-lab__header, .ink-lab__header, .drawio-embed-lab__header, .klecks-lab__header, .fabric-lab__header, .paper-lab__header, .konva-lab__header, .pixi-lab__header, .three-lab__header, .vega-lab__header, .mermaid-lab__header, .code-editor-lab__header) > :is(h2, div:has(> h2)) { display: none; }
+.lab-shell.is-workbench .ink-lab__header { display: none; }
+.lab-shell.is-workbench .p5-lab__header:has(.p5-lab__actions:empty) { display: none; }
+.lab-shell.is-workbench .ink-lab__stage { height: max(370px, calc(100dvh - 215px)); }
+.lab-shell.is-workbench .drawio-embed-lab__editor { min-height: 300px; }
+.lab-shell.is-workbench .drawio-embed-lab__editor iframe { height: calc(100dvh - 150px); min-height: 300px; }
+.lab-shell.is-workbench.is-focus :is(.lab-shell__workbench-picker, .lab-shell__notebook-link) { display: none; }
+.lab-shell.is-workbench.is-focus :is(.p5-lab__stage, .p5-lab__controls) { height: max(360px, calc(100dvh - 210px)); }
+.lab-shell.is-workbench.is-focus .p5-lab__code-panel > :is(.cm-theme, .cm-theme-light) { height: max(300px, calc(100dvh - 265px)); }
+@media (max-width: 760px) {
+  .lab-shell__workbar { gap: 5px; padding: 5px 7px; }
+  .lab-shell__workbar :is(button, select, input, summary) { min-height: 44px; }
+  .lab-shell__workbar-name { width: 120px; max-width: none; }
+  .lab-shell__save-details { order: 5; }
+  .lab-shell__workbar .lab-menu__panel { position: fixed; top: 112px; left: 8px; right: 8px; width: auto; }
+  .lab-shell__workbench-picker { width: 110px; }
+  .lab-shell.is-workbench .ink-lab__stage { height: max(350px, calc(100dvh - 300px)); }
+  .lab-shell.is-workbench .drawio-embed-lab__editor iframe { height: calc(100dvh - 190px); }
+}

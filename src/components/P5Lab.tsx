@@ -4,6 +4,7 @@ import CodeMirror from '@uiw/react-codemirror'
 import { javascript } from '@codemirror/lang-javascript'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { LabCaptureButton } from '../lab/LabCaptureButton'
+import { LabFileActions } from '../lab/LabFileActions'
 import { LabDraftContext } from '../lab/LabDraftContext'
 import { canvasToBlob } from '../lab/labCaptureUtils'
 import type { LabCapture, LabProjectSource } from '../lab/labTypes'
@@ -395,8 +396,10 @@ export function P5Lab({ theme, initialSource, beforeRun }: P5LabProps) {
         <div className="p5-lab__actions">
           {mode === 'controls' ? <><button type="button" onClick={() => setPlaying((value) => !value)}>{playing ? 'pause' : 'play'}</button>
           <button type="button" onClick={regenerate}>regenerate</button></> : null}
-          <button type="button" disabled={exporting || (mode === 'code' && runStatus !== 'running')} onClick={() => void exportPng()}>export PNG</button>
-          <button type="button" onClick={exportSource}>source JS</button>
+          <LabFileActions>
+            <button type="button" disabled={exporting || (mode === 'code' && runStatus !== 'running')} onClick={() => void exportPng()}>Download PNG</button>
+            <button type="button" onClick={exportSource}>Download JavaScript</button>
+          </LabFileActions>
           <LabCaptureButton capture={capture} disabled={mode === 'code' && runStatus !== 'running'} />
         </div>
       </header>

@@ -1,6 +1,7 @@
 import { useContext, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import { LabDraftContext } from '../lab/LabDraftContext'
 import { LabCaptureButton } from '../lab/LabCaptureButton'
+import { LabFileActions } from '../lab/LabFileActions'
 import type { LabCapture, LabProjectSource } from '../lab/labTypes'
 import { INK_POINT_LIMIT, INK_SOURCE_LIMIT, createInkDocument, inkDocumentPng, inkDocumentSvg, inkStrokePath, parseInkDocument, type InkDocument, type InkPen, type InkPoint, type InkStroke } from '../lab/inkDocument'
 import './InkLab.css'
@@ -37,7 +38,7 @@ export function InkLab({ onSave, initialSource }: { onSave?: (capture: LabCaptur
   const [tool, setTool] = useState<'draw' | 'pan'>('draw')
   const [view, setView] = useState({ x: 0, y: 0, zoom: 1 })
   const [activeStroke, setActiveStroke] = useState<InkStroke | null>(null)
-  const [message, setMessage] = useState(initialSource ? 'Saved drawing opened for editing. Save to notebook keeps a new version.' : '')
+  const [message, setMessage] = useState('')
   const [exporting, setExporting] = useState(false)
   const svgRef = useRef<SVGSVGElement>(null)
   const importRef = useRef<HTMLInputElement>(null)
@@ -50,7 +51,7 @@ export function InkLab({ onSave, initialSource }: { onSave?: (capture: LabCaptur
     setPast((history) => [...history.slice(-39), document])
     setFuture([])
     setDocument(next)
-    setMessage('Drawing changed. Add it to the notebook or download it to keep this version.')
+    setMessage('')
   }
   const undo = () => {
     if (!past.length || gesture.current) return
@@ -165,13 +166,15 @@ export function InkLab({ onSave, initialSource }: { onSave?: (capture: LabCaptur
       <header className="ink-lab__header">
         <div><h2>Ink</h2><p>A page for handwriting, sketches, and layered marks.</p></div>
         <div className="ink-lab__actions">
-          <button type="button" onClick={() => importRef.current?.click()}>Open ink file</button>
           <LabCaptureButton capture={capture} disabled={!document.strokes.length || !!activeStroke} onSave={onSave} />
-          <details className="ink-lab__downloads"><summary>Download</summary><div>
+          <LabFileActions>
+            <button type="button" onClick={() => importRef.current?.click()}>Open ink file</button>
+            <details className="ink-lab__downloads"><summary>Download</summary><div>
             <button type="button" disabled={!document.strokes.length || exporting} onClick={() => void exportImage()}>PNG image</button>
             <button type="button" onClick={() => download(new Blob([inkDocumentSvg(document)], { type: 'image/svg+xml' }), 'drawing.svg')}>SVG image</button>
             <button type="button" onClick={() => download(new Blob([JSON.stringify(document)], { type: 'application/json' }), 'drawing.osa-ink.json')}>Editable ink JSON</button>
           </div></details>
+          </LabFileActions>
         </div>
       </header>
       <div className="ink-lab__toolbar" aria-label="Drawing tools">
@@ -202,7 +205,7 @@ export function InkLab({ onSave, initialSource }: { onSave?: (capture: LabCaptur
           <g clipPath={`url(#${clipId})`}>{completedPaths}{activeStroke && <path d={inkStrokePath(activeStroke, false)} fill={activeStroke.color} opacity={activeStroke.opacity} />}</g>
         </svg>
       </div>
-      <footer className="ink-lab__footer"><p role="status">{message || 'Not saved yet. Add to notebook keeps both the image and editable strokes.'}</p><small>Canvas color is saved in the ink file and exported image; changing it leaves existing strokes untouched. Pen pressure needs a compatible stylus/browser; mouse strokes use simulated pressure. Pencil is a light stroke style, not a textured material brush.</small></footer>
+      <footer className="ink-lab__footer">{message ? <p role="status">{message}</p> : null}<details><summary>Ink tips</summary><small>Save keeps the image and editable strokes. Canvas color is saved in the ink file and exported image; changing it leaves existing strokes untouched. Pen pressure needs a compatible stylus/browser; mouse strokes use simulated pressure. Pencil is a light stroke style, not a textured material brush.</small></details></footer>
       <input ref={importRef} type="file" accept=".json,application/json" hidden onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void importDocument(file) }} />
     </section>
   )

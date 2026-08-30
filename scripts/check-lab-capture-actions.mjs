@@ -28,6 +28,7 @@ function loadModule(path, mocks = {}) {
 }
 
 const { LabCaptureContext } = loadModule('src/lab/LabCaptureContext.ts')
+const { LabWorkbenchChromeContext } = draftTestDependency('LabWorkbenchChromeContext')
 const { LabCaptureButton } = loadModule('src/lab/LabCaptureButton.tsx', {
   './LabCaptureContext': { LabCaptureContext },
 })
@@ -116,9 +117,15 @@ try {
     notebookSaves.push(args)
     return new Promise((resolveSave, rejectSave) => { finishNotebookSave = resolveSave; rejectNotebookSave = rejectSave })
   }
+  const saveTarget = document.createElement('div'), fileTarget = document.createElement('div')
+  document.body.append(saveTarget, fileTarget)
   await React.act(async () => root.render(
-    React.createElement(LabCaptureContext.Provider, { value: saveDiagram }, React.createElement(DrawioEmbedLab, { theme: 'dark' })),
+    React.createElement(LabWorkbenchChromeContext.Provider, { value: { saveTarget, fileTarget, readOnly: false } },
+      React.createElement(LabCaptureContext.Provider, { value: saveDiagram }, React.createElement(DrawioEmbedLab, { theme: 'dark' }))),
   ))
+  assert.equal(saveTarget.querySelector('button').textContent, 'Save')
+  assert.equal(fileTarget.querySelector('button').textContent, 'Save a copy')
+  assert.equal(document.querySelector('.drawio-embed-lab .lab-capture'), null, 'draw.io Save lives in shared chrome without replacing its context')
   const iframe = document.querySelector('iframe')
   const sent = []
   iframe.contentWindow.postMessage = (data, origin) => sent.push({ data: JSON.parse(data), origin })

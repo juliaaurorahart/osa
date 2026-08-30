@@ -1,5 +1,7 @@
 import { useContext, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { LabCaptureContext } from './LabCaptureContext'
+import { LabWorkbenchChromeContext } from './LabWorkbenchChromeContext'
 import type { LabCapture } from './labTypes'
 import './LabCaptureButton.css'
 
@@ -10,6 +12,8 @@ export function LabCaptureButton({ capture, disabled = false, onSave }: {
   onSave?: (capture: LabCapture) => Promise<string>
 }) {
   const contextSave = useContext(LabCaptureContext)
+  const sharedChrome = useContext(LabWorkbenchChromeContext)
+  const chrome = onSave ? null : sharedChrome
   const save = onSave ?? contextSave
   const busyRef = useRef(false)
   const [busy, setBusy] = useState<'save' | 'copy' | null>(null)
@@ -18,7 +22,7 @@ export function LabCaptureButton({ capture, disabled = false, onSave }: {
   if (!save) return null
 
   const captureToNotebook = async (asCopy = false) => {
-    if (busyRef.current || disabled) return
+    if (busyRef.current || disabled || chrome?.readOnly) return
     busyRef.current = true
     setBusy(asCopy ? 'copy' : 'save')
     setFailed(false)
@@ -37,15 +41,18 @@ export function LabCaptureButton({ capture, disabled = false, onSave }: {
     }
   }
 
-  return (
+  const copyButton = !onSave && contextSave ? <button type="button" disabled={disabled || Boolean(busy) || chrome?.readOnly} onClick={() => void captureToNotebook(true)} title="Save as a separate notebook item">
+    {busy === 'copy' ? 'Saving copy…' : 'Save a copy'}
+  </button> : null
+  const controls = (
     <span className="lab-capture" aria-busy={Boolean(busy)}>
-      <button type="button" disabled={disabled || Boolean(busy)} onClick={() => void captureToNotebook()}>
-        {busy === 'save' ? 'Saving…' : 'Save to notebook'}
+      <button type="button" title="Save the current project to the notebook" disabled={disabled || Boolean(busy) || chrome?.readOnly} onClick={() => void captureToNotebook()}>
+        {busy ? 'Saving…' : chrome ? 'Save' : 'Save to notebook'}
       </button>
-      {!onSave && contextSave ? <button type="button" disabled={disabled || Boolean(busy)} onClick={() => void captureToNotebook(true)} title="Save as a separate notebook item">
-        {busy === 'copy' ? 'Saving copy…' : 'Save a copy'}
-      </button> : null}
-      {message ? <span className={failed ? 'is-error' : ''} role={failed ? 'alert' : 'status'}>{message}</span> : null}
+      {!chrome?.fileTarget ? copyButton : null}
+      {message && (!chrome || failed) ? <span className={failed ? 'is-error' : ''} role={failed ? 'alert' : 'status'}>{message}</span> : null}
     </span>
   )
+  return <>{chrome?.saveTarget ? createPortal(controls, chrome.saveTarget) : controls}
+    {chrome?.fileTarget && copyButton ? createPortal(copyButton, chrome.fileTarget) : null}</>
 }

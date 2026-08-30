@@ -7,6 +7,8 @@ import { LabSettings } from './LabSettings'
 import type { LabArtifact, LabCapture, LabProjectSource, LabRoute, LabTheme, LabWorkbenchId } from './labTypes'
 import { LabWorkbench } from './LabWorkbench'
 import { LabCaptureContext } from './LabCaptureContext'
+import { LabWorkbenchChromeContext } from './LabWorkbenchChromeContext'
+import { LabMenu } from './LabMenu'
 import { useSyncedLabNotebook } from './useSyncedLabNotebook'
 import { LabNotebookSync } from './LabNotebookSync'
 import { readSavedLabProject } from './labSavedProjects'
@@ -14,6 +16,7 @@ import { LabDraftContext, type LabDraftReader } from './LabDraftContext'
 import { DRAFT_TOOLS, readLabDraftSource } from './labDrafts'
 import { useLabWorkingDrafts } from './useLabWorkingDrafts'
 import './CanvasLab.css'
+import './LabWorkbenchChrome.css'
 
 export type CanvasLabProps = {
   theme: LabTheme
@@ -65,6 +68,10 @@ export function CanvasLab({
   const [pending, setPending] = useState<PendingAction | null>(null)
   const [saving, setSaving] = useState(false)
   const [projectMessage, setProjectMessage] = useState('')
+  const [projectFailure, setProjectFailure] = useState('')
+  const [focusedEditor, setFocusedEditor] = useState(false)
+  const [saveTarget, setSaveTarget] = useState<HTMLDivElement | null>(null)
+  const [fileTarget, setFileTarget] = useState<HTMLDivElement | null>(null)
   const [sessionScope, setSessionScope] = useState(notebook.scope)
   const currentRef = useRef({ scope: notebook.scope, projectId: project?.id, projectName: project?.name })
   const savingRef = useRef(false)
@@ -92,6 +99,7 @@ export function CanvasLab({
     setSession(null)
     setPending(null)
     setProjectMessage('')
+    setProjectFailure('')
     if (route.page === 'workbench') setRoute({ page: 'notebook' })
   }
   useEffect(() => {
@@ -150,7 +158,8 @@ export function CanvasLab({
 
   const startProject = (next: ProjectSession) => {
     setSession(next)
-    setProjectMessage(next.source ? 'Opened your project. Save updates this file; Save a copy starts a separate file.' : '')
+    setProjectMessage('')
+    setProjectFailure('')
     setRoute({ page: 'workbench', workbenchId: next.toolId })
   }
   const requestProject = (next: ProjectSession) => {
@@ -206,7 +215,7 @@ export function CanvasLab({
       startProject({ ...project, id: crypto.randomUUID(), draftSessionId: undefined, source, mode,
         name: mode === 'draft' && draft?.draftActive ? draft.name : saved.name,
         draftFileId: draft?.fileId, fileId: mode === 'draft' && draft?.draftActive ? draft.draftBaseFileId : saved.fileId })
-    } catch (error) { setProjectMessage(error instanceof Error ? error.message : 'Could not switch versions.') }
+    } catch (error) { setProjectFailure(error instanceof Error ? error.message : 'Could not switch versions.') }
   }
   const saveProject = async (capture: LabCapture, options?: { asCopy?: boolean }): Promise<string> => {
     if (project?.mode === 'saved') throw new Error('Switch to Working draft before saving edits.')
@@ -248,30 +257,7 @@ export function CanvasLab({
   }
 
   const context = (() => {
-    if (activeLab) {
-      return (
-        <>
-          <strong>{activeLab.name}</strong>
-          <span>{activeLab.note}</span>
-          <span>files: {activeLab.output}</span>
-          {project ? <label className="lab-shell__project-name">Project name
-            <input aria-label="Project name" maxLength={160} value={project.name} disabled={saving}
-              onChange={(event) => setSession({ ...project, name: event.target.value })} />
-          </label> : null}
-          <button type="button" onClick={() => setRoute({ page: 'notebook' })}>Back to notebook</button>
-          <button type="button" disabled={saving} onClick={() => requestProject({ id: crypto.randomUUID(), scope: notebook.scope,
-            toolId: activeLab.id, name: `${activeLab.name} project` })}>New project</button>
-          {supportsDrafts && project?.artifactId ? <div className="lab-shell__versions" role="group" aria-label="Project version">
-            <button type="button" aria-pressed={project.mode === 'saved'} disabled={saving} onClick={() => void switchVersion('saved')}>Saved · read only</button>
-            <button type="button" aria-pressed={project.mode !== 'saved'} disabled={saving} onClick={() => void switchVersion('draft')}>Working draft</button>
-          </div> : null}
-          <span role="status">{saving ? 'Saving project…' : projectMessage}</span>
-          <span role="status">{supportsDrafts ? project?.mode === 'saved' ? 'Viewing the last saved version. Your working draft is kept separately.' : workingDrafts.state.message
-            : 'Recovery drafts are not available in this workbench yet. Use its Save, export, or Share controls before leaving.'}</span>
-          {supportsDrafts && workingDrafts.state.kind === 'error' ? <button type="button" onClick={() => void workingDrafts.flush().catch(() => undefined)}>Retry draft save</button> : null}
-        </>
-      )
-    }
+    if (activeLab) return null
     if (route.page === 'notebook') {
       return (
         <>
@@ -302,10 +288,17 @@ export function CanvasLab({
     )
   })()
 
+  const draftFailed = supportsDrafts && workingDrafts.state.kind === 'error'
+  const currentDraft = project ? notebook.getProjectDraft(project.draftOf || project.artifactId || project.id) : null
+  const statusLabel = draftFailed ? 'Draft needs attention' : saving ? 'Saving…' : project?.mode === 'saved' ? 'Saved · read only'
+    : !supportsDrafts ? 'Manual save' : workingDrafts.state.kind === 'saving' ? 'Saving draft…'
+      : currentDraft?.draftActive ? 'Draft saved locally' : project?.artifactId ? 'Saved to notebook' : 'Working draft'
+
   return (
     <LabCaptureContext.Provider value={saveProject}>
-    <section className={`lab-shell${route.page === 'home' ? ' is-home' : ''}`} aria-label="OSA Lab">
-      <header className="lab-shell__header">
+    <LabWorkbenchChromeContext.Provider value={{ saveTarget, fileTarget, readOnly: project?.mode === 'saved' }}>
+    <section className={`lab-shell is-${route.page}${focusedEditor ? ' is-focus' : ''}`} aria-label="OSA Lab">
+      <header className="lab-shell__header" hidden={!!activeLab}>
         <button className="lab-shell__brand" type="button" onClick={() => setRoute({ page: 'home' })}>
           <strong>OSA Lab</strong>
           <span>experimental facility</span>
@@ -375,7 +368,47 @@ export function CanvasLab({
         </div>
       </header>
 
-      <aside className="lab-shell__context">{context}</aside>
+      <header className="lab-shell__workbar" hidden={!activeLab} aria-label="Project work bar">
+        <button className="lab-shell__home-link" type="button" title="Lab home" onClick={() => setRoute({ page: 'home' })}>Lab</button>
+        <select className="lab-shell__workbench-picker" aria-label="Switch workbench" value={activeLab?.id || ''}
+          disabled={!notebook.isReady} onChange={(event) => openWorkbench(event.target.value as LabWorkbenchId)}>
+          <option value="" disabled>Workbench</option>
+          {LAB_GROUPS.map((group) => <optgroup key={group.name} label={group.name}>{group.labs.map((lab) => <option key={lab.id} value={lab.id}>{lab.name}</option>)}</optgroup>)}
+        </select>
+        {activeLab && project ? <input className="lab-shell__workbar-name" aria-label="Project name" maxLength={160} value={project.name}
+          disabled={saving || project.mode === 'saved'} onChange={(event) => setSession({ ...project, name: event.target.value })} /> : null}
+        <LabMenu className="lab-shell__save-details" label={<span role="status">{statusLabel}</span>}>
+          <strong>Saving & versions</strong>
+          <p>{project?.mode === 'saved' ? 'Viewing the last saved version. Your working draft is kept separately.'
+            : supportsDrafts ? workingDrafts.state.message : 'No recovery drafts in this workbench. Save, export, or Share before leaving.'}</p>
+          <p>{notebook.message}</p>
+          {projectMessage ? <p>{projectMessage}</p> : null}
+          {supportsDrafts && project?.artifactId ? <div className="lab-shell__versions" role="group" aria-label="Project version">
+            <button type="button" aria-pressed={project.mode === 'saved'} disabled={saving} onClick={() => void switchVersion('saved')}>Saved · read only</button>
+            <button type="button" aria-pressed={project.mode !== 'saved'} disabled={saving} onClick={() => void switchVersion('draft')}>Working draft</button>
+          </div> : null}
+        </LabMenu>
+        <div className="lab-shell__save-slot" ref={setSaveTarget} inert={project?.mode === 'saved' || undefined} />
+        <button className="lab-shell__notebook-link" type="button" title="Back to notebook" onClick={() => setRoute({ page: 'notebook' })}>Notebook</button>
+        <button className="lab-shell__focus-toggle" type="button" aria-pressed={focusedEditor} onClick={() => setFocusedEditor((value) => !value)}>{focusedEditor ? 'Show navigation' : 'Focus'}</button>
+        <LabMenu label="File">
+          <div ref={setFileTarget} />
+          <button type="button" disabled={saving || !activeLab} onClick={() => activeLab && requestProject({ id: crypto.randomUUID(), scope: notebook.scope,
+            toolId: activeLab.id, name: `${activeLab.name} project` })}>New project</button>
+          <hr />
+          <button type="button" onClick={() => setRoute({ page: 'settings' })}>Settings</button>
+          <button type="button" onClick={onToggleTheme}>Switch to {theme === 'dark' ? 'light' : 'dark'} theme</button>
+          <button type="button" disabled={saving} onClick={requestExit}>exit lab</button>
+          {activeLab ? <details><summary>About {activeLab.name}</summary><p>{activeLab.note}. Files: {activeLab.output}.</p></details> : null}
+        </LabMenu>
+      </header>
+
+      {activeLab ? <aside className="lab-shell__workbar-notices" hidden={!draftFailed && !projectFailure && supportsDrafts && notebook.status !== 'error'}>
+        {draftFailed ? <><span role="alert">{workingDrafts.state.message}</span><button type="button" onClick={() => void workingDrafts.flush().catch(() => undefined)}>Retry draft save</button></> : null}
+        {projectFailure ? <span role="alert">{projectFailure}</span> : null}
+        {notebook.status === 'error' ? <span role="alert">{notebook.message}</span> : null}
+        {!supportsDrafts ? <span>No automatic drafts here—save or export before leaving.</span> : null}
+      </aside> : <aside className="lab-shell__context">{context}</aside>}
 
       <main ref={bodyRef} className={`lab-shell__body is-${route.page}`}>
         {route.page === 'home' ? (
@@ -474,6 +507,7 @@ export function CanvasLab({
         </> : null}
       </dialog>
     </section>
+    </LabWorkbenchChromeContext.Provider>
     </LabCaptureContext.Provider>
   )
 }

@@ -93,8 +93,14 @@ Each project has one current draft slot, separate from its explicit saved versio
 Saved notebook notes, files, and topics persist independently of project
 boards. Original editable files and their previews are separate attachments.
 
-For an editable project, set **Project name**, then use the workbench's
-**Save to notebook** (draw.io's **Save** and Klecks' **Submit** also save
+Workbenches share a compact bar: Lab, tool, project name, draft status,
+**Save**, Notebook, Focus, and File. **File** holds Save a copy, available
+downloads, New project, and settings; the status disclosure holds version
+switching and sync details. Storage failures remain visible outside menus.
+**Focus** hides secondary navigation without closing or restarting the editor.
+
+For an editable project, set **Project name**, then use the shared
+**Save** (draw.io's **Save** and Klecks' **Submit** also save
 there). Saving updates the current notebook file; **Save a copy** creates a
 separate item. Earlier saves remain available in **History**, with immutable
 source and preview bytes for each saved version.
