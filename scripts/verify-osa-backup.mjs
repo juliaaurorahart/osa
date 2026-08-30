@@ -14,7 +14,8 @@ const LEGACY_KEY = /^images\/[a-f0-9]{64}\.(?:jpg|png|gif|webp|avif)$/
 const PRIVATE_KEY = /^private\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i
 const FILE_ID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i
 const ORIGINAL_TABLES = ['boards', 'board_shares', 'board_collaborators']
-const MIGRATED_TABLES = ['private_assets', 'legacy_asset_grants', 'private_asset_migrations', 'lab_notebooks']
+const PRIVATE_TABLES = ['private_assets', 'legacy_asset_grants', 'private_asset_migrations']
+const MIGRATED_TABLES = [...PRIVATE_TABLES, 'lab_notebooks', 'lab_notebook_catalog']
 const REQUIRED_COLUMNS = {
   boards: ['id', 'owner_email', 'name', 'content', 'updated_at', 'created_at', 'archived', 'revision'],
   board_shares: ['token', 'board_id', 'assembly_id', 'created_at', 'slug'],
@@ -23,8 +24,9 @@ const REQUIRED_COLUMNS = {
   legacy_asset_grants: ['board_id', 'storage_key'],
   private_asset_migrations: ['id'],
   lab_notebooks: ['owner_email', 'board_id', 'created_at'],
+  lab_notebook_catalog: ['board_id', 'owner_email', 'name', 'name_revision', 'creation_key', 'created_at'],
 }
-const MIGRATION_NAMES = ['0007_private_assets.sql', '0008_lab_notebooks.sql']
+const MIGRATION_NAMES = ['0007_private_assets.sql', '0008_lab_notebooks.sql', '0009_lab_notebook_catalog.sql']
 
 export class BackupVerificationError extends Error {
   constructor(code, message) {
@@ -78,12 +80,13 @@ function restoreInMemory(bytes) {
   requireCheck(typeof db.setAuthorizer === 'function', 'E_NODE', 'Use Node 24.12 or newer; a SQLite authorizer is required.')
   db.exec('PRAGMA temp_store=MEMORY; PRAGMA trusted_schema=OFF;')
   let importing = true
+  let importingStatisticsSelect = false
   const denied = new Set([
     constants.SQLITE_ATTACH, constants.SQLITE_DETACH, constants.SQLITE_CREATE_VTABLE, constants.SQLITE_DROP_VTABLE,
     constants.SQLITE_CREATE_TRIGGER, constants.SQLITE_CREATE_TEMP_TRIGGER,
     constants.SQLITE_CREATE_VIEW, constants.SQLITE_CREATE_TEMP_VIEW, constants.SQLITE_RECURSIVE,
   ])
-  const readPragmas = new Set(['table_info', 'index_list', 'index_info', 'index_xinfo', 'foreign_key_list', 'foreign_key_check', 'integrity_check'])
+  const readPragmas = new Set(['table_info', 'index_list', 'index_info', 'index_xinfo', 'foreign_key_list', 'foreign_key_check', 'integrity_check', 'optimize'])
   db.setAuthorizer((action, first, second) => {
     if (denied.has(action)) return constants.SQLITE_DENY
     if (action === constants.SQLITE_PRAGMA) {
@@ -98,7 +101,15 @@ function restoreInMemory(bytes) {
       // queries/functions; the reviewed migrations run only after import.
       if (importing && !['current_timestamp', 'current_date', 'current_time', 'datetime', 'strftime'].includes(name)) return constants.SQLITE_DENY
     }
-    if (importing && action === constants.SQLITE_SELECT) return constants.SQLITE_DENY
+    // D1 dumps optimized databases with ANALYZE sqlite_schema followed by
+    // literal sqlite_stat1 rows. SQLite itself creates this reserved table
+    // and performs one internal SELECT to load its statistics. Permit that
+    // exact bootstrap, not arbitrary SELECT statements from the dump.
+    if (importing && action === constants.SQLITE_CREATE_TABLE && first === 'sqlite_stat1') importingStatisticsSelect = true
+    if (importing && action === constants.SQLITE_SELECT) {
+      if (!importingStatisticsSelect) return constants.SQLITE_DENY
+      importingStatisticsSelect = false
+    }
     return constants.SQLITE_OK
   })
   try {
@@ -168,10 +179,22 @@ function sameFingerprints(left, right, code = 'E_PRESERVATION') {
 
 function migrationState(db) {
   const present = MIGRATED_TABLES.filter((name) => tableExists(db, name))
-  const privateCount = present.filter((name) => name !== 'lab_notebooks').length
+  const privateCount = present.filter((name) => PRIVATE_TABLES.includes(name)).length
   requireCheck(privateCount === 0 || privateCount === 3, 'E_PARTIAL_SCHEMA', 'The backup contains an incomplete private-file migration; review it before proceeding.')
   requireCheck(!present.includes('lab_notebooks') || privateCount === 3, 'E_PARTIAL_SCHEMA', 'Notebook schema exists without the required private-file schema.')
+  requireCheck(!present.includes('lab_notebook_catalog') || present.includes('lab_notebooks'), 'E_PARTIAL_SCHEMA', 'Notebook catalog exists without the legacy notebook schema.')
   checkColumns(db, present)
+  if (present.includes('lab_notebooks')) {
+    requireCheck(count(db, `SELECT COUNT(*) AS count FROM lab_notebooks n LEFT JOIN boards b ON b.id = n.board_id
+      WHERE b.id IS NULL OR b.owner_email != n.owner_email`) === 0, 'E_NOTEBOOK_OWNER', 'A notebook association does not match its board owner.')
+  }
+  if (present.includes('lab_notebook_catalog')) {
+    requireCheck(count(db, `SELECT COUNT(*) AS count FROM lab_notebook_catalog c LEFT JOIN boards b ON b.id = c.board_id
+      WHERE b.id IS NULL OR b.owner_email != c.owner_email`) === 0, 'E_NOTEBOOK_OWNER', 'A notebook catalog entry does not match its board owner.')
+    requireCheck(count(db, `SELECT COUNT(*) AS count FROM lab_notebooks n LEFT JOIN lab_notebook_catalog c
+      ON c.board_id = n.board_id AND c.owner_email = n.owner_email WHERE c.board_id IS NULL`) === 0,
+    'E_NOTEBOOK_CATALOG', 'The notebook catalog backfill is incomplete.')
+  }
   const seeded = privateCount === 3 && Boolean(db.prepare('SELECT 1 FROM private_asset_migrations WHERE id = ?').get('legacy_grants_seeded'))
   requireCheck(privateCount === 0 || seeded, 'E_SEED_MARKER', 'Private-file tables exist without the frozen seed marker; do not automatically reseed them.')
   return { present, seeded }
@@ -352,8 +375,9 @@ export function verifySqlBackup(input, { compareSql } = {}) {
       comparison = openVerifiedBackup(compareSql)
       sameFingerprints(backup.baseline, comparison.baseline, 'E_COMPARE')
       requireCheck(comparison.state.present.length === MIGRATED_TABLES.length && comparison.state.seeded,
-        'E_COMPARE_SCHEMA', 'The comparison backup does not contain both completed migrations.')
+        'E_COMPARE_SCHEMA', 'The comparison backup does not contain all completed migrations.')
       requireCheck(sameSet(beforeGrants, grantPairs(comparison.db)), 'E_COMPARE_GRANTS', 'The comparison backup changed the frozen historical grant set.')
+      sameFingerprints(rehearsed, fingerprints(comparison.db, MIGRATED_TABLES), 'E_COMPARE_MIGRATED')
       report.comparison = { backup: comparison.file, ...comparison.checks, originalTablesUnchanged: true,
         frozenGrantsUnchanged: true, tables: comparison.baseline }
       report.r2Inventory.recognizedKeys = [...new Set([...report.r2Inventory.recognizedKeys, ...comparison.assets.recognizedKeys])].sort()

@@ -331,6 +331,7 @@ async function legacyFullListRequiresReload(env: Env, email: string, archived: n
       FROM boards
       WHERE boards.archived = ?
         AND NOT EXISTS (SELECT 1 FROM lab_notebooks WHERE lab_notebooks.board_id = boards.id)
+        AND NOT EXISTS (SELECT 1 FROM lab_notebook_catalog WHERE lab_notebook_catalog.board_id = boards.id)
         AND (
           boards.owner_email = ?
           OR EXISTS (
@@ -471,6 +472,7 @@ export const onRequestGet: PagesFunction<Env, string, AccessData> = async ({ req
           AND board_collaborators.email = ?
         WHERE boards.archived = ?
           AND NOT EXISTS (SELECT 1 FROM lab_notebooks WHERE lab_notebooks.board_id = boards.id)
+          AND NOT EXISTS (SELECT 1 FROM lab_notebook_catalog WHERE lab_notebook_catalog.board_id = boards.id)
           AND (boards.owner_email = ? OR board_collaborators.email = ?)
         ORDER BY boards.updated_at DESC
       `)
@@ -499,6 +501,7 @@ export const onRequestGet: PagesFunction<Env, string, AccessData> = async ({ req
         AND board_collaborators.email = ?
       WHERE boards.archived = ?
         AND NOT EXISTS (SELECT 1 FROM lab_notebooks WHERE lab_notebooks.board_id = boards.id)
+        AND NOT EXISTS (SELECT 1 FROM lab_notebook_catalog WHERE lab_notebook_catalog.board_id = boards.id)
         AND (boards.owner_email = ? OR board_collaborators.email = ?)
       ORDER BY boards.updated_at DESC
     `)

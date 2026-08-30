@@ -1,23 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { BoardConflictError, type SavedBoard } from '../graph/boardStorage'
+import { BoardConflictError } from '../graph/boardStorage'
 import { applyLabNotePatch, createStoredLabCapture, labArtifactMetadata, labFileMimeType, MAX_LAB_ARTIFACT_BYTES } from './labNotebookStorage'
 import { findLabTopic, normalizeLabTopicName, normalizeLabOrganization, setLabObjectTopics } from './labNotebookTopics'
 import { copyLabContents, LAB_PROPERTY, labContentsFromSnapshot, labSnapshotFromContents, type LabNotebookContents } from './labNotebookGraph'
 import { accountLabScope, GUEST_LAB_SCOPE, keepLabRecovery, LabLocalConflictError, openGuestLabDocument,
-  readLabDocument, readLabDocumentFile, readLatestLabRecovery, storeLabDocumentFiles, writeLabDocument, type LabNotebookDocument } from './labNotebookDocumentStorage'
-import { checkLabAccount, fetchCloudNotebook, fetchLabSession, loadLabFile, portableLabSnapshot, saveCloudNotebook } from './labNotebookCloud'
+  labDocumentName, labDocumentOwner, listLabDocuments, readLabDocument, readLabDocumentFile, readLatestLabRecovery,
+  storeLabDocumentFiles, writeLabDocument, type LabNotebookDocument, type LabNotebookChoice } from './labNotebookDocumentStorage'
+import { changeCloudNotebook, checkLabAccount, fetchCloudNotebook, fetchLabSession, listCloudNotebooks,
+  loadLabFile, portableLabSnapshot, saveCloudNotebook, type LabCloudBoard } from './labNotebookCloud'
 import type { LabArtifact, LabCapture, LabNote, LabNotebookObjectType, StoredLabArtifact } from './labTypes'
 import type { LabNotebookStatus } from './useLabNotebook'
 import { DRAFT_TOOLS, draftSlotId, draftMatchesSave, labDraftHash, type LabProjectDraftInput } from './labDrafts'
 
 export type LabNotebookSyncStatus = 'local' | 'syncing' | 'synced' | 'pending' | 'conflict' | 'offline'
 const LAST_ACCOUNT_KEY = 'osa.lab.lastAccount'
+const selectionKey = (email: string | null) => `osa.lab.notebook:${email || 'guest'}`
 const id = () => crypto.randomUUID()
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'The notebook could not save.'
 const isLocalHost = () => ['localhost', '127.0.0.1', '::1', '[::1]'].includes(location.hostname)
 
-function fromBoard(board: SavedBoard, scope: string, localVersion: number): LabNotebookDocument {
+function fromBoard(board: LabCloudBoard, scope: string, localVersion: number, ownerEmail?: string): LabNotebookDocument {
   return { scope, snapshot: board.snapshot, boardId: board.id, baseRevision: board.revision,
+    name: board.name, nameRevision: board.nameRevision, ownerEmail,
     localVersion, dirty: false, updatedAt: board.updatedAt, lastSyncedAt: new Date().toISOString() }
 }
 
@@ -34,6 +38,8 @@ export function useSyncedLabNotebook() {
   const [conflict, setConflict] = useState(false)
   const [storageFailed, setStorageFailed] = useState(false)
   const [hasRecovery, setHasRecovery] = useState(false)
+  const [notebooks, setNotebooks] = useState<LabNotebookChoice[]>([])
+  const [notebookListError, setNotebookListError] = useState('')
   const currentRef = useRef<LabNotebookDocument | null>(null)
   const mounted = useRef(false)
   const writeQueue = useRef<Promise<void>>(Promise.resolve())
@@ -44,6 +50,7 @@ export function useSyncedLabNotebook() {
   const generation = useRef(0)
   const fileOperations = useRef(0)
   const retryRequired = useRef(false)
+  const creation = useRef<{ name: string; location: string; key: string } | null>(null)
 
   const contents = useMemo(() => document ? labContentsFromSnapshot(document.snapshot)
     : { notes: [], artifacts: [], topics: [], topicLinks: [] }, [document])
@@ -92,7 +99,7 @@ export function useSyncedLabNotebook() {
 
   const syncNow = useCallback(async () => {
     if (!email || syncing.current || switching.current || conflictRef.current || localFailure.current) return
-    if (!currentRef.current?.boardId || currentRef.current.scope !== accountLabScope(email)) return
+    if (!currentRef.current?.boardId || labDocumentOwner(currentRef.current) !== email) return
     syncing.current = true
     const run = generation.current
     if (mounted.current) { setSyncStatus('syncing'); setSyncMessage('Syncing your private notebook…') }
@@ -102,13 +109,13 @@ export function useSyncedLabNotebook() {
       const pending = currentRef.current!
       if (!pending.dirty) {
         await checkLabAccount(email)
-        const remote = await fetchCloudNotebook(email)
+        const remote = await fetchCloudNotebook(email, false, pending.boardId)
         const current = currentRef.current
         if (!remote) throw new Error('The cloud notebook was not found. Your local copy was kept.')
         if (!current || generation.current !== run) return
         if (current.localVersion !== pending.localVersion) return
-        if (remote.revision !== pending.baseRevision) {
-          const next = fromBoard(remote, current.scope, current.localVersion + 1)
+        if (remote.revision !== pending.baseRevision || remote.nameRevision !== pending.nameRevision || remote.name !== pending.name) {
+          const next = fromBoard(remote, current.scope, current.localVersion + 1, email)
           showDocument(next)
           await persist(next, current.localVersion)
         }
@@ -167,26 +174,44 @@ export function useSyncedLabNotebook() {
     const run = ++generation.current
     void (async () => {
       let account: string | null = null
-      let remote: SavedBoard | null = null
+      let remote: LabCloudBoard | null = null
+      let selectedScope: string | null = null
       let sessionError = ''
       // A real authenticated local backend is supported; Vite alone returns
       // no session and stays local. Merely visiting localhost never provisions.
-      try { account = await fetchLabSession(); remote = await fetchCloudNotebook(account) }
+      try {
+        account = await fetchLabSession()
+        let preference: string | null = null
+        try { preference = localStorage.getItem(selectionKey(account)) } catch { /* optional preference */ }
+        if (preference?.startsWith('local:') || preference === GUEST_LAB_SCOPE) selectedScope = preference
+        else if (preference && preference !== accountLabScope(account)) {
+          const choice = (await listCloudNotebooks(account)).find((item) => accountLabScope(account!, item.isDefault ? undefined : item.id) === preference)
+          if (choice) { remote = await fetchCloudNotebook(account, false, choice.id); selectedScope = preference }
+        }
+        if (!selectedScope) remote = await fetchCloudNotebook(account)
+      }
       catch (error) { sessionError = isLocalHost() && !account ? '' : errorText(error) }
       if (cancelled || generation.current !== run) return
       let loaded: LabNotebookDocument
-      if (account && remote) {
-        const scope = accountLabScope(account)
+      if (selectedScope === GUEST_LAB_SCOPE || selectedScope?.startsWith('local:')) {
+        loaded = selectedScope === GUEST_LAB_SCOPE ? await openGuestLabDocument()
+          : (await readLabDocument(selectedScope)) ?? await openGuestLabDocument()
+      } else if (account && remote) {
+        const scope = selectedScope || accountLabScope(account)
         const cached = await readLabDocument(scope)
         if (cached?.dirty) {
           loaded = cached
           if (cached.baseRevision !== remote.revision) reportConflict('Cloud changes and local changes both exist. Your local copy was kept.')
         } else {
-          loaded = fromBoard(remote, scope, (cached?.localVersion ?? 0) + 1)
+          loaded = fromBoard(remote, scope, (cached?.localVersion ?? 0) + 1, account)
           await writeLabDocument(loaded, cached?.localVersion ?? null)
         }
         try { localStorage.setItem(LAST_ACCOUNT_KEY, account) } catch { /* optional shortcut */ }
-      } else loaded = await openGuestLabDocument()
+      } else {
+        let preference: string | null = null
+        try { preference = localStorage.getItem(selectionKey(null)) } catch { /* optional preference */ }
+        loaded = preference?.startsWith('local:') ? (await readLabDocument(preference)) ?? await openGuestLabDocument() : await openGuestLabDocument()
+      }
       if (cancelled || generation.current !== run) return
       setEmail(account)
       try { setOfflineAccount(localStorage.getItem(LAST_ACCOUNT_KEY)) } catch { /* optional shortcut */ }
@@ -198,6 +223,30 @@ export function useSyncedLabNotebook() {
     })().catch(reportError)
     return () => { cancelled = true; mounted.current = false }
   }, [reportConflict, reportError, showDocument])
+
+  const documentScope = document?.scope
+  const documentName = document?.name
+  useEffect(() => {
+    if (!documentScope) return
+    try { localStorage.setItem(selectionKey(email), documentScope) } catch { /* optional preference */ }
+    let cancelled = false
+    void (async () => {
+      const cached = (await listLabDocuments()).filter((item) => !item.boardId || item.ownerEmail === email)
+      let choices = cached
+      let error = ''
+      if (email) {
+        try {
+          const remote = await listCloudNotebooks(email)
+          const cloud = remote.map((item) => ({ name: item.name, boardId: item.id, ownerEmail: email, isDefault: item.isDefault,
+            scope: accountLabScope(email, item.isDefault ? undefined : item.id) }))
+          choices = [...cached.filter((item) => !cloud.some((entry) => entry.scope === item.scope)), ...cloud]
+        } catch (cause) { error = `${errorText(cause)} Saved copies on this device are still listed.` }
+      }
+      if (!choices.some((item) => item.scope === GUEST_LAB_SCOPE)) choices.unshift({ scope: GUEST_LAB_SCOPE, name: 'Local notebook', isDefault: true })
+      if (!cancelled) { setNotebooks(choices); setNotebookListError(error) }
+    })().catch((error) => { if (!cancelled) setNotebookListError(errorText(error)) })
+    return () => { cancelled = true }
+  }, [documentScope, documentName, email])
 
   useEffect(() => {
     if (!document?.dirty || !email || retryRequired.current || conflict || busy || storageFailed || syncStatus === 'syncing') return
@@ -458,9 +507,11 @@ export function useSyncedLabNotebook() {
   }, [reportError])
   const exportNotebook = useCallback(async () => {
     try {
-      if (!currentRef.current) return
-      const snapshot = await portableLabSnapshot(currentRef.current)
-      downloadBlob(new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' }), 'lab-notebook-with-files.osa.json')
+      const current = currentRef.current
+      if (!current) return
+      const snapshot = await portableLabSnapshot(current)
+      const filename = labDocumentName(current).replace(/[^\p{L}\p{N}._ -]/gu, '-').trim() || 'notebook'
+      downloadBlob(new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' }), `${filename}-with-files.osa.json`)
     } catch (error) { reportError(error) }
   }, [reportError])
   const exportRecovery = useCallback(async () => {
@@ -485,9 +536,9 @@ export function useSyncedLabNotebook() {
       let next: LabNotebookDocument
       if (current.boardId && email) {
         await checkLabAccount(email)
-        const remote = await fetchCloudNotebook(email)
+        const remote = await fetchCloudNotebook(email, false, current.boardId)
         if (!remote) throw new Error('The cloud notebook was not found. Your local copy was kept.')
-        next = fromBoard(remote, current.scope, (stored?.localVersion ?? 0) + 1)
+        next = fromBoard(remote, current.scope, (stored?.localVersion ?? 0) + 1, email)
         await writeLabDocument(next, stored?.localVersion ?? null)
       } else {
         if (!stored) throw new Error('The latest local notebook could not be found.')
@@ -514,7 +565,7 @@ export function useSyncedLabNotebook() {
       const scope = accountLabScope(account)
       const cached = await readLabDocument(scope)
       if (cached?.dirty) throw new Error('This account has unsynced notebook changes on this device. Open its offline copy and sync or export it first.')
-      const guest = currentRef.current?.scope === GUEST_LAB_SCOPE ? currentRef.current : await openGuestLabDocument()
+      const guest = currentRef.current && !currentRef.current.boardId ? currentRef.current : await openGuestLabDocument()
       const { contents: copied, fileIds } = copyLabContents(labContentsFromSnapshot(guest.snapshot), id)
       const files: StoredLabArtifact[] = []
       for (const artifact of labContentsFromSnapshot(guest.snapshot).artifacts) {
@@ -528,7 +579,7 @@ export function useSyncedLabNotebook() {
       const remoteContents = labContentsFromSnapshot(remote.snapshot)
       const organization = normalizeLabOrganization({ topics: [...remoteContents.topics, ...copied.topics],
         topicLinks: [...remoteContents.topicLinks, ...copied.topicLinks] })
-      const next: LabNotebookDocument = { ...fromBoard(remote, scope, (cached?.localVersion ?? 0) + 1), dirty: true,
+      const next: LabNotebookDocument = { ...fromBoard(remote, scope, (cached?.localVersion ?? 0) + 1, account), dirty: true,
         snapshot: labSnapshotFromContents({ ...organization, notes: [...copied.notes, ...remoteContents.notes],
           artifacts: [...copied.artifacts, ...remoteContents.artifacts] }, remote.snapshot) }
       await writeLabDocument(next, cached?.localVersion ?? null)
@@ -561,6 +612,99 @@ export function useSyncedLabNotebook() {
     finally { switching.current = false; setBusy(false) }
   }, [email, offlineAccount, reportError, showDocument])
 
+  const openNotebook = useCallback(async (scope: string) => {
+    if (scope === currentRef.current?.scope) return
+    if (switching.current || syncing.current || fileOperations.current) throw new Error('Wait for the current save to finish before switching notebooks.')
+    const choice = notebooks.find((item) => item.scope === scope)
+    if (!choice) throw new Error('That notebook is not in the current notebook list.')
+    switching.current = true; setBusy(true)
+    try {
+      await writeQueue.current
+      if (localFailure.current) throw new Error('The current notebook could not save. Export a recovery copy before switching.')
+      let next: LabNotebookDocument | null
+      let hasConflict = false
+      if (choice.boardId) {
+        if (!email || choice.ownerEmail !== email) throw new Error('Sign in as this notebook’s owner to open it.')
+        await checkLabAccount(email)
+        const cached = await readLabDocument(scope)
+        const remote = await fetchCloudNotebook(email, false, choice.boardId)
+        if (!remote) throw new Error('The notebook was not found. The current notebook is unchanged.')
+        if (cached?.dirty) {
+          next = cached
+          hasConflict = cached.baseRevision !== remote.revision
+        } else {
+          next = fromBoard(remote, scope, (cached?.localVersion ?? 0) + 1, email)
+          await writeLabDocument(next, cached?.localVersion ?? null)
+        }
+      } else next = scope === GUEST_LAB_SCOPE ? await openGuestLabDocument() : await readLabDocument(scope)
+      if (!next) throw new Error('This notebook is not saved on this device.')
+      generation.current += 1; retryRequired.current = false; conflictRef.current = false; localFailure.current = false
+      setConflict(false); setStorageFailed(false); showDocument(next); setStatus('ready'); setMessage('Notebook opened')
+      setSyncStatus(next.boardId ? next.dirty ? 'pending' : 'synced' : 'local')
+      setSyncMessage(next.boardId ? 'Private account notebook' : 'Saved on this device only')
+      if (hasConflict) reportConflict('Cloud and local changes both exist in this notebook. Your local version was kept; export or resolve before syncing.')
+    } finally { switching.current = false; setBusy(false) }
+  }, [email, notebooks, reportConflict, showDocument])
+
+  const createNotebook = useCallback(async (name: string, location: 'local' | 'account') => {
+    name = name.trim()
+    if (!name || name.length > 120 || Array.from(name).some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)) throw new Error('Give the notebook a name (1–120 characters).')
+    if (switching.current || syncing.current || fileOperations.current) throw new Error('Wait for the current save to finish.')
+    switching.current = true; setBusy(true)
+    try {
+      await writeQueue.current
+      if (localFailure.current) throw new Error('The current notebook could not save. Export a recovery copy before creating another.')
+      if (creation.current?.name !== name || creation.current.location !== location) creation.current = { name, location, key: id() }
+      let next: LabNotebookDocument
+      if (location === 'account') {
+        if (!email) throw new Error('Sign in before creating an account notebook.')
+        await checkLabAccount(email)
+        const board = await changeCloudNotebook(email, { name, creationKey: creation.current.key })
+        const scope = accountLabScope(email, board.id)
+        const cached = await readLabDocument(scope)
+        if (cached?.dirty) next = cached
+        else {
+          next = fromBoard(board, scope, (cached?.localVersion ?? 0) + 1, email)
+          await writeLabDocument(next, cached?.localVersion ?? null)
+        }
+      } else {
+        const scope = `local:${creation.current.key}`
+        const cached = await readLabDocument(scope)
+        next = cached ?? { scope, name, snapshot: labSnapshotFromContents({ notes: [], artifacts: [], topics: [], topicLinks: [] }),
+          localVersion: 1, dirty: false, updatedAt: new Date().toISOString() }
+        if (!cached) await writeLabDocument(next, null)
+      }
+      creation.current = null
+      generation.current += 1; retryRequired.current = false; conflictRef.current = false
+      setConflict(false); showDocument(next); setStatus('ready'); setMessage('New notebook opened')
+      setSyncStatus(next.boardId ? next.dirty ? 'pending' : 'synced' : 'local')
+      setSyncMessage(next.boardId ? 'Private account notebook created' : 'Saved on this device only')
+    } finally { switching.current = false; setBusy(false) }
+  }, [email, showDocument])
+
+  const renameNotebook = useCallback(async (name: string, expectedScope?: string) => {
+    name = name.trim()
+    if (!name || name.length > 120 || Array.from(name).some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)) throw new Error('Give the notebook a name (1–120 characters).')
+    if (switching.current || syncing.current || fileOperations.current) throw new Error('Wait for the current save to finish.')
+    switching.current = true; setBusy(true)
+    try {
+      await writeQueue.current
+      const current = currentRef.current
+      if (!current || localFailure.current) throw new Error('Resolve the current save problem before renaming.')
+      if (expectedScope && current.scope !== expectedScope) throw new Error('The notebook changed. Reopen Rename for the notebook you want to name.')
+      let nameRevision = current.nameRevision
+      if (current.boardId) {
+        if (!email || labDocumentOwner(current) !== email) throw new Error('Sign in as the notebook’s owner before renaming.')
+        await checkLabAccount(email)
+        const renamed = await changeCloudNotebook(email, { id: current.boardId, name, nameRevision: nameRevision ?? 1 })
+        nameRevision = renamed.nameRevision
+      }
+      const next = { ...current, name, nameRevision, localVersion: current.localVersion + 1 }
+      await persist(next, current.localVersion)
+      showDocument(next); setStatus('saved'); setMessage('Notebook renamed; its contents are unchanged')
+    } finally { switching.current = false; setBusy(false) }
+  }, [email, persist, showDocument])
+
   return { ...contents,
     notes: contents.notes.filter((note) => !note.isDraft), noteDrafts: contents.notes.filter((note) => note.isDraft),
     projectDrafts: contents.artifacts.filter((artifact) => artifact.draftOf && artifact.draftActive),
@@ -574,7 +718,9 @@ export function useSyncedLabNotebook() {
     loadArtifactPreview, loadArtifactSource, downloadArtifact,
     scope: document?.scope ?? 'loading', email, offlineAccount, syncStatus, syncMessage, busy, conflict,
     isLocal: !document?.boardId, cloudAvailable: Boolean(email) || !isLocalHost(), syncNow, loadLatest, exportNotebook,
-    copyLocalToAccount, openLocalNotebook, hasRecovery, exportRecovery }
+    copyLocalToAccount, openLocalNotebook, hasRecovery, exportRecovery,
+    name: document ? labDocumentName(document) : 'Notebook', notebooks, notebookListError,
+    openNotebook, createNotebook, renameNotebook }
 }
 
 function downloadBlob(blob: Blob, name: string) {

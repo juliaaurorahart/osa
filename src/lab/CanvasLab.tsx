@@ -261,7 +261,7 @@ export function CanvasLab({
     if (route.page === 'notebook') {
       return (
         <>
-          <strong>Lab notebook</strong>
+          <strong>{notebook.name || 'Lab notebook'}</strong>
           <span>{notebook.notes.length} notes</span>
           <span>{notebook.artifacts.length} saved files</span>
           <span>{notebook.message}</span>
@@ -422,9 +422,10 @@ export function CanvasLab({
         ) : null}
 
         <div hidden={route.page !== 'notebook'}>
-          <LabNotebookSync notebook={notebook} hasDraft={hasUnaddedIdea} hasProject={Boolean(project)} beforeSwitch={flushDrafts} />
+          <LabNotebookSync key={`sync:${notebook.scope}`} notebook={notebook} hasDraft={hasUnaddedIdea} hasProject={Boolean(project)} beforeSwitch={flushDrafts} />
           <LabNotebook
             key={notebook.scope}
+            notebookName={notebook.name}
             notes={notebook.notes}
             noteDrafts={notebook.noteDrafts}
             projectDrafts={notebook.projectDrafts}

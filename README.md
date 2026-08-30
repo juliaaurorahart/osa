@@ -93,6 +93,19 @@ Each project has one current draft slot, separate from its explicit saved versio
 Saved notebook notes, files, and topics persist independently of project
 boards. Original editable files and their previews are separate attachments.
 
+The notebook picker switches deliberately named datasets. **New notebook**
+requires a name and starts empty, either on this device or in the signed-in
+private account. **Rename** changes only the name, keeping file/draft/topic
+identities. Switching flushes supported editor drafts before closing the old
+editor. Each notebook has its own local cache/outbox; inactive unsynced changes
+are retained and sync when that notebook is reopened. Sign-in and sync/backups
+remain in the notebook. External OSA Draw captures still go to the default
+notebook; viewing another notebook does not silently redirect them.
+
+Named account notebooks require additive migration `0009_lab_notebook_catalog.sql`.
+The catalog keeps their names independent of older clients' hardcoded titles,
+while the legacy default mapping and OSA board JSON schema remain unchanged.
+
 Workbenches share a compact bar: Lab, tool, project name, draft status,
 **Save**, Notebook, Focus, and File. **File** holds Save a copy, available
 downloads, New project, and settings; the status disclosure holds version
@@ -119,7 +132,7 @@ account-sync status. A sudden shutdown can still lose edits since the last
 completed checkpoint, and browser storage is not a backup. Export important work.
 Fabric, Pixi, Three, CodeMirror, and remote Strudel do not yet expose a
 complete reopenable draft path here; their workbenches explicitly say to use
-Save/export/Share before leaving. No new database migration is needed.
+Save/export/Share before leaving. Draft checkpoints use the existing notebook graph format.
 
 Notebook browsing/search and focused note editing are separate views. Files
 can be moved to **Trash** and restored; removing a file does not permanently

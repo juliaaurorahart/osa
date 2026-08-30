@@ -10,7 +10,8 @@ export function mayCaptureToGuest(error: unknown, expectedAccount: string | unde
   return !expectedAccount && !fetchedAccount && (error instanceof BoardAccessError || local)
 }
 
-/** Explicit capture outside the Lab (OSA Draw). Never provisions an account silently. */
+/** Explicit capture outside the Lab (OSA Draw) targets the default notebook,
+ * never the last-viewed named notebook. Never provisions an account silently. */
 export async function captureToLabNotebook(capture: LabCapture) {
   const file = createStoredLabCapture(capture, crypto.randomUUID(), new Date().toISOString())
   const expectedAccount = requestAccountHeaders()['x-osa-account']
@@ -26,6 +27,7 @@ export async function captureToLabNotebook(capture: LabCapture) {
       if (cached?.dirty) current = cached
       else {
         current = { scope, snapshot: board.snapshot, boardId: board.id, baseRevision: board.revision,
+          name: board.name, nameRevision: board.nameRevision, ownerEmail: email,
           dirty: false, localVersion: (cached?.localVersion ?? 0) + 1, updatedAt: board.updatedAt }
         await writeLabDocument(current, cached?.localVersion ?? null)
       }

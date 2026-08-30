@@ -13,9 +13,28 @@ export type LabNotebookDocument = {
   boardId?: string
   baseRevision?: number
   lastSyncedAt?: string
+  name?: string
+  nameRevision?: number
+  ownerEmail?: string
 }
 export const GUEST_LAB_SCOPE = 'guest'
-export const accountLabScope = (email: string) => `account:${email.trim().toLowerCase()}`
+export const accountLabScope = (email: string, notebookId?: string) => notebookId
+  ? `notebook:${encodeURIComponent(email.trim().toLowerCase())}:${notebookId}` : `account:${email.trim().toLowerCase()}`
+export const labDocumentOwner = (document: LabNotebookDocument) => document.ownerEmail
+  ?? (document.scope.startsWith('account:') ? document.scope.slice('account:'.length) : undefined)
+export const labDocumentName = (document: LabNotebookDocument) => document.name || (document.boardId ? 'Lab notebook' : 'Local notebook')
+export type LabNotebookChoice = { scope: string; name: string; boardId?: string; ownerEmail?: string; isDefault?: boolean }
+
+/** Metadata only to callers: inactive notebook content never enters the view. */
+export async function listLabDocuments(): Promise<LabNotebookChoice[]> {
+  const database = await openLabDatabase()
+  try {
+    const transaction = database.transaction('documents', 'readonly')
+    const [records] = await Promise.all([labRequestResult(transaction.objectStore('documents').getAll() as IDBRequest<LabNotebookDocument[]>), labTransactionComplete(transaction)])
+    return records.map((document) => ({ scope: document.scope, name: labDocumentName(document),
+      boardId: document.boardId, ownerEmail: labDocumentOwner(document), isDefault: document.scope === GUEST_LAB_SCOPE || document.scope.startsWith('account:') }))
+  } finally { database.close() }
+}
 export class LabLocalConflictError extends Error {
   constructor() { super('This notebook changed in another tab. Your edit was kept as a recovery copy.'); this.name = 'LabLocalConflictError' }
 }

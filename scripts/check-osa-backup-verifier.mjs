@@ -11,7 +11,7 @@ import { publicSummary, verifySqlBackup } from './verify-osa-backup.mjs'
 const migration = (name) => readFileSync(new URL('../migrations/' + name, import.meta.url), 'utf8')
 const baselineMigrations = ['0001_boards.sql', '0002_board_shares.sql', '0003_board_share_slugs.sql',
   '0004_board_archiving.sql', '0005_board_revisions.sql', '0006_board_collaborators.sql']
-const newMigrations = ['0007_private_assets.sql', '0008_lab_notebooks.sql']
+const newMigrations = ['0007_private_assets.sql', '0008_lab_notebooks.sql', '0009_lab_notebook_catalog.sql']
 const quote = (value) => '"' + value.replaceAll('"', '""') + '"'
 const literal = (value) => {
   if (value === null) return 'NULL'
@@ -75,10 +75,31 @@ try {
 
   newMigrations.forEach((name) => db.exec(migration(name)))
   const afterSql = dump(db)
+  const analyzedSql = afterSql + '\nANALYZE sqlite_schema;\nINSERT INTO "sqlite_stat1" VALUES(\'boards\',\'sqlite_autoindex_boards_1\',\'1 1\');'
+  assert.equal(verifySqlBackup(analyzedSql).status, 'verified', 'Trusted D1 statistics bootstrap is importable without allowing arbitrary SELECT statements')
+  assert.throws(() => verifySqlBackup(analyzedSql + '\nSELECT * FROM boards;'), { code: 'E_SQL_IMPORT' })
   const compared = verifySqlBackup(beforeSql, { compareSql: afterSql })
   assert.equal(compared.comparison.originalTablesUnchanged, true)
   assert.equal(compared.comparison.frozenGrantsUnchanged, true)
   assert.equal(verifySqlBackup(afterSql).rehearsal.replayUnchanged, true, 'Already-migrated backups preserve their frozen grants.')
+  const preCatalog = fixture()
+  try {
+    newMigrations.slice(0, 2).forEach((name) => preCatalog.exec(migration(name)))
+    preCatalog.prepare('INSERT INTO lab_notebooks (owner_email, board_id, created_at) VALUES (?, ?, ?)').run(privateEmail, 'synthetic-board', '2026-08-29')
+    const original = dump(preCatalog)
+    const beforeCatalog = verifySqlBackup(original)
+    assert.equal(beforeCatalog.rehearsal.tables.lab_notebook_catalog.rows, 1)
+    preCatalog.exec(migration(newMigrations[2]))
+    assert.equal(verifySqlBackup(original, { compareSql: dump(preCatalog) }).comparison.originalTablesUnchanged, true)
+    preCatalog.prepare('UPDATE lab_notebook_catalog SET name = ?, name_revision = 2').run('Deliberate name')
+    assert.equal(verifySqlBackup(dump(preCatalog)).rehearsal.replayUnchanged, true)
+    assert.throws(() => verifySqlBackup(original, { compareSql: dump(preCatalog) }), { code: 'E_COMPARE_MIGRATED' })
+    preCatalog.prepare('DELETE FROM lab_notebook_catalog').run()
+    assert.throws(() => verifySqlBackup(dump(preCatalog)), { code: 'E_NOTEBOOK_CATALOG' })
+    preCatalog.exec(migration(newMigrations[2]))
+    preCatalog.prepare('UPDATE lab_notebook_catalog SET owner_email = ?').run('wrong@example.invalid')
+    assert.throws(() => verifySqlBackup(dump(preCatalog)), { code: 'E_NOTEBOOK_OWNER' })
+  } finally { preCatalog.close() }
   db.prepare('UPDATE boards SET name = ?').run('changed-' + privateMarker)
   assert.throws(() => verifySqlBackup(beforeSql, { compareSql: dump(db) }), { code: 'E_COMPARE' })
   db.prepare('UPDATE boards SET name = ?').run(privateMarker)

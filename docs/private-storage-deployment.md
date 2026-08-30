@@ -10,6 +10,14 @@ or made public. See [Lab address rollout](lab-domain-rollout.md) for hosting
 status and the live user-flow checks; database verification alone is not a
 claim that every browser/account workflow has been exercised in production.
 
+Later on 2026-08-30, migration `0009_lab_notebook_catalog.sql` was applied to
+the existing `osa-private` database after a fresh private SQL export and clean
+rehearsal. An independent post-update export matched every pre-existing
+board/share/collaborator/private-file/default-notebook row and the expected
+catalog backfill, with clean integrity and foreign-key checks. No R2 object
+was modified or deleted by this metadata-only update. The fresh SQL backups
+do not replace the separate file-byte backups described above.
+
 ## Storage and permission boundaries
 
 | Location | What it holds | Boundary |
@@ -54,10 +62,19 @@ exports are not portable image backups, and external web links are not copied.
 ## Lab notebook
 
 `lab_notebooks` associates one verified account with a separate notebook board.
+`lab_notebook_catalog` adds multiple deliberately named notebooks while keeping
+that legacy default association. Catalog names have independent revisions so
+an older client saving a hardcoded title cannot undo a deliberate rename.
+Notebook list/open/create/rename operations require owner-matched catalog or
+legacy membership; a known ordinary board ID is not enough. Default notebooks
+created during rolling deployment remain readable and are catalogued on rename.
 The graph uses ordinary OSA nodes/edges for notes, artifacts, topics, and their
 relationships; it is not the user's currently open project board. Its backing
 board is excluded from normal board lists. File authorization uses the same
 board ownership rules instead of introducing a second public file store.
+Named notebook scopes isolate local documents, recoveries, and immutable file
+copies even within one account. Naming does not alter scope or file identity.
+An inactive notebook's unsynced outbox remains on that device until reopened.
 
 Guest/local content is copied to the account only through the explicit
 notebook action. Its original remains local. Account-scoped IndexedDB keeps

@@ -127,6 +127,21 @@ try {
   assert.deepEqual((await cache.readLabDocument('guest')).snapshot, migratedWithTrash.snapshot, 'Account writes cannot touch the guest graph')
   const otherScope = cache.accountLabScope('other@example.test')
   assert.equal(await cache.readLabDocument(otherScope), null)
+  for (const notebookId of ['studio', 'research']) {
+    const namedScope = cache.accountLabScope('julia@example.test', notebookId)
+    assert.notEqual(namedScope, scope)
+    const named = { ...base, scope: namedScope, ownerEmail: 'julia@example.test', boardId: notebookId, name: notebookId }
+    await cache.writeLabDocument(named, null)
+    await cache.storeLabDocumentFiles(namedScope, [{ ...legacy, id: 'shared-file-id', file: new Blob([notebookId]) }])
+    await cache.keepLabRecovery(named)
+  }
+  for (const notebookId of ['studio', 'research']) {
+    const namedScope = cache.accountLabScope('julia@example.test', notebookId)
+    assert.equal(await (await cache.readLabDocumentFile(namedScope, 'shared-file-id')).file.text(), notebookId)
+    assert.equal((await cache.readLatestLabRecovery(namedScope)).name, notebookId)
+  }
+  assert.equal((await cache.readLabDocument(scope)).dirty, true, 'Named notebooks do not adopt or replace the legacy outbox')
+  assert.equal((await cache.listLabDocuments()).filter((item) => item.ownerEmail === 'julia@example.test').length, 3)
   const file = { id: 'same-id', name: 'Private', mimeType: 'image/png', size: 1, createdAt: date, file: new Blob(['A'], { type: 'image/png' }) }
   await cache.storeLabDocumentFiles(scope, [file])
   await cache.storeLabDocumentFiles(otherScope, [{ ...file, file: new Blob(['B'], { type: 'image/png' }) }])
@@ -185,6 +200,10 @@ try {
       'Cloud downloads cache immutable bytes under the version key, not the stable graph item id')
     await cloud.loadLabFile({ ...versionDocument, snapshot: remoteSnapshot }, remoteMetadata.id)
     assert.equal(downloads.length, 2, 'Loading the same immutable source and preview uses the cache')
+    const namedDownloadScope = cache.accountLabScope('julia@example.test', `named-${index}`)
+    await cloud.loadLabFile({ ...versionDocument, scope: namedDownloadScope, ownerEmail: 'julia@example.test', snapshot: remoteSnapshot }, remoteMetadata.id)
+    assert.equal(downloads.length, 4, 'Named notebook files use their own cache and the verified owner email header, not the encoded scope')
+    assert.equal(await (await cache.readLabDocumentFile(namedDownloadScope, remoteMetadata.fileId)).file.text(), 'remote native bytes')
     assert.deepEqual(remoteSnapshot, beforeDownload, 'Alias reads never rewrite saved snapshots or history')
   }
   assert.equal(await cache.readLabDocumentFile(otherScope, legacy.id), null, 'Private cache never falls through to guest originals')

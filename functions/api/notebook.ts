@@ -1,15 +1,18 @@
 import { signedInEmail, type AccessData } from './boardAccess'
 
 type Env = { OSA_DB: D1Database }
-type NotebookRow = { content: string; revision: number }
+type NotebookRow = { content: string; revision: number; name: string; nameRevision: number }
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status,
   headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } })
 
 async function notebook(env: Env, email: string) {
-  const row = await env.OSA_DB.prepare(`SELECT boards.content, boards.revision FROM lab_notebooks
+  const row = await env.OSA_DB.prepare(`SELECT boards.content, boards.revision,
+    COALESCE(catalog.name, boards.name) AS name, COALESCE(catalog.name_revision, 1) AS nameRevision FROM lab_notebooks
     JOIN boards ON boards.id = lab_notebooks.board_id AND boards.owner_email = lab_notebooks.owner_email
+    LEFT JOIN lab_notebook_catalog catalog ON catalog.board_id = boards.id AND catalog.owner_email = boards.owner_email
     WHERE lab_notebooks.owner_email = ?`).bind(email).first<NotebookRow>()
-  return row ? { ...JSON.parse(row.content), revision: row.revision, archived: false, access: 'owner' } : null
+  return row ? { ...JSON.parse(row.content), name: row.name, nameRevision: row.nameRevision,
+    revision: row.revision, archived: false, access: 'owner', isDefault: true } : null
 }
 
 function accountError(request: Request, email: string | null) {
@@ -49,6 +52,9 @@ export const onRequestPut: PagesFunction<Env, string, AccessData> = async ({ req
         .bind(id, email, board.name, JSON.stringify(board), updatedAt, email),
       env.OSA_DB.prepare(`INSERT OR IGNORE INTO lab_notebooks (owner_email, board_id)
         SELECT ?, id FROM boards WHERE id = ? AND owner_email = ?`).bind(email, id, email),
+      env.OSA_DB.prepare(`INSERT OR IGNORE INTO lab_notebook_catalog (board_id, owner_email, name)
+        SELECT boards.id, boards.owner_email, boards.name FROM boards JOIN lab_notebooks ON lab_notebooks.board_id = boards.id
+        WHERE lab_notebooks.owner_email = ? AND boards.owner_email = ?`).bind(email, email),
     ])
     const created = await notebook(env, email!)
     return created ? json({ board: created }) : json({ error: 'The account notebook could not be opened. Try again.' }, 503)

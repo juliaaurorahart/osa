@@ -42,6 +42,12 @@ const fileReads = []
 const files = new Map()
 let deferredRead = null
 let failNextWrite = false
+let failCreationResponse = false
+let failCloudRead = false
+const creations = new Map()
+const remoteBoards = new Map([['account-notebook', { id: 'account-notebook', name: 'Lab notebook', nameRevision: 1, updatedAt: date, revision: 1, snapshot: emptySnapshot() }]])
+const namedScope = (value, notebookId) => notebookId ? `notebook:${encodeURIComponent(value)}:${notebookId}` : `account:${value}`
+const fetchedBoards = []
 const topics = loadModule('src/lab/labNotebookTopics.ts')
 const storage = loadModule('src/lab/labNotebookStorage.ts', { './labNotebookTopics': topics })
 class LocalConflict extends Error {}
@@ -55,7 +61,10 @@ const { useSyncedLabNotebook } = loadModule('src/lab/useSyncedLabNotebook.ts', {
     labSnapshotFromContents: (contents, snapshot) => ({ ...snapshot, contents }),
   },
   './labNotebookDocumentStorage': {
-    accountLabScope: (value) => `account:${value}`, GUEST_LAB_SCOPE: 'guest', LabLocalConflictError: LocalConflict,
+    accountLabScope: namedScope, GUEST_LAB_SCOPE: 'guest', LabLocalConflictError: LocalConflict,
+    labDocumentOwner: (doc) => doc.ownerEmail ?? (doc.scope.startsWith('account:') ? doc.scope.slice(8) : undefined),
+    labDocumentName: (doc) => doc.name || (doc.boardId ? 'Lab notebook' : 'Local notebook'),
+    listLabDocuments: async () => [...cached.values()].map((doc) => ({ scope: doc.scope, name: doc.name || 'Local notebook', boardId: doc.boardId, ownerEmail: doc.ownerEmail })),
     openGuestLabDocument: async () => guest,
     readLabDocument: async (key) => cached.get(key) ?? null,
     readLatestLabRecovery: async () => null,
@@ -74,7 +83,24 @@ const { useSyncedLabNotebook } = loadModule('src/lab/useSyncedLabNotebook.ts', {
   './labNotebookCloud': {
     fetchLabSession: async () => email,
     checkLabAccount: async (value) => assert.equal(value, email),
-    fetchCloudNotebook: async () => ({ id: 'account-notebook', name: 'Lab notebook', updatedAt: date, revision: 1, snapshot: emptySnapshot() }),
+    fetchCloudNotebook: async (_email, _provision, boardId = 'account-notebook') => { fetchedBoards.push(boardId); if (failCloudRead) throw new Error('Cloud unavailable'); return remoteBoards.get(boardId) },
+    listCloudNotebooks: async () => [...remoteBoards.values()].map((board) => ({ ...board, isDefault: board.id === 'account-notebook' })),
+    changeCloudNotebook: async (_email, action) => {
+      if ('creationKey' in action) {
+        let board = creations.get(action.creationKey)
+        if (!board) {
+          board = { id: crypto.randomUUID(), name: action.name, nameRevision: 1, updatedAt: date, revision: 1, snapshot: emptySnapshot() }
+          creations.set(action.creationKey, board); remoteBoards.set(board.id, board)
+        }
+        if (failCreationResponse) { failCreationResponse = false; throw new Error('Lost response after creation') }
+        return board
+      }
+      const board = remoteBoards.get(action.id)
+      assert.equal(board.nameRevision, action.nameRevision)
+      const renamed = { ...board, name: action.name, nameRevision: board.nameRevision + 1 }
+      remoteBoards.set(board.id, renamed)
+      return renamed
+    },
     loadLabFile: async (document, id) => {
       fileReads.push({ scope: document.scope, id })
       const artifact = document.snapshot.contents.artifacts.find((item) => item.id === id)
@@ -86,7 +112,7 @@ const { useSyncedLabNotebook } = loadModule('src/lab/useSyncedLabNotebook.ts', {
 
 let notebook
 function Harness() { notebook = useSyncedLabNotebook(); return null }
-const root = createRoot(document.getElementById('root'))
+let root = createRoot(document.getElementById('root'))
 const capture = { name: 'Private drawing', toolId: 'ink', preview: new Blob(['preview'], { type: 'image/png' }),
   source: { name: 'drawing.osa-ink.json', blob: new Blob(['native source'], { type: 'application/json' }) } }
 
@@ -203,6 +229,56 @@ try {
   assert.equal(notebook.notes.find((note) => note.id === noteDraft.id).body, 'Latest text')
   await assert.rejects(() => notebook.saveNoteDraft(noteDraft, [], scope), /already|saved|draft/i)
 
+  const pendingDefault = structuredClone(cached.get(scope).snapshot)
+  await React.act(async () => notebook.renameNotebook('Commonplace book', scope))
+  assert.equal(notebook.name, 'Commonplace book')
+  assert.equal(notebook.scope, scope)
+  assert.equal(cached.get(scope).dirty, true)
+  assert.deepEqual(cached.get(scope).snapshot, pendingDefault, 'Renaming retains unsynced contents and all drafts')
+  failCreationResponse = true
+  await React.act(async () => assert.rejects(() => notebook.createNotebook('Studio', 'account'), /Lost response/))
+  assert.equal(notebook.scope, scope, 'A failed creation response keeps the current editor dataset')
+  await React.act(async () => notebook.createNotebook('Studio', 'account'))
+  assert.equal(creations.size, 1, 'Retry reuses the same creation key rather than creating a duplicate notebook')
+  const studioScope = notebook.scope
+  const studioId = cached.get(studioScope).boardId
+  assert.equal(studioScope, namedScope(email, studioId))
+  assert.equal(notebook.artifacts.length, 0)
+  assert.deepEqual(cached.get(scope).snapshot, pendingDefault)
+  let studioFile
+  await React.act(async () => { studioFile = await notebook.captureVisual(capture, [], studioScope) })
+  const studioSnapshot = structuredClone(cached.get(studioScope).snapshot)
+  const oldStudioCapture = notebook.captureVisual
+  const oldStudioLoad = notebook.loadArtifactSource
+  await React.act(async () => notebook.createNotebook('Research', 'account'))
+  const researchScope = notebook.scope
+  const researchId = cached.get(researchScope).boardId
+  assert.notEqual(studioScope, researchScope)
+  const fileCount = fileWrites.length
+  await assert.rejects(() => oldStudioCapture(capture, [], studioScope), /changed/)
+  await assert.rejects(() => oldStudioLoad(studioFile, studioScope), /changed/)
+  await React.act(async () => assert.rejects(() => notebook.renameNotebook('Wrong target', studioScope), /changed/))
+  assert.equal(fileWrites.length, fileCount, 'Same-account notebook changes reject old callbacks before writing')
+  remoteBoards.set(researchId, { ...remoteBoards.get(researchId), name: 'Research renamed elsewhere', nameRevision: 2 })
+  await React.act(async () => notebook.syncNow())
+  assert.equal(fetchedBoards.at(-1), researchId, 'Refresh reads the selected notebook, not the legacy default')
+  assert.equal(notebook.name, 'Research renamed elsewhere')
+  await React.act(async () => notebook.loadLatest())
+  assert.equal(fetchedBoards.at(-1), researchId)
+  await React.act(async () => notebook.openNotebook(studioScope))
+  assert.deepEqual(cached.get(studioScope).snapshot, studioSnapshot, 'Reopening retains the inactive unsynced outbox')
+  assert.equal(await (await notebook.loadArtifactSource(studioFile, studioScope)).text(), 'native source')
+  await React.act(async () => notebook.createNotebook('Local experiments', 'local'))
+  const localScope = notebook.scope
+  assert.match(localScope, /^local:/)
+  assert.equal(notebook.isLocal, true)
+  assert.equal(notebook.notes.length, 0, 'Named local notebooks do not import legacy guest notes')
+  await React.act(async () => notebook.renameNotebook('Local lab notes', localScope))
+  assert.equal(notebook.scope, localScope)
+  assert.equal(notebook.name, 'Local lab notes')
+  await React.act(async () => notebook.openNotebook(scope))
+  assert.deepEqual(cached.get(scope).snapshot, pendingDefault, 'Switching back to the default keeps its unsynced draft contents')
+
   const staleCapture = notebook.captureVisual
   const staleSourceLoad = notebook.loadArtifactSource
   let finishRead
@@ -230,6 +306,17 @@ try {
   await React.act(async () => { await assert.rejects(() => notebook.promoteNoteDraft(noteDraft.id, 'guest', date), /could not|failed|confirm/i) })
   assert.equal(cached.get('guest').snapshot.contents.notes[0].isDraft, true, 'Failed promotion leaves the durable draft intact')
   assert.equal(notebook.isReady, false, 'A failed durability acknowledgement cannot report success')
+  await React.act(async () => assert.rejects(() => notebook.openNotebook(studioScope), /could not save/))
+  assert.equal(notebook.scope, 'guest', 'A failed local checkpoint blocks switching to another notebook')
+  await React.act(async () => root.unmount())
+  localStorage.setItem(`osa.lab.notebook:${email}`, localScope)
+  failCloudRead = true
+  const readsBeforeLocalOpen = fetchedBoards.length
+  root = createRoot(document.getElementById('root'))
+  await React.act(async () => root.render(React.createElement(Harness)))
+  assert.equal(notebook.scope, localScope, 'A remembered local notebook reopens even when cloud reads are unavailable')
+  assert.equal(notebook.name, 'Local lab notes')
+  assert.equal(fetchedBoards.length, readsBeforeLocalOpen, 'Local selection does not depend on fetching the default cloud notebook')
   console.log('Lab project scope checks passed: atomic pre-write guard, pre/post-read guard, same-scope success, and late callbacks after notebook switching.')
 } finally {
   await React.act(async () => root.unmount())

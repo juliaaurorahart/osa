@@ -17,6 +17,7 @@ const handlers = {
   '/api/boards': '/functions/api/boards.ts',
   '/api/collaborators': '/functions/api/collaborators.ts',
   '/api/notebook': '/functions/api/notebook.ts',
+  '/api/notebooks': '/functions/api/notebooks.ts',
   '/api/session': '/functions/api/session.ts',
   '/api/shares': '/functions/api/shares.ts',
 }

@@ -199,6 +199,20 @@ try {
   await assert.rejects(cloud.saveCloudNotebook({ ...doc, snapshot: uploaded }, 'julia@example.test'), { name: 'BoardConflictError' })
   assert.equal(doc.baseRevision, 3)
   assert.equal(doc.dirty, true, 'A conflict cannot mutate or discard the pending local document')
+  const named = { ...result, name: 'Studio', nameRevision: 3 }
+  globalThis.fetch = async (url, init = {}) => {
+    assert.equal(init.headers['x-osa-account'], 'julia@example.test')
+    if (url === '/api/notebooks?id=notebook') return Response.json({ board: named })
+    if (url === '/api/notebooks' && !init.method) return Response.json({ notebooks: [{ id: named.id, name: named.name, nameRevision: 3, updatedAt: date, isDefault: false }] })
+    if (url === '/api/notebooks' && ['POST', 'PATCH'].includes(init.method)) return Response.json({ board: named })
+    throw new Error('Unexpected notebook request')
+  }
+  assert.equal((await cloud.fetchCloudNotebook('julia@example.test', false, 'notebook')).nameRevision, 3)
+  assert.equal((await cloud.listCloudNotebooks('julia@example.test'))[0].name, 'Studio')
+  assert.equal((await cloud.changeCloudNotebook('julia@example.test', { name: 'Studio', creationKey: crypto.randomUUID() })).id, 'notebook')
+  assert.equal((await cloud.changeCloudNotebook('julia@example.test', { name: 'Studio', id: 'notebook', nameRevision: 2 })).name, 'Studio')
+  globalThis.fetch = async () => Response.json({ board: { ...named, id: 'wrong-notebook' } })
+  await assert.rejects(cloud.fetchCloudNotebook('julia@example.test', false, 'notebook'), /unreadable/)
   console.log('Lab v7 schema, relationships, copies, private asset URLs, external uploads, exact portable source/preview backups, account guards, and revision conflicts passed.')
 } finally {
   globalThis.fetch = originalFetch

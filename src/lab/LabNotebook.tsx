@@ -9,6 +9,7 @@ import { createLabDraftQueue } from './labDraftQueue'
 import './LabNotebook.css'
 
 type LabNotebookProps = {
+  notebookName?: string
   notes: readonly LabNote[]
   noteDrafts?: readonly LabNote[]
   projectDrafts?: readonly LabArtifact[]
@@ -178,6 +179,7 @@ function NotebookVisualPicker({ artifacts, attachedIds, topicNamesFor, disabled,
 
 /** A Lab-only notebook for loose thoughts and imported experiment files. */
 export function LabNotebook({
+  notebookName = 'Lab notebook',
   notes,
   noteDrafts = [],
   projectDrafts = [],
@@ -603,7 +605,7 @@ export function LabNotebook({
     <section className={`lab-notebook lab-notebook--${view}`} aria-labelledby="lab-notebook-title">
       <header className="lab-notebook__header">
         <div>
-          <h2 id="lab-notebook-title">Lab notebook</h2>
+          <h2 id="lab-notebook-title">{notebookName}</h2>
           <p>{view === 'browse' ? 'Find, filter, and organize your notes and visuals.' : 'A little room to think. Your notebook stays one click away.'}</p>
         </div>
         <div className="lab-notebook__header-actions">

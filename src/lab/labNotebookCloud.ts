@@ -2,16 +2,19 @@ import { parseBoardSnapshot, type BoardSnapshot } from '../graph/boardSnapshot'
 import { BoardAccessError, BoardConflictError, type SavedBoard } from '../graph/boardStorage'
 import { blobToDataUrl, privateAssetUrl, scopeLegacyAssets } from '../graph/portableAssets'
 import { LAB_PROPERTY, labContentsFromSnapshot } from './labNotebookGraph'
-import { readLabDocumentFile, storeLabDocumentFiles, type LabNotebookDocument } from './labNotebookDocumentStorage'
+import { labDocumentOwner, labDocumentName, readLabDocumentFile, storeLabDocumentFiles, type LabNotebookDocument } from './labNotebookDocumentStorage'
 import type { StoredLabArtifact } from './labTypes'
 
 const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
-export function parseLabCloudBoard(value: unknown): SavedBoard | null {
+export type LabCloudBoard = SavedBoard & { nameRevision?: number }
+export type LabCloudNotebook = { id: string; name: string; nameRevision: number; updatedAt: string; isDefault: boolean }
+export function parseLabCloudBoard(value: unknown): LabCloudBoard | null {
   if (!record(value) || typeof value.id !== 'string' || typeof value.name !== 'string'
     || typeof value.updatedAt !== 'string' || !Number.isSafeInteger(value.revision) || Number(value.revision) < 1) return null
   const snapshot = parseBoardSnapshot(value.snapshot)
   return snapshot ? { id: value.id, name: value.name, updatedAt: value.updatedAt,
-    snapshot: scopeLegacyAssets(snapshot, value.id), revision: Number(value.revision), access: 'owner' } : null
+    snapshot: scopeLegacyAssets(snapshot, value.id), revision: Number(value.revision), access: 'owner',
+    ...(Number.isSafeInteger(value.nameRevision) && Number(value.nameRevision) > 0 ? { nameRevision: Number(value.nameRevision) } : {}) } : null
 }
 
 export async function labCloudRequest(url: string, init: RequestInit = {}) {
@@ -40,14 +43,32 @@ export async function checkLabAccount(email: string) {
   if (await fetchLabSession() !== email) throw new Error('The signed-in account changed. Reopen the Lab before syncing. Your local copy is safe.')
 }
 
-export async function fetchCloudNotebook(email: string, provision = false): Promise<SavedBoard | null> {
-  const response = await labCloudRequest('/api/notebook', {
+export async function fetchCloudNotebook(email: string, provision = false, boardId?: string): Promise<LabCloudBoard | null> {
+  const response = await labCloudRequest(boardId ? `/api/notebooks?id=${encodeURIComponent(boardId)}` : '/api/notebook', {
     method: provision ? 'PUT' : 'GET', headers: { accept: 'application/json', 'x-osa-account': email },
   })
   const body: unknown = await response.json()
   if (record(body) && body.board === null && !provision) return null
   const board = record(body) ? parseLabCloudBoard(body.board) : null
-  if (!board) throw new Error('The notebook server returned an unreadable document. No local data was replaced.')
+  if (!board || (boardId && board.id !== boardId)) throw new Error('The notebook server returned an unreadable document. No local data was replaced.')
+  return board
+}
+
+export async function listCloudNotebooks(email: string): Promise<LabCloudNotebook[]> {
+  const response = await labCloudRequest('/api/notebooks', { headers: { 'x-osa-account': email } })
+  const body: unknown = await response.json()
+  if (!record(body) || !Array.isArray(body.notebooks) || !body.notebooks.every((item) => record(item)
+    && typeof item.id === 'string' && typeof item.name === 'string' && typeof item.updatedAt === 'string'
+    && typeof item.isDefault === 'boolean' && Number.isSafeInteger(item.nameRevision))) throw new Error('The notebook list could not be read.')
+  return body.notebooks as LabCloudNotebook[]
+}
+
+export async function changeCloudNotebook(email: string, action: { name: string; creationKey: string } | { name: string; id: string; nameRevision: number }): Promise<LabCloudBoard> {
+  const response = await labCloudRequest('/api/notebooks', { method: 'creationKey' in action ? 'POST' : 'PATCH',
+    headers: { 'content-type': 'application/json', 'x-osa-account': email }, body: JSON.stringify(action) })
+  const body: unknown = await response.json()
+  const board = record(body) ? parseLabCloudBoard(body.board) : null
+  if (!board || ('id' in action && board.id !== action.id)) throw new Error('The notebook change could not be confirmed. Your existing data is unchanged.')
   return board
 }
 
@@ -72,7 +93,7 @@ export async function loadLabFile(document: LabNotebookDocument, id: string): Pr
   if (cached) return { ...artifact, file: cached.file, ...(cached.preview ? { preview: cached.preview } : {}) }
   const sourceUrl = node.data.properties[LAB_PROPERTY.source]
   const previewUrl = node.data.properties[LAB_PROPERTY.preview]
-  const email = document.scope.startsWith('account:') ? document.scope.slice('account:'.length) : undefined
+  const email = labDocumentOwner(document)
   const source = await fetchLabFile(sourceUrl, email)
   const file = source.type ? source : source.slice(0, source.size, artifact.mimeType)
   const preview = previewUrl && previewUrl !== sourceUrl ? await fetchLabFile(previewUrl, email) : undefined
@@ -134,7 +155,7 @@ export async function saveCloudNotebook(document: LabNotebookDocument, email: st
   const snapshot = await uploadLabNotebookFiles(document, email)
   const response = await labCloudRequest('/api/boards', {
     method: 'PUT', headers: { 'content-type': 'application/json', 'x-osa-account': email },
-    body: JSON.stringify({ board: { id: document.boardId, name: 'Lab notebook', updatedAt: new Date().toISOString(), snapshot },
+    body: JSON.stringify({ board: { id: document.boardId, name: labDocumentName(document), updatedAt: new Date().toISOString(), snapshot },
       baseRevision: document.baseRevision }),
   })
   const body: unknown = await response.json()
