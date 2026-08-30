@@ -1,6 +1,9 @@
 import { lazy } from 'react'
 import type { LabTheme, LabWorkbenchId } from './labTypes'
 
+const InkLab = lazy(() => import('../components/InkLab').then((module) => ({ default: module.InkLab })))
+const KlecksLab = lazy(() => import('../components/KlecksLab').then((module) => ({ default: module.KlecksLab })))
+
 const DrawioEmbedLab = lazy(() => import('../components/DrawioEmbedLab').then((module) => ({
   default: module.DrawioEmbedLab,
 })))
@@ -44,6 +47,10 @@ export function LabWorkbench({ workbenchId, theme }: {
   theme: LabTheme
 }) {
   switch (workbenchId) {
+    case 'ink':
+      return <InkLab theme={theme} />
+    case 'klecks':
+      return <KlecksLab theme={theme} />
     case 'drawio':
       return <DrawioEmbedLab theme={theme} />
     case 'excalidraw':

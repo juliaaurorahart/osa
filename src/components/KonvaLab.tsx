@@ -10,6 +10,9 @@ import {
 } from 'react'
 import type Konva from 'konva'
 import { Layer, Line, Rect, Stage, Transformer } from 'react-konva'
+import { LabCaptureButton } from '../lab/LabCaptureButton'
+import { canvasToBlob } from '../lab/labCaptureUtils'
+import type { LabCapture } from '../lab/labTypes'
 import { KonvaItemRenderer } from './KonvaItemRenderer'
 import {
   cloneItem,
@@ -631,6 +634,27 @@ export function KonvaLab({ theme, initialDocument, onDocumentChange }: KonvaLabP
     setNotice('downloaded local PNG')
   }, [])
 
+  const capture = useCallback(async (): Promise<LabCapture> => {
+    const stage = stageRef.current
+    if (!stage) throw new Error('The Konva canvas is not ready yet.')
+    const sourceDocument: KonvaLabDocument = { items: itemsRef.current }
+    const source = new Blob([JSON.stringify(sourceDocument, null, 2)], { type: 'application/json' })
+    const selectionLayer = transformerRef.current?.getLayer()
+    const selectionWasVisible = selectionLayer?.visible()
+    // Export the current viewport without selection handles; restore the UI
+    // synchronously, before encoding the detached snapshot canvas.
+    const canvas = (() => {
+      selectionLayer?.hide()
+      try {
+        return stage.toCanvas({ pixelRatio: 1 })
+      } finally {
+        if (selectionLayer && selectionWasVisible !== undefined) selectionLayer.visible(selectionWasVisible)
+      }
+    })()
+    const preview = await canvasToBlob(canvas)
+    return { name: 'Konva drawing', toolId: 'konva', preview, source: { blob: source, name: 'osa-konva-lab.json' } }
+  }, [])
+
   const importJson = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0]
     event.currentTarget.value = ''
@@ -750,6 +774,7 @@ export function KonvaLab({ theme, initialDocument, onDocumentChange }: KonvaLabP
           <button type="button" onClick={exportJson}>JSON</button>
           <button type="button" onClick={() => importInputRef.current?.click()}>load</button>
           <button type="button" onClick={exportPng}>PNG</button>
+          <LabCaptureButton capture={capture} />
           <button type="button" onClick={resetLab}>reset</button>
           <input
             ref={importInputRef}

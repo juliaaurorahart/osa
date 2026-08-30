@@ -1,4 +1,6 @@
 import { parseBoardSnapshot, type BoardSnapshot } from './boardSnapshot'
+import { prepareDocumentAssets, scopeLegacyAssets } from './portableAssets'
+import { requestAccountHeaders } from './requestAccount'
 
 export type SavedBoard = {
   id: string
@@ -45,8 +47,8 @@ type CreateShareResponse = {
 export type AssemblyShare = CreateShareResponse
 
 export class BoardAccessError extends Error {
-  constructor() {
-    super('Sign in to access saved boards.')
+  constructor(message = 'Sign in to access saved boards.') {
+    super(message)
     this.name = 'BoardAccessError'
   }
 }
@@ -124,7 +126,7 @@ function parseSavedBoard(value: unknown): SavedBoard | null {
   if (!summary || !isRecord(value)) return null
   const snapshot = parseBoardSnapshot(value.snapshot)
   if (!snapshot) return null
-  return { ...summary, snapshot }
+  return { ...summary, snapshot: scopeLegacyAssets(snapshot, summary.id) }
 }
 
 type RawBoardServerState = Pick<Required<BoardSummary>, 'id' | 'name' | 'updatedAt' | 'archived' | 'revision' | 'access'>
@@ -173,6 +175,9 @@ async function responseError(response: Response): Promise<Error> {
   if (response.status === 404) return new BoardUnavailableError()
 
   const body: unknown = await response.json().catch(() => null)
+  if (response.status === 409 && isRecord(body) && body.code === 'account_changed') {
+    return new BoardAccessError('Your signed-in account changed. Save a backup, then sign in again.')
+  }
   if (response.status === 403) {
     const message = isRecord(body) && typeof body.error === 'string' ? body.error : ''
     return message === 'Private sign-in required.'
@@ -193,7 +198,9 @@ async function responseError(response: Response): Promise<Error> {
 
 async function boardRequest(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   try {
-    const response = await fetch(input, { ...init, redirect: 'manual' })
+    const headers = new Headers(init?.headers)
+    for (const [name, value] of Object.entries(requestAccountHeaders())) headers.set(name, value)
+    const response = await fetch(input, { ...init, headers, redirect: 'manual' })
     // Cloudflare Access uses an interactive cross-origin redirect. A fetch
     // cannot complete that login, but a normal link to /api/login can.
     if (response.type === 'opaqueredirect' || response.status === 0) {
@@ -444,6 +451,30 @@ export async function saveBoard(
   const savedBoard = isRecord(body) ? parseSavedBoard(body.board) : null
   if (!savedBoard) throw new Error('The board service returned invalid data.')
   return savedBoard
+}
+
+/** Reserve ownership before uploading files; notify callers so failed uploads can resume. */
+export async function saveBoardWithAssets(
+  board: SavedBoard,
+  baseRevision: number | null,
+  onProvisioned?: (board: SavedBoard) => void,
+): Promise<SavedBoard> {
+  let revision = baseRevision
+  if (revision === null) {
+    const scaffold = { ...board, snapshot: { ...board.snapshot, nodes: [], edges: [] } }
+    let provisioned: SavedBoard
+    try { provisioned = await saveBoard(scaffold, null) } catch (error) {
+      // A lost create response can be recovered only when the reserved board is still empty.
+      if (!(error instanceof BoardConflictError) || error.board.name !== board.name
+        || error.board.snapshot.nodes.length || error.board.snapshot.edges.length || error.board.archived) throw error
+      provisioned = error.board
+    }
+    revision = provisioned.revision ?? null
+    if (revision === null) throw new Error('Board storage did not acknowledge its revision.')
+    onProvisioned?.(provisioned)
+  }
+  const snapshot = await prepareDocumentAssets(board.snapshot, board.id)
+  return saveBoard({ ...board, snapshot }, revision)
 }
 
 /** Moves a board into the archive, preserving its data and public share links. */

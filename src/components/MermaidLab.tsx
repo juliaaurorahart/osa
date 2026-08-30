@@ -1,5 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import mermaid from 'mermaid'
+import { LabCaptureButton } from '../lab/LabCaptureButton'
+import type { LabCapture } from '../lab/labTypes'
 import './MermaidLab.css'
 
 type MermaidLabProps = { theme: 'dark' | 'light' }
@@ -43,6 +45,8 @@ export function MermaidLab({ theme }: MermaidLabProps) {
   const [source, setSource] = useState<string>(SAMPLES.flowchart)
   const [error, setError] = useState('')
   const [svg, setSvg] = useState('')
+  const [renderedKey, setRenderedKey] = useState('')
+  const currentKey = `${theme}:${source}`
 
   useEffect(() => {
     let cancelled = false
@@ -58,6 +62,7 @@ export function MermaidLab({ theme }: MermaidLabProps) {
         const rendered = await mermaid.render(`${renderId}-${Date.now()}`, source)
         if (cancelled) return
         setSvg(rendered.svg)
+        setRenderedKey(`${theme}:${source}`)
         setError('')
         if (outputRef.current) {
           outputRef.current.innerHTML = rendered.svg
@@ -86,6 +91,18 @@ export function MermaidLab({ theme }: MermaidLabProps) {
     setSource(SAMPLES[name])
   }
 
+  const capture = (): LabCapture => {
+    if (!svg || renderedKey !== currentKey) throw new Error('Wait for the current diagram to finish rendering before capturing it.')
+    return {
+      name: 'Mermaid diagram',
+      toolId: 'mermaid',
+      // This is the successful strict-mode render of this exact source/theme,
+      // not the previous diagram that may remain visible during the debounce.
+      preview: new Blob([svg], { type: 'image/svg+xml' }),
+      source: { blob: new Blob([source], { type: 'text/plain' }), name: 'diagram.mmd' },
+    }
+  }
+
   return (
     <section className={`mermaid-lab mermaid-lab--${theme}`} aria-label="Mermaid diagram lab">
       <header className="mermaid-lab__header">
@@ -94,6 +111,7 @@ export function MermaidLab({ theme }: MermaidLabProps) {
           <label>sample<select value={sample} onChange={(event) => chooseSample(event.target.value as SampleName)}>{Object.keys(SAMPLES).map((name) => <option key={name}>{name}</option>)}</select></label>
           <button type="button" onClick={() => downloadText(source, 'osa-diagram.mmd', 'text/plain')}>source .mmd</button>
           <button type="button" disabled={!svg} onClick={() => downloadText(svg, 'osa-diagram.svg', 'image/svg+xml')}>export SVG</button>
+          <LabCaptureButton capture={capture} disabled={!svg || renderedKey !== currentKey} />
         </div>
       </header>
       <div className="mermaid-lab__layout">

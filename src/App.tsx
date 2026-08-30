@@ -64,7 +64,9 @@ import {
 } from './graph/textNode'
 import { migrateLegacyCanvasBackgroundImages } from './graph/legacyCanvasImages'
 import { migrateLegacyOperationSourceVisuals } from './graph/legacySourceVisuals'
-import { isInlineImage, storeInlineImage } from './graph/imageAsset'
+import { ImageStorageContext } from './graph/ImageStorageContext'
+import { setRequestAccount } from './graph/requestAccount'
+import { assetSubstitutions, documentNeedsAssetSync, makeDocumentPortable, mapDocumentStrings, scopeLegacyAssets } from './graph/portableAssets'
 import type { NodeKind } from './graph/nodeKinds'
 import {
   defaultVisualEmbedPlacement,
@@ -134,7 +136,7 @@ import {
   fetchSharedAssembly,
   restoreBoardSummary,
   removeBoardCollaborator,
-  saveBoard,
+  saveBoardWithAssets,
   saveBoardCollaborator,
   SharedAssemblyUnavailableError,
   type BoardAccess,
@@ -149,6 +151,7 @@ import {
   suggestedAssemblyShareSlug,
 } from './graph/sharedAssemblyRoute'
 import { downloadBoardSnapshot, readBoardSnapshotFile } from './app/boardFile'
+import { readAccountIdentity } from './app/accountSession'
 import {
   CLOUD_AUTOSAVE_DELAY_MS,
   CLOUD_REFRESH_INTERVAL_MS,
@@ -162,6 +165,9 @@ import {
 } from './app/boardSession'
 import {
   readLocalDraft,
+  readLegacyLocalDraft,
+  writeLocalDraft,
+  type LocalDraft,
   readSelectedAssemblyId,
   writeSelectedAssemblyId,
 } from './app/browserSession'
@@ -265,8 +271,7 @@ function ownedVisualsFor(
 }
 
 /** Owns the live React Flow node/edge state and responds to user actions. */
-function Flow() {
-  const [startupDraft] = useState(readLocalDraft)
+function Flow({ identity, startupDraft }: { identity: string | null; startupDraft: LocalDraft | null }) {
   const [sharedAssemblyReference] = useState(readSharedAssemblyReference)
   const isSharedAssembly = sharedAssemblyReference !== null
   const { theme, toggleTheme } = useOsaTheme()
@@ -334,6 +339,7 @@ function Flow() {
   // API. Plain Vite localhost deliberately stays local-first instead of
   // accidentally writing through to the deployed production database.
   const [cloudBoardListReady, setCloudBoardListReady] = useState(false)
+  const [cloudSyncRequested, setCloudSyncRequested] = useState(Boolean(startupDraft?.revision))
   // Archived boards stay separate from the normal picker. They are only
   // shown when someone deliberately opens the archive, and can be restored.
   const [archivedBoards, setArchivedBoards] = useState<BoardSummary[]>([])
@@ -392,7 +398,8 @@ function Flow() {
   // Each legacy base64 image is moved at most once during this browser
   // session. Once its URL reaches the graph, ordinary autosave persists the
   // small board document while the pixels remain in R2.
-  const inlineAssetMigrationAttempts = useRef(new Set<string>())
+  const assetMigrationAttempt = useRef('')
+  const localBackupFingerprint = useRef('')
   const [cloudSaveCycle, setCloudSaveCycle] = useState(0)
   const [needsSignIn, setNeedsSignIn] = useState(false)
   const [shareStatus, setShareStatus] = useState('')
@@ -432,6 +439,7 @@ function Flow() {
   const suppressPointerContextMenuUntil = useRef(0)
 
   useLocalDraftPersistence({
+    identity,
     // React Flow publishes temporary position frames while a node is moving.
     // Save the final frame instead of rebuilding the whole document mid-drag.
     enabled: !isSharedAssembly && !nodeDragActive,
@@ -472,87 +480,6 @@ function Flow() {
     if (migratedCanvasImages.edges !== edges) setEdges(migratedCanvasImages.edges)
   }, [bundledStarterImportPlan, edges, nodeDragActive, nodes, setEdges, setNodes])
 
-  // Older boards embedded camera data directly in their graph JSON. Move
-  // those source pixels to object storage as the board is opened, without
-  // changing the picture or asking someone to re-upload it. This deliberately
-  // skips shared/read-only views: only the board author can update canonical
-  // links.
-  useEffect(() => {
-    const migrationAttempts = inlineAssetMigrationAttempts.current
-    if (
-      nodeDragActive
-      || isSharedAssembly
-      || cloudRevision === null
-      || boardAccess === 'viewer'
-    ) return
-
-    const candidates = new Map<string, Array<{ id: string; image: string }>>()
-    nodes.forEach((node) => {
-      const image = node.data.properties[OSA_PROPERTY.assetImage]
-      if (!isInlineImage(image)) return
-      const attemptKey = `${boardId}\u0000${node.id}\u0000${image}`
-      if (migrationAttempts.has(attemptKey)) return
-      migrationAttempts.add(attemptKey)
-      const grouped = candidates.get(image) ?? []
-      grouped.push({ id: node.id, image })
-      candidates.set(image, grouped)
-    })
-    if (!candidates.size) return
-
-    let cancelled = false
-    const attemptKeys = [...candidates.values()].flatMap((owners) => owners.map(({ id, image }) => (
-      `${boardId}\u0000${id}\u0000${image}`
-    )))
-    setCloudSyncStatus('Moving existing photos…')
-    void (async () => {
-      const replacements = new Map<string, string>()
-      let hadFailure = false
-
-      for (const [image, owners] of candidates) {
-        try {
-          const url = await storeInlineImage(image)
-          owners.forEach(({ id, image: previous }) => {
-            replacements.set(`${id}\u0000${previous}`, url)
-          })
-        } catch {
-          hadFailure = true
-        }
-      }
-
-      if (cancelled || latestBoardId.current !== boardId) {
-        // A graph migration or board switch can invalidate this effect while
-        // uploads are still running. R2 writes are content-addressed and safe
-        // to repeat, so release these guards and let the current graph retry
-        // instead of leaving uploaded pixels embedded in the board forever.
-        attemptKeys.forEach((key) => migrationAttempts.delete(key))
-        return
-      }
-      if (replacements.size) {
-        setNodes((currentNodes) => currentNodes.map((node) => {
-          const image = node.data.properties[OSA_PROPERTY.assetImage]
-          const replacement = image
-            ? replacements.get(`${node.id}\u0000${image}`)
-            : undefined
-          return replacement
-            ? {
-                ...node,
-                data: {
-                  ...node.data,
-                  properties: { ...node.data.properties, [OSA_PROPERTY.assetImage]: replacement },
-                },
-              }
-            : node
-        }))
-      }
-      if (hadFailure) setCloudSyncStatus('Some existing photos could not be moved yet.')
-    })()
-
-    return () => {
-      cancelled = true
-      attemptKeys.forEach((key) => migrationAttempts.delete(key))
-    }
-  }, [boardAccess, boardId, cloudRevision, isSharedAssembly, nodeDragActive, nodes, setNodes])
-
   // React Flow and the Assembly editor both edit the same node/edge state.
   // Compare it with the last D1 acknowledgement rather than treating an
   // effect run as an edit. React StrictMode intentionally runs mount effects
@@ -585,6 +512,11 @@ function Flow() {
   const suppressPaneCollapseUntil = useRef(0)
   const refreshSavedBoards = useCallback(async () => {
     setCloudBoardListReady(false)
+    if (!identity) {
+      setNeedsSignIn(true)
+      setStorageStatus('Local only — sign in to open saved boards.')
+      return
+    }
     setStorageStatus('Loading saved boards…')
     try {
       const boards = await fetchBoardSummaries()
@@ -605,10 +537,15 @@ function Flow() {
         ? ''
         : error instanceof Error ? error.message : 'Unable to load saved boards.')
     }
-  }, [])
+  }, [identity])
 
   /** Opens the separate recoverable archive; it never mingles with active boards. */
   const showArchivedBoardList = useCallback(async () => {
+    if (!identity) {
+      setNeedsSignIn(true)
+      setStorageStatus('Sign in to open the archive.')
+      return
+    }
     setStorageStatus('Loading archive…')
     try {
       const boards = await fetchBoardSummaries({ archived: true })
@@ -629,7 +566,7 @@ function Flow() {
         ? ''
         : error instanceof Error ? error.message : 'Unable to load the archive.')
     }
-  }, [])
+  }, [identity])
 
   const showActiveBoardList = useCallback(() => {
     setShowingArchivedBoards(false)
@@ -2071,6 +2008,11 @@ function Flow() {
 
   /** Fetches one full board without replacing the document currently on screen. */
   const readSavedCloudBoard = useCallback(async (id: string): Promise<SavedBoard | null> => {
+    if (!identity) {
+      setNeedsSignIn(true)
+      setStorageStatus('Sign in to open saved boards.')
+      return null
+    }
     try {
       const savedBoard = await fetchBoard(id)
       if (!savedBoard) {
@@ -2086,7 +2028,7 @@ function Flow() {
         : error instanceof Error ? error.message : 'Unable to open this board.')
       return null
     }
-  }, [])
+  }, [identity])
 
   /** Loads the one selected cloud board after a metadata-only picker read. */
   const openSavedCloudBoard = useCallback(async (
@@ -2216,6 +2158,12 @@ function Flow() {
   const saveCurrentBoard = useCallback(async (
     mode: 'manual' | 'auto' | 'create' = 'manual',
   ): Promise<SavedBoard | null> => {
+    if (!identity) {
+      setNeedsSignIn(true)
+      setCloudSyncStatus('Local only — sign in to sync.')
+      return null
+    }
+    if (mode !== 'manual' && needsSignIn) return null
     if (boardAccess === 'viewer') {
       const message = 'This board is shared with you for viewing only.'
       setCloudSyncStatus(message)
@@ -2307,7 +2255,17 @@ function Flow() {
     }
 
     try {
-      const savedBoard = await saveBoard(boardToSave, baseRevision)
+      const savedBoard = await saveBoardWithAssets(boardToSave, baseRevision, acknowledgeCloudSave)
+      if (latestBoardId.current === id) {
+        const substitutions = assetSubstitutions(boardToSave.snapshot, savedBoard.snapshot)
+        if (substitutions.size) {
+          const replace = (value: string) => substitutions.get(value) ?? value
+          latestNodes.current = mapDocumentStrings(latestNodes.current, replace)
+          latestEdges.current = mapDocumentStrings(latestEdges.current, replace)
+          setNodes(latestNodes.current)
+          setEdges(latestEdges.current)
+        }
+      }
       acknowledgeCloudSave(savedBoard)
 
       if (mode === 'manual') setStorageStatus(`Saved “${savedBoard.name}”`)
@@ -2358,14 +2316,12 @@ function Flow() {
       }
       setCloudSaveCycle((current) => current + 1)
     }
-  }, [archivedBoards, boardAccess, savedBoards])
+  }, [archivedBoards, boardAccess, identity, needsSignIn, savedBoards, setNodes, setEdges])
 
-  // Once this origin successfully reaches the private board list, give a
-  // local-first document its D1 identity automatically. An untouched startup
-  // canvas yields to an existing cloud board; an edited/imported draft does
-  // not. The attempt key prevents StrictMode and re-renders from creating the
-  // same board twice.
+  // Only an explicitly requested sync may provision a local board. The attempt
+  // key prevents StrictMode and re-renders from creating the same board twice.
   useEffect(() => {
+    if (!cloudSyncRequested) return
     if (nodeDragActive) return
     if (boardLoadInFlight.current) return
 
@@ -2401,6 +2357,7 @@ function Flow() {
     boardId,
     boardName,
     cloudBoardListReady,
+    cloudSyncRequested,
     cloudConflictBoard,
     cloudRevision,
     cloudSaveCycle,
@@ -2413,8 +2370,20 @@ function Flow() {
   ])
 
   const saveBoardToDatabase = useCallback(async () => {
+    setCloudSyncRequested(true)
     await saveCurrentBoard('manual')
   }, [saveCurrentBoard])
+
+  // Protect legacy file links, including frozen visual versions, through the
+  // same guarded write path. Failed transfers remain local and can be retried.
+  useEffect(() => {
+    if (isSharedAssembly || boardAccess === 'viewer' || cloudRevision === null
+      || nodeDragActive || cloudSaveInFlight.current || cloudConflictBoard) return
+    const attempt = `${boardId}:${cloudRevision}`
+    if (assetMigrationAttempt.current === attempt || !documentNeedsAssetSync({ nodes, edges }, boardId)) return
+    assetMigrationAttempt.current = attempt
+    void saveCurrentBoard('auto')
+  }, [boardAccess, boardId, cloudConflictBoard, cloudRevision, edges, isSharedAssembly, nodeDragActive, nodes, saveCurrentBoard])
 
   /** Detects edits synchronously, including before React's dirty effect runs. */
   const currentBoardNeedsSyncBeforeLoad = useCallback(() => {
@@ -2426,6 +2395,7 @@ function Flow() {
       'Untitled board',
       createBoardSnapshot(initialNodes, initialEdges),
     )
+    if (cloudRevisionRef.current === null && currentDocument === localBackupFingerprint.current) return false
     return boardNeedsSyncBeforeLoad({
       cloudRevision: cloudRevisionRef.current,
       cloudDirty: cloudDirtyRef.current,
@@ -2437,6 +2407,19 @@ function Flow() {
 
   /** Protects the source board before a fetched target is allowed to replace it. */
   const secureCurrentBoardBeforeLoad = useCallback(async (sourceBoardId: string) => {
+    if (cloudRevisionRef.current === null && currentBoardNeedsSyncBeforeLoad()) {
+      if (!window.confirm('This board is local only. Download a backup with its files before opening the saved board?')) return false
+      const snapshot = createBoardSnapshot(latestNodes.current, latestEdges.current)
+      const fingerprint = boardDocumentFingerprint(latestBoardName.current, snapshot)
+      try {
+        await downloadBoardSnapshot(snapshot)
+        localBackupFingerprint.current = fingerprint
+        return latestBoardId.current === sourceBoardId && !currentBoardNeedsSyncBeforeLoad()
+      } catch (error) {
+        setStorageStatus(error instanceof Error ? error.message : 'Could not back up the local board.')
+        return false
+      }
+    }
     if (cloudSaveCompletion.current || currentBoardNeedsSyncBeforeLoad()) {
       setStorageStatus('Syncing current board before opening…')
     }
@@ -2746,6 +2729,11 @@ function Flow() {
 
   /** A compact conflict escape hatch: keep this device's work as a new board. */
   const saveCurrentBoardAsCopy = useCallback(async () => {
+    if (!identity) {
+      setNeedsSignIn(true)
+      setStorageStatus('Sign in to save a cloud copy, or download a backup.')
+      return
+    }
     if (cloudSaveInFlight.current) return
 
     const sourceId = latestBoardId.current
@@ -2773,7 +2761,7 @@ function Flow() {
     })
     cloudSaveCompletion.current = copySaveCompletion
     try {
-      const savedCopy = await saveBoard(copy, null)
+      const savedCopy = await saveBoardWithAssets(copy, null)
       setNeedsSignIn(false)
       setSavedBoards((currentBoards) => [
         boardSummary(savedCopy),
@@ -2824,7 +2812,7 @@ function Flow() {
       }
       setCloudSaveCycle((current) => current + 1)
     }
-  }, [applyCloudBoard, savedBoards])
+  }, [applyCloudBoard, identity, savedBoards])
 
   /** Replaces the open document only when the author explicitly chooses the newer cloud copy. */
   const reloadCloudBoard = useCallback(() => {
@@ -2967,9 +2955,47 @@ function Flow() {
     }
   }, [cloudRevision, isSharedAssembly, refreshCurrentCloudBoard])
 
-  const saveBoardAsJson = useCallback(() => {
-    downloadBoardSnapshot(createBoardSnapshot(nodes, edges))
+  const saveBoardAsJson = useCallback(async () => {
+    setStorageStatus('Preparing JSON with saved files…')
+    try {
+      await downloadBoardSnapshot(createBoardSnapshot(nodes, edges))
+      setStorageStatus('Downloaded JSON including saved files.')
+    } catch (error) {
+      setStorageStatus(error instanceof Error ? error.message : 'The backup could not be prepared.')
+    }
   }, [nodes, edges])
+
+  const useLocalBoardCopy = useCallback(async () => {
+    if (cloudSaveInFlight.current) return
+    const id = latestBoardId.current
+    const original = createBoardSnapshot(latestNodes.current, latestEdges.current)
+    setStorageStatus('Preparing a local copy with files…')
+    try {
+      const portable = await makeDocumentPortable(original)
+      if (latestBoardId.current !== id || JSON.stringify(createBoardSnapshot(latestNodes.current, latestEdges.current)) !== JSON.stringify(original)) {
+        setStorageStatus('The board changed while preparing the copy. Try again.')
+        return
+      }
+      applyBoardSnapshot(portable)
+      cloudRevisionRef.current = null
+      setCloudRevision(null)
+      setCloudSyncRequested(false)
+      cloudBaselineRef.current = null
+      cloudDirtyRef.current = false
+      setCloudDirty(false)
+      setCloudConflictBoard(null)
+      boardAccessRef.current = 'owner'
+      setBoardAccess('owner')
+      setBoardId(crypto.randomUUID())
+      setBoardName(`${latestBoardName.current} local copy`)
+      setSelectedBoardId('')
+      setBoardCollaborators([])
+      setCloudSyncStatus('On this device')
+      setStorageStatus('Local copy opened. The shared/cloud original is unchanged.')
+    } catch (error) {
+      setStorageStatus(error instanceof Error ? error.message : 'Could not prepare the local copy.')
+    }
+  }, [applyBoardSnapshot])
 
   /**
    * Ingests a board file selected through the browser's file picker.
@@ -2987,6 +3013,7 @@ function Flow() {
       cloudBaselineRef.current = null
       cloudRevisionRef.current = null
       setCloudRevision(null)
+      setCloudSyncRequested(false)
       boardAccessRef.current = 'owner'
       setBoardAccess('owner')
       setBoardCollaborators([])
@@ -2997,7 +3024,7 @@ function Flow() {
       setCloudSyncStatus('')
       setBoardId(crypto.randomUUID())
       setBoardName(file.name.replace(/\.json$/i, '') || 'Imported board')
-      setStorageStatus('Imported JSON; cloud sync starts automatically when available.')
+      setStorageStatus('Imported on this device. Choose Sync to my account to upload it.')
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to load this board file.'
       window.alert(message)
@@ -3245,6 +3272,7 @@ function Flow() {
       onArchiveCurrentBoard={archiveCurrentBoard}
       onRestoreSelectedBoard={restoreSelectedBoard}
       onManualSync={saveBoardToDatabase}
+      onUseLocalCopy={useLocalBoardCopy}
       storageStatus={storageStatus}
       cloudSyncStatus={cloudSyncStatus}
       localDraftStatus={draftStatus}
@@ -3271,6 +3299,7 @@ function Flow() {
   )
 
   return (
+    <ImageStorageContext.Provider value={!isSharedAssembly && boardAccess !== 'viewer' && cloudRevision !== null ? boardId : null}>
     <div
       className={`osa-workspace${workspaceMenuVisible ? '' : ' workspace-menu-hidden'}`}
       onPointerDownCapture={canvasLabVisible ? undefined : beginPointerPalettePress}
@@ -3719,14 +3748,42 @@ function Flow() {
         document.body,
       )}
     </div>
+    </ImageStorageContext.Provider>
   )
 }
 
 /** Provides React Flow context, then mounts the interactive canvas. */
 export default function App() {
+  const [session, setSession] = useState<{ identity: string | null; startupDraft: LocalDraft | null } | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const identity = await readAccountIdentity()
+      if (cancelled) return
+      setRequestAccount(identity)
+      let startupDraft = readLocalDraft(identity)
+      // The old shared recovery slot may contain private work. Verify access
+      // before displaying or adopting it into an account-specific cache.
+      const legacy = readLegacyLocalDraft()
+      if (identity && legacy?.revision && (!startupDraft || !startupDraft.revision)) {
+        const authorized = await fetchBoard(legacy.id).catch(() => null)
+        if (authorized) {
+          startupDraft = { ...legacy, access: authorized.access,
+            snapshot: scopeLegacyAssets(legacy.snapshot, legacy.id) }
+          // A full browser cache must not prevent the app from opening. The
+          // normal persistence hook reports a visible backup warning below.
+          try { writeLocalDraft(startupDraft, identity) } catch { /* Keep recovered work in memory. */ }
+        }
+      }
+      if (startupDraft?.revision) startupDraft = { ...startupDraft, snapshot: scopeLegacyAssets(startupDraft.snapshot, startupDraft.id) }
+      if (!cancelled) setSession({ identity, startupDraft })
+    })()
+    return () => { cancelled = true }
+  }, [])
+  if (!session) return <div role="status" style={{ padding: 24 }}>Opening OSA…</div>
   return (
     <ReactFlowProvider>
-      <Flow />
+      <Flow identity={session.identity} startupDraft={session.startupDraft} />
     </ReactFlowProvider>
   )
 }

@@ -12,9 +12,21 @@ type ArtCredit = {
   creditLine?: string
   note?: string
   source: string
+  license?: {
+    name: string
+    url: string
+  }
 }
 
 const REPOSITORY_URL = 'https://github.com/juliaaurorahart/osa'
+const PUBLIC_DOMAIN_LICENSE = {
+  name: 'CC0 / Public Domain',
+  url: 'https://creativecommons.org/publicdomain/zero/1.0/',
+}
+const PEXELS_LICENSE = {
+  name: 'Pexels License',
+  url: 'https://www.pexels.com/license/',
+}
 
 const ART_CREDITS: ArtCredit[] = [
   {
@@ -49,6 +61,22 @@ const ART_CREDITS: ArtCredit[] = [
     creator: 'Ricardo Viana',
     note: 'Resized local derivative.',
     source: 'https://commons.wikimedia.org/wiki/File:Splatter_paint_on_white_table_(Unsplash).jpg',
+  },
+  {
+    file: 'pink-ink-in-water.jpg',
+    work: 'Colorful Liquids Mixed in Water',
+    creator: 'MART PRODUCTION',
+    note: 'Resized provider preview; displayed with CSS cropping, masking, and contrast treatment.',
+    source: 'https://www.pexels.com/photo/colorful-liquids-mixed-in-water-7577864/',
+    license: PEXELS_LICENSE,
+  },
+  {
+    file: 'blue-pink-ink-in-water.jpg',
+    work: 'High-Speed Photography of Colorful Ink Diffusion in Water',
+    creator: 'cottonbro studio',
+    note: 'Resized provider preview; displayed with CSS cropping, masking, and contrast treatment.',
+    source: 'https://www.pexels.com/photo/high-speed-photography-of-colorful-ink-diffusion-in-water-9669091/',
+    license: PEXELS_LICENSE,
   },
   {
     file: 'paint-splatter-mask.svg',
@@ -104,6 +132,7 @@ const SOFTWARE_GROUPS = [
       'konva',
       'react-konva',
       'paper',
+      'perfect-freehand',
       'p5',
       'pixi.js',
       'three',
@@ -238,13 +267,21 @@ export function LabAbout({ onBack }: LabAboutProps) {
           <p className="lab-about__kicker">Human-created art</p>
           <h3 id="lab-about-art">Paint and texture credits</h3>
           <p>
-            The Lab landing surface uses local copies or derivatives of the works below. The project source ledger identifies each as CC0 / Public Domain; attribution is retained here to preserve the human creators and provenance behind the visuals.
+            The Lab landing surface uses local copies or derivatives of the works below. Each work retains its own license: the paint textures and masks are CC0 / Public Domain, while the ink-in-water photographs use the Pexels License. Credits preserve the creators and provenance behind the visuals.
+          </p>
+          <p>
+            The raised, glossy paint lighting is an SVG/CSS treatment of the credited masks—not an additional photograph or AI-generated raster artwork. Cropping, tinting, masking, and contrast adjustments also shape how the source images appear here.
           </p>
           <ul className="lab-about__credit-grid">
             {ART_CREDITS.map((credit) => (
               <li key={credit.file}>
                 <a href={credit.source} target="_blank" rel="noreferrer">{credit.work}</a>
                 <span>{credit.creditLine ?? `by ${credit.creator}`}</span>
+                <small>
+                  <a href={(credit.license ?? PUBLIC_DOMAIN_LICENSE).url} target="_blank" rel="noreferrer">
+                    {(credit.license ?? PUBLIC_DOMAIN_LICENSE).name}
+                  </a>
+                </small>
                 {credit.note ? <small>{credit.note}</small> : null}
                 <code>{credit.file}</code>
               </li>
@@ -281,6 +318,10 @@ export function LabAbout({ onBack }: LabAboutProps) {
           </div>
           <p className="lab-about__fine-print">
             For the exact installed versions and transitive packages, inspect <a href={repositoryFileUrl('package-lock.json')} target="_blank" rel="noreferrer">package-lock.json</a>. That file is a dependency record, not a compiled notices document.
+          </p>
+          <h4>Klecks painting editor</h4>
+          <p>
+            <a href="https://github.com/bitbof/klecks" target="_blank" rel="noreferrer">Klecks by bitbof and contributors</a> is a separately bundled, MIT-licensed painting editor. OSA serves a pinned build locally within the Lab; opening it does not send your artwork to the Klecks website. Its source revision, build instructions, and bundled license notices are kept with the editor in <code>public/lab-vendor/klecks</code>.
           </p>
         </section>
       </div>

@@ -1,5 +1,6 @@
 import { useMemo, useState, type CSSProperties } from 'react'
 import { LAB_GROUPS } from './labCatalog'
+import { LabPaint } from './LabPaint'
 import type { LabWorkbenchId } from './labTypes'
 import './LabHome.css'
 
@@ -81,12 +82,27 @@ const CLUSTER_LAYOUTS: readonly ClusterLayout[] = [
     labelX: 18, labelY: 12,
     points: [{ x: 84.38, y: 30.43 }, { x: 53.13, y: 69.57 }, { x: 21.88, y: 60.87 }],
   },
+  {
+    x: 1, y: 8, width: 15, height: 32, turn: -8,
+    labelX: 40, labelY: 92,
+    points: [{ x: 52, y: 21 }, { x: 48, y: 65 }],
+  },
 ]
 
 const ROOM_CLUSTER: ClusterLayout = {
   x: 17, y: 62, width: 19, height: 26, turn: 1,
   labelX: 12, labelY: 18,
   points: [{ x: 73.68, y: 26.92 }, { x: 31.58, y: 73.08 }],
+}
+
+// Deliberate material variety; adding a tool no longer changes its neighbors' paint.
+const STATION_PAINT: Readonly<Record<string, number>> = {
+  drawio: 0, excalidraw: 1, konva: 2,
+  fabric: 3, paper: 5,
+  p5: 6, pixi: 4, strudel: 5, three: 2,
+  mermaid: 0, vega: 6, code: 3,
+  notebook: 4, settings: 1,
+  ink: 5, klecks: 2,
 }
 
 function toId(value: string) {
@@ -115,6 +131,7 @@ function clusteredStationStyle(
   groupIndex: number,
   stationIndex: number,
   stationCount: number,
+  stationId: string,
 ): StationStyle {
   const fallbackAngle = -90 + (360 / Math.max(stationCount, 1)) * stationIndex
   const fallbackRadians = fallbackAngle * (Math.PI / 180)
@@ -122,14 +139,14 @@ function clusteredStationStyle(
     x: 50 + Math.cos(fallbackRadians) * 34,
     y: 50 + Math.sin(fallbackRadians) * 34,
   }
-  const size = 90 + ((groupIndex * 5 + stationIndex * 7) % 6)
+  const size = 112 + ((groupIndex * 5 + stationIndex * 7) % 6)
 
   return {
     '--station-x': `${point.x}%`,
     '--station-y': `${point.y}%`,
     '--station-size': `${size}px`,
     '--paint-turn': `${-28 + ((groupIndex * 29 + stationIndex * 23) % 56)}deg`,
-    '--paint-variant': `${(groupIndex + stationIndex) % 5}`,
+    '--paint-variant': `${STATION_PAINT[stationId] ?? (groupIndex + stationIndex) % 7}`,
   }
 }
 
@@ -154,7 +171,7 @@ export function LabHome({
       stations: group.labs.map<Station>((lab, stationIndex) => ({
         ...lab,
         kind: 'workbench',
-        style: clusteredStationStyle(layout, groupIndex, stationIndex, group.labs.length),
+        style: clusteredStationStyle(layout, groupIndex, stationIndex, group.labs.length, lab.id),
         open: () => onOpenWorkbench(lab.id),
       })),
     }
@@ -168,7 +185,7 @@ export function LabHome({
       output: 'ideas, observations, and Lab artifacts',
       glyph: '▤',
       kind: 'room',
-      style: clusteredStationStyle(ROOM_CLUSTER, 4, 0, 2),
+      style: clusteredStationStyle(ROOM_CLUSTER, 4, 0, 2, 'notebook'),
       open: onOpenNotebook,
     },
     {
@@ -178,7 +195,7 @@ export function LabHome({
       output: 'the way the Lab behaves',
       glyph: '⚙',
       kind: 'room',
-      style: clusteredStationStyle(ROOM_CLUSTER, 4, 1, 2),
+      style: clusteredStationStyle(ROOM_CLUSTER, 4, 1, 2, 'settings'),
       open: onOpenSettings,
     },
   ], [artifactCount, noteCount, onOpenNotebook, onOpenSettings])
@@ -195,6 +212,13 @@ export function LabHome({
       onMouseEnter={() => setActiveStationId(station.id)}
       onMouseLeave={() => setActiveStationId(null)}
     >
+      {['2', '4'].includes(station.style['--paint-variant']) ? (
+        <LabPaint
+          className="lab-home__station-paint"
+          shape={station.style['--paint-variant'] === '2' ? 'round' : 'splash'}
+          palette={['pixi', 'three'].includes(station.id) ? 'cyan' : 'pink'}
+        />
+      ) : null}
       <button
         type="button"
         aria-label={`Open ${station.name}: ${station.note}`}
@@ -227,7 +251,7 @@ export function LabHome({
           role="img"
           aria-label="LAB, surrounded by clustered creative workbenches and rooms."
         >
-          <span className="lab-home__core-paint" aria-hidden="true" />
+          <LabPaint className="lab-home__core-paint" shape="round" palette="rainbow" />
           <span className="lab-home__core-disc" aria-hidden="true">
             <strong>LAB</strong>
           </span>

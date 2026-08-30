@@ -200,6 +200,9 @@
   overflow: auto;
 }
 
+/* Keep a notebook draft alive while moving between instruments. */
+.lab-shell__body > [hidden] { display: none; }
+
 .lab-shell__body.is-workbench {
   padding: 12px;
 }

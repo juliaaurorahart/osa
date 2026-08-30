@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import paper from 'paper'
+import { LabCaptureButton } from '../lab/LabCaptureButton'
+import { canvasToBlob } from '../lab/labCaptureUtils'
+import type { LabCapture } from '../lab/labTypes'
 import './PaperLab.css'
 
 type PaperTheme = 'dark' | 'light'
@@ -398,6 +401,16 @@ export function PaperLab({ theme }: PaperLabProps) {
     downloadDataUrl(canvas.toDataURL('image/png'), 'paper-lab.png')
   }
 
+  const capture = async (): Promise<LabCapture> => {
+    const scope = scopeRef.current
+    const canvas = canvasRef.current
+    if (!scope || !canvas) throw new Error('The Paper canvas is not ready yet.')
+    scope.view.update()
+    const source = new Blob([scope.project.exportJSON({ asString: true, precision: 4 })], { type: 'application/json' })
+    const preview = await canvasToBlob(canvas)
+    return { name: `Paper ${preset}`, toolId: 'paper', preview, source: { blob: source, name: 'paper-lab.json' } }
+  }
+
   return (
     <section className="paper-lab" data-theme={theme} aria-label="Paper vector geometry lab">
       <header className="paper-lab__header">
@@ -409,6 +422,7 @@ export function PaperLab({ theme }: PaperLabProps) {
           <button type="button" onClick={exportSvg}>SVG</button>
           <button type="button" onClick={exportJson}>JSON</button>
           <button type="button" onClick={exportPng}>PNG</button>
+          <LabCaptureButton capture={capture} />
         </div>
       </header>
 

@@ -1,0 +1,21 @@
+.klecks-lab { min-width: 0; overflow: hidden; border: 1px solid var(--osa-border); border-radius: 14px; background: var(--osa-surface); color: var(--osa-text); }
+.klecks-lab__header, .klecks-lab__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.klecks-lab__header { justify-content: space-between; padding: 14px; }
+.klecks-lab h2, .klecks-lab p { margin: 0; }
+.klecks-lab h2 { font-size: 1.15rem; }
+.klecks-lab__header p { margin-top: 3px; color: var(--osa-muted); font-size: .82rem; }
+.klecks-lab button, .klecks-lab summary, .klecks-lab select { min-height: 36px; padding: 6px 10px; border: 1px solid var(--osa-border); border-radius: 7px; background: var(--osa-surface-raised); color: var(--osa-text); font: inherit; font-size: .8rem; cursor: pointer; }
+.klecks-lab :is(button, summary, select, iframe):focus-visible { outline: 2px solid var(--osa-focus); outline-offset: 3px; }
+.klecks-lab__canvas-color { display: inline-flex; align-items: center; gap: 6px; font-size: .8rem; }
+.klecks-lab button:disabled { cursor: not-allowed; opacity: .45; }
+.klecks-lab details { position: relative; }
+.klecks-lab__downloads { position: absolute; top: 100%; right: 0; z-index: 3; display: grid; gap: 5px; width: 170px; padding: 8px; border: 1px solid var(--osa-border); border-radius: 8px; background: var(--osa-surface); box-shadow: 0 5px 20px var(--osa-shadow); }
+.klecks-lab__status { padding: 8px 14px; border-top: 1px solid var(--osa-border); color: var(--osa-muted); font-size: .8rem; }
+.klecks-lab__status.is-error { color: var(--osa-danger, #d15959); }
+.klecks-lab__frame { display: block; width: 100%; height: clamp(570px, 76vh, 1000px); border: 0; border-top: 1px solid var(--osa-border); background: var(--osa-bg); }
+.klecks-lab footer { padding: 10px 14px; border-top: 1px solid var(--osa-border); color: var(--osa-muted); font-size: .75rem; line-height: 1.5; }
+@media (max-width: 650px) {
+  .klecks-lab__header { padding: 10px; align-items: flex-start; }
+  .klecks-lab__frame { height: 650px; }
+  .klecks-lab button, .klecks-lab summary, .klecks-lab select { min-height: 40px; }
+}

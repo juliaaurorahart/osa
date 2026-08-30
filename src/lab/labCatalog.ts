@@ -41,6 +41,14 @@ export const LAB_GROUPS: readonly LabGroup[] = [
       { id: 'code', name: 'CodeMirror', note: 'embeddable code editor', output: 'text source', glyph: '{ }' },
     ],
   },
+  {
+    name: 'Stylus and paint',
+    description: 'Draw by hand with pressure-sensitive ink or a layered painting studio.',
+    labs: [
+      { id: 'ink', name: 'Ink', note: 'pressure-sensitive freehand', output: 'editable strokes, SVG, and PNG', glyph: '✒' },
+      { id: 'klecks', name: 'Klecks', note: 'layered painting studio', output: 'layered PSD and PNG', glyph: '◒' },
+    ],
+  },
 ]
 
 export const LABS: readonly LabDefinition[] = LAB_GROUPS.flatMap((group) => group.labs)

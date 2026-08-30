@@ -1,0 +1,276 @@
+{
+  "repository": "https://github.com/bitbof/klecks",
+  "commit": "6df305c2b16d14221fcc01df6f7e1885f0aaac3e",
+  "patch": {
+    "name": "OSA-INITIAL-BRUSH-COLOR.patch",
+    "sha256": "3f6e78be1d220c38db6ae5280d751e61c199240f324129ca72d08d4d1049eda3"
+  },
+  "build": "npm ci && npm run icon:build && npm run lang:build && patch -p1 -i OSA-INITIAL-BRUSH-COLOR.patch && npm run build:embed -- --no-source-maps --dist-dir dist-osa-patched",
+  "files": [
+    {
+      "name": "Caveat-Regular.2fe80bbd.woff2",
+      "bytes": 102716,
+      "sha256": "c2c4fd6c0bd207043e6fd39015efd952333206a31ee68a807413dfbf72168d52"
+    },
+    {
+      "name": "ClimateCrisis-Regular-VariableFont_YEAR.3ad02523.woff2",
+      "bytes": 70528,
+      "sha256": "25ac0f6f251b832e11a330893c5beaa29497f6a877b9ac1e7d544c6459059b41"
+    },
+    {
+      "name": "CorrectionBrush.a69973aa.woff2",
+      "bytes": 67840,
+      "sha256": "d31445d9f2054e50dc7efa51a754de51342f325c3717e863a012e72194457bc1"
+    },
+    {
+      "name": "DancingScript-Regular.ef2fe647.woff2",
+      "bytes": 34228,
+      "sha256": "170c5983dd41804f18d15f32e3f5eccf5feff76038f5a20b0c262cfbcc28d6f4"
+    },
+    {
+      "name": "Diabolik-Regular-VF.f4eeb79e.woff2",
+      "bytes": 49532,
+      "sha256": "2f87d782f2e7713a9f505577c8478be18a1620f0a90a07cbe0a4770e0b05a239"
+    },
+    {
+      "name": "FreckleFace-Regular.05946539.woff2",
+      "bytes": 46684,
+      "sha256": "197a7446ab8c756eb145badf0bf04b96fd09c6bebcf5df860be5530ff3ad9ade"
+    },
+    {
+      "name": "Gloock-Regular.60f8f765.woff2",
+      "bytes": 30388,
+      "sha256": "a4a2f93ee615af34444e70dc10c1a430f5742441ce9eefbe5f7feea5b84cfb4f"
+    },
+    {
+      "name": "GochiHand-Regular.c45792b0.woff2",
+      "bytes": 20752,
+      "sha256": "28da0f7c7c61c56ff0116e3575972ca5eeec42f9c58cb58b29bbc96f00957aa8"
+    },
+    {
+      "name": "Pacha.08c8457a.woff2",
+      "bytes": 17844,
+      "sha256": "075b8dda4ce0df1b48784ea404fc0876b7591d4e6d7035e7d05f48b0c55cec14"
+    },
+    {
+      "name": "PassionOne-Bold.9e08b0dc.woff2",
+      "bytes": 9248,
+      "sha256": "6a2812105e618871f3419f350f3fab8acb803c777c58ba8de3fd1952581eaceb"
+    },
+    {
+      "name": "PixeloidSans.bc292131.woff2",
+      "bytes": 9352,
+      "sha256": "351c4881318361d15263ab6f9cb76436c88656ed6829096918abfc6d4ef63ae6"
+    },
+    {
+      "name": "PlaypenSans-Thin.314b29a4.woff2",
+      "bytes": 128764,
+      "sha256": "9d354e8b74afbf409cb720212602b6cb92fb7fb20bcc59e014e03275de9a4c9d"
+    },
+    {
+      "name": "Quicksand-Light.1f0c44a2.woff2",
+      "bytes": 28920,
+      "sha256": "ff75a35419964b4dfeee9978a8a8fddad1e3f7f31328717d0a33eb800a9dced0"
+    },
+    {
+      "name": "Silkscreen-Regular.cef2b4cb.woff2",
+      "bytes": 8968,
+      "sha256": "0f98a7db44185dbae6a01e303ef47e197692ee8892f28e44d4588970a706c953"
+    },
+    {
+      "name": "Tehroc-Regular.4540047b.woff2",
+      "bytes": 43848,
+      "sha256": "70806f1800493d7df129e73052d03a30e2c81f8b2e46473dff0be9699d12b1b2"
+    },
+    {
+      "name": "YUNGA-Display.30c04a15.woff2",
+      "bytes": 29108,
+      "sha256": "bbd36a9a1f761f2bc82bf5ed911b3e7bdbca4efd50841e944444ca088ad4cd8a"
+    },
+    {
+      "name": "ag-psd.4dc2f05b.js",
+      "bytes": 299518,
+      "sha256": "04bdc7e9fe64dcf07703c8fb71a993a5206626df77fd733601b8fb3f3d326d70"
+    },
+    {
+      "name": "brush-sketchy.6c75169d.png",
+      "bytes": 3457,
+      "sha256": "7245636233123f713423342b1c7273c7eaaccfdc6bf0177acb8e5f22f441e3e8"
+    },
+    {
+      "name": "cursor-fill.ab749dde.png",
+      "bytes": 1927,
+      "sha256": "fd1ad4c61a35507f2abe1eea13ba2ca62921e10273e2474da5d8434ad6c85177"
+    },
+    {
+      "name": "cursor-picker.71be1460.png",
+      "bytes": 3100,
+      "sha256": "6d47ecc377c538d8334262d78d6840b59cc5e258e38ac3837917274ed38613c1"
+    },
+    {
+      "name": "cursor-rotate.0c8e34b1.png",
+      "bytes": 2805,
+      "sha256": "03f45a922b3af60e68de731f4569bf4e60e6ee0782021ffca75d53f9843c3084"
+    },
+    {
+      "name": "cursor-text.b4ebf6cd.png",
+      "bytes": 1878,
+      "sha256": "6af40bcdbfb48e7606c4f83de3643cf85a66ad64485102cf61449f5e07ba614d"
+    },
+    {
+      "name": "cursor-zoom-ew.d3ab2d60.png",
+      "bytes": 1683,
+      "sha256": "27ff16784c8538a82ac2bee249177b2e8fdba247069f3c19255112b275d5c388"
+    },
+    {
+      "name": "de.b0aa8ee0.js",
+      "bytes": 8440,
+      "sha256": "79f4991b2a13b94cf3e56280af7d97dae41abbe045cde5b7ee19989ba971ec57"
+    },
+    {
+      "name": "edit-invert.91bfa402.png",
+      "bytes": 3931,
+      "sha256": "f73117f115d4b04c62712995e121ce34b7c8e605413fc1975e24decc29baf9a6"
+    },
+    {
+      "name": "edit-tilt-shift.7ad164eb.png",
+      "bytes": 3078,
+      "sha256": "779666e44c8e2ae0ad0d1f716d30aed00c88c115e46f4f796d28a064b6b53259"
+    },
+    {
+      "name": "edit-triangle-blur.17417e43.png",
+      "bytes": 3128,
+      "sha256": "b29ba854768d63bf3f0557bd45ce2668b48109f6e53857a58861e6104ca625d8"
+    },
+    {
+      "name": "edit-unsharp-mask.38afa514.png",
+      "bytes": 3143,
+      "sha256": "935f6963f266d3dac99e3136dcc8677ac5ed31071e9ae908208fe9ba61db22c2"
+    },
+    {
+      "name": "embed.3c641c08.css",
+      "bytes": 27621,
+      "sha256": "98629b1ff0b431e7fafb62fafa08ffd65200ee7d63cbf39fbbd1871a491a4ae3"
+    },
+    {
+      "name": "embed.js",
+      "bytes": 89833,
+      "sha256": "f66c292959a3e45ade467ad89db917b268eda052bedb6b8c43815e9a67c92b8d"
+    },
+    {
+      "name": "es.bcf7bf04.js",
+      "bytes": 8630,
+      "sha256": "1ada6e44a1f709f6bbe4b666fe41317c8105ce66335bed32903d82478bbd6c6c"
+    },
+    {
+      "name": "fi.083acfcd.js",
+      "bytes": 7705,
+      "sha256": "32faefab3c1be4323471d943811eb3e0ac984868b4b7d75d5d4b5470f3e7fa36"
+    },
+    {
+      "name": "font-licenses.a7349610.js",
+      "bytes": 71740,
+      "sha256": "5e4f51d97f4174a9abc4e064b4cbace636657e424438be8cce89a105e309b026"
+    },
+    {
+      "name": "fr.d276724e.js",
+      "bytes": 8867,
+      "sha256": "63f625d66a9f2cd01117df9c144a8e10591d12c26ed5b712af35a2a7df97658b"
+    },
+    {
+      "name": "help.html",
+      "bytes": 13816,
+      "sha256": "c62686fecc9b3c9ec12953ee3a4f80112d7fad7a76efb33e063eca4ecd7fceae"
+    },
+    {
+      "name": "hu.e21b7fa6.js",
+      "bytes": 7793,
+      "sha256": "dc7ea46fb12657177876895ae1cd39f85460f45a8d3e4857b3bafe411f356565"
+    },
+    {
+      "name": "id.01c43208.js",
+      "bytes": 8250,
+      "sha256": "0926ca5b2e004fba908b91758505ca18c3635db8af08741427b4bb01922333a7"
+    },
+    {
+      "name": "ja.5bb8542a.js",
+      "bytes": 7965,
+      "sha256": "e10bf2cbd2ee579a712e52de144620d3d6104a1576e50e7ad07447b166ffbc24"
+    },
+    {
+      "name": "jv.4d8e75f5.js",
+      "bytes": 7840,
+      "sha256": "b2cd992d16737671af4c14c8277c331f58c2c5569640d5697b540ada529679cc"
+    },
+    {
+      "name": "klecks-logo.ae8bd45e.png",
+      "bytes": 2441,
+      "sha256": "bf9139657ab34895e0d02069c1c478a63ac703f64b98d20f1e353cdb5c0dce47"
+    },
+    {
+      "name": "ko.beaa2723.js",
+      "bytes": 8135,
+      "sha256": "5cb13df79a45e25b2e995f97ee6e33ced7913a6e76f743811df1465d891882bb"
+    },
+    {
+      "name": "licenses.5384351b.js",
+      "bytes": 6456,
+      "sha256": "627325a393a9a2de9d0f6aea0249d190482c21e59452b6c45714b91b85c16f3f"
+    },
+    {
+      "name": "loading.7ff8a2ac.gif",
+      "bytes": 673,
+      "sha256": "43a526a07a078d736e5c9d67d8479dd54072b7e5c6ddd2cd466f86a086e49ef5"
+    },
+    {
+      "name": "lv.b4f1da97.js",
+      "bytes": 7856,
+      "sha256": "361f7ddd1e5b4883d8f5771010488321c09804c4e8d2a57abcb39514d22adf72"
+    },
+    {
+      "name": "main-embed.4375416c.css",
+      "bytes": 7867,
+      "sha256": "531a0fc4f4a072e0f63c1d9661706f8aa54faae5476074f60b602c9a2934b9de"
+    },
+    {
+      "name": "main-embed.fa45f823.js",
+      "bytes": 749938,
+      "sha256": "e3b115c9a810594ef5dbf8d303c325ef87dc1ae734970a1a19cbaf33ffcff1fd"
+    },
+    {
+      "name": "nl.0eff9f8a.js",
+      "bytes": 8343,
+      "sha256": "8d2e650b5c51661212d7aef21acd4e8f9ed775b71d304129d63bbda62ade3cb4"
+    },
+    {
+      "name": "pt-BR.95fdfe84.js",
+      "bytes": 7708,
+      "sha256": "0c7e37ed5454adf494019776c985125d93b76974385b7d4bab979903dcd3408e"
+    },
+    {
+      "name": "ru.845d4a59.js",
+      "bytes": 15382,
+      "sha256": "8b4dc8d5674644cf0ed8fc0a46bb7278048050c6ec958c3716689b52aba4c3b0"
+    },
+    {
+      "name": "su.856634de.js",
+      "bytes": 8064,
+      "sha256": "1a3564208fbf07b3ce221b8942398debe917c3c8453eb5ec8baf4ef046ec4101"
+    },
+    {
+      "name": "sv.098b66e0.js",
+      "bytes": 8052,
+      "sha256": "dafeffd60a40437653321e46a4761a8421fbafe72711a3f244145126e2dee3c3"
+    },
+    {
+      "name": "zh-CN.327b5eb8.js",
+      "bytes": 6208,
+      "sha256": "d982eea654eeda886137d11fc2edf3d278463eafb2416a32fb6ea139787bd27d"
+    },
+    {
+      "name": "zh-TW.7ec16ba8.js",
+      "bytes": 5752,
+      "sha256": "032a8d136b942a3fe16553af64927064a0e9e2b9f155ed8138696a8a8720eb0a"
+    }
+  ]
+}

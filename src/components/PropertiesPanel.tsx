@@ -1,7 +1,8 @@
-import { useState, type ChangeEvent, type DragEvent } from 'react'
+import { useContext, useState, type ChangeEvent, type DragEvent } from 'react'
 import './PropertiesPanel.css'
 import type { TextFlowNode } from '../graph/textNode'
 import { storeImageFile } from '../graph/imageAsset'
+import { ImageStorageContext } from '../graph/ImageStorageContext'
 import { NODE_KINDS } from '../graph/nodeKinds'
 import {
   appearanceAccentColor,
@@ -69,6 +70,7 @@ export function PropertiesPanel({
   onOpenOwnedVisual,
   onRemoveOwnedVisualCanvas,
 }: PropertiesPanelProps) {
+  const imageBoardId = useContext(ImageStorageContext)
   const [imageImportError, setImageImportError] = useState<string | null>(null)
   const propertyEntries = Object.entries(node.data.properties)
   const accentColor = appearanceAccentColor(node)
@@ -111,7 +113,7 @@ export function PropertiesPanel({
     setImageImportError(null)
     let imageData: string
     try {
-      imageData = await storeImageFile(file)
+      imageData = await storeImageFile(file, imageBoardId)
     } catch (error) {
       setImageImportError(error instanceof Error ? error.message : 'The image could not be imported.')
       return

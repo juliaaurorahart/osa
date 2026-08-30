@@ -1,11 +1,12 @@
 import { parseBoardSnapshot, type BoardSnapshot } from '../graph/boardSnapshot'
+import { makeDocumentPortable } from '../graph/portableAssets'
 
 /** Download one validated board document through the browser. */
-export function downloadBoardSnapshot(
+export async function downloadBoardSnapshot(
   snapshot: BoardSnapshot,
   fileName = 'react-flow-board.json',
 ) {
-  const json = JSON.stringify(snapshot, null, 2)
+  const json = JSON.stringify(await makeDocumentPortable(snapshot), null, 2)
   const blob = new Blob([json], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
 

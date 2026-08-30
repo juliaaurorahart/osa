@@ -7,6 +7,9 @@ import {
   type Texture,
   type Ticker,
 } from 'pixi.js'
+import { LabCaptureButton } from '../lab/LabCaptureButton'
+import { dataUrlToBlob } from '../lab/labCaptureUtils'
+import type { LabCapture } from '../lab/labTypes'
 import './PixiLab.css'
 
 type PixiTheme = 'dark' | 'light'
@@ -332,6 +335,22 @@ export function PixiLab({ theme }: PixiLabProps) {
     })
   }, [theme])
 
+  const capture = async (): Promise<LabCapture> => {
+    const engine = engineRef.current
+    if (!engine) throw new Error('The Pixi renderer is not ready yet.')
+    engine.app.render()
+    const dataUrl = await engine.app.renderer.extract.base64({
+      target: engine.app.stage,
+      frame: engine.app.screen,
+      format: 'png',
+      resolution: 1,
+      clearColor: stageBackground(theme),
+      antialias: true,
+    })
+    const preview = await dataUrlToBlob(dataUrl)
+    return { name: 'Pixi particle field', toolId: 'pixi', preview, description: `${particleCount} particles at ${speed.toFixed(2)}× speed; captured animation frame.` }
+  }
+
   return (
     <section className="pixi-lab" aria-label="PixiJS graphics lab">
       <header className="pixi-lab__header">
@@ -384,6 +403,7 @@ export function PixiLab({ theme }: PixiLabProps) {
           >
             export PNG
           </button>
+          <LabCaptureButton capture={capture} disabled={!isReady} />
         </div>
       </header>
 

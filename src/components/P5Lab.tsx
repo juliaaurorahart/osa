@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import p5 from 'p5'
+import { LabCaptureButton } from '../lab/LabCaptureButton'
+import { canvasToBlob } from '../lab/labCaptureUtils'
+import type { LabCapture } from '../lab/labTypes'
 import './P5Lab.css'
 
 type P5LabProps = { theme: 'dark' | 'light' }
@@ -329,6 +332,20 @@ export function P5Lab({ theme }: P5LabProps) {
   const exportPng = () => sketchRef.current?.saveCanvas(`osa-${pattern.replaceAll(' ', '-')}-${seed}`, 'png')
   const exportSource = () => downloadBlob(new Blob([source], { type: 'text/javascript' }), 'osa-p5-sketch.js')
 
+  const capture = async (): Promise<LabCapture> => {
+    const canvas = hostRef.current?.querySelector('canvas')
+    if (!canvas || !sketchRef.current) throw new Error('The p5 sketch is still starting.')
+    const sourceBlob = new Blob([source], { type: 'text/javascript' })
+    const preview = await canvasToBlob(canvas)
+    return {
+      name: `p5 ${pattern}`,
+      toolId: 'p5',
+      preview,
+      source: { blob: sourceBlob, name: 'osa-p5-sketch.js' },
+      description: `A captured animation frame; the JavaScript recreates the seeded sketch (${seed}).`,
+    }
+  }
+
   return (
     <section className={`p5-lab p5-lab--${theme}`} aria-label="p5 generative pattern lab">
       <header className="p5-lab__header">
@@ -341,6 +358,7 @@ export function P5Lab({ theme }: P5LabProps) {
           <button type="button" onClick={regenerate}>regenerate</button>
           <button type="button" onClick={exportPng}>export PNG</button>
           <button type="button" onClick={exportSource}>source JS</button>
+          <LabCaptureButton capture={capture} />
         </div>
       </header>
 

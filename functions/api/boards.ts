@@ -1,5 +1,6 @@
 import {
   accessibleBoard,
+  accountMatchesRequest,
   ownedBoard,
   signedInEmail,
   type AccessData,
@@ -329,6 +330,7 @@ async function legacyFullListRequiresReload(env: Env, email: string, archived: n
         COALESCE(SUM(LENGTH(boards.content)), 0) AS contentBytes
       FROM boards
       WHERE boards.archived = ?
+        AND NOT EXISTS (SELECT 1 FROM lab_notebooks WHERE lab_notebooks.board_id = boards.id)
         AND (
           boards.owner_email = ?
           OR EXISTS (
@@ -426,6 +428,7 @@ export const onRequestGet: PagesFunction<Env, string, AccessData> = async ({ req
   return withBoardServiceErrors(async () => {
   const email = signedInEmail(data)
   if (!email) return json({ error: 'Private sign-in required.' }, 403)
+  if (!accountMatchesRequest(request, email)) return json({ error: 'The signed-in account changed.', code: 'account_changed' }, 409)
 
   const url = new URL(request.url)
   const boardId = url.searchParams.get('id')
@@ -467,6 +470,7 @@ export const onRequestGet: PagesFunction<Env, string, AccessData> = async ({ req
           ON board_collaborators.board_id = boards.id
           AND board_collaborators.email = ?
         WHERE boards.archived = ?
+          AND NOT EXISTS (SELECT 1 FROM lab_notebooks WHERE lab_notebooks.board_id = boards.id)
           AND (boards.owner_email = ? OR board_collaborators.email = ?)
         ORDER BY boards.updated_at DESC
       `)
@@ -494,6 +498,7 @@ export const onRequestGet: PagesFunction<Env, string, AccessData> = async ({ req
         ON board_collaborators.board_id = boards.id
         AND board_collaborators.email = ?
       WHERE boards.archived = ?
+        AND NOT EXISTS (SELECT 1 FROM lab_notebooks WHERE lab_notebooks.board_id = boards.id)
         AND (boards.owner_email = ? OR board_collaborators.email = ?)
       ORDER BY boards.updated_at DESC
     `)
@@ -601,6 +606,7 @@ export const onRequestPut: PagesFunction<Env, string, AccessData> = async ({ req
   return withBoardServiceErrors(async () => {
   const email = signedInEmail(data)
   if (!email) return json({ error: 'Private sign-in required.' }, 403)
+  if (!accountMatchesRequest(request, email)) return json({ error: 'The signed-in account changed.', code: 'account_changed' }, 409)
   const rawRequest = rawBoardSaveRequest(request)
   if (rawRequest.kind === 'invalid') return json({ error: rawRequest.error }, 400)
   if (rawRequest.kind === 'raw') return saveRawBoard(request, env, email, rawRequest.save)
@@ -738,6 +744,7 @@ export const onRequestPatch: PagesFunction<Env, string, AccessData> = async ({ r
   return withBoardServiceErrors(async () => {
   const owner = signedInEmail(data)
   if (!owner) return json({ error: 'Private sign-in required.' }, 403)
+  if (!accountMatchesRequest(request, owner)) return json({ error: 'The signed-in account changed.', code: 'account_changed' }, 409)
 
   const body = await request.json().catch(() => null) as ArchiveRequest | null
   const boardId = body?.boardId

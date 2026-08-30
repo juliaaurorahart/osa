@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { LabCaptureButton } from '../lab/LabCaptureButton'
+import { canvasToBlob } from '../lab/labCaptureUtils'
+import type { LabCapture } from '../lab/labTypes'
 import './ThreeLab.css'
 
 type ThreeTheme = 'dark' | 'light'
@@ -414,6 +417,17 @@ export function ThreeLab({ theme }: ThreeLabProps) {
     downloadBlob(new Blob([contents], { type: 'application/json' }), 'osa-three-scene.json')
   }, [])
 
+  const capture = useCallback(async (): Promise<LabCapture> => {
+    const engine = engineRef.current
+    if (!engine) throw new Error('The Three.js renderer is not ready yet.')
+    engine.renderer.render(engine.scene, engine.camera)
+    const source = new Blob([JSON.stringify(engine.scene.toJSON(), null, 2)], { type: 'application/json' })
+    // Read pixels immediately after rendering: WebGL may clear its drawing
+    // buffer before the next frame when preserveDrawingBuffer is disabled.
+    const preview = await canvasToBlob(engine.renderer.domElement)
+    return { name: 'Three.js scene', toolId: 'three', preview, source: { blob: source, name: 'osa-three-scene.json' } }
+  }, [])
+
   return (
     <section className="three-lab" aria-label="Three.js 3D lab">
       <header className="three-lab__header">
@@ -465,6 +479,7 @@ export function ThreeLab({ theme }: ThreeLabProps) {
           >
             export scene JSON
           </button>
+          <LabCaptureButton capture={capture} disabled={!isReady} />
         </div>
       </header>
 

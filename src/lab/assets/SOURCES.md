@@ -1,8 +1,10 @@
 # Lab landing paint sources
 
-The Lab landing surface keeps local copies of these human-made, public-domain
-assets so it has no runtime dependency on an image host. Attribution is not
-required by CC0, but the creator and provenance remain with the files here.
+The Lab landing surface keeps local copies of artwork and photographs credited
+to the creators below so it has no runtime dependency on an image host. Licenses
+differ by asset: the existing paint textures and masks are CC0 / Public Domain;
+the two ink-in-water photographs use the Pexels License, not CC0. Credits and
+provenance remain with each file even where attribution is optional.
 
 ## Paint textures and photographed paint
 
@@ -26,6 +28,26 @@ required by CC0, but the creator and provenance remain with the files here.
   - Resized local derivative of **Splatter paint on white table** by Ricardo Viana
   - Source: https://commons.wikimedia.org/wiki/File:Splatter_paint_on_white_table_(Unsplash).jpg
   - License: CC0 / Public Domain
+- pink-ink-in-water.jpg
+  - **Colorful Liquids Mixed in Water** by MART PRODUCTION
+  - Source: https://www.pexels.com/photo/colorful-liquids-mixed-in-water-7577864/
+  - License: Pexels License — https://www.pexels.com/license/
+  - Local copy of a resized provider preview. Displayed with CSS cropping,
+    masking, and contrast treatment.
+- blue-pink-ink-in-water.jpg
+  - **High-Speed Photography of Colorful Ink Diffusion in Water** by cottonbro studio
+  - Source: https://www.pexels.com/photo/high-speed-photography-of-colorful-ink-diffusion-in-water-9669091/
+  - License: Pexels License — https://www.pexels.com/license/
+  - Local copy of a resized provider preview. Displayed with CSS cropping,
+    masking, and contrast treatment.
+
+The Pexels License permits free use and modification, including on websites and
+in apps; attribution is optional and retained here. It is not a public-domain or
+open-source license. Restrictions include selling unaltered copies,
+redistributing images on stock-photo or wallpaper platforms, implying
+endorsement, and using the imagery as a trademark. Consult the linked license
+for its complete terms; these photographs remain subject to those terms when
+included with the project.
 
 ## Paint masks
 
@@ -52,3 +74,10 @@ required by CC0, but the creator and provenance remain with the files here.
 
 Openclipart license statement:
 https://openclipart.org/share
+
+## In-app material styling
+
+The raised, glossy paint lighting is an SVG/CSS treatment of the credited paint
+masks above. It is interface styling, not an additional photograph or an
+AI-generated raster artwork. Cropping, tinting, masking, and contrast adjustments
+also change how the credited source images appear on the landing surface.

@@ -2,20 +2,30 @@
 
 OSA is a durable connected-object Space for writing, sketching, actions, projects, and assembly work.
 
-Nodes, connections, text, and properties are the shared data model. Notebook,
-Actions, Projects, Assembly, and Space are views over that same data—not
-separate stores. A focused view may understand particular property names, but
-the underlying information remains normal editable OSA data and can appear in
-every relevant view.
+Nodes, connections, text, and properties are the shared data model. Actions,
+Projects, Assembly, and Space are views over the open board. The Lab notebook
+uses the same OSA graph primitives in a separate document: saving a Lab note
+or file does not insert it into the current project or Assembly.
 
 ## Where a board is saved
 
-- While you work, OSA writes a recovery draft to this browser's local storage after a short delay. That draft stays in this browser profile and does not sync to another device.
-- On the signed-in deployed site, a new board is created automatically through `/api/boards`; later changes autosave to the same revision-guarded record in the Cloudflare D1 database bound as `OSA_DB`.
-- Plain `npm run dev` is local-only because Vite does not run or proxy the Cloudflare board API. It keeps the browser recovery draft without writing to production. Settings retains a manual sync control plus database status for recovery and diagnostics.
-- **Save JSON** downloads an independent copy of the current board that can be kept or imported later.
+- New and imported boards begin on this device. Editing or signing in alone does not upload them: choose **Settings → Sync to my account** to start cloud storage.
+- OSA keeps browser recovery drafts, separated into guest/account scopes. These are not cross-device backups, and clearing browser data can remove them.
+- Once a board is synced or loaded from the cloud, edits autosave to its revision-checked D1 record through `/api/boards`. The configured database binding is `OSA_DB`.
+- Cloud board JSON holds file references; private file bytes live separately in the R2 bucket bound as `OSA_ASSETS`. A file inherits its owning board's permissions.
+- **Download JSON backup** embeds accessible OSA-managed files in the downloaded JSON. This portable copy is different from raw cloud JSON, which still contains file URLs. An unavailable file produces an export error instead of a silently incomplete backup. Arbitrary external web links are not archived.
+- Plain `npm run dev` runs Vite without Cloudflare APIs and stays local. It does not proxy writes to production.
 
-Cloudflare Access supplies the signed-in email address. Each board is read and saved only for that email address.
+Cloudflare Access verifies the signed-in email. Boards have an owner and may
+have named editors or viewers; being signed in does not grant access to every
+board. A public Assembly link is a separate, intentional anyone-with-the-link
+publication, not a private invitation. Public links receive only their scoped
+Assembly data and eligible files. Bare legacy `/media/...` links are no longer
+public file credentials in this implementation.
+
+The repository changes have not been deployed or applied to production.
+Read [Private storage and deployment](docs/private-storage-deployment.md)
+before releasing: migrations **0007 and 0008 must precede the new code**.
 
 ## Import the Shako source data
 
@@ -23,8 +33,8 @@ Cloudflare Access supplies the signed-in email address. Each board is read and s
 assembly-instruction PowerPoint and BOM/expense workbook. Use **Import OSA
 Data** and choose that JSON file. The validated package adds ordinary nodes and
 edges to the current board, opens its Space, and shows its Assembly board. Use
-the deployed site when the imported information should sync; cloud creation and
-later saves then happen automatically.
+the deployed site and choose **Sync to my account** when the imported
+information should sync; subsequent edits then autosave.
 
 The Assembly view recognizes ordinary Projects connected to ordinary Actions,
 so an import does not need special assembly node classes. Each Action becomes
@@ -46,7 +56,10 @@ FROM boards
 ORDER BY updated_at DESC;
 ```
 
-The complete board is JSON in the `content` column. To make a database backup with Wrangler:
+The board document is JSON in `content`; that database export does **not**
+include R2 file bytes or unsynced browser drafts. Back up those separately.
+After confirming the actual database and signing into the correct Cloudflare
+account, a database-only backup can be made with Wrangler:
 
 ```sh
 npx wrangler d1 export <database-name> --remote --output=./osa-backup.sql
@@ -58,10 +71,21 @@ Cloudflare references: [Pages bindings](https://developers.cloudflare.com/pages/
 
 ## Visual tools Lab
 
-The **Lab** menu opens isolated workbenches for draw.io, Excalidraw, Konva,
-Fabric, Paper, p5.js, PixiJS, Strudel REPL, Three.js, Mermaid, Vega-Lite, and
-CodeMirror. Each engine loads only when selected. Lab drafts are disposable
-and never alter the current board; download an image or native source file
-before switching workbenches. Strudel uses its officially documented remote
-iframe so its AGPL application remains separate from OSA; use Strudel's share
-control to retain a tune.
+The **Lab** menu opens isolated visual workbenches. Each engine loads only
+when selected. Workbench drafts remain temporary; use **Save to notebook**
+where available, or download the image/native source before leaving the tool.
+Saved notebook notes, files, and topics persist independently of project
+boards. Original editable files and their previews are separate attachments.
+
+The private-notebook implementation keeps a local IndexedDB copy and a
+separate account notebook in D1, with its files in private R2 storage. Moving
+local notebook content to an account is an explicit copy, retaining the local
+original. Existing account notebooks can be opened from another signed-in
+device; pending work and revision conflicts are kept without silently
+overwriting another copy. Local two-device browser checks covered notes,
+topics, attached Ink source/preview files, reverse sync, account isolation,
+and competing edits. These are isolated tests, not a production deployment;
+see the deployment checklist before enabling the live service.
+
+Strudel uses its separate remote iframe; use Strudel's own share control to
+retain a tune.

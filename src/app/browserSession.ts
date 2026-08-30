@@ -66,9 +66,12 @@ export function writeSelectedAssemblyId(assemblyId: string | null) {
   }
 }
 
-export function readLocalDraft(): LocalDraft | null {
+function draftKey(identity: string | null) {
+  return `${LOCAL_DRAFT_KEY}:${identity ? `account:${encodeURIComponent(identity.toLowerCase())}` : 'guest'}`
+}
+
+function parseLocalDraft(rawDraft: string | null): LocalDraft | null {
   try {
-    const rawDraft = window.localStorage.getItem(LOCAL_DRAFT_KEY)
     if (!rawDraft) return null
     const value: unknown = JSON.parse(rawDraft)
     if (typeof value !== 'object' || value === null) return null
@@ -102,8 +105,36 @@ export function readLocalDraft(): LocalDraft | null {
   }
 }
 
-export function writeLocalDraft(draft: LocalDraft) {
-  window.localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify(draft))
+/** Private legacy data is offered only after its board access has been verified. */
+export function readLegacyLocalDraft() {
+  try { return parseLocalDraft(window.localStorage.getItem(LOCAL_DRAFT_KEY)) } catch { return null }
+}
+
+export function readLocalDraft(identity: string | null = null): LocalDraft | null {
+  try {
+    const scoped = parseLocalDraft(window.localStorage.getItem(draftKey(identity)))
+    if (scoped && (identity || !scoped.revision)) return scoped
+    const guest = parseLocalDraft(window.localStorage.getItem(draftKey(null)))
+    if (guest && !guest.revision) return guest
+    const legacy = readLegacyLocalDraft()
+    return legacy && !legacy.revision ? legacy : null
+  } catch { return null }
+}
+
+export class LocalDraftIdentityError extends Error {
+  constructor() {
+    super('Account could not be verified — download a backup before leaving.')
+    this.name = 'LocalDraftIdentityError'
+  }
+}
+
+export function writeLocalDraft(draft: LocalDraft, identity: string | null = null) {
+  // Never put authenticated documents back into the shared guest slot.
+  if (draft.revision && !identity) throw new LocalDraftIdentityError()
+  const key = draftKey(identity)
+  const value = JSON.stringify(draft)
+  window.localStorage.setItem(key, value)
+  window.localStorage.setItem(`${key}:board:${draft.id}`, value)
 }
 
 /** The Canvas Lab is a temporary browser route, never durable board state. */

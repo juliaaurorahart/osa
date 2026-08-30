@@ -21,6 +21,12 @@ export function signedInEmail(data: AccessData) {
   return typeof email === 'string' ? email.trim().toLowerCase() || null : null
 }
 
+/** An optional client expectation can reject an account switch, never grant access. */
+export function accountMatchesRequest(request: Request, email: string) {
+  const expected = request.headers.get('x-osa-account')
+  return expected === null || expected.trim().toLowerCase() === email
+}
+
 /** Reject malformed addresses before they become durable collaboration records. */
 export function normalizeEmail(value: unknown) {
   if (typeof value !== 'string') return null

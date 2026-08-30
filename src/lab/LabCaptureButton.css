@@ -1,0 +1,5 @@
+.lab-capture { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.lab-capture > button { font: inherit; cursor: pointer; min-height: 34px; }
+.lab-capture > button:disabled { cursor: wait; opacity: .6; }
+.lab-capture > span { max-width: 38ch; font-size: .78rem; color: var(--osa-muted); overflow-wrap: anywhere; }
+.lab-capture > .is-error { color: var(--osa-danger-text, #ff9696); }

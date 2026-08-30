@@ -1,0 +1,60 @@
+diff --git a/src/app/script/main-embed.ts b/src/app/script/main-embed.ts
+--- a/src/app/script/main-embed.ts
++++ b/src/app/script/main-embed.ts
+@@ -1,6 +1,6 @@
+ import './polyfills/polyfills';
+ import { KlApp } from './app/kl-app';
+-import { TKlProject, TKlProjectWithOptionalId } from './klecks/kl-types';
++import { TKlProject, TKlProjectWithOptionalId, TRgb } from './klecks/kl-types';
+ import { klPsdToKlProject, readPsd } from './klecks/storage/psd';
+ import { LANG } from './language/language';
+ import { loadAgPsd, TAgPsd } from './klecks/storage/load-ag-psd';
+@@ -13,6 +13,8 @@
+ export type TEmbedParams = {
+     project?: TKlProject;
+     psdBlob?: Blob;
++    // OSA: optional foreground for a new dark canvas; not saved artwork.
++    initialBrushColor?: TRgb;
+     onSubmit: (onSuccess: () => void, onError: () => void) => void;
+     embedUrl: string;
+     logoImg?: any;
+@@ -52,6 +54,7 @@
+ 
+             this.klApp = new KlApp({
+                 project: projectWithId,
++                initialBrushColor: this.p.initialBrushColor,
+                 bottomBar: this.p.bottomBar,
+                 aboutEl: this.p.aboutEl,
+                 embed: {
+diff --git a/src/app/script/app/kl-app.ts b/src/app/script/app/kl-app.ts
+--- a/src/app/script/app/kl-app.ts
++++ b/src/app/script/app/kl-app.ts
+@@ -97,6 +97,8 @@
+ 
+ export type TKlAppParams = {
+     project?: TKlProject;
++    // OSA: initialization only; never changes existing layer pixels.
++    initialBrushColor?: TRgb;
+     logoImg?: string; // app logo
+     bottomBar?: HTMLElement; // row at bottom of toolspace
+     helpPath?: string; // default help.html
+@@ -357,7 +359,9 @@
+                 );
+         };
+ 
+-        let currentColor = new BB.RGB(0, 0, 0);
++        let currentColor = p.initialBrushColor
++            ? new BB.RGB(p.initialBrushColor.r, p.initialBrushColor.g, p.initialBrushColor.b)
++            : new BB.RGB(0, 0, 0);
+         let currentBrushUi: TBrushUiInstance<any>;
+         let currentBrushId: string;
+         let lastNonEraserBrushId: string;
+@@ -1316,7 +1320,7 @@
+             width: 250,
+             height: 30,
+             svHeight: 100,
+-            startValue: new BB.RGB(0, 0, 0),
++            startValue: new BB.RGB(currentColor.r, currentColor.g, currentColor.b),
+             onPick: setBrushColor,
+             onEyedropper: (isActive) => {
+                 if (isActive) {

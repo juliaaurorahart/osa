@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
+import { useContext, useEffect, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
 import type { GraphEdge } from '../graph/graphEdge'
 import {
   defaultVisualEmbedPlacement,
@@ -22,6 +22,7 @@ import {
   type TextFlowNode,
 } from '../graph/textNode'
 import { storeImageFile } from '../graph/imageAsset'
+import { ImageStorageContext } from '../graph/ImageStorageContext'
 import { annotationTargetsForNodes } from '../graph/sketchAnnotation'
 import {
   visualForOfficialVersion,
@@ -29,6 +30,9 @@ import {
   type VisualVersionRecord,
 } from '../graph/visualVersion'
 import { SketchPad, SketchPreview } from './SketchPad'
+import { LabCaptureButton } from '../lab/LabCaptureButton'
+import { captureToLabNotebook } from '../lab/labNotebookCapture'
+import { createOsaDrawLabCapture } from './visualCanvasCapture'
 import './VisualCanvas.css'
 
 type VisualCanvasPreviewProps = {
@@ -182,6 +186,7 @@ export function VisualCanvasEditor({
   onRestoreVisualVersion,
   onCreateIndependentVisualCopy,
 }: VisualCanvasEditorProps) {
+  const imageBoardId = useContext(ImageStorageContext)
   // A canvas opens as a protected preview. Editing is a deliberate, local
   // choice and resets when this editor closes and opens again.
   const identity = visualIdentity(visual)
@@ -205,6 +210,7 @@ export function VisualCanvasEditor({
   const identityCameraInputRef = useRef<HTMLInputElement | null>(null)
   const replacePhotoInputRef = useRef<HTMLInputElement | null>(null)
   const replacePhotoCameraInputRef = useRef<HTMLInputElement | null>(null)
+  const editorRef = useRef<HTMLElement | null>(null)
   const savedVersions = visual.data.visualVersions?.records ?? []
   const viewingVersion = viewingVersionId
     ? savedVersions.find((record) => record.id === viewingVersionId) ?? null
@@ -309,7 +315,7 @@ export function VisualCanvasEditor({
     if (!file) return null
     setImageImportError(null)
     try {
-      return await storeImageFile(file)
+      return await storeImageFile(file, imageBoardId)
     } catch (error) {
       setImageImportError(error instanceof Error ? error.message : 'The image could not be imported.')
       return null
@@ -468,9 +474,19 @@ export function VisualCanvasEditor({
 
   const selectableVisuals = availableVisuals.filter((candidate) => candidate.id !== visual.id)
 
+  const captureDisplayedCanvas = () => createOsaDrawLabCapture({
+    // Match the projection in the body below, including selected history records.
+    visual: viewingVersion ? visualForVersion(visual, viewingVersion) : draftVisual,
+    embeddedVisuals: viewingVersion ? versionEmbeds : draftEmbedsRef.current,
+    annotationTargets,
+    viewingVersion,
+    fontFamily: editorRef.current ? getComputedStyle(editorRef.current).fontFamily : undefined,
+  })
+
   return (
     <div className="visual-canvas-editor__scrim" role="presentation">
       <section
+        ref={editorRef}
         className="visual-canvas-editor"
         role="dialog"
         aria-modal="true"
@@ -583,6 +599,10 @@ export function VisualCanvasEditor({
                   </>
                 )}
               </>
+            ) : null}
+            {identity === 'osa-draw' ? (
+              <LabCaptureButton capture={captureDisplayedCanvas}
+                onSave={async (capture) => (await captureToLabNotebook(capture)).id} />
             ) : null}
             <button type="button" onClick={closeEditor}>close</button>
           </div>

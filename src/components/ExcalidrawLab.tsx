@@ -1,5 +1,7 @@
 import { useRef, useState, type ComponentProps } from 'react'
-import { Excalidraw } from '@excalidraw/excalidraw'
+import { Excalidraw, exportToBlob, serializeAsJSON } from '@excalidraw/excalidraw'
+import { LabCaptureButton } from '../lab/LabCaptureButton'
+import type { LabCapture } from '../lab/labTypes'
 import '@excalidraw/excalidraw/index.css'
 import './ExcalidrawLab.css'
 
@@ -9,10 +11,12 @@ type ExcalidrawLabProps = {
 
 type ExcalidrawInitialData = ComponentProps<typeof Excalidraw>['initialData']
 type ExcalidrawOnChange = NonNullable<ComponentProps<typeof Excalidraw>['onChange']>
+type ExcalidrawApi = Parameters<NonNullable<ComponentProps<typeof Excalidraw>['excalidrawAPI']>>[0]
 
 /** Excalidraw already supplies its own image and native-scene export menu. */
 export function ExcalidrawLab({ theme }: ExcalidrawLabProps) {
   const draftRef = useRef<ExcalidrawInitialData>(undefined)
+  const apiRef = useRef<ExcalidrawApi | null>(null)
   const [initialData, setInitialData] = useState<ExcalidrawInitialData>(undefined)
   const [elementCount, setElementCount] = useState(0)
   const [revision, setRevision] = useState(0)
@@ -23,10 +27,29 @@ export function ExcalidrawLab({ theme }: ExcalidrawLabProps) {
   }
 
   const reset = () => {
+    apiRef.current = null
     draftRef.current = undefined
     setInitialData(undefined)
     setElementCount(0)
     setRevision((current) => current + 1)
+  }
+
+  const capture = async (): Promise<LabCapture> => {
+    const api = apiRef.current
+    if (!api) throw new Error('Excalidraw is still starting. Try again when the canvas is ready.')
+    const elements = api.getSceneElements()
+    if (!elements.length) throw new Error('Add something to the drawing before capturing it.')
+    const appState = api.getAppState()
+    const files = api.getFiles()
+    const source = new Blob([serializeAsJSON(elements, appState, files, 'local')], { type: 'application/json' })
+    const preview = await exportToBlob({
+      elements,
+      appState: { ...appState, exportWithDarkMode: theme === 'dark' },
+      files,
+      mimeType: 'image/png',
+      maxWidthOrHeight: 2048,
+    })
+    return { name: 'Excalidraw drawing', toolId: 'excalidraw', preview, source: { blob: source, name: 'drawing.excalidraw' } }
   }
 
   return (
@@ -38,6 +61,7 @@ export function ExcalidrawLab({ theme }: ExcalidrawLabProps) {
         </div>
         <div className="excalidraw-lab__controls">
           <span>{elementCount} objects</span>
+          <LabCaptureButton capture={capture} disabled={elementCount === 0} />
           <button type="button" onClick={reset}>reset</button>
         </div>
       </header>
@@ -46,6 +70,7 @@ export function ExcalidrawLab({ theme }: ExcalidrawLabProps) {
           key={revision}
           theme={theme}
           initialData={initialData}
+          excalidrawAPI={(api) => { apiRef.current = api }}
           onChange={saveDraft}
         />
       </div>

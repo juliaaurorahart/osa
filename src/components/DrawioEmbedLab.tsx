@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { LabCaptureButton } from '../lab/LabCaptureButton'
+import { dataUrlToBlob } from '../lab/labCaptureUtils'
+import type { LabCapture } from '../lab/labTypes'
 import './DrawioEmbedLab.css'
 
 /**
  * This is deliberately a standalone experiment. It does not read OSA board
- * data and it does not write a diagram to the board, browser storage, or a
- * database. Its XML lives only in this component's in-memory state.
+ * data or write a diagram to the board. XML stays in memory unless the person
+ * explicitly captures it through the surrounding Lab notebook provider.
  *
  * draw.io runs on a different origin, so every received message must pass
  * both origin and iframe-window checks before we use it.
@@ -23,6 +26,17 @@ type DrawioEvent = {
   xml?: string
   error?: string
   modified?: boolean
+  format?: string
+  data?: string
+  requestId?: string
+}
+
+type DrawioExport = { data: string; xml: string }
+type PendingCapture = {
+  requestId: string
+  timer: number
+  resolve: (result: DrawioExport) => void
+  reject: (reason: Error) => void
 }
 
 type LabStatus = {
@@ -39,7 +53,7 @@ type DrawioEmbedLabProps = {
   onXmlChange?: (xml: string) => void
 }
 
-function parseDrawioEvent(data: unknown): DrawioEvent | null {
+function parseJsonRecord(data: unknown): Record<string, unknown> | null {
   let parsed: unknown = data
 
   if (typeof data === 'string') {
@@ -50,16 +64,25 @@ function parseDrawioEvent(data: unknown): DrawioEvent | null {
     }
   }
 
-  if (!parsed || typeof parsed !== 'object') return null
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+  return parsed as Record<string, unknown>
+}
 
-  const record = parsed as Record<string, unknown>
-  if (typeof record.event !== 'string') return null
+function parseDrawioEvent(data: unknown): DrawioEvent | null {
+  const record = parseJsonRecord(data)
+  if (!record || (typeof record.event !== 'string' && typeof record.error !== 'string')) return null
+  // The official export response echoes the original request in `message`.
+  // Versions may return that request as its JSON string or as an object.
+  const request = parseJsonRecord(record.message)
 
   return {
-    event: record.event,
+    event: typeof record.event === 'string' ? record.event : 'error',
     xml: typeof record.xml === 'string' ? record.xml : undefined,
     error: typeof record.error === 'string' ? record.error : undefined,
     modified: typeof record.modified === 'boolean' ? record.modified : undefined,
+    format: typeof record.format === 'string' ? record.format : undefined,
+    data: typeof record.data === 'string' ? record.data : undefined,
+    requestId: typeof request?.requestId === 'string' ? request.requestId : undefined,
   }
 }
 
@@ -82,10 +105,21 @@ export function DrawioEmbedLab({
   // authoritative until it emits an autosave or explicit save event.
   const currentXmlRef = useRef(initialXml)
   const editorInitializedRef = useRef(false)
+  const pendingCaptureRef = useRef<PendingCapture | null>(null)
   const [status, setStatus] = useState<LabStatus>({
     kind: 'waiting',
     label: 'waiting for draw.io',
   })
+
+  const cancelCapture = useCallback((reason: string) => {
+    const pending = pendingCaptureRef.current
+    if (!pending) return
+    pendingCaptureRef.current = null
+    window.clearTimeout(pending.timer)
+    pending.reject(new Error(reason))
+  }, [])
+
+  useEffect(() => () => cancelCapture('The draw.io workbench closed before the capture completed.'), [cancelCapture])
 
   const sendLoad = useCallback(() => {
     const editorWindow = iframeRef.current?.contentWindow
@@ -94,8 +128,8 @@ export function DrawioEmbedLab({
     editorWindow.postMessage(JSON.stringify({
       action: 'load',
       xml: currentXmlRef.current,
-      // draw.io returns every edit through `autosave`; the host keeps it only
-      // in memory until OSA deliberately gains a durable diagram model.
+      // Autosave remains in memory. A notebook capture is a separate,
+      // explicit export action and does not turn autosave into a board save.
       autosave: 1,
       modified: 0,
       // This matches OSA's current theme. The diagram content itself remains
@@ -116,11 +150,26 @@ export function DrawioEmbedLab({
       if (!event) return
 
       if (event.error) {
+        cancelCapture(`draw.io could not export the diagram: ${event.error}`)
         setStatus({ kind: 'error', label: `editor error: ${event.error}` })
         return
       }
 
+      if (event.event === 'export') {
+        const pending = pendingCaptureRef.current
+        if (!pending || event.requestId !== pending.requestId) return
+        if (event.format !== 'png' || !event.data?.startsWith('data:image/png;') || !event.xml?.trim()) {
+          cancelCapture('draw.io returned an incomplete capture. Please try again.')
+          return
+        }
+        pendingCaptureRef.current = null
+        window.clearTimeout(pending.timer)
+        pending.resolve({ data: event.data, xml: event.xml })
+        return
+      }
+
       if (event.event === 'init') {
+        cancelCapture('draw.io restarted before the capture completed. Please try again.')
         editorInitializedRef.current = true
         setStatus({ kind: 'waiting', label: 'loading local sample' })
         if (!sendLoad()) {
@@ -146,6 +195,7 @@ export function DrawioEmbedLab({
       }
 
       if (event.event === 'exit') {
+        cancelCapture('draw.io closed before the capture completed.')
         setStatus({
           kind: 'closed',
           label: event.modified ? 'editor closed with unsaved changes' : 'editor closed',
@@ -157,9 +207,47 @@ export function DrawioEmbedLab({
 
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
-  }, [onXmlChange, sendLoad])
+  }, [cancelCapture, onXmlChange, sendLoad])
+
+  const capture = useCallback(async (): Promise<LabCapture> => {
+    const editorWindow = iframeRef.current?.contentWindow
+    if (!editorWindow || !editorInitializedRef.current || !['loaded', 'autosaved', 'saved'].includes(status.kind)) {
+      throw new Error('Wait for the draw.io diagram to finish loading before capturing it.')
+    }
+    if (pendingCaptureRef.current) throw new Error('A draw.io capture is already in progress.')
+
+    const exported = await new Promise<DrawioExport>((resolve, reject) => {
+      const requestId = `lab-capture-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      const timer = window.setTimeout(() => {
+        if (pendingCaptureRef.current?.requestId === requestId) {
+          cancelCapture('draw.io did not return a capture within 20 seconds. Please try again.')
+        }
+      }, 20_000)
+      pendingCaptureRef.current = { requestId, timer, resolve, reject }
+      try {
+        // Official protocol only: commit any in-place label edit, then export
+        // the current page and its matching full, editable diagram XML.
+        editorWindow.postMessage(JSON.stringify({ action: 'resetEditor' }), DRAWIO_ORIGIN)
+        editorWindow.postMessage(JSON.stringify({
+          action: 'export', format: 'png', currentPage: true, keepTheme: true, scale: 1, requestId,
+        }), DRAWIO_ORIGIN)
+      } catch (error) {
+        cancelCapture(error instanceof Error ? error.message : 'The draw.io capture request could not be sent.')
+      }
+    })
+    const preview = await dataUrlToBlob(exported.data)
+    if (preview.type !== 'image/png') throw new Error('draw.io did not return a PNG image.')
+    return {
+      name: 'draw.io diagram',
+      toolId: 'drawio',
+      preview,
+      source: { blob: new Blob([exported.xml], { type: 'application/xml' }), name: 'diagram.drawio' },
+      description: 'Current page preview with the complete editable draw.io document.',
+    }
+  }, [cancelCapture, status.kind])
 
   const resetSample = () => {
+    cancelCapture('The diagram was reset before its capture completed.')
     currentXmlRef.current = DRAWIO_SAMPLE_XML
     onXmlChange?.(DRAWIO_SAMPLE_XML)
 
@@ -180,6 +268,7 @@ export function DrawioEmbedLab({
         <h2>draw.io <small>sample only</small></h2>
         <div className="drawio-embed-lab__controls">
           <output className={statusClassName(status)} aria-live="polite">{status.label}</output>
+          <LabCaptureButton capture={capture} disabled={!['loaded', 'autosaved', 'saved'].includes(status.kind)} />
           <button type="button" onClick={resetSample}>reset sample</button>
         </div>
       </header>
@@ -194,6 +283,7 @@ export function DrawioEmbedLab({
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
           referrerPolicy="no-referrer"
           onLoad={() => {
+            cancelCapture('The draw.io editor reloaded before the capture completed.')
             editorInitializedRef.current = false
             setStatus({ kind: 'waiting', label: 'waiting for draw.io' })
           }}

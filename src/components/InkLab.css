@@ -1,0 +1,51 @@
+.ink-lab {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--osa-border);
+  border-radius: 14px;
+  background: var(--osa-surface);
+  color: var(--osa-text);
+}
+
+.ink-lab__header, .ink-lab__toolbar, .ink-lab__page-tools, .ink-lab__actions, .ink-lab__pen-group, .ink-lab__zoom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ink-lab__header { justify-content: space-between; padding: 14px; }
+.ink-lab h2, .ink-lab p { margin: 0; }
+.ink-lab h2 { font-size: 1.15rem; }
+.ink-lab__header p { margin-top: 3px; color: var(--osa-muted); font-size: .82rem; }
+.ink-lab__toolbar, .ink-lab__page-tools { padding: 9px 14px; border-top: 1px solid var(--osa-border); }
+.ink-lab label { display: inline-flex; align-items: center; gap: 6px; font-size: .8rem; }
+.ink-lab button, .ink-lab select, .ink-lab summary { min-height: 34px; border: 1px solid var(--osa-border); border-radius: 7px; background: var(--osa-surface-raised); color: var(--osa-text); font: inherit; font-size: .8rem; padding: 5px 9px; cursor: pointer; }
+.ink-lab button[aria-pressed="true"] { background: var(--osa-hover-surface); border-color: var(--osa-focus); }
+.ink-lab :is(button, select, input, summary, svg):focus-visible { outline: 2px solid var(--osa-focus); outline-offset: 3px; }
+.ink-lab button:disabled { cursor: not-allowed; opacity: .45; }
+.ink-lab input[type="range"] { width: 85px; accent-color: var(--osa-focus); }
+.ink-lab input[type="color"] { width: 32px; height: 32px; padding: 2px; border: 1px solid var(--osa-border); border-radius: 5px; background: transparent; }
+.ink-lab input[type="checkbox"] { accent-color: var(--osa-focus); }
+.ink-lab label output { min-width: 28px; font-size: .73rem; }
+.ink-lab__zoom { margin-left: auto; }
+.ink-lab__zoom output { min-width: 42px; text-align: center; font-size: .8rem; }
+.ink-lab__downloads { position: relative; }
+.ink-lab__downloads > div { position: absolute; z-index: 3; top: 100%; right: 0; display: grid; gap: 5px; width: 190px; padding: 8px; border: 1px solid var(--osa-border); border-radius: 8px; background: var(--osa-surface); box-shadow: 0 5px 20px var(--osa-shadow); }
+.ink-lab__stage { min-width: 0; height: clamp(370px, 59vh, 760px); padding: 14px; border-top: 1px solid var(--osa-border); background: repeating-conic-gradient(#c3c5c9 0% 25%, #b9bcc2 0% 50%) 0 0 / 16px 16px; }
+.ink-lab__stage svg { display: block; width: 100%; height: 100%; touch-action: none; cursor: crosshair; user-select: none; -webkit-user-select: none; }
+.ink-lab__stage svg.is-panning { cursor: grab; }
+.ink-lab__stage svg.is-panning:active { cursor: grabbing; }
+.ink-lab__footer { display: grid; gap: 5px; padding: 10px 14px; border-top: 1px solid var(--osa-border); color: var(--osa-muted); font-size: .78rem; }
+.ink-lab__footer small { font-size: .72rem; line-height: 1.45; }
+
+@media (max-width: 650px) {
+  .ink-lab__header { align-items: flex-start; }
+  .ink-lab__header, .ink-lab__toolbar, .ink-lab__page-tools { padding: 10px; }
+  .ink-lab__toolbar { gap: 10px 12px; }
+  .ink-lab__pen-group { width: 100%; }
+  .ink-lab__zoom { margin-left: 0; }
+  .ink-lab__stage { height: 470px; padding: 6px; }
+  .ink-lab button, .ink-lab summary, .ink-lab select { min-height: 40px; }
+  .ink-lab input[type="range"] { width: 70px; }
+}

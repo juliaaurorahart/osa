@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import embed, { type Result } from 'vega-embed'
 import type { TopLevelSpec } from 'vega-lite'
+import { LabCaptureButton } from '../lab/LabCaptureButton'
+import type { LabCapture } from '../lab/labTypes'
 import './VegaLab.css'
 
 type VegaTheme = 'dark' | 'light'
@@ -132,8 +134,10 @@ function createSampleSpec(kind: ChartKind, theme: VegaTheme): TopLevelSpec {
 export function VegaLab({ theme }: VegaLabProps) {
   const chartHostRef = useRef<HTMLDivElement | null>(null)
   const renderVersionRef = useRef(0)
+  const resultRef = useRef<{ result: Result; spec: TopLevelSpec } | null>(null)
   const [chartKind, setChartKind] = useState<ChartKind>('bar')
   const [embedError, setEmbedError] = useState<string | null>(null)
+  const [renderedSpec, setRenderedSpec] = useState<TopLevelSpec | null>(null)
   const spec = useMemo(() => createSampleSpec(chartKind, theme), [chartKind, theme])
 
   useEffect(() => {
@@ -164,6 +168,8 @@ export function VegaLab({ theme }: VegaLabProps) {
         return
       }
       result = embedResult
+      resultRef.current = { result: embedResult, spec }
+      setRenderedSpec(spec)
     }).catch(() => {
       if (renderVersion === renderVersionRef.current) {
         setEmbedError('The sample chart could not load.')
@@ -175,13 +181,27 @@ export function VegaLab({ theme }: VegaLabProps) {
         renderVersionRef.current += 1
       }
       result?.finalize()
+      if (resultRef.current?.result === result) resultRef.current = null
       mount.remove()
     }
   }, [spec, theme])
 
+  const capture = async (): Promise<LabCapture> => {
+    const rendered = resultRef.current
+    if (!rendered || rendered.spec !== spec) throw new Error('Wait for the current chart to finish rendering before capturing it.')
+    const source = new Blob([JSON.stringify(rendered.spec, null, 2)], { type: 'application/json' })
+    const svg = await rendered.result.view.toSVG()
+    return {
+      name: `Vega-Lite ${chartKind} chart`,
+      toolId: 'vega',
+      preview: new Blob([svg], { type: 'image/svg+xml' }),
+      source: { blob: source, name: 'chart.vl.json' },
+    }
+  }
+
   return (
     <section className="vega-lab" aria-label="Vega-Lite chart lab">
-      <header className="vega-lab__header">
+      <header className="vega-lab__header" style={{ flexWrap: 'wrap' }}>
         <div>
           <h2>Vega-Lite</h2>
           <p>local-only</p>
@@ -196,6 +216,7 @@ export function VegaLab({ theme }: VegaLabProps) {
             <option value="line">line</option>
           </select>
         </label>
+        <LabCaptureButton capture={capture} disabled={renderedSpec !== spec || Boolean(embedError)} />
       </header>
 
       <div className="vega-lab__chart-wrap">

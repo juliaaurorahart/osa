@@ -3,9 +3,10 @@ import { createBoardSnapshot } from '../graph/boardSnapshot'
 import type { GraphEdge } from '../graph/graphEdge'
 import type { TextFlowNode } from '../graph/textNode'
 import type { BoardAccess } from '../graph/boardStorage'
-import { writeLocalDraft } from './browserSession'
+import { LocalDraftIdentityError, writeLocalDraft } from './browserSession'
 
 type LocalDraftPersistenceOptions = {
+  identity: string | null
   enabled: boolean
   boardId: string
   boardName: string
@@ -24,6 +25,7 @@ type LocalDraftPersistenceOptions = {
  * work during ordinary editing, refreshes, and mobile browser lifecycle pauses.
  */
 export function useLocalDraftPersistence({
+  identity,
   enabled,
   boardId,
   boardName,
@@ -52,14 +54,16 @@ export function useLocalDraftPersistence({
           snapshot: createBoardSnapshot(nodes, edges),
           ...(cloudRevision === null ? {} : { revision: cloudRevision, access: boardAccess }),
           cloudDirty,
-        })
+        }, identity)
         setDraftStatus(`Draft saved ${new Date().toLocaleTimeString([], {
           hour: 'numeric',
           minute: '2-digit',
           second: '2-digit',
         })}`)
-      } catch {
-        setDraftStatus('Local draft is full — use Save board')
+      } catch (error) {
+        setDraftStatus(error instanceof LocalDraftIdentityError
+          ? error.message
+          : 'Local draft could not save — download a backup')
       }
     }, 900)
     return () => window.clearTimeout(saveTimer)
@@ -71,6 +75,7 @@ export function useLocalDraftPersistence({
     cloudRevision,
     edges,
     enabled,
+    identity,
     nodes,
     setDraftStatus,
   ])
@@ -90,7 +95,7 @@ export function useLocalDraftPersistence({
             ? {}
             : { revision: latest.cloudRevision, access: latest.boardAccess }),
           cloudDirty: latest.cloudDirty,
-        })
+        }, identity)
       } catch {
         // The normal autosave status is where storage failures are reported.
       }
@@ -106,5 +111,5 @@ export function useLocalDraftPersistence({
       window.removeEventListener('pagehide', flushLocalDraft)
       document.removeEventListener('visibilitychange', flushWhenHidden)
     }
-  }, [boardId, boardName, edges, enabled, nodes])
+  }, [boardId, boardName, edges, enabled, identity, nodes])
 }

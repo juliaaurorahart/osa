@@ -7,6 +7,9 @@ import {
   Textbox,
   type FabricObject,
 } from 'fabric'
+import { LabCaptureButton } from '../lab/LabCaptureButton'
+import { canvasToBlob } from '../lab/labCaptureUtils'
+import type { LabCapture } from '../lab/labTypes'
 import './FabricLab.css'
 
 type FabricTheme = 'dark' | 'light'
@@ -115,7 +118,8 @@ function createStarterObjects(canvas: Canvas, theme: FabricTheme) {
 
 /**
  * An isolated Fabric comparison surface. Everything here is temporary local
- * state: the component imports no OSA models and writes only explicit downloads.
+ * state: the component imports no OSA models; only explicit downloads or
+ * notebook captures leave this workbench.
  */
 export function FabricLab({ theme }: FabricLabProps) {
   const canvasElementRef = useRef<HTMLCanvasElement | null>(null)
@@ -316,6 +320,15 @@ export function FabricLab({ theme }: FabricLabProps) {
     if (json) downloadText(JSON.stringify(json, null, 2), 'fabric-lab.json', 'application/json')
   }
 
+  const capture = async (): Promise<LabCapture> => {
+    const canvas = fabricRef.current
+    if (!canvas) throw new Error('The Fabric canvas is not ready yet.')
+    const source = new Blob([JSON.stringify(canvas.toJSON(), null, 2)], { type: 'application/json' })
+    // Fabric's export canvas omits editing handles without clearing selection.
+    const preview = await canvasToBlob(canvas.toCanvasElement(1))
+    return { name: 'Fabric drawing', toolId: 'fabric', preview, source: { blob: source, name: 'fabric-lab.json' } }
+  }
+
   return (
     <section className="fabric-lab" data-theme={theme} aria-label="Fabric object canvas lab">
       <header className="fabric-lab__header">
@@ -327,6 +340,7 @@ export function FabricLab({ theme }: FabricLabProps) {
           <button type="button" onClick={exportPng}>PNG</button>
           <button type="button" onClick={exportSvg}>SVG</button>
           <button type="button" onClick={exportJson}>JSON</button>
+          <LabCaptureButton capture={capture} />
         </div>
       </header>
 

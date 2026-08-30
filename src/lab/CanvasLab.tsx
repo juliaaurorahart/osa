@@ -6,7 +6,9 @@ import { LabNotebook } from './LabNotebook'
 import { LabSettings } from './LabSettings'
 import type { LabRoute, LabTheme, LabWorkbenchId } from './labTypes'
 import { LabWorkbench } from './LabWorkbench'
-import { useLabNotebook } from './useLabNotebook'
+import { LabCaptureContext } from './LabCaptureContext'
+import { useSyncedLabNotebook } from './useSyncedLabNotebook'
+import { LabNotebookSync } from './LabNotebookSync'
 import './CanvasLab.css'
 
 export type CanvasLabProps = {
@@ -32,7 +34,8 @@ export function CanvasLab({
   workspaceSettingsMenu,
 }: CanvasLabProps) {
   const [route, setRoute] = useState<LabRoute>({ page: 'home' })
-  const notebook = useLabNotebook()
+  const [hasUnaddedIdea, setHasUnaddedIdea] = useState(false)
+  const notebook = useSyncedLabNotebook()
   const activeLab = route.page === 'workbench' ? findLab(route.workbenchId) : null
 
   const openWorkbench = (workbenchId: LabWorkbenchId) => {
@@ -46,7 +49,7 @@ export function CanvasLab({
           <strong>{activeLab.name}</strong>
           <span>{activeLab.note}</span>
           <span>files: {activeLab.output}</span>
-          <span>download or add files to the notebook before switching</span>
+          <span>Save to notebook or download before switching tools</span>
         </>
       )
     }
@@ -81,6 +84,7 @@ export function CanvasLab({
   })()
 
   return (
+    <LabCaptureContext.Provider value={notebook.captureVisual}>
     <section className={`lab-shell${route.page === 'home' ? ' is-home' : ''}`} aria-label="OSA Lab">
       <header className="lab-shell__header">
         <button className="lab-shell__brand" type="button" onClick={() => setRoute({ page: 'home' })}>
@@ -145,7 +149,9 @@ export function CanvasLab({
           >
             {theme === 'dark' ? 'light' : 'dark'}
           </button>
-          <button type="button" onClick={onExit}>exit lab</button>
+          <button type="button" onClick={() => {
+            if (!hasUnaddedIdea || window.confirm('Your new idea has not been added yet. Leave the Lab without saving that draft?')) onExit()
+          }}>exit lab</button>
         </div>
       </header>
 
@@ -162,18 +168,28 @@ export function CanvasLab({
           />
         ) : null}
 
-        {route.page === 'notebook' ? (
+        <div hidden={route.page !== 'notebook'}>
+          <LabNotebookSync notebook={notebook} hasDraft={hasUnaddedIdea} />
           <LabNotebook
+            key={notebook.scope}
             notes={notebook.notes}
             artifacts={notebook.artifacts}
+            topics={notebook.topics}
+            topicLinks={notebook.topicLinks}
+            isReady={notebook.isReady}
+            isActive={route.page === 'notebook'}
+            onDraftChange={setHasUnaddedIdea}
             status={notebook.status}
             message={notebook.message}
             onCreateNote={notebook.createNote}
             onUpdateNote={notebook.updateNote}
             onImportFiles={notebook.importFiles}
+            onLoadPreview={notebook.loadArtifactPreview}
             onDownloadArtifact={notebook.downloadArtifact}
+            onCreateTopic={notebook.createTopic}
+            onSetObjectTopics={notebook.setObjectTopics}
           />
-        ) : null}
+        </div>
 
         {route.page === 'settings' ? (
           <LabSettings
@@ -195,5 +211,6 @@ export function CanvasLab({
         ) : null}
       </main>
     </section>
+    </LabCaptureContext.Provider>
   )
 }

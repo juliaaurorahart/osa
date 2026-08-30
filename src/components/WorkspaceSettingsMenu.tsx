@@ -51,6 +51,7 @@ export type WorkspaceSettingsMenuProps = {
   onArchiveCurrentBoard: WorkspaceSettingsAction
   onRestoreSelectedBoard: WorkspaceSettingsAction
   onManualSync: WorkspaceSettingsAction
+  onUseLocalCopy?: WorkspaceSettingsAction
 
   storageStatus?: string
   cloudSyncStatus?: string
@@ -119,6 +120,7 @@ export function WorkspaceSettingsMenu({
   onArchiveCurrentBoard,
   onRestoreSelectedBoard,
   onManualSync,
+  onUseLocalCopy,
   storageStatus,
   cloudSyncStatus,
   localDraftStatus,
@@ -145,7 +147,7 @@ export function WorkspaceSettingsMenu({
 }: WorkspaceSettingsMenuProps) {
   const [open, setOpen] = useState(false)
   const [collaboratorEmail, setCollaboratorEmail] = useState('')
-  const [collaboratorRole, setCollaboratorRole] = useState<CollaboratorRole>('editor')
+  const [collaboratorRole, setCollaboratorRole] = useState<CollaboratorRole>('viewer')
   const dialogId = useId()
   const titleId = useId()
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -338,7 +340,7 @@ export function WorkspaceSettingsMenu({
                     disabled={!canEditBoard}
                     onClick={() => runAction(onManualSync)}
                   >
-                    Sync now
+                    {cloudRevision == null ? 'Sync to my account' : 'Sync now'}
                   </button>
                   {!showingArchivedBoards ? (
                     <button
@@ -357,6 +359,14 @@ export function WorkspaceSettingsMenu({
                 <div className="workspace-settings-menu__section-heading">
                   <h3 id={`${titleId}-cloud`}>Cloud &amp; database</h3>
                 </div>
+                  <p>{cloudRevision == null
+                  ? 'On this device only. Nothing is uploaded until you choose to sync.'
+                  : 'Synced to your account. Files follow this board’s access list.'}</p>
+                {cloudRevision != null && onUseLocalCopy ? (
+                  <button className="workspace-settings-menu__button" type="button" onClick={() => runAction(onUseLocalCopy)}>
+                    Work on a local copy
+                  </button>
+                ) : null}
                 <dl className="workspace-settings-menu__status-list" aria-live="polite">
                   <div>
                     <dt>Current board</dt>
@@ -542,7 +552,8 @@ export function WorkspaceSettingsMenu({
                   <h3 id={`${titleId}-backup`}>Backup &amp; import</h3>
                 </div>
                 <p className="workspace-settings-menu__note">
-                  JSON backup replaces the open board when loaded. OSA data adds structured content to it.
+                  Downloads include saved files for portability; database saves keep files separate.
+                  Loading a JSON backup replaces the open board. OSA data adds structured content to it.
                 </p>
                 <div className="workspace-settings-menu__actions">
                   <button

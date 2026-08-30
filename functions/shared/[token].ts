@@ -1,6 +1,12 @@
-type Env = { OSA_DB?: D1Database }
+import {
+  FILE_ID, findStoredFile, hasLegacyFileGrant, LEGACY_IMAGE_KEY, legacyFileDetails, managedFileReference,
+  referencedFiles, storedFileResponse, type FileEnv,
+} from '../assetFiles'
+
+type Env = FileEnv
 
 type SharedBoardRow = {
+  board_id: string
   content: string
   assembly_id: string
 }
@@ -111,7 +117,7 @@ function isAssemblyTargetEdge(edge: JsonRecord, nodesById: Map<string, JsonRecor
  * operations, and the durable steps/canvases needed to carry them out --
  * never unrelated board data.
  */
-function createAssemblyScopedBoard(board: unknown, assemblyId: string): JsonRecord | null {
+export function createAssemblyScopedBoard(board: unknown, assemblyId: string): JsonRecord | null {
   if (!isRecord(board) || typeof board.id !== 'string' || typeof board.name !== 'string' || typeof board.updatedAt !== 'string') {
     return null
   }
@@ -210,19 +216,27 @@ function createAssemblyScopedBoard(board: unknown, assemblyId: string): JsonReco
  * This route is intentionally outside `/api`, so the private Access middleware
  * does not intercept a recipient opening a public, read-only share link.
  */
-export const onRequestGet: PagesFunction<Env> = async ({ env, params }) => {
+async function sharedAssemblyResponse(
+  request: Request | undefined,
+  env: Env,
+  reference: string | string[] | undefined,
+  includeBody: boolean,
+) {
   // The dynamic filename is intentionally retained for old opaque links.
   // It now also receives a human-friendly public share name.
-  const reference = params.token
-  if (!reference) return json({ error: 'A public assembly link is required.' }, 400)
+  if (!reference || typeof reference !== 'string') return json({ error: 'A public assembly link is required.' }, 400)
   if (!env.OSA_DB) {
     return json({ error: 'Shared assembly service is not configured.' }, 503)
   }
 
   try {
+    const url = new URL(request?.url ?? 'https://osa.invalid/')
+    const requestedAsset = url.searchParams.get('asset')
+    const requestedLegacyKey = url.searchParams.get('legacyKey')
+    if (requestedAsset !== null && requestedLegacyKey !== null) return json({ error: 'Choose one shared file.' }, 400)
     const sharedBoard = await env.OSA_DB
       .prepare(`
-        SELECT boards.content, board_shares.assembly_id
+        SELECT boards.id AS board_id, boards.content, board_shares.assembly_id
         FROM board_shares
         INNER JOIN boards ON boards.id = board_shares.board_id
         WHERE board_shares.slug = ? OR board_shares.token = ?
@@ -233,10 +247,75 @@ export const onRequestGet: PagesFunction<Env> = async ({ env, params }) => {
 
     const board = createAssemblyScopedBoard(JSON.parse(sharedBoard.content), sharedBoard.assembly_id)
     if (!board) return json({ error: 'This shared assembly is unavailable.' }, 404)
-    return json({ board, assemblyId: sharedBoard.assembly_id })
+    const boardId = sharedBoard.board_id ?? String(board.id)
+    const references = referencedFiles(board.snapshot, url.origin, boardId)
+
+    // The share grants access only to files in this projected Assembly and
+    // owned by its source board. An arbitrary ID pasted into JSON is not a grant.
+    if (requestedAsset !== null) {
+      if (!FILE_ID.test(requestedAsset) || !references.ids.has(requestedAsset)) {
+        return json({ error: 'Shared file not found.' }, 404)
+      }
+      const file = await findStoredFile(env.OSA_DB, requestedAsset)
+      if (!file || file.board_id !== boardId) return json({ error: 'Shared file not found.' }, 404)
+      if (!env.OSA_ASSETS) return json({ error: 'File storage is not configured.' }, 503)
+      return storedFileResponse(env.OSA_ASSETS, file, includeBody)
+    }
+    if (requestedLegacyKey !== null) {
+      if (!LEGACY_IMAGE_KEY.test(requestedLegacyKey) || !references.legacyKeys.has(requestedLegacyKey)
+        || !await hasLegacyFileGrant(env.OSA_DB, boardId, requestedLegacyKey)) {
+        return json({ error: 'Shared file not found.' }, 404)
+      }
+      if (!env.OSA_ASSETS) return json({ error: 'File storage is not configured.' }, 503)
+      return storedFileResponse(env.OSA_ASSETS, legacyFileDetails(requestedLegacyKey), includeBody)
+    }
+
+    const ownedIds = new Set<string>()
+    const grantedLegacyKeys = new Set<string>()
+    if (references.ids.size) {
+      // One query per packet avoids one round trip per image on large assemblies.
+      const files = await env.OSA_DB.prepare('SELECT id FROM private_assets WHERE board_id = ?')
+        .bind(boardId).all<{ id: string }>()
+      files.results.forEach((file) => ownedIds.add(file.id))
+    }
+    if (references.legacyKeys.size) {
+      const grants = await env.OSA_DB.prepare('SELECT storage_key FROM legacy_asset_grants WHERE board_id = ?')
+        .bind(boardId).all<{ storage_key: string }>()
+      grants.results.forEach((grant) => grantedLegacyKeys.add(grant.storage_key))
+    }
+    const shareFileUrl = (field: 'asset' | 'legacyKey', value: string) => {
+      const fileUrl = new URL(`/shared/${encodeURIComponent(reference)}`, url.origin)
+      fileUrl.searchParams.set(field, value)
+      return fileUrl.toString()
+    }
+    const rewriteFileLinks = (value: unknown): unknown => {
+      if (typeof value === 'string') {
+        const file = managedFileReference(value, url.origin)
+        if (file?.kind === 'file') return ownedIds.has(file.id) ? shareFileUrl('asset', file.id) : ''
+        if (file?.kind === 'legacy') {
+          return references.legacyKeys.has(file.key) && grantedLegacyKeys.has(file.key) && (!file.boardId || file.boardId === boardId)
+            ? shareFileUrl('legacyKey', file.key)
+            : ''
+        }
+        return value
+      }
+      if (Array.isArray(value)) return value.map(rewriteFileLinks)
+      if (isRecord(value)) return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, rewriteFileLinks(item)]))
+      return value
+    }
+    const response = json({ board: rewriteFileLinks(board), assemblyId: sharedBoard.assembly_id })
+    return includeBody ? response : new Response(null, { status: response.status, headers: response.headers })
   } catch {
     // A schema/binding failure belongs to the service, not to the recipient's
     // link. Returning JSON avoids a raw Cloudflare 1101 page on the phone.
     return json({ error: 'Shared assembly service is temporarily unavailable.' }, 503)
   }
 }
+
+export const onRequestGet: PagesFunction<Env> = ({ request, env, params }) => (
+  sharedAssemblyResponse(request, env, params.token, true)
+)
+
+export const onRequestHead: PagesFunction<Env> = ({ request, env, params }) => (
+  sharedAssemblyResponse(request, env, params.token, false)
+)
