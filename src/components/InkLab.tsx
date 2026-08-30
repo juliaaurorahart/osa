@@ -1,6 +1,6 @@
 import { useId, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import { LabCaptureButton } from '../lab/LabCaptureButton'
-import type { LabCapture } from '../lab/labTypes'
+import type { LabCapture, LabProjectSource } from '../lab/labTypes'
 import { INK_POINT_LIMIT, INK_SOURCE_LIMIT, createInkDocument, inkDocumentPng, inkDocumentSvg, inkStrokePath, parseInkDocument, type InkDocument, type InkPen, type InkPoint, type InkStroke } from '../lab/inkDocument'
 import './InkLab.css'
 
@@ -20,8 +20,9 @@ function download(blob: Blob, name: string) {
 }
 
 /** Local ink source and previews only: no OSA graph or board mutations. */
-export function InkLab({ onSave }: { onSave?: (capture: LabCapture) => Promise<string>; theme?: 'dark' | 'light' } = {}) {
-  const [document, setDocument] = useState<InkDocument>(createInkDocument)
+export function InkLab({ onSave, initialSource }: { onSave?: (capture: LabCapture) => Promise<string>; theme?: 'dark' | 'light'; initialSource?: LabProjectSource } = {}) {
+  const [document, setDocument] = useState<InkDocument>(() => initialSource
+    ? parseInkDocument(initialSource.text ?? '') : createInkDocument())
   const [past, setPast] = useState<InkDocument[]>([])
   const [future, setFuture] = useState<InkDocument[]>([])
   const [pen, setPen] = useState<InkPen>('ink')
@@ -33,7 +34,7 @@ export function InkLab({ onSave }: { onSave?: (capture: LabCapture) => Promise<s
   const [tool, setTool] = useState<'draw' | 'pan'>('draw')
   const [view, setView] = useState({ x: 0, y: 0, zoom: 1 })
   const [activeStroke, setActiveStroke] = useState<InkStroke | null>(null)
-  const [message, setMessage] = useState('')
+  const [message, setMessage] = useState(initialSource ? 'Saved drawing opened for editing. Save to notebook keeps a new version.' : '')
   const [exporting, setExporting] = useState(false)
   const svgRef = useRef<SVGSVGElement>(null)
   const importRef = useRef<HTMLInputElement>(null)

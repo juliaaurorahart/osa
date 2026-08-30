@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import embed, { type Result } from 'vega-embed'
 import type { TopLevelSpec } from 'vega-lite'
 import { LabCaptureButton } from '../lab/LabCaptureButton'
-import type { LabCapture } from '../lab/labTypes'
+import type { LabCapture, LabProjectSource } from '../lab/labTypes'
+import { localOnlyVegaLoader, parseVegaProjectSource, validateStructuredProjectSource } from '../lab/labStructuredProjectSource'
 import './VegaLab.css'
 
 type VegaTheme = 'dark' | 'light'
@@ -11,6 +12,7 @@ type ChartKind = 'bar' | 'line'
 type VegaLabProps = {
   /** Uses OSA's app-level theme; this Lab never owns a theme preference. */
   theme: VegaTheme
+  initialSource?: LabProjectSource
 }
 
 /**
@@ -131,14 +133,27 @@ function createSampleSpec(kind: ChartKind, theme: VegaTheme): TopLevelSpec {
  * An isolated Vega-Lite playground. It is intentionally local-only: no OSA
  * board, Canvas, or Assembly object is read or written from this component.
  */
-export function VegaLab({ theme }: VegaLabProps) {
+export function VegaLab({ theme, initialSource }: VegaLabProps) {
   const chartHostRef = useRef<HTMLDivElement | null>(null)
   const renderVersionRef = useRef(0)
   const resultRef = useRef<{ result: Result; spec: TopLevelSpec } | null>(null)
   const [chartKind, setChartKind] = useState<ChartKind>('bar')
   const [embedError, setEmbedError] = useState<string | null>(null)
   const [renderedSpec, setRenderedSpec] = useState<TopLevelSpec | null>(null)
-  const spec = useMemo(() => createSampleSpec(chartKind, theme), [chartKind, theme])
+  const [savedSpec, setSavedSpec] = useState<TopLevelSpec | null>(() => initialSource ? parseVegaProjectSource(initialSource) : null)
+  const [editorText, setEditorText] = useState(() => initialSource?.text ?? '')
+  const [appliedText, setAppliedText] = useState(() => initialSource?.text ?? '')
+  const [sourceError, setSourceError] = useState('')
+  const [isApplyingSource, setIsApplyingSource] = useState(false)
+  const sourceEditVersionRef = useRef(0)
+  const mountedRef = useRef(true)
+  const hasUnappliedSource = Boolean(savedSpec) && editorText !== appliedText
+  const spec = useMemo(() => savedSpec ?? createSampleSpec(chartKind, theme), [chartKind, savedSpec, theme])
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false; sourceEditVersionRef.current += 1 }
+  }, [])
 
   useEffect(() => {
     const host = chartHostRef.current
@@ -160,6 +175,8 @@ export function VegaLab({ theme }: VegaLabProps) {
       defaultStyle: false,
       renderer: 'svg',
       tooltip: { theme },
+      loader: localOnlyVegaLoader,
+      ast: true,
     }).then((embedResult) => {
       // React's development checks can start and immediately clean up an
       // effect. Only the latest embed gets to keep its rendered controls.
@@ -172,7 +189,7 @@ export function VegaLab({ theme }: VegaLabProps) {
       setRenderedSpec(spec)
     }).catch(() => {
       if (renderVersion === renderVersionRef.current) {
-        setEmbedError('The sample chart could not load.')
+        setEmbedError('The chart could not load. Only self-contained inline chart data is supported.')
       }
     })
 
@@ -186,13 +203,28 @@ export function VegaLab({ theme }: VegaLabProps) {
     }
   }, [spec, theme])
 
+  const applySource = async () => {
+    const version = sourceEditVersionRef.current
+    setIsApplyingSource(true)
+    try {
+      const file = new Blob([editorText], { type: 'application/json' })
+      const source = { file, text: editorText, name: initialSource?.name ?? 'chart.vl.json' }
+      await validateStructuredProjectSource('vega', source)
+      if (!mountedRef.current || version !== sourceEditVersionRef.current) return
+      setSavedSpec(parseVegaProjectSource(source)); setAppliedText(editorText); setSourceError('')
+    } catch (error) {
+      if (mountedRef.current && version === sourceEditVersionRef.current) setSourceError(error instanceof Error ? error.message : 'The chart specification is invalid.')
+    } finally { if (mountedRef.current) setIsApplyingSource(false) }
+  }
+
   const capture = async (): Promise<LabCapture> => {
+    if (hasUnappliedSource || isApplyingSource) throw new Error('Apply your chart JSON changes before saving this project.')
     const rendered = resultRef.current
     if (!rendered || rendered.spec !== spec) throw new Error('Wait for the current chart to finish rendering before capturing it.')
     const source = new Blob([JSON.stringify(rendered.spec, null, 2)], { type: 'application/json' })
     const svg = await rendered.result.view.toSVG()
     return {
-      name: `Vega-Lite ${chartKind} chart`,
+      name: savedSpec ? 'Vega-Lite saved chart' : `Vega-Lite ${chartKind} chart`,
       toolId: 'vega',
       preview: new Blob([svg], { type: 'image/svg+xml' }),
       source: { blob: source, name: 'chart.vl.json' },
@@ -209,22 +241,33 @@ export function VegaLab({ theme }: VegaLabProps) {
         <label className="vega-lab__control">
           <span>chart</span>
           <select
-            value={chartKind}
-            onChange={(event) => setChartKind(event.target.value as ChartKind)}
+            value={savedSpec ? 'saved' : chartKind}
+            onChange={(event) => { sourceEditVersionRef.current += 1; setChartKind(event.target.value as ChartKind); setSavedSpec(null) }}
           >
+            {savedSpec ? <option value="saved" disabled>saved chart</option> : null}
             <option value="bar">bars</option>
             <option value="line">line</option>
           </select>
         </label>
-        <LabCaptureButton capture={capture} disabled={renderedSpec !== spec || Boolean(embedError)} />
+        <LabCaptureButton capture={capture} disabled={renderedSpec !== spec || Boolean(embedError) || hasUnappliedSource || isApplyingSource} />
       </header>
+
+      {savedSpec ? <section aria-label="Editable Vega-Lite project source" style={{ padding: '12px 18px' }}>
+        <label style={{ display: 'grid', gap: 8 }}>Chart JSON
+          <textarea value={editorText} onChange={(event) => { sourceEditVersionRef.current += 1; setEditorText(event.target.value) }} spellCheck={false}
+            style={{ minHeight: 180, width: '100%', fontFamily: 'monospace' }} />
+        </label>
+        <button type="button" onClick={() => { void applySource() }} disabled={isApplyingSource}>Apply chart changes</button>
+        <small>{hasUnappliedSource ? ' Apply your JSON changes before saving. ' : ' '}Inline data only. A failed edit keeps the last working chart.</small>
+        {sourceError ? <p role="alert">{sourceError}</p> : null}
+      </section> : null}
 
       <div className="vega-lab__chart-wrap">
         <div ref={chartHostRef} className="vega-lab__chart" />
         {embedError ? <p className="vega-lab__error" role="alert">{embedError}</p> : null}
       </div>
 
-      <footer className="vega-lab__footer">local sample</footer>
+      <footer className="vega-lab__footer">{savedSpec ? 'saved project · inline data only' : 'local sample'}</footer>
     </section>
   )
 }

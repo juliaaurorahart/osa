@@ -194,6 +194,49 @@
   content: '·';
 }
 
+.lab-shell__project-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lab-shell__project-name input {
+  width: clamp(140px, 18vw, 260px);
+  padding: 6px 9px;
+  border: 1px solid var(--osa-border);
+  border-radius: 6px;
+  background: var(--osa-bg);
+  color: var(--osa-text);
+  font: inherit;
+}
+
+.lab-shell__context button,
+.lab-shell__project-confirm button {
+  padding: 7px 10px;
+  border: 1px solid var(--osa-border);
+  border-radius: 6px;
+  background: var(--osa-surface);
+  color: var(--osa-text);
+  cursor: pointer;
+  font: inherit;
+}
+
+.lab-shell__project-confirm {
+  width: min(480px, calc(100vw - 48px));
+  padding: 24px;
+  border: 1px solid var(--osa-border);
+  border-radius: 12px;
+  background: var(--osa-bg);
+  color: var(--osa-text);
+  box-shadow: 0 16px 64px rgb(0 0 0 / 50%);
+}
+
+.lab-shell__project-confirm::backdrop { background: rgb(0 0 0 / 65%); }
+.lab-shell__project-confirm h2 { margin-top: 0; font-size: 1.2rem; }
+.lab-shell__project-confirm p { line-height: 1.55; }
+.lab-shell__project-confirm > div { display: flex; gap: 12px; margin-top: 24px; }
+.lab-shell__project-confirm button:focus-visible { outline: 2px solid var(--osa-focus); outline-offset: 3px; }
+
 .lab-shell__body {
   min-width: 0;
   min-height: 0;

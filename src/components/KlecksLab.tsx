@@ -1,7 +1,8 @@
 import { useContext, useEffect, useRef, useState } from 'react'
 import { LabCaptureButton } from '../lab/LabCaptureButton'
 import { LabCaptureContext } from '../lab/LabCaptureContext'
-import type { LabCapture } from '../lab/labTypes'
+import type { LabCapture, LabProjectSource } from '../lab/labTypes'
+import { validateKlecksProjectSource } from '../lab/labDrawingProjectSource'
 import './KlecksLab.css'
 
 const CHANNEL = 'osa-klecks-v1'
@@ -25,7 +26,7 @@ function captureFromMessage(data: Record<string, unknown>): LabCapture {
 }
 
 /** The upstream singleton lives in its own same-origin document, not React's DOM. */
-export function KlecksLab({ onSave }: { onSave?: (capture: LabCapture) => Promise<string>; theme?: 'dark' | 'light' } = {}) {
+export function KlecksLab({ onSave, initialSource }: { onSave?: (capture: LabCapture) => Promise<string>; theme?: 'dark' | 'light'; initialSource?: LabProjectSource } = {}) {
   const contextSave = useContext(LabCaptureContext)
   const save = onSave ?? contextSave
   const saveRef = useRef(save)
@@ -33,7 +34,7 @@ export function KlecksLab({ onSave }: { onSave?: (capture: LabCapture) => Promis
   const fileInputRef = useRef<HTMLInputElement>(null)
   const pendingRef = useRef(new Map<string, PendingCapture>())
   const validationRef = useRef(new Map<string, PendingValidation>())
-  const [frame, setFrame] = useState<{ token: string; file: File | null; background: string }>(() => ({ token: crypto.randomUUID(), file: null, background: '#000000' }))
+  const [frame, setFrame] = useState<{ token: string; file: Blob | null; background: string }>(() => ({ token: crypto.randomUUID(), file: initialSource?.file ?? null, background: '#000000' }))
   const [newCanvasBackground, setNewCanvasBackground] = useState('#000000')
   const [ready, setReady] = useState(false)
   const [message, setMessage] = useState('Loading the local painter…')
@@ -142,11 +143,7 @@ export function KlecksLab({ onSave }: { onSave?: (capture: LabCapture) => Promis
   const openFile = async (file: File) => {
     setOpening(true)
     try {
-      if (file.size > MAX_BYTES) throw new Error('Choose a PSD file smaller than 25 MB.')
-      const buffer = await file.slice(0, 26).arrayBuffer()
-      const header = new DataView(buffer)
-      if (buffer.byteLength < 26 || header.getUint32(0) !== 0x38425053 || header.getUint16(4) !== 1) throw new Error('Choose a standard PSD file. PSB files are not supported here.')
-      if (header.getUint32(14) > 4096 || header.getUint32(18) > 4096) throw new Error('Choose a PSD no larger than 4096 pixels in either direction.')
+      await validateKlecksProjectSource(file)
       if (ready && !window.confirm('Open this PSD? Save or download the current painting first if you want to keep it.')) return
       if (ready) {
         setMessage('Checking the PSD before replacing the current painting…')

@@ -17,6 +17,13 @@ export type LabWorkbenchId =
 
 export type LabTheme = 'dark' | 'light'
 
+/** A saved native file, read before replacing the current editor. Never executed. */
+export type LabProjectSource = {
+  file: Blob
+  text: string | null
+  name: string
+}
+
 /** A route inside the Lab overlay. It never changes the active OSA board. */
 export type LabRoute =
   | { page: 'home' }

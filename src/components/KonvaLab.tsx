@@ -12,7 +12,8 @@ import type Konva from 'konva'
 import { Layer, Line, Rect, Stage, Transformer } from 'react-konva'
 import { LabCaptureButton } from '../lab/LabCaptureButton'
 import { canvasToBlob } from '../lab/labCaptureUtils'
-import type { LabCapture } from '../lab/labTypes'
+import type { LabCapture, LabProjectSource } from '../lab/labTypes'
+import { parseKonvaProjectSource } from '../lab/labDrawingProjectSource'
 import { KonvaItemRenderer } from './KonvaItemRenderer'
 import {
   cloneItem,
@@ -47,6 +48,7 @@ type KonvaLabProps = {
    * boards, project state, and browser storage.
    */
   initialDocument?: KonvaLabDocument
+  initialSource?: LabProjectSource
   onDocumentChange?: (document: KonvaLabDocument) => void
 }
 
@@ -158,11 +160,6 @@ function loadLocalImage(file: File) {
   })
 }
 
-function isLabDocument(value: unknown): value is KonvaLabDocument {
-  if (!value || typeof value !== 'object' || !('items' in value)) return false
-  return Array.isArray(value.items)
-}
-
 function GridLayer({ theme }: { theme: CanvasTheme }) {
   const lines = useMemo(() => {
     const coordinates: number[] = []
@@ -208,10 +205,11 @@ function GridLayer({ theme }: { theme: CanvasTheme }) {
  * Its state is deliberately throwaway: it imports no OSA board data, writes no
  * project data, and can be reset/exported safely while trying Konva.
  */
-export function KonvaLab({ theme, initialDocument, onDocumentChange }: KonvaLabProps) {
+export function KonvaLab({ theme, initialDocument, initialSource, onDocumentChange }: KonvaLabProps) {
   // Take a private copy once on mount. The parent only needs the serializable
   // items so that it can restore this temporary draft after a tab switch.
-  const [items, setItems] = useState<CanvasItem[]>(() => cloneItems(initialDocument?.items ?? STARTER_ITEMS))
+  const [items, setItems] = useState<CanvasItem[]>(() => cloneItems(initialSource
+    ? parseKonvaProjectSource(initialSource.text ?? '').items : initialDocument?.items ?? STARTER_ITEMS))
   const itemsRef = useRef<CanvasItem[]>(cloneItems(items))
   const historyRef = useRef({ entries: [cloneItems(items)], index: 0 })
   const [historyState, setHistoryState] = useState({ index: 0, length: 1 })
@@ -659,14 +657,14 @@ export function KonvaLab({ theme, initialDocument, onDocumentChange }: KonvaLabP
     const file = event.currentTarget.files?.[0]
     event.currentTarget.value = ''
     if (!file) return
+    if (file.size > 25 * 1024 * 1024) { setNotice('Choose a Konva source smaller than 25 MB.'); return }
 
     const reader = new FileReader()
     reader.onerror = () => setNotice('Could not read that JSON file.')
     reader.onload = () => {
       try {
-        const parsed: unknown = JSON.parse(String(reader.result))
-        if (!isLabDocument(parsed)) throw new Error('not a Konva Lab file')
-        const nextItems = parsed.items as CanvasItem[]
+        const nextItems = parseKonvaProjectSource(String(reader.result)).items
+        if (itemsRef.current.length && !window.confirm('Open this project? Save or download the current canvas first if you want to keep it.')) return
         historyRef.current = { entries: [cloneItems(nextItems)], index: 0 }
         publishItems(nextItems)
         setSelectedIds([])

@@ -565,6 +565,8 @@
 }
 .lab-notebook__search input:focus-visible { outline: 2px solid var(--osa-focus); outline-offset: 2px; }
 .lab-notebook__file-actions { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.lab-notebook__project-filter { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; }
+.lab-notebook__project-filter input { width: auto; accent-color: var(--osa-focus); }
 .lab-notebook__file-actions button:disabled { cursor: default; color: var(--osa-muted); }
 .lab-notebook__excerpt { line-height: 1.5; overflow-wrap: anywhere; }
 .lab-notebook__preview {

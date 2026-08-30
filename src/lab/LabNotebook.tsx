@@ -3,6 +3,8 @@ import type { LabArtifact, LabNote, LabNotebookObjectType, LabTopic, LabTopicLin
 import type { LabNotebookStatus } from './useLabNotebook'
 import { LabArtifactPreview } from './LabArtifactPreview'
 import { matchesNotebookSearch } from './labNotebookSearch'
+import { savedProjectTool } from './labSavedProjects'
+import { findLab } from './labCatalog'
 import './LabNotebook.css'
 
 type LabNotebookProps = {
@@ -20,6 +22,7 @@ type LabNotebookProps = {
   onImportFiles: (files: readonly File[], topicIds?: readonly string[]) => Promise<string[]>
   onLoadPreview: (artifactId: string) => Promise<Blob | null>
   onDownloadArtifact: (artifactId: string) => Promise<void>
+  onOpenProject: (artifact: LabArtifact) => Promise<void>
   onCreateTopic: (name: string) => string | null
   onSetObjectTopics: (objectType: LabNotebookObjectType, objectId: string, topicIds: readonly string[]) => void
 }
@@ -104,6 +107,7 @@ export function LabNotebook({
   onImportFiles,
   onLoadPreview,
   onDownloadArtifact,
+  onOpenProject,
   onCreateTopic,
   onSetObjectTopics,
 }: LabNotebookProps) {
@@ -119,6 +123,9 @@ export function LabNotebook({
   const [isImporting, setIsImporting] = useState(false)
   const [captureError, setCaptureError] = useState('')
   const [openedArtifact, setOpenedArtifact] = useState<LabArtifact | null>(null)
+  const [openingProjectId, setOpeningProjectId] = useState<string | null>(null)
+  const [projectsOnly, setProjectsOnly] = useState(false)
+  const openPendingRef = useRef(false)
   const previewDialogRef = useRef<HTMLDialogElement>(null)
   const latestNotesRef = useRef(notes)
   const importPendingRef = useRef(false)
@@ -154,8 +161,33 @@ export function LabNotebook({
     && matchesNotebookSearch(query, note.title, note.body, topicNamesFor('note', note.id),
       artifacts.filter((artifact) => note.artifactIds?.includes(artifact.id)).map((artifact) => artifact.name).join(' ')))
   const visibleArtifacts = artifacts.filter((artifact) => (!selectedTopic || topicIdsFor('artifact', artifact.id).includes(selectedTopic.id))
+    && (!projectsOnly || savedProjectTool(artifact) !== null)
     && matchesNotebookSearch(query, artifact.name, artifact.description, artifact.toolId, topicNamesFor('artifact', artifact.id)))
   const selectedNoteOutsideFilter = selectedNote && selectedTopic && !topicIdsFor('note', selectedNote.id).includes(selectedTopic.id)
+
+  const openProject = async (artifact: LabArtifact) => {
+    if (openPendingRef.current) return
+    openPendingRef.current = true
+    setOpeningProjectId(artifact.id)
+    setCaptureError('')
+    try {
+      await onOpenProject(artifact)
+      setOpenedArtifact(null)
+    } catch (error) {
+      setCaptureError(error instanceof Error ? error.message : 'This project could not open. The saved file is unchanged.')
+    } finally {
+      openPendingRef.current = false
+      setOpeningProjectId(null)
+    }
+  }
+
+  const editProjectButton = (artifact: LabArtifact) => {
+    const tool = savedProjectTool(artifact)
+    return tool ? <button type="button" disabled={isUnavailable || openingProjectId !== null}
+      onClick={() => void openProject(artifact)}>
+      {openingProjectId === artifact.id ? 'Opening…' : `Open in ${findLab(tool).name}`}
+    </button> : null
+  }
 
   useEffect(() => {
     if (!isUnavailable && isActive) writingRef.current?.focus()
@@ -487,6 +519,10 @@ export function LabNotebook({
                 <h3 id="lab-notebook-files-title">Visuals & files</h3>
                 <span>{visibleArtifacts.length}{selectedTopic ? ` of ${artifacts.length}` : ''}</span>
               </div>
+              <label className="lab-notebook__project-filter">
+                <input type="checkbox" checked={projectsOnly} onChange={(event) => setProjectsOnly(event.target.checked)} />
+                Editable projects only
+              </label>
               <label className="lab-notebook__file-input">
                 + add files
                 <input type="file" multiple disabled={isUnavailable} onChange={importFiles} />
@@ -504,6 +540,7 @@ export function LabNotebook({
                       {artifact.toolId ? <small>From {artifact.toolId}</small> : null}
                     </span>
                     <div className="lab-notebook__file-actions">
+                      {editProjectButton(artifact)}
                       <button type="button" onClick={() => void onDownloadArtifact(artifact.id)}>{artifact.sourceName ? 'source file' : 'download'}</button>
                       <button type="button" disabled={isUnavailable || attachedIds.includes(artifact.id)} onClick={() => attachIds([artifact.id])}>attach to {selectedNote ? 'note' : 'idea'}</button>
                     </div>
@@ -520,7 +557,7 @@ export function LabNotebook({
             ) : (
               <div className="lab-notebook__empty-files">
                 <p>{query ? 'No visuals or files match your search.' : selectedTopic ? `No files in “${selectedTopic.name}” yet.` : 'Keep experiment files beside your ideas.'}</p>
-                <span>Use Save to notebook in a visual workbench, or add an exported file here.</span>
+                <span>Use Save to notebook in a workbench. Native project files can reopen for editing; images remain previews.</span>
               </div>
             )}
           </section>
@@ -531,6 +568,7 @@ export function LabNotebook({
           <header><h3>{openedArtifact.name}</h3><button type="button" onClick={() => setOpenedArtifact(null)}>close preview</button></header>
           <LabArtifactPreview artifact={openedArtifact} loadPreview={onLoadPreview} />
           <footer>
+            {editProjectButton(openedArtifact)}
             <button type="button" onClick={() => void onDownloadArtifact(openedArtifact.id)}>Download {openedArtifact.sourceName ? 'source' : 'file'}</button>
             {(openedArtifact.previewMimeType ?? openedArtifact.mimeType).startsWith('image/') ? <button type="button" onClick={() => void downloadPreview(openedArtifact)}>Download image</button> : null}
             <span>The original stays available for its creating tool.</span>

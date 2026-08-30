@@ -1,12 +1,14 @@
 import { useRef, useState, type ComponentProps } from 'react'
 import { Excalidraw, exportToBlob, serializeAsJSON } from '@excalidraw/excalidraw'
 import { LabCaptureButton } from '../lab/LabCaptureButton'
-import type { LabCapture } from '../lab/labTypes'
+import type { LabCapture, LabProjectSource } from '../lab/labTypes'
+import { loadExcalidrawProjectSource } from '../lab/labDrawingProjectSource'
 import '@excalidraw/excalidraw/index.css'
 import './ExcalidrawLab.css'
 
 type ExcalidrawLabProps = {
   theme: 'dark' | 'light'
+  initialSource?: LabProjectSource
 }
 
 type ExcalidrawInitialData = ComponentProps<typeof Excalidraw>['initialData']
@@ -14,10 +16,11 @@ type ExcalidrawOnChange = NonNullable<ComponentProps<typeof Excalidraw>['onChang
 type ExcalidrawApi = Parameters<NonNullable<ComponentProps<typeof Excalidraw>['excalidrawAPI']>>[0]
 
 /** Excalidraw already supplies its own image and native-scene export menu. */
-export function ExcalidrawLab({ theme }: ExcalidrawLabProps) {
+export function ExcalidrawLab({ theme, initialSource }: ExcalidrawLabProps) {
   const draftRef = useRef<ExcalidrawInitialData>(undefined)
   const apiRef = useRef<ExcalidrawApi | null>(null)
-  const [initialData, setInitialData] = useState<ExcalidrawInitialData>(undefined)
+  const [initialData, setInitialData] = useState<ExcalidrawInitialData>(() => initialSource
+    ? loadExcalidrawProjectSource(initialSource) : undefined)
   const [elementCount, setElementCount] = useState(0)
   const [revision, setRevision] = useState(0)
 

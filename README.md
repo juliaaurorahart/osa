@@ -77,6 +77,23 @@ where available, or download the image/native source before leaving the tool.
 Saved notebook notes, files, and topics persist independently of project
 boards. Original editable files and their previews are separate attachments.
 
+For an editable project, set **Project name**, then use the workbench's
+**Save to notebook** (Klecks' **Submit** also saves there). Each save keeps a
+separate named version; reopening and saving never overwrites the old file.
+Notebook visits keep the current editor mounted; **Return to [tool]** resumes
+it. Replacing the editor or leaving the Lab asks first. This is not draft
+autosave, and closing the browser still requires an explicit save.
+
+In **Notebook → Visuals & files**, use **Open in [tool]**, or filter to
+**Editable projects only**. Supported native files currently include Ink,
+Klecks PSD, draw.io, Excalidraw, Konva Lab, Paper, Mermaid, and Vega-Lite.
+Preview images cannot restore layers or editable shapes. Other exports remain
+downloadable; p5 source is not executed, and Pixi/Three/OSA Draw restoration is
+not implemented here. Opening draw.io requires confirmation because its
+editor is hosted at `embed.diagrams.net`, outside OSA. Saved native files are
+validated before opening; Klecks additionally parses PSD layers inside its
+local iframe. Imported Paper geometry is kept paused rather than regenerated.
+
 The private-notebook implementation keeps a local IndexedDB copy and a
 separate account notebook in D1, with its files in private R2 storage. Moving
 local notebook content to an account is an explicit copy, retaining the local

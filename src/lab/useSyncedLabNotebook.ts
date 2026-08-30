@@ -265,9 +265,10 @@ export function useSyncedLabNotebook() {
     if (organization !== current) commit({ ...current, ...organization })
   }, [commit])
 
-  const addFiles = useCallback(async (files: StoredLabArtifact[], topicIds: readonly string[]) => {
+  const addFiles = useCallback(async (files: StoredLabArtifact[], topicIds: readonly string[], expectedScope?: string) => {
     const current = currentRef.current
     if (!current || switching.current || localFailure.current) throw new Error('Open the notebook before saving files.')
+    if (expectedScope !== undefined && current.scope !== expectedScope) throw new Error('The notebook changed before this project could save. No file was added to the other notebook.')
     fileOperations.current += 1
     try {
       await storeLabDocumentFiles(current.scope, files)
@@ -294,8 +295,8 @@ export function useSyncedLabNotebook() {
       }), topicIds)
     } catch (error) { reportError(error); return [] }
   }, [addFiles, reportError])
-  const captureVisual = useCallback(async (capture: LabCapture, topicIds: readonly string[] = []) => {
-    return (await addFiles([createStoredLabCapture(capture, id(), new Date().toISOString())], topicIds))[0]
+  const captureVisual = useCallback(async (capture: LabCapture, topicIds: readonly string[] = [], expectedScope?: string) => {
+    return (await addFiles([createStoredLabCapture(capture, id(), new Date().toISOString())], topicIds, expectedScope))[0]
   }, [addFiles])
   const loadArtifactPreview = useCallback(async (artifactId: string) => {
     if (!currentRef.current) return null
@@ -304,8 +305,14 @@ export function useSyncedLabNotebook() {
     if (file.preview) return file.preview
     return file.previewMimeType?.startsWith('image/') || file.mimeType.startsWith('image/') ? file.file : null
   }, [])
-  const loadArtifactSource = useCallback(async (artifactId: string) => currentRef.current
-    ? (await loadLabFile(currentRef.current, artifactId))?.file ?? null : null, [])
+  const loadArtifactSource = useCallback(async (artifactId: string, expectedScope?: string) => {
+    const current = currentRef.current
+    if (!current) return null
+    if (expectedScope !== undefined && current.scope !== expectedScope) throw new Error('The notebook changed before this project could open.')
+    const file = await loadLabFile(current, artifactId)
+    if (expectedScope !== undefined && currentRef.current?.scope !== expectedScope) throw new Error('The notebook changed while the project was loading.')
+    return file?.file ?? null
+  }, [])
   const downloadArtifact = useCallback(async (artifactId: string) => {
     try {
       if (!currentRef.current) return

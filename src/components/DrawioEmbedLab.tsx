@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { LabCaptureButton } from '../lab/LabCaptureButton'
 import { dataUrlToBlob } from '../lab/labCaptureUtils'
-import type { LabCapture } from '../lab/labTypes'
+import type { LabCapture, LabProjectSource } from '../lab/labTypes'
 import './DrawioEmbedLab.css'
 
 /**
@@ -49,6 +49,7 @@ type DrawioEmbedLabProps = {
   theme: 'dark' | 'light'
   /** A parent may own the draft; otherwise this workbench starts with its sample. */
   initialXml?: string
+  initialSource?: LabProjectSource
   /** This is still ephemeral Lab state, never an OSA board save. */
   onXmlChange?: (xml: string) => void
 }
@@ -98,12 +99,13 @@ export function DrawioEmbedLab({
   className,
   theme,
   initialXml = DRAWIO_SAMPLE_XML,
+  initialSource,
   onXmlChange,
 }: DrawioEmbedLabProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
   // `initialXml` is read only on mount. After that the current iframe draft is
   // authoritative until it emits an autosave or explicit save event.
-  const currentXmlRef = useRef(initialXml)
+  const currentXmlRef = useRef(initialSource?.text ?? initialXml)
   const editorInitializedRef = useRef(false)
   const pendingCaptureRef = useRef<PendingCapture | null>(null)
   const [status, setStatus] = useState<LabStatus>({

@@ -1,10 +1,11 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import mermaid from 'mermaid'
 import { LabCaptureButton } from '../lab/LabCaptureButton'
-import type { LabCapture } from '../lab/labTypes'
+import type { LabCapture, LabProjectSource } from '../lab/labTypes'
+import { mermaidProjectText } from '../lab/labStructuredProjectSource'
 import './MermaidLab.css'
 
-type MermaidLabProps = { theme: 'dark' | 'light' }
+type MermaidLabProps = { theme: 'dark' | 'light'; initialSource?: LabProjectSource }
 type SampleName = keyof typeof SAMPLES
 
 const SAMPLES = {
@@ -37,12 +38,12 @@ function downloadText(text: string, filename: string, type: string) {
 }
 
 /** A local-text Mermaid editor. Rendered markup uses Mermaid's strict mode. */
-export function MermaidLab({ theme }: MermaidLabProps) {
+export function MermaidLab({ theme, initialSource }: MermaidLabProps) {
   const rawId = useId()
   const renderId = `mermaid-lab-${rawId.replace(/[^a-zA-Z0-9_-]/g, '')}`
   const outputRef = useRef<HTMLDivElement>(null)
-  const [sample, setSample] = useState<SampleName>('flowchart')
-  const [source, setSource] = useState<string>(SAMPLES.flowchart)
+  const [sample, setSample] = useState<SampleName | ''>(initialSource ? '' : 'flowchart')
+  const [source, setSource] = useState<string>(() => initialSource ? mermaidProjectText(initialSource) : SAMPLES.flowchart)
   const [error, setError] = useState('')
   const [svg, setSvg] = useState('')
   const [renderedKey, setRenderedKey] = useState('')
@@ -108,7 +109,7 @@ export function MermaidLab({ theme }: MermaidLabProps) {
       <header className="mermaid-lab__header">
         <div><h2>Mermaid lab</h2><p>Edit plain diagram text and see a strict, live preview.</p></div>
         <div className="mermaid-lab__actions">
-          <label>sample<select value={sample} onChange={(event) => chooseSample(event.target.value as SampleName)}>{Object.keys(SAMPLES).map((name) => <option key={name}>{name}</option>)}</select></label>
+          <label>sample<select value={sample} onChange={(event) => chooseSample(event.target.value as SampleName)}>{initialSource ? <option value="" disabled>saved diagram</option> : null}{Object.keys(SAMPLES).map((name) => <option key={name}>{name}</option>)}</select></label>
           <button type="button" onClick={() => downloadText(source, 'osa-diagram.mmd', 'text/plain')}>source .mmd</button>
           <button type="button" disabled={!svg} onClick={() => downloadText(svg, 'osa-diagram.svg', 'image/svg+xml')}>export SVG</button>
           <LabCaptureButton capture={capture} disabled={!svg || renderedKey !== currentKey} />

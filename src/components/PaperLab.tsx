@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import paper from 'paper'
 import { LabCaptureButton } from '../lab/LabCaptureButton'
 import { canvasToBlob } from '../lab/labCaptureUtils'
-import type { LabCapture } from '../lab/labTypes'
+import type { LabCapture, LabProjectSource } from '../lab/labTypes'
+import { parsePaperProjectSource } from '../lab/labStructuredProjectSource'
 import './PaperLab.css'
 
 type PaperTheme = 'dark' | 'light'
@@ -11,6 +12,7 @@ type PaperPreset = 'orbits' | 'bloom' | 'weave'
 type PaperLabProps = {
   /** Paper uses OSA's current colors but owns no theme or board state. */
   theme: PaperTheme
+  initialSource?: LabProjectSource
 }
 
 type SceneSettings = {
@@ -270,13 +272,16 @@ function drawScene(scope: paper.PaperScope, settings: SceneSettings) {
  * A disposable Paper.js geometry playground. Its PaperScope, project, animation,
  * and ResizeObserver all live and die inside this component.
  */
-export function PaperLab({ theme }: PaperLabProps) {
+export function PaperLab({ theme, initialSource }: PaperLabProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const canvasHostRef = useRef<HTMLDivElement | null>(null)
   const scopeRef = useRef<DisposablePaperScope | null>(null)
   const artworkRef = useRef<paper.Group | null>(null)
   const redrawRef = useRef<(() => void) | null>(null)
   const speedRef = useRef(0.65)
+  const [initialProject] = useState(() => initialSource ? parsePaperProjectSource(initialSource) : null)
+  const importedProjectRef = useRef(initialProject)
+  const [isImported, setIsImported] = useState(Boolean(initialProject))
   const settingsRef = useRef<SceneSettings>({
     preset: 'orbits',
     complexity: 7,
@@ -288,7 +293,7 @@ export function PaperLab({ theme }: PaperLabProps) {
   const [complexity, setComplexity] = useState(7)
   const [speed, setSpeed] = useState(0.65)
   const [generation, setGeneration] = useState(1)
-  const [isPlaying, setIsPlaying] = useState(true)
+  const [isPlaying, setIsPlaying] = useState(!initialProject)
   const [isCleared, setIsCleared] = useState(false)
 
   useEffect(() => {
@@ -299,14 +304,35 @@ export function PaperLab({ theme }: PaperLabProps) {
     const scope = new paper.PaperScope() as DisposablePaperScope
     scope.setup(canvas)
     scopeRef.current = scope
+    let hasDrawnProject = false
+
+    const fitImportedProject = () => {
+      const bounds = scope.project.activeLayer?.bounds
+      if (!bounds || !bounds.width || !bounds.height) return
+      scope.view.zoom = Math.min((scope.view.viewSize.width - 24) / bounds.width,
+        (scope.view.viewSize.height - 24) / bounds.height, 2)
+      scope.view.center = bounds.center
+    }
 
     const redraw = () => {
+      hasDrawnProject = true
+      if (importedProjectRef.current) {
+        scope.project.clear()
+        scope.project.importJSON(JSON.stringify(importedProjectRef.current))
+        artworkRef.current = scope.project.getItem({ name: 'generated-artwork' }) as paper.Group | null
+          ?? scope.project.activeLayer
+        fitImportedProject()
+        scope.view.update()
+        return
+      }
       if (settingsRef.current.cleared) {
         artworkRef.current = null
         scope.project.clear()
         scope.view.update()
         return
       }
+      scope.view.zoom = 1
+      scope.view.center = new scope.Point(scope.view.viewSize.width / 2, scope.view.viewSize.height / 2)
       artworkRef.current = drawScene(scope, settingsRef.current)
     }
     redrawRef.current = redraw
@@ -322,16 +348,42 @@ export function PaperLab({ theme }: PaperLabProps) {
       const bounds = host.getBoundingClientRect()
       const width = Math.max(320, Math.round(bounds.width || 900))
       const height = Math.max(460, Math.round(bounds.height || 560))
-      if (scope.view.viewSize.width === width && scope.view.viewSize.height === height) return
+      if (scope.view.viewSize.width === width && scope.view.viewSize.height === height) {
+        if (!hasDrawnProject) redraw()
+        return
+      }
       scope.view.viewSize = new scope.Size(width, height)
-      redraw()
+      if (importedProjectRef.current && hasDrawnProject) {
+        fitImportedProject()
+        scope.view.update()
+      } else redraw()
     }
     const resizeObserver = new ResizeObserver(resizeCanvas)
     resizeObserver.observe(host)
     resizeCanvas()
+    // A loaded native vector project stays editable, not just a flattened
+    // preview. Drag a path/item without executing any embedded source code.
+    const tool = new scope.Tool()
+    let dragged: paper.Item | null = null
+    tool.onMouseDown = (event: paper.ToolEvent) => {
+      if (!importedProjectRef.current) return
+      const hit = scope.project.hitTest(event.point, { fill: true, stroke: true, tolerance: 7 })
+      if (hit?.item && !hit.item.locked && hit.item.name !== 'background') {
+        dragged = hit.item
+        dragged.selected = true
+      }
+    }
+    tool.onMouseDrag = (event: paper.ToolEvent) => {
+      if (dragged) dragged.position = dragged.position.add(event.delta)
+    }
+    tool.onMouseUp = () => {
+      if (dragged) dragged.selected = false
+      dragged = null
+    }
 
     return () => {
       resizeObserver.disconnect()
+      tool.remove()
       redrawRef.current = null
       artworkRef.current = null
       scope.view.onFrame = null
@@ -344,7 +396,8 @@ export function PaperLab({ theme }: PaperLabProps) {
 
   useEffect(() => {
     settingsRef.current = { preset, complexity, generation, theme, cleared: isCleared }
-    redrawRef.current?.()
+    // Theme/resizing must not regenerate or overwrite reopened geometry.
+    if (!importedProjectRef.current) redrawRef.current?.()
   }, [complexity, generation, isCleared, preset, theme])
 
   useEffect(() => {
@@ -374,7 +427,16 @@ export function PaperLab({ theme }: PaperLabProps) {
   }
 
   const clearProject = () => {
+    importedProjectRef.current = null
+    setIsImported(false)
     setIsCleared(true)
+  }
+
+  const newGeneratedProject = () => {
+    importedProjectRef.current = null
+    setIsImported(false)
+    setGeneration((current) => current + 1)
+    setIsCleared(false)
   }
 
   const exportSvg = () => {
@@ -408,7 +470,7 @@ export function PaperLab({ theme }: PaperLabProps) {
     scope.view.update()
     const source = new Blob([scope.project.exportJSON({ asString: true, precision: 4 })], { type: 'application/json' })
     const preview = await canvasToBlob(canvas)
-    return { name: `Paper ${preset}`, toolId: 'paper', preview, source: { blob: source, name: 'paper-lab.json' } }
+    return { name: isImported ? 'Paper vector project' : `Paper ${preset}`, toolId: 'paper', preview, source: { blob: source, name: 'paper-lab.json' } }
   }
 
   return (
@@ -416,7 +478,7 @@ export function PaperLab({ theme }: PaperLabProps) {
       <header className="paper-lab__header">
         <div className="paper-lab__title">
           <h2>Paper.js</h2>
-          <p>local vector geometry</p>
+          <p>{isImported ? 'saved vectors · drag an item to move it' : 'local vector geometry'}</p>
         </div>
         <div className="paper-lab__exports" aria-label="Export Paper project">
           <button type="button" onClick={exportSvg}>SVG</button>
@@ -431,6 +493,7 @@ export function PaperLab({ theme }: PaperLabProps) {
           <span>preset</span>
           <select
             value={preset}
+            disabled={isImported}
             onChange={(event) => choosePreset(event.target.value as PaperPreset)}
           >
             <option value="orbits">orbits</option>
@@ -446,6 +509,7 @@ export function PaperLab({ theme }: PaperLabProps) {
             min="3"
             max="14"
             value={complexity}
+            disabled={isImported}
             onChange={(event) => chooseComplexity(Number(event.target.value))}
           />
           <output>{complexity}</output>
@@ -473,7 +537,8 @@ export function PaperLab({ theme }: PaperLabProps) {
           >
             {isPlaying ? 'pause' : 'play'}
           </button>
-          <button type="button" onClick={regenerate}>regenerate</button>
+          {isImported ? <button type="button" onClick={newGeneratedProject}>new generated project</button>
+            : <button type="button" onClick={regenerate}>regenerate</button>}
           <button type="button" disabled={isCleared} onClick={clearProject}>clear</button>
         </div>
       </div>
@@ -483,9 +548,9 @@ export function PaperLab({ theme }: PaperLabProps) {
       </div>
 
       <footer className="paper-lab__footer" aria-live="polite">
-        <span>{isCleared ? 'empty project' : `${preset} · density ${complexity}`}</span>
+        <span>{isCleared ? 'empty project' : isImported ? 'saved vector project' : `${preset} · density ${complexity}`}</span>
         <span>{isPlaying ? 'animating' : 'paused'}</span>
-        <span>local sample</span>
+        <span>{isImported ? 'drag vectors to edit · saved geometry retained' : 'local sample'}</span>
       </footer>
     </section>
   )

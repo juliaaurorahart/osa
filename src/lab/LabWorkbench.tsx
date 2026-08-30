@@ -1,5 +1,5 @@
 import { lazy } from 'react'
-import type { LabTheme, LabWorkbenchId } from './labTypes'
+import type { LabProjectSource, LabTheme, LabWorkbenchId } from './labTypes'
 
 const InkLab = lazy(() => import('../components/InkLab').then((module) => ({ default: module.InkLab })))
 const KlecksLab = lazy(() => import('../components/KlecksLab').then((module) => ({ default: module.KlecksLab })))
@@ -42,25 +42,26 @@ const CodeEditorLab = lazy(() => import('../components/CodeEditorLab').then((mod
 })))
 
 /** The one place where a catalog ID is connected to its executable workbench. */
-export function LabWorkbench({ workbenchId, theme }: {
+export function LabWorkbench({ workbenchId, theme, initialSource }: {
   workbenchId: LabWorkbenchId
   theme: LabTheme
+  initialSource?: LabProjectSource
 }) {
   switch (workbenchId) {
     case 'ink':
-      return <InkLab theme={theme} />
+      return <InkLab theme={theme} initialSource={initialSource} />
     case 'klecks':
-      return <KlecksLab theme={theme} />
+      return <KlecksLab theme={theme} initialSource={initialSource} />
     case 'drawio':
-      return <DrawioEmbedLab theme={theme} />
+      return <DrawioEmbedLab theme={theme} initialSource={initialSource} />
     case 'excalidraw':
-      return <ExcalidrawLab theme={theme} />
+      return <ExcalidrawLab theme={theme} initialSource={initialSource} />
     case 'konva':
-      return <KonvaLab theme={theme} />
+      return <KonvaLab theme={theme} initialSource={initialSource} />
     case 'fabric':
       return <FabricLab theme={theme} />
     case 'paper':
-      return <PaperLab theme={theme} />
+      return <PaperLab theme={theme} initialSource={initialSource} />
     case 'p5':
       return <P5Lab theme={theme} />
     case 'pixi':
@@ -70,9 +71,9 @@ export function LabWorkbench({ workbenchId, theme }: {
     case 'three':
       return <ThreeLab theme={theme} />
     case 'mermaid':
-      return <MermaidLab theme={theme} />
+      return <MermaidLab theme={theme} initialSource={initialSource} />
     case 'vega':
-      return <VegaLab theme={theme} />
+      return <VegaLab theme={theme} initialSource={initialSource} />
     case 'code':
       return <CodeEditorLab theme={theme} />
   }

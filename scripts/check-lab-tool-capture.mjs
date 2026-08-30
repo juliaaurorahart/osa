@@ -65,6 +65,7 @@ function CaptureButton({ capture, disabled }) {
 const sharedMocks = {
   '../lab/LabCaptureButton': { LabCaptureButton: CaptureButton },
   '../lab/labCaptureUtils': loadModule('src/lab/labCaptureUtils.ts'),
+  '../lab/labStructuredProjectSource': loadModule('src/lab/labStructuredProjectSource.ts'),
 }
 const root = createRoot(document.getElementById('root'))
 const render = (Component, props) => React.act(async () => root.render(React.createElement(Component, props)))
