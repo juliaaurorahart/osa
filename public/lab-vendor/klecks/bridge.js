@@ -22,6 +22,17 @@
   }
   const submissions = new Map()
   const send = (type, data = {}) => parent.postMessage({ channel, token, type, ...data }, origin)
+  // Signal edits immediately; the parent coalesces writes and requests only PSD,
+  // never a PNG preview. Incomplete brush strokes are not checkpointed.
+  for (const type of ['pointerup', 'pointercancel', 'keyup', 'input', 'change', 'drop', 'paste']) {
+    addEventListener(type, () => {
+      if (ready && !captureBusy) send('draft-changed')
+    })
+  }
+  // Also catch async image imports and changes completed inside upstream dialogs.
+  setInterval(() => {
+    if (ready && !captureBusy && !activePointers.size && document.visibilityState !== 'hidden') send('draft-changed')
+  }, 10000)
   const fail = (error) => send('error', { message: error instanceof Error ? error.message : String(error) })
   const capture = async () => {
     if (!ready || !painter?.getPNG || !painter?.getPSD) throw new Error('The painter is still preparing. Try again shortly.')
@@ -87,6 +98,23 @@
     if (data.type === 'init') { try { await initialize(data) } catch (error) { fail(error) } }
     if (data.type === 'capture' && typeof data.id === 'string') {
       try { send('capture-result', { id: data.id, ...await capture() }) } catch (error) { send('capture-error', { id: data.id, message: error instanceof Error ? error.message : 'The painting could not be exported.' }) }
+    }
+    if (data.type === 'draft' && typeof data.id === 'string') {
+      const deadline = performance.now() + 40000
+      const checkpoint = async () => {
+        if (activePointers.size || captureBusy) {
+          if (performance.now() < deadline) { setTimeout(checkpoint, 100); return }
+          send('draft-error', { id: data.id, message: 'Finish the current brush stroke to save its draft.' }); return
+        }
+        if (!ready || !painter?.getPSD) { send('draft-error', { id: data.id, message: 'The painter is not ready to save drafts yet.' }); return }
+        captureBusy = true
+        const wasInert = document.body.inert
+        document.body.inert = true
+        try { send('draft-result', { id: data.id, psd: await painter.getPSD() }) }
+        catch (error) { send('draft-error', { id: data.id, message: error instanceof Error ? error.message : 'Could not save the painting draft.' }) }
+        finally { document.body.inert = wasInert; captureBusy = false }
+      }
+      void checkpoint()
     }
     if (data.type === 'validate-psd' && typeof data.id === 'string' && data.psd instanceof ArrayBuffer) {
       try {

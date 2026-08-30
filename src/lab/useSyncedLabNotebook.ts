@@ -4,10 +4,11 @@ import { applyLabNotePatch, createStoredLabCapture, labArtifactMetadata, labFile
 import { findLabTopic, normalizeLabTopicName, normalizeLabOrganization, setLabObjectTopics } from './labNotebookTopics'
 import { copyLabContents, LAB_PROPERTY, labContentsFromSnapshot, labSnapshotFromContents, type LabNotebookContents } from './labNotebookGraph'
 import { accountLabScope, GUEST_LAB_SCOPE, keepLabRecovery, LabLocalConflictError, openGuestLabDocument,
-  readLabDocument, readLatestLabRecovery, storeLabDocumentFiles, writeLabDocument, type LabNotebookDocument } from './labNotebookDocumentStorage'
+  readLabDocument, readLabDocumentFile, readLatestLabRecovery, storeLabDocumentFiles, writeLabDocument, type LabNotebookDocument } from './labNotebookDocumentStorage'
 import { checkLabAccount, fetchCloudNotebook, fetchLabSession, loadLabFile, portableLabSnapshot, saveCloudNotebook } from './labNotebookCloud'
 import type { LabArtifact, LabCapture, LabNote, LabNotebookObjectType, StoredLabArtifact } from './labTypes'
 import type { LabNotebookStatus } from './useLabNotebook'
+import { DRAFT_TOOLS, draftSlotId, draftMatchesSave, labDraftHash, type LabProjectDraftInput } from './labDrafts'
 
 export type LabNotebookSyncStatus = 'local' | 'syncing' | 'synced' | 'pending' | 'conflict' | 'offline'
 const LAST_ACCOUNT_KEY = 'osa.lab.lastAccount'
@@ -61,19 +62,22 @@ export function useSyncedLabNotebook() {
   /** No local debounce: unmount cannot discard a queued keystroke. */
   const persist = useCallback((next: LabNotebookDocument, expected: number | null) => {
     const writing = writeQueue.current.then(() => writeLabDocument(next, expected))
-    writeQueue.current = writing.catch(() => undefined)
-    void writing.then(() => {
+    const acknowledged = writing.then(() => {
       if (mounted.current && currentRef.current?.scope === next.scope && currentRef.current.localVersion === next.localVersion) {
         setStatus('saved'); setMessage(next.dirty ? 'Saved on this device · waiting to sync' : 'Notebook saved on this device')
       }
-    }).catch((error: unknown) => {
-      if (currentRef.current?.scope !== next.scope) return
-      localFailure.current = true
-      if (mounted.current) setStorageFailed(true)
-      if (error instanceof LabLocalConflictError) reportConflict(error.message)
-      reportError(error)
+    }, (error: unknown) => {
+      if (currentRef.current?.scope === next.scope) {
+        localFailure.current = true
+        if (mounted.current) setStorageFailed(true)
+        if (error instanceof LabLocalConflictError) reportConflict(error.message)
+        reportError(error)
+      }
+      throw error
     })
-    return writing
+    // The durability waiter must observe failure flags before it can resume.
+    writeQueue.current = acknowledged.catch(() => undefined)
+    return acknowledged
   }, [reportConflict, reportError])
   const commit = useCallback((nextContents: LabNotebookContents) => {
     const current = currentRef.current
@@ -248,6 +252,30 @@ export function useSyncedLabNotebook() {
     const edited = applyLabNotePatch(existing, patch, new Set(current.artifacts.map((file) => file.id)), new Date().toISOString())
     if (edited !== existing) commit({ ...current, notes: current.notes.map((note) => note.id === noteId ? edited : note) })
   }, [commit])
+  const saveNoteDraft = useCallback(async (note: LabNote, topicIds: readonly string[], expectedScope: string, expectedUpdatedAt?: string) => {
+    const current = currentRef.current
+    if (!current || current.scope !== expectedScope || switching.current || localFailure.current) throw new Error('The notebook changed. Your idea has not been moved to another account.')
+    const existing = labContentsFromSnapshot(current.snapshot)
+    const previous = existing.notes.find((item) => item.id === note.id)
+    if (previous && !previous.isDraft) throw new Error('This idea has already been saved as a note. Reopen that note to continue.')
+    if (previous && previous.updatedAt !== expectedUpdatedAt) throw new Error('This idea changed elsewhere. Add your current writing as a separate idea to keep both versions.')
+    const next = { ...note, isDraft: true, createdAt: previous?.createdAt ?? note.createdAt }
+    if (!commit({ ...existing, ...setLabObjectTopics(existing, 'note', note.id, topicIds),
+      notes: previous ? existing.notes.map((item) => item.id === note.id ? next : item) : [next, ...existing.notes] })) throw new Error('The draft could not be saved.')
+    await writeQueue.current
+    if (localFailure.current) throw new Error('Draft storage failed. Keep this page open and copy your text before leaving.')
+  }, [commit])
+  const promoteNoteDraft = useCallback(async (noteId: string, expectedScope: string, expectedUpdatedAt?: string) => {
+    const current = currentRef.current
+    if (!current || current.scope !== expectedScope || switching.current || localFailure.current) throw new Error('Return to the original notebook before adding this idea.')
+    const existing = labContentsFromSnapshot(current.snapshot)
+    if (!existing.notes.some((note) => note.id === noteId && note.isDraft)) throw new Error('The draft is not available. Your editor text has been kept.')
+    if (existing.notes.find((note) => note.id === noteId)?.updatedAt !== expectedUpdatedAt) throw new Error('This idea changed before it could be added. Your writing is still in the editor; add it as a separate idea to keep both.')
+    if (!commit({ ...existing, notes: existing.notes.map((note) => note.id === noteId ? { ...note, isDraft: false } : note) })) throw new Error('The note could not be saved.')
+    await writeQueue.current
+    if (localFailure.current) throw new Error('The note save could not be confirmed. Your draft text has been kept.')
+    return noteId
+  }, [commit])
   const createTopic = useCallback((name: string): string | null => {
     if (!currentRef.current) return null
     const current = labContentsFromSnapshot(currentRef.current.snapshot)
@@ -298,40 +326,85 @@ export function useSyncedLabNotebook() {
   }, [addFiles, reportError])
   const getArtifact = useCallback((artifactId: string) => currentRef.current
     ? labContentsFromSnapshot(currentRef.current.snapshot).artifacts.find((item) => item.id === artifactId) : undefined, [])
+  const getProjectDraft = useCallback((projectId: string) => currentRef.current
+    ? labContentsFromSnapshot(currentRef.current.snapshot).artifacts.find((item) => item.draftOf === projectId) : undefined, [])
+  const saveProjectDraft = useCallback(async (input: LabProjectDraftInput, expectedScope: string): Promise<LabArtifact> => {
+    const current = currentRef.current
+    if (!current || current.scope !== expectedScope || switching.current || localFailure.current) throw new Error('Draft storage is unavailable in this notebook. Keep the editor open or download your work.')
+    if (!DRAFT_TOOLS.has(input.toolId)) throw new Error('This tool does not support recovery drafts yet.')
+    if (input.source.blob.size > MAX_LAB_ARTIFACT_BYTES) throw new Error('The draft exceeds the 25 MB file limit. Export your work to keep it.')
+    fileOperations.current += 1
+    try {
+      const hash = await labDraftHash(input.source.blob)
+      if (currentRef.current?.scope !== expectedScope) throw new Error('The notebook changed before this draft could save.')
+      let existing = labContentsFromSnapshot(currentRef.current.snapshot)
+      const previous = existing.artifacts.find((item) => item.draftOf === input.projectId)
+      if (previous && previous.fileId !== input.expectedDraftFileId) throw new Error('This draft changed elsewhere. Your working editor is still intact; save a separate copy before reloading.')
+      if (previous?.draftHash === hash && previous.name === input.name
+        && previous.draftBaseFileId === input.baseFileId) return previous
+      const now = new Date().toISOString()
+      const fileId = id()
+      const draft: LabArtifact = { id: previous?.id ?? draftSlotId(input.projectId), fileId,
+        name: input.name, toolId: input.toolId, sourceName: input.source.name,
+        mimeType: input.source.blob.type || 'application/octet-stream', size: input.source.blob.size,
+        createdAt: previous?.createdAt ?? now, updatedAt: now, draftOf: input.projectId,
+        draftBaseFileId: input.baseFileId, draftActive: true, draftHash: hash }
+      await storeLabDocumentFiles(expectedScope, [{ ...draft, id: fileId, file: input.source.blob }])
+      if (currentRef.current?.scope !== expectedScope) throw new Error('The notebook changed while the draft was saving. Its bytes remain in the original notebook.')
+      existing = labContentsFromSnapshot(currentRef.current.snapshot)
+      const latest = existing.artifacts.find((item) => item.draftOf === input.projectId)
+      if (latest?.fileId !== previous?.fileId) throw new Error('A newer draft was saved before this one finished. Neither saved file was changed.')
+      const topicIds = existing.topicLinks.filter((link) => link.objectType === 'artifact' && link.objectId === input.projectId).map((link) => link.topicId)
+      if (!commit({ ...existing, ...setLabObjectTopics(existing, 'artifact', draft.id, topicIds),
+        artifacts: previous ? existing.artifacts.map((item) => item.id === previous.id ? draft : item) : [draft, ...existing.artifacts] })) throw new Error('The draft could not be recorded.')
+      await writeQueue.current
+      if (localFailure.current) throw new Error('The draft write could not be confirmed. Keep this editor open or export your work.')
+      return draft
+    } finally { fileOperations.current -= 1 }
+  }, [commit])
   const captureVisual = useCallback(async (capture: LabCapture, topicIds: readonly string[] = [], expectedScope?: string,
-    options?: { artifactId?: string; expectedFileId?: string }) => {
-    if (!options?.artifactId) return (await addFiles([createStoredLabCapture(capture, id(), new Date().toISOString())], topicIds, expectedScope))[0]
+    options?: { artifactId?: string; expectedFileId?: string; newArtifactId?: string }) => {
+    if (!options?.artifactId && !options?.newArtifactId) return (await addFiles([createStoredLabCapture(capture, id(), new Date().toISOString())], topicIds, expectedScope))[0]
     const current = currentRef.current
     if (!current || switching.current || localFailure.current) throw new Error('Open the notebook before saving files.')
     if (expectedScope !== undefined && current.scope !== expectedScope) throw new Error('The notebook changed before this project could save.')
-    const previous = getArtifact(options.artifactId)
-    if (!previous || previous.revisionOf) throw new Error('This project is no longer available. Use Save a copy to keep your work.')
-    if (previous.deletedAt) throw new Error('This project is in Trash. Restore it in the notebook or use Save a copy.')
-    if (options.expectedFileId && options.expectedFileId !== (previous.fileId || previous.id)) {
+    const previous = options.artifactId ? getArtifact(options.artifactId) : undefined
+    if (options.artifactId && (!previous || previous.revisionOf || previous.draftOf)) throw new Error('This project is no longer available. Use Save a copy to keep your work.')
+    if (previous?.deletedAt) throw new Error('This project is in Trash. Restore it in the notebook or use Save a copy.')
+    if (previous && options.expectedFileId && options.expectedFileId !== (previous.fileId || previous.id)) {
       throw new Error('This project changed since you opened it. Use Save a copy to preserve your edits, or reopen the latest file.')
     }
     const now = new Date().toISOString()
     const file = createStoredLabCapture(capture, id(), now)
+    const projectId = previous?.id ?? options.newArtifactId!
+    if (!previous && getArtifact(projectId)) throw new Error('This project identity is already in use. Save a copy instead.')
     fileOperations.current += 1
     try {
+      const draft = labContentsFromSnapshot(current.snapshot).artifacts.find((item) => item.draftOf === projectId)
+      const draftFile = draft ? await readLabDocumentFile(current.scope, draft.fileId || draft.id) : null
+      const consumesDraft = draft ? await draftMatchesSave(draft, draftFile?.file ?? null, file.file) : false
       // Every save gets fresh bytes. A failed metadata write cannot damage the
       // old project or the files referenced by a conflict/recovery snapshot.
       await storeLabDocumentFiles(current.scope, [file])
       if (currentRef.current?.scope !== current.scope) throw new Error('The notebook changed while saving. No file was changed in the other notebook.')
       const existing = labContentsFromSnapshot(currentRef.current.snapshot)
-      const latest = existing.artifacts.find((item) => item.id === previous.id)
-      if (!latest || latest.deletedAt || (latest.fileId || latest.id) !== (previous.fileId || previous.id)) {
+      const latest = existing.artifacts.find((item) => item.id === projectId)
+      if (previous ? (!latest || latest.deletedAt || (latest.fileId || latest.id) !== (previous.fileId || previous.id)) : Boolean(latest)) {
         throw new Error('This project changed while saving. Your previous saved file is safe. Use Save a copy to keep these edits.')
       }
-      const revision: LabArtifact = { ...previous, id: id(), revisionOf: previous.id, fileId: previous.fileId || previous.id }
-      const updated: LabArtifact = { ...labArtifactMetadata(file), id: previous.id, fileId: file.id,
-        createdAt: previous.createdAt, updatedAt: now }
-      if (!commit({ ...existing, artifacts: [revision, ...existing.artifacts.map((item) => item.id === previous.id ? updated : item)] })) {
+      const revisions: LabArtifact[] = previous ? [{ ...previous, id: id(), revisionOf: previous.id, fileId: previous.fileId || previous.id }] : []
+      const updated: LabArtifact = { ...labArtifactMetadata(file), id: projectId, fileId: file.id,
+        createdAt: previous?.createdAt ?? now, updatedAt: now }
+      const artifacts = existing.artifacts.map((item) => item.id === projectId ? updated : item.draftOf === projectId
+        && consumesDraft && item.fileId === draft?.fileId && item.name === capture.name
+        ? { ...item, draftBaseFileId: file.id, draftActive: false } : item)
+      if (!commit({ ...existing, ...(!previous ? setLabObjectTopics(existing, 'artifact', projectId, topicIds) : {}),
+        artifacts: [...revisions, ...(!previous ? [updated] : []), ...artifacts] })) {
         throw new Error('The project could not be updated. The previous saved version is unchanged.')
       }
       await writeQueue.current
       if (localFailure.current) throw new Error('The notebook could not finish saving. Your earlier version is preserved; download a recovery copy before continuing.')
-      return previous.id
+      return projectId
     } finally { fileOperations.current -= 1 }
   }, [addFiles, commit, getArtifact])
   const changeArtifact = useCallback(async (artifactId: string, change: (artifact: LabArtifact, all: LabArtifact[]) => LabArtifact[]) => {
@@ -489,12 +562,15 @@ export function useSyncedLabNotebook() {
   }, [email, offlineAccount, reportError, showDocument])
 
   return { ...contents,
-    artifacts: contents.artifacts.filter((artifact) => !artifact.revisionOf && !artifact.deletedAt),
-    trashedArtifacts: contents.artifacts.filter((artifact) => !artifact.revisionOf && artifact.deletedAt),
+    notes: contents.notes.filter((note) => !note.isDraft), noteDrafts: contents.notes.filter((note) => note.isDraft),
+    projectDrafts: contents.artifacts.filter((artifact) => artifact.draftOf && artifact.draftActive),
+    artifacts: contents.artifacts.filter((artifact) => !artifact.draftOf && !artifact.revisionOf && !artifact.deletedAt),
+    trashedArtifacts: contents.artifacts.filter((artifact) => !artifact.draftOf && !artifact.revisionOf && artifact.deletedAt),
     artifactRevisions: contents.artifacts.filter((artifact) => artifact.revisionOf),
-    getArtifact, trashArtifact, restoreArtifact, restoreRevision,
+    getArtifact, getProjectDraft, trashArtifact, restoreArtifact, restoreRevision,
     status, message, isReady: Boolean(document) && !busy && !storageFailed,
     createNote, updateNote, createTopic, setObjectTopics, importFiles, captureVisual,
+    saveNoteDraft, promoteNoteDraft, saveProjectDraft,
     loadArtifactPreview, loadArtifactSource, downloadArtifact,
     scope: document?.scope ?? 'loading', email, offlineAccount, syncStatus, syncMessage, busy, conflict,
     isLocal: !document?.boardId, cloudAvailable: Boolean(email) || !isLocalHost(), syncNow, loadLatest, exportNotebook,

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useRef, useState } from 'react'
+import { LabDraftContext } from '../lab/LabDraftContext'
 import paper from 'paper'
 import { LabCaptureButton } from '../lab/LabCaptureButton'
 import { canvasToBlob } from '../lab/labCaptureUtils'
@@ -273,6 +274,10 @@ function drawScene(scope: paper.PaperScope, settings: SceneSettings) {
  * and ResizeObserver all live and die inside this component.
  */
 export function PaperLab({ theme, initialSource }: PaperLabProps) {
+  const reportDraft = useContext(LabDraftContext)
+  const draftReporter = useRef(reportDraft)
+  const checkpointRef = useRef<(() => void) | null>(null)
+  useEffect(() => { draftReporter.current = reportDraft; checkpointRef.current?.() }, [reportDraft])
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const canvasHostRef = useRef<HTMLDivElement | null>(null)
   const scopeRef = useRef<DisposablePaperScope | null>(null)
@@ -304,6 +309,12 @@ export function PaperLab({ theme, initialSource }: PaperLabProps) {
     const scope = new paper.PaperScope() as DisposablePaperScope
     scope.setup(canvas)
     scopeRef.current = scope
+    const checkpoint = () => {
+      // Serialize before a later remount can dispose this PaperScope.
+      const json = scope.project.exportJSON({ asString: true, precision: 4 })
+      draftReporter.current?.({ name: 'drawing.paper.json', blob: new Blob([json], { type: 'application/json' }) })
+    }
+    checkpointRef.current = checkpoint
     let hasDrawnProject = false
 
     const fitImportedProject = () => {
@@ -323,17 +334,20 @@ export function PaperLab({ theme, initialSource }: PaperLabProps) {
           ?? scope.project.activeLayer
         fitImportedProject()
         scope.view.update()
+        checkpoint()
         return
       }
       if (settingsRef.current.cleared) {
         artworkRef.current = null
         scope.project.clear()
         scope.view.update()
+        checkpoint()
         return
       }
       scope.view.zoom = 1
       scope.view.center = new scope.Point(scope.view.viewSize.width / 2, scope.view.viewSize.height / 2)
       artworkRef.current = drawScene(scope, settingsRef.current)
+      checkpoint()
     }
     redrawRef.current = redraw
 
@@ -379,12 +393,14 @@ export function PaperLab({ theme, initialSource }: PaperLabProps) {
     tool.onMouseUp = () => {
       if (dragged) dragged.selected = false
       dragged = null
+      checkpoint()
     }
 
     return () => {
       resizeObserver.disconnect()
       tool.remove()
       redrawRef.current = null
+      checkpointRef.current = null
       artworkRef.current = null
       scope.view.onFrame = null
       scope.view.pause()
@@ -408,7 +424,7 @@ export function PaperLab({ theme, initialSource }: PaperLabProps) {
     const view = scopeRef.current?.view
     if (!view) return
     if (isPlaying) view.play()
-    else view.pause()
+    else { view.pause(); checkpointRef.current?.() }
   }, [isPlaying])
 
   const choosePreset = (nextPreset: PaperPreset) => {

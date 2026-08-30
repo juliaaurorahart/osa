@@ -109,6 +109,7 @@ export function DrawioEmbedLab({
   // `initialXml` is read only on mount. After that the current iframe draft is
   // authoritative until it emits an autosave or explicit save event.
   const currentXmlRef = useRef(initialSource?.text ?? initialXml)
+  useEffect(() => { onXmlChange?.(currentXmlRef.current) }, [onXmlChange])
   const lastSavedXmlRef = useRef<string | undefined>(undefined)
   const editorInitializedRef = useRef(false)
   const pendingCaptureRef = useRef<PendingCapture | null>(null)

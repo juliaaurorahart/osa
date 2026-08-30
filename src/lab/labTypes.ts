@@ -22,6 +22,10 @@ export type LabProjectSource = {
   file: Blob
   text: string | null
   name: string
+  /** Recovery buffers may be incomplete; never execute them on restore. */
+  isDraft?: boolean
+  editorText?: string
+  appliedText?: string
 }
 
 /** A route inside the Lab overlay. It never changes the active OSA board. */
@@ -54,6 +58,8 @@ export type LabNote = {
   updatedAt: string
   /** Attachments stay reusable notebook objects when removed from this note. */
   artifactIds?: string[]
+  /** An idea that is protected but has not been added to the saved notes yet. */
+  isDraft?: boolean
 }
 
 /** Metadata shown in the notebook while the file Blob stays in IndexedDB. */
@@ -74,7 +80,14 @@ export type LabArtifact = {
   description?: string
   previewMimeType?: string
   sourceName?: string
+  /** One hidden working slot per project; native bytes remain immutable. */
+  draftOf?: string
+  draftBaseFileId?: string
+  draftActive?: boolean
+  draftHash?: string
 }
+
+export type LabDraftSource = { blob: Blob; name: string }
 
 export type StoredLabArtifact = LabArtifact & {
   /** The original editable source, or the image itself for image-only captures. */

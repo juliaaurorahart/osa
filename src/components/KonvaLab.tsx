@@ -252,6 +252,7 @@ export function KonvaLab({ theme, initialDocument, initialSource, onDocumentChan
     setItems(snapshot)
     onDocumentChange?.({ items: cloneItems(snapshot) })
   }, [onDocumentChange])
+  useEffect(() => { onDocumentChange?.({ items: cloneItems(itemsRef.current) }) }, [onDocumentChange])
 
   const commitItems = useCallback((update: ItemUpdate) => {
     const current = cloneItems(itemsRef.current)

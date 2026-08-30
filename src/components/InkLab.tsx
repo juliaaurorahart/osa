@@ -1,4 +1,5 @@
-import { useId, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
+import { useContext, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
+import { LabDraftContext } from '../lab/LabDraftContext'
 import { LabCaptureButton } from '../lab/LabCaptureButton'
 import type { LabCapture, LabProjectSource } from '../lab/labTypes'
 import { INK_POINT_LIMIT, INK_SOURCE_LIMIT, createInkDocument, inkDocumentPng, inkDocumentSvg, inkStrokePath, parseInkDocument, type InkDocument, type InkPen, type InkPoint, type InkStroke } from '../lab/inkDocument'
@@ -21,8 +22,10 @@ function download(blob: Blob, name: string) {
 
 /** Local ink source and previews only: no OSA graph or board mutations. */
 export function InkLab({ onSave, initialSource }: { onSave?: (capture: LabCapture) => Promise<string>; theme?: 'dark' | 'light'; initialSource?: LabProjectSource } = {}) {
+  const reportDraft = useContext(LabDraftContext)
   const [document, setDocument] = useState<InkDocument>(() => initialSource
     ? parseInkDocument(initialSource.text ?? '') : createInkDocument())
+  useEffect(() => { reportDraft?.(() => ({ name: 'drawing.osa-ink.json', blob: new Blob([JSON.stringify(document)], { type: 'application/json' }) })) }, [document, reportDraft])
   const [past, setPast] = useState<InkDocument[]>([])
   const [future, setFuture] = useState<InkDocument[]>([])
   const [pen, setPen] = useState<InkPen>('ink')

@@ -1,7 +1,8 @@
 import { useContext, useEffect, useRef, useState } from 'react'
 import { LabCaptureButton } from '../lab/LabCaptureButton'
 import { LabCaptureContext } from '../lab/LabCaptureContext'
-import type { LabCapture, LabProjectSource } from '../lab/labTypes'
+import { LabDraftContext } from '../lab/LabDraftContext'
+import type { LabCapture, LabDraftSource, LabProjectSource } from '../lab/labTypes'
 import { validateKlecksProjectSource } from '../lab/labDrawingProjectSource'
 import './KlecksLab.css'
 
@@ -28,6 +29,9 @@ function captureFromMessage(data: Record<string, unknown>): LabCapture {
 /** The upstream singleton lives in its own same-origin document, not React's DOM. */
 export function KlecksLab({ onSave, initialSource }: { onSave?: (capture: LabCapture) => Promise<string>; theme?: 'dark' | 'light'; initialSource?: LabProjectSource } = {}) {
   const contextSave = useContext(LabCaptureContext)
+  const reportDraft = useContext(LabDraftContext)
+  const draftReporter = useRef(reportDraft)
+  const draftReader = useRef<(() => Promise<LabDraftSource>) | null>(null)
   const save = onSave ?? contextSave
   const saveRef = useRef(save)
   const iframeRef = useRef<HTMLIFrameElement>(null)
@@ -46,20 +50,39 @@ export function KlecksLab({ onSave, initialSource }: { onSave?: (capture: LabCap
 
   useEffect(() => { saveRef.current = save }, [save])
   useEffect(() => {
+    draftReporter.current = reportDraft
+    if (ready && draftReader.current) reportDraft?.(draftReader.current)
+  }, [reportDraft, ready])
+  useEffect(() => {
     const pending = pendingRef.current
     const validations = validationRef.current
     let disposed = false
     let submitted = false
+    const draftRequests = new Map<string, { resolve: (source: LabDraftSource) => void; reject: (error: Error) => void; timeout: number }>()
     const loadTimeout = window.setTimeout(() => {
       if (disposed) return
       setMessage('The local painter is taking too long to load. You can reload it below.')
       setFailed(true)
     }, 45000)
     const send = (type: string, data: Record<string, unknown> = {}) => iframeRef.current?.contentWindow?.postMessage({ channel: CHANNEL, token: frame.token, type, ...data }, location.origin)
+    const readDraft = () => new Promise<LabDraftSource>((resolve, reject) => {
+      const id = crypto.randomUUID()
+      const timeout = window.setTimeout(() => { draftRequests.delete(id); reject(new Error('Painting draft timed out. Keep the painter open or download the PSD.')) }, 45000)
+      draftRequests.set(id, { resolve, reject, timeout }); send('draft', { id })
+    })
+    draftReader.current = readDraft
     const receive = async (event: MessageEvent) => {
       if (event.origin !== location.origin || event.source !== iframeRef.current?.contentWindow) return
       const data = event.data as Record<string, unknown> | null
       if (!data || data.channel !== CHANNEL || data.token !== frame.token) return
+      if (data.type === 'draft-changed') draftReporter.current?.(readDraft)
+      if ((data.type === 'draft-result' || data.type === 'draft-error') && typeof data.id === 'string') {
+        const request = draftRequests.get(data.id)
+        if (!request) return
+        window.clearTimeout(request.timeout); draftRequests.delete(data.id)
+        if (data.type === 'draft-result' && data.psd instanceof Blob && data.psd.size) request.resolve({ blob: data.psd, name: 'painting.psd' })
+        else request.reject(new Error(typeof data.message === 'string' ? data.message : 'The painting draft could not save. Download the PSD to keep your work.'))
+      }
       if (data.type === 'boot') {
         try {
           const psd = frame.file ? await frame.file.arrayBuffer() : undefined
@@ -121,6 +144,9 @@ export function KlecksLab({ onSave, initialSource }: { onSave?: (capture: LabCap
       pending.clear()
       for (const request of validations.values()) { window.clearTimeout(request.timeout); request.reject(new Error('The painter closed before the PSD could be checked.')) }
       validations.clear()
+      for (const request of draftRequests.values()) { window.clearTimeout(request.timeout); request.reject(new Error('The painter closed before its draft could save.')) }
+      draftRequests.clear()
+      if (draftReader.current === readDraft) draftReader.current = null
     }
   }, [frame])
 

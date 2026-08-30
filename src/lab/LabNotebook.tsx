@@ -5,10 +5,17 @@ import { LabArtifactPreview } from './LabArtifactPreview'
 import { matchesNotebookSearch } from './labNotebookSearch'
 import { savedProjectTool } from './labSavedProjects'
 import { findLab } from './labCatalog'
+import { createLabDraftQueue } from './labDraftQueue'
 import './LabNotebook.css'
 
 type LabNotebookProps = {
   notes: readonly LabNote[]
+  noteDrafts?: readonly LabNote[]
+  projectDrafts?: readonly LabArtifact[]
+  notebookScope?: string
+  onSaveNoteDraft?: (note: LabNote, topicIds: readonly string[], scope: string, expectedUpdatedAt?: string) => Promise<void>
+  onPromoteNoteDraft?: (id: string, scope: string, expectedUpdatedAt?: string) => Promise<string>
+  onRegisterDraftFlush?: (flush: () => Promise<void>) => void
   artifacts: readonly LabArtifact[]
   trashedArtifacts?: readonly LabArtifact[]
   artifactRevisions?: readonly LabArtifact[]
@@ -100,6 +107,12 @@ function titleFromIdea(body: string) {
 /** A Lab-only notebook for loose thoughts and imported experiment files. */
 export function LabNotebook({
   notes,
+  noteDrafts = [],
+  projectDrafts = [],
+  notebookScope = 'local',
+  onSaveNoteDraft,
+  onPromoteNoteDraft,
+  onRegisterDraftFlush,
   artifacts,
   trashedArtifacts = [],
   artifactRevisions = [],
@@ -132,6 +145,18 @@ export function LabNotebook({
   const [draftTopicIds, setDraftTopicIds] = useState<readonly string[]>([])
   const [draftTopicsCustomized, setDraftTopicsCustomized] = useState(false)
   const [draftArtifactIds, setDraftArtifactIds] = useState<string[]>([])
+  const [draftIdentity, setDraftIdentity] = useState<{ id: string; createdAt: string }>(() => ({ id: crypto.randomUUID(), createdAt: new Date().toISOString() }))
+  const [draftMessage, setDraftMessage] = useState('')
+  const [draftSaveFailed, setDraftSaveFailed] = useState(false)
+  const [draftVersions] = useState(() => new Map<string, string>())
+  const [isPromoting, setIsPromoting] = useState(false)
+  const promotingRef = useRef(false)
+  const [draftQueue] = useState(() => createLabDraftQueue<{ note: LabNote; topicIds: readonly string[] }>(
+    async ({ note, topicIds }) => {
+      await onSaveNoteDraft?.(note, topicIds, notebookScope, draftVersions.get(note.id))
+      draftVersions.set(note.id, note.updatedAt)
+    },
+    (kind, detail) => { setDraftMessage(detail); setDraftSaveFailed(kind === 'error') }))
   const [query, setQuery] = useState('')
   const [isImporting, setIsImporting] = useState(false)
   const [captureError, setCaptureError] = useState('')
@@ -155,13 +180,13 @@ export function LabNotebook({
     .find((artifact) => artifact.id === openedArtifactId) ?? null
   const selectedTopic = topics.find((topic) => topic.id === selectedTopicId) ?? null
   const isLoading = status === 'loading'
-  const isUnavailable = isLoading || !isReady
+  const isUnavailable = isLoading || !isReady || isPromoting
   const isFileBusy = fileOperation !== null || openingProjectId !== null || isImporting
   const canAddIdea = !isUnavailable && !isImporting && Boolean(draftTitle.trim() || draftBody.trim() || draftArtifactIds.length)
   const hasUnaddedIdea = Boolean(draftTitle || draftBody || draftArtifactIds.length)
   useEffect(() => { onDraftChange(hasUnaddedIdea || isImporting) }, [hasUnaddedIdea, isImporting, onDraftChange])
   const statusText = hasUnaddedIdea && status !== 'error'
-    ? 'Idea not added yet — use Add idea to save it.'
+    ? onSaveNoteDraft ? draftMessage || 'Saving recovery draft…' : 'Idea not added yet — use Add idea to save it.'
     : message
   const topicIdsByObject = useMemo(() => {
     const index = new Map<string, string[]>()
@@ -176,6 +201,26 @@ export function LabNotebook({
   const topicIdsFor = (objectType: LabNotebookObjectType, objectId: string) => (
     topicIdsByObject.get(`${objectType}:${objectId}`) ?? []
   )
+  useEffect(() => {
+    if (!onSaveNoteDraft || !isReady || promotingRef.current || selectedNoteId
+      || (!hasUnaddedIdea && !noteDrafts.some((note) => note.id === draftIdentity.id))) return
+    draftQueue.push(draftIdentity.id, { note: { ...draftIdentity, title: draftTitle, body: draftBody,
+      artifactIds: draftArtifactIds, updatedAt: new Date().toISOString(), isDraft: true }, topicIds: draftTopicIds })
+  // Remote notebook acknowledgements must not themselves start another save.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftTitle, draftBody, draftArtifactIds, draftTopicIds, draftIdentity, selectedNoteId, isReady, onSaveNoteDraft, draftQueue])
+  useEffect(() => {
+    onRegisterDraftFlush?.(draftQueue.flush)
+    const flush = () => { void draftQueue.flush().catch(() => undefined) }
+    const hide = () => { if (document.visibilityState === 'hidden') flush() }
+    window.addEventListener('pagehide', flush)
+    document.addEventListener('visibilitychange', hide)
+    return () => {
+      window.removeEventListener('pagehide', flush)
+      document.removeEventListener('visibilitychange', hide)
+      draftQueue.stop(); flush()
+    }
+  }, [draftQueue, onRegisterDraftFlush])
   const topicNamesFor = (objectType: LabNotebookObjectType, objectId: string) => topics
     .filter((topic) => topicIdsFor(objectType, objectId).includes(topic.id)).map((topic) => topic.name).join(' ')
   const visibleNotes = notes.filter((note) => (!selectedTopic || topicIdsFor('note', note.id).includes(selectedTopic.id))
@@ -199,7 +244,7 @@ export function LabNotebook({
   }, [artifactRevisions])
 
   const runFileAction = async (artifact: LabArtifact, label: string, action: () => Promise<void>, success: string) => {
-    if (isUnavailable || fileOperationRef.current || openPendingRef.current || importPendingRef.current) return
+    if (isLoading || fileOperationRef.current || openPendingRef.current || importPendingRef.current) return
     fileOperationRef.current = true
     setFileOperation({ id: artifact.id, label })
     setFileError('')
@@ -291,42 +336,83 @@ export function LabNotebook({
     chooseTopic(topicId)
   }
 
-  const openNewNote = () => {
-    // A draft is only a form until Add idea is used; returning here preserves it.
+  const openNewNote = async () => {
+    if (promotingRef.current || isImporting) return
+    if (onSaveNoteDraft && hasUnaddedIdea) {
+      promotingRef.current = true; setIsPromoting(true)
+      try {
+        await draftQueue.flush()
+        setDraftIdentity({ id: crypto.randomUUID(), createdAt: new Date().toISOString() })
+        setDraftTitle(''); setDraftBody(''); setDraftArtifactIds([])
+        setDraftTopicIds(selectedTopic ? [selectedTopic.id] : []); setDraftTopicsCustomized(false)
+      } catch (error) { setCaptureError(error instanceof Error ? error.message : 'Keep this draft open until it can save.'); return }
+      finally { promotingRef.current = false; setIsPromoting(false) }
+    }
     setSelectedNoteId(null)
     setView('edit')
     if (!selectedNote) writingRef.current?.focus()
   }
 
-  const addIdea = () => {
-    if (!canAddIdea) return
-
-    // These callbacks queue ordered updates in the existing notebook owner.
-    const noteId = onCreateNote(draftTopicIds)
-    if (!noteId) return
-    onUpdateNote(noteId, {
+  const addIdea = async (asCopy = false) => {
+    if (!canAddIdea || promotingRef.current) return
+    const patch = {
       title: draftTitle.trim() || (draftBody.trim() ? titleFromIdea(draftBody) : artifacts.find((item) => draftArtifactIds.includes(item.id))?.name) || 'Untitled note',
       body: draftBody,
       artifactIds: draftArtifactIds,
-    })
-    setDraftTitle('')
-    setDraftBody('')
-    setDraftArtifactIds([])
-    setDraftTopicIds(selectedTopic ? [selectedTopic.id] : [])
-    setDraftTopicsCustomized(false)
-    setSelectedNoteId(noteId)
-    setView('browse')
+    }
+    let noteId: string
+    promotingRef.current = true
+    setIsPromoting(true)
+    setCaptureError('')
+    try {
+      if (onSaveNoteDraft && onPromoteNoteDraft) {
+        try { await draftQueue.flush() } catch (error) { if (!asCopy) throw error }
+        const identity = asCopy ? { id: crypto.randomUUID(), createdAt: new Date().toISOString() } : draftIdentity
+        const updatedAt = new Date().toISOString()
+        await onSaveNoteDraft({ ...identity, ...patch, updatedAt, isDraft: true }, draftTopicIds, notebookScope, draftVersions.get(identity.id))
+        draftVersions.set(identity.id, updatedAt)
+        noteId = await onPromoteNoteDraft(identity.id, notebookScope, updatedAt)
+        if (asCopy) draftQueue.removePending(draftIdentity.id)
+      } else {
+        noteId = onCreateNote(draftTopicIds)
+        if (!noteId) return
+        onUpdateNote(noteId, patch)
+      }
+      setDraftTitle('')
+      setDraftBody('')
+      setDraftArtifactIds([])
+      setDraftTopicIds(selectedTopic ? [selectedTopic.id] : [])
+      setDraftTopicsCustomized(false)
+      setSelectedNoteId(noteId)
+      setView('browse')
+      setDraftIdentity({ id: crypto.randomUUID(), createdAt: new Date().toISOString() })
+      setDraftMessage('')
+    } catch (error) { setCaptureError(error instanceof Error ? error.message : 'Your idea could not be added. Keep this editor open.') }
+    finally { promotingRef.current = false; setIsPromoting(false) }
+  }
+
+  const resumeNoteDraft = async (note: LabNote) => {
+    try {
+      await draftQueue.flush()
+      if (note.id === draftIdentity.id) { setSelectedNoteId(null); setView('edit'); return }
+      const latest = noteDrafts.find((item) => item.id === note.id) ?? note
+      draftVersions.set(latest.id, latest.updatedAt)
+      setDraftIdentity({ id: latest.id, createdAt: latest.createdAt })
+      setDraftTitle(latest.title); setDraftBody(latest.body); setDraftArtifactIds(latest.artifactIds ?? [])
+      setDraftTopicIds(topicIdsFor('note', latest.id)); setDraftTopicsCustomized(true)
+      setSelectedNoteId(null); setCaptureError(''); setView('edit')
+    } catch (error) { setCaptureError(error instanceof Error ? error.message : 'Keep your current draft open until it can save.') }
   }
 
   const submitIdea = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    addIdea()
+    void addIdea()
   }
 
   const captureShortcut = (event: KeyboardEvent<HTMLFormElement>) => {
     if ((event.metaKey || event.ctrlKey) && event.key === 'Enter' && !event.nativeEvent.isComposing) {
       event.preventDefault()
-      if (!event.repeat) addIdea()
+      if (!event.repeat) void addIdea()
     }
   }
 
@@ -457,11 +543,32 @@ export function LabNotebook({
             if (hasUnaddedIdea) setSelectedNoteId(null)
             setView('edit')
           }}>{hasUnaddedIdea ? 'Continue idea' : 'Continue note'}</button> : null}
-          <button type="button" ref={newNoteButtonRef} disabled={isUnavailable} onClick={openNewNote}>+ new note</button>
+          <button type="button" ref={newNoteButtonRef} disabled={isUnavailable || isImporting} onClick={() => void openNewNote()}>+ new note</button>
         </div>
       </header>
 
       <p className={`lab-notebook__status is-${status}`} role="status">{statusText}</p>
+
+      {view === 'browse' && (onSaveNoteDraft || projectDrafts.length) ? <section className="lab-notebook__drafts" aria-labelledby="lab-drafts-title">
+        <h3 id="lab-drafts-title">Drafts</h3>
+        <p>Work in progress, kept separately from your saved files. Account sync includes these drafts.</p>
+        {!noteDrafts.length && !projectDrafts.length ? <small>No recovery drafts yet.</small> : null}
+        <ul>
+          {noteDrafts.filter((note) => (!selectedTopic || topicIdsFor('note', note.id).includes(selectedTopic.id))
+            && matchesNotebookSearch(query, note.title, note.body, topicNamesFor('note', note.id))).map((note) => <li key={note.id}>
+            <div><strong>{note.title || titleFromIdea(note.body)}</strong><small>Note · {formatSavedTime(note.updatedAt)}</small></div>
+            <button type="button" disabled={isUnavailable || isImporting} onClick={() => void resumeNoteDraft(note)}>Resume idea</button>
+          </li>)}
+          {projectDrafts.filter((file) => (!selectedTopic || topicIdsFor('artifact', file.id).includes(selectedTopic.id))
+            && matchesNotebookSearch(query, file.name, file.toolId, topicNamesFor('artifact', file.id))).map((file) => <li key={file.id}>
+            <div><strong>{file.name}</strong><small>{file.toolId} · {formatSavedTime(file.updatedAt || file.createdAt)}</small></div>
+            <div><button type="button" disabled={isUnavailable || isFileBusy} onClick={() => void openProject(file)}>{openingProjectId === file.id ? 'Opening…' : 'Resume draft'}</button>
+              <button type="button" disabled={isFileBusy} onClick={() => void downloadArtifact(file)}>Download draft</button></div>
+          </li>)}
+        </ul>
+        {captureError ? <p role="alert">{captureError}</p> : null}
+        {fileError ? <p role="alert">{fileError}</p> : null}
+      </section> : null}
 
       {view === 'browse' ? <>
       <label className="lab-notebook__search">Search notebook
@@ -581,6 +688,7 @@ export function LabNotebook({
               <footer>
                 <p id="lab-notebook-capture-help">Add to save · Ctrl / ⌘ + Enter<br /><span>No title needed—we&apos;ll use the first line.</span></p>
                 <button className="lab-notebook__add-idea" type="submit" disabled={!canAddIdea}>Add idea</button>
+                {onSaveNoteDraft && (draftSaveFailed || captureError) ? <button type="button" disabled={!canAddIdea} onClick={() => void addIdea(true)}>Add as separate idea</button> : null}
               </footer>
             </form>
           )}

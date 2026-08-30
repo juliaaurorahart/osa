@@ -1,5 +1,7 @@
-import { lazy } from 'react'
+import { lazy, useCallback, useContext } from 'react'
 import type { LabProjectSource, LabTheme, LabWorkbenchId } from './labTypes'
+import { LabDraftContext } from './LabDraftContext'
+import type { KonvaLabDocument } from '../components/konvaLabModel'
 
 const InkLab = lazy(() => import('../components/InkLab').then((module) => ({ default: module.InkLab })))
 const KlecksLab = lazy(() => import('../components/KlecksLab').then((module) => ({ default: module.KlecksLab })))
@@ -47,17 +49,20 @@ export function LabWorkbench({ workbenchId, theme, initialSource }: {
   theme: LabTheme
   initialSource?: LabProjectSource
 }) {
+  const report = useContext(LabDraftContext)
+  const drawioChange = useCallback((xml: string) => report?.({ blob: new Blob([xml], { type: 'application/xml' }), name: 'diagram.drawio' }), [report])
+  const konvaChange = useCallback((document: KonvaLabDocument) => report?.({ blob: new Blob([JSON.stringify(document, null, 2)], { type: 'application/json' }), name: 'drawing.konva.json' }), [report])
   switch (workbenchId) {
     case 'ink':
       return <InkLab theme={theme} initialSource={initialSource} />
     case 'klecks':
       return <KlecksLab theme={theme} initialSource={initialSource} />
     case 'drawio':
-      return <DrawioEmbedLab theme={theme} initialSource={initialSource} />
+      return <DrawioEmbedLab theme={theme} initialSource={initialSource} onXmlChange={drawioChange} />
     case 'excalidraw':
       return <ExcalidrawLab theme={theme} initialSource={initialSource} />
     case 'konva':
-      return <KonvaLab theme={theme} initialSource={initialSource} />
+      return <KonvaLab theme={theme} initialSource={initialSource} onDocumentChange={konvaChange} />
     case 'fabric':
       return <FabricLab theme={theme} />
     case 'paper':

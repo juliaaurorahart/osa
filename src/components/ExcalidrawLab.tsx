@@ -1,4 +1,5 @@
-import { useRef, useState, type ComponentProps } from 'react'
+import { useCallback, useContext, useEffect, useRef, useState, type ComponentProps } from 'react'
+import { LabDraftContext } from '../lab/LabDraftContext'
 import { Excalidraw, exportToBlob, serializeAsJSON } from '@excalidraw/excalidraw'
 import { LabCaptureButton } from '../lab/LabCaptureButton'
 import type { LabCapture, LabProjectSource } from '../lab/labTypes'
@@ -17,6 +18,7 @@ type ExcalidrawApi = Parameters<NonNullable<ComponentProps<typeof Excalidraw>['e
 
 /** Excalidraw already supplies its own image and native-scene export menu. */
 export function ExcalidrawLab({ theme, initialSource }: ExcalidrawLabProps) {
+  const reportDraft = useContext(LabDraftContext)
   const draftRef = useRef<ExcalidrawInitialData>(undefined)
   const apiRef = useRef<ExcalidrawApi | null>(null)
   const [initialData, setInitialData] = useState<ExcalidrawInitialData>(() => initialSource
@@ -24,10 +26,16 @@ export function ExcalidrawLab({ theme, initialSource }: ExcalidrawLabProps) {
   const [elementCount, setElementCount] = useState(0)
   const [revision, setRevision] = useState(0)
 
-  const saveDraft: ExcalidrawOnChange = (elements, appState, files) => {
+  const saveDraft: ExcalidrawOnChange = useCallback((elements, appState, files) => {
     draftRef.current = { elements, appState, files }
     setElementCount(elements.filter((element) => !element.isDeleted).length)
-  }
+    reportDraft?.(() => ({ name: 'drawing.excalidraw', blob: new Blob([serializeAsJSON(elements, appState, files, 'local')], { type: 'application/json' }) }))
+  }, [reportDraft])
+  const receiveApi = useCallback((api: ExcalidrawApi) => { apiRef.current = api }, [])
+  useEffect(() => {
+    const api = apiRef.current
+    if (api) reportDraft?.(() => ({ name: 'drawing.excalidraw', blob: new Blob([serializeAsJSON(api.getSceneElements(), api.getAppState(), api.getFiles(), 'local')], { type: 'application/json' }) }))
+  }, [reportDraft])
 
   const reset = () => {
     apiRef.current = null
@@ -73,7 +81,7 @@ export function ExcalidrawLab({ theme, initialSource }: ExcalidrawLabProps) {
           key={revision}
           theme={theme}
           initialData={initialData}
-          excalidrawAPI={(api) => { apiRef.current = api }}
+          excalidrawAPI={receiveApi}
           onChange={saveDraft}
         />
       </div>

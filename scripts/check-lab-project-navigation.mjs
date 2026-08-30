@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import ts from 'typescript'
+import { draftTestDependency } from './lab-draft-test-loader.mjs'
 
 // Use the same DOM/React harness as check-lab-tool-capture; no live APIs,
 // browser storage, real embedded editors, or deployment services are involved.
@@ -29,7 +30,7 @@ function loadModule(path, mocks = {}) {
   }).outputText
   const module = { exports: {} }
   const localRequire = createRequire(filename)
-  const importModule = (id) => Object.hasOwn(mocks, id) ? mocks[id] : id.endsWith('.css') ? {} : localRequire(id)
+  const importModule = (id) => Object.hasOwn(mocks, id) ? mocks[id] : id.endsWith('.css') ? {} : draftTestDependency(id) ?? localRequire(id)
   new Function('require', 'module', 'exports', code)(importModule, module, module.exports)
   return module.exports
 }
@@ -66,6 +67,8 @@ const imageArtifact = { id: 'image-only', name: 'Image-only capture', sourceName
 const files = new Map([[originalArtifact.id, nativeFile], [delayedArtifact.id, nativeFile], [imageArtifact.id, new Blob(['png'], { type: 'image/png' })]])
 const saveCalls = []
 const storedVersions = new Map()
+const drafts = new Map()
+let draftTesting = false
 const loadOverrides = new Map()
 const openAttempts = []
 let currentNotebook
@@ -76,6 +79,7 @@ function useNotebookFixture() {
   const [scope, setScope] = React.useState('account:owner@example.test')
   const [artifacts, setArtifacts] = React.useState([originalArtifact, delayedArtifact, imageArtifact])
   const [topicLinks, setTopicLinks] = React.useState([{ objectType: 'artifact', objectId: originalArtifact.id, topicId: 'drawings' }])
+  const [, setDraftVersion] = React.useState(0)
   changeScope = (nextScope) => { setScope(nextScope); setArtifacts([]); setTopicLinks([]) }
   const notebook = {
     scope, artifacts, topicLinks, notes: [], topics: [{ id: 'drawings', name: 'Drawings', createdAt: date }],
@@ -85,14 +89,33 @@ function useNotebookFixture() {
     loadArtifactSource: (id) => loadOverrides.has(id) ? loadOverrides.get(id) : Promise.resolve(files.get(id) ?? null),
     downloadArtifact: async () => {}, createTopic: () => 'drawings', setObjectTopics() {},
     getArtifact: (id) => storedVersions.get(id) || artifacts.find((item) => item.id === id),
+    projectDrafts: [...drafts.values()].filter((item) => item.draftActive),
+    getProjectDraft: (id) => drafts.get(id),
+    saveProjectDraft: async (input, expectedScope) => {
+      assert.equal(expectedScope, scope)
+      const previous = drafts.get(input.projectId)
+      assert.equal(input.expectedDraftFileId, previous?.fileId)
+      const text = await input.source.blob.text()
+      if (previous && text === await files.get(previous.id).text() && previous.name === input.name) return previous
+      const draft = { id: `draft:${input.projectId}`, fileId: `draft-version-${++nextVersion}`, name: input.name,
+        draftOf: input.projectId, draftBaseFileId: input.baseFileId, draftActive: true, toolId: input.toolId,
+        sourceName: input.source.name, size: input.source.blob.size, mimeType: input.source.blob.type, createdAt: date }
+      drafts.set(input.projectId, draft); files.set(draft.id, input.source.blob)
+      setDraftVersion((value) => value + 1)
+      return draft
+    },
     captureVisual: async (capture, selectedTopics, expectedScope, options) => {
       assert.equal(expectedScope, scope)
       const fileId = `saved-version-${++nextVersion}`
-      const id = options?.artifactId || fileId
+      const id = options?.artifactId || options?.newArtifactId || fileId
       const stored = { ...storage.createStoredLabCapture(capture, id, date), fileId }
       saveCalls.push({ capture, selectedTopics: [...selectedTopics], id })
       storedVersions.set(id, stored)
       files.set(id, stored.file)
+      const draft = drafts.get(id)
+      if (draft && await files.get(draft.id).text() === await stored.file.text()) {
+        drafts.set(id, { ...draft, draftActive: false, draftBaseFileId: fileId })
+      }
       setArtifacts((current) => [...current.filter((item) => item.id !== id), storage.labArtifactMetadata(stored)])
       setTopicLinks((current) => [...current, ...selectedTopics.map((topicId) => ({ objectType: 'artifact', objectId: id, topicId }))])
       return id
@@ -106,8 +129,12 @@ let mountedEditors = 0
 let unmountedEditors = 0
 const sourceByInstance = new Map()
 function WorkbenchFixture({ workbenchId, initialSource }) {
+  const reportDraft = React.useContext(draftTestDependency('LabDraftContext').LabDraftContext)
   const [instance] = React.useState(() => `editor-${++mountedEditors}`)
-  const [text, setText] = React.useState(initialSource?.text ?? 'Unsaved starter')
+  const [text, setText] = React.useState(() => draftTesting && initialSource ? JSON.parse(initialSource.text).text : initialSource?.text ?? 'Unsaved starter')
+  React.useEffect(() => {
+    if (draftTesting) reportDraft?.({ name: 'editor.osa-ink.json', blob: new Blob([JSON.stringify({ text })], { type: 'application/json' }) })
+  }, [text, reportDraft])
   React.useEffect(() => {
     sourceByInstance.set(instance, initialSource)
     return () => { unmountedEditors += 1 }
@@ -322,7 +349,34 @@ try {
   assert.equal(exitWarnings.at(-1), false, 'A notebook-only draft gets the same confirmed-exit protection.')
   assert.equal(warnsBeforeUnload(), true)
 
-  console.log('Lab project navigation passed: named saves, retained versions, editor lifetime, safe replacement, native source handoff, image-only actions, viewport reset, stale-scope rejection, sign-out session disposal, and one-event confirmed exit.')
+  draftTesting = true
+  await React.act(async () => root.render(React.createElement(CanvasLab, { key: 'draft-flow', theme: 'dark', onToggleTheme() {}, onExit() {} })))
+  await changeValue(document.querySelector('[aria-label="Choose Lab instrument"]'), 'ink', 'change')
+  await changeValue(editorText(), 'First saved text')
+  await clickButton('Save to notebook', editor())
+  const draftSaved = saveCalls.at(-1).id
+  assert.equal(drafts.get(draftSaved).draftActive, false)
+  await changeValue(editorText(), 'Newest working draft')
+  await clickButton('Saved · read only')
+  assert.equal(editorText().value, 'First saved text', 'Saved view is the last explicit save, not unsaved edits')
+  assert.ok(editor().closest('[inert]'), 'Saved version cannot be accidentally edited')
+  await clickButton('Working draft')
+  assert.equal(editorText().value, 'Newest working draft')
+  assert.equal(editor().closest('[inert]'), null)
+  await changeValue(editorText(), 'Latest before closing')
+  await clickButton('New project')
+  await clickButton('Open project', projectDialog())
+  assert.equal(editorText().value, 'Unsaved starter')
+  await clickButton('Notebook')
+  const draftRow = [...document.querySelectorAll('.lab-notebook__drafts li')].find((row) => row.querySelector('strong')?.textContent === 'Ink project')
+  await clickButton('Resume draft', draftRow)
+  await clickButton('Open project', projectDialog())
+  assert.equal(editorText().value, 'Latest before closing', 'Editor replacement preserves its latest working draft')
+  await clickButton('Save to notebook', editor())
+  assert.equal(saveCalls.at(-1).id, draftSaved)
+  assert.equal(drafts.get(draftSaved).draftActive, false)
+  assert.equal(currentNotebook.artifacts.filter((item) => item.id === draftSaved).length, 1)
+  console.log('Lab navigation and draft recovery passed: named saves, editor lifetime, scope/exit guards, readonly Saved/Draft switching, resume after replacement, and no duplicate saved files.')
 } finally {
   await React.act(async () => root.unmount())
   dom.window.close()

@@ -1,4 +1,5 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useContext, useEffect, useId, useRef, useState } from 'react'
+import { LabDraftContext } from '../lab/LabDraftContext'
 import mermaid from 'mermaid'
 import { LabCaptureButton } from '../lab/LabCaptureButton'
 import type { LabCapture, LabProjectSource } from '../lab/labTypes'
@@ -39,11 +40,13 @@ function downloadText(text: string, filename: string, type: string) {
 
 /** A local-text Mermaid editor. Rendered markup uses Mermaid's strict mode. */
 export function MermaidLab({ theme, initialSource }: MermaidLabProps) {
+  const reportDraft = useContext(LabDraftContext)
   const rawId = useId()
   const renderId = `mermaid-lab-${rawId.replace(/[^a-zA-Z0-9_-]/g, '')}`
   const outputRef = useRef<HTMLDivElement>(null)
   const [sample, setSample] = useState<SampleName | ''>(initialSource ? '' : 'flowchart')
-  const [source, setSource] = useState<string>(() => initialSource ? mermaidProjectText(initialSource) : SAMPLES.flowchart)
+  const [source, setSource] = useState<string>(() => initialSource?.isDraft ? initialSource.text ?? '' : initialSource ? mermaidProjectText(initialSource) : SAMPLES.flowchart)
+  useEffect(() => { reportDraft?.({ name: 'diagram.mermaid-draft.json', blob: new Blob([JSON.stringify({ osaMermaidDraft: 1, text: source })], { type: 'application/json' }) }) }, [source, reportDraft])
   const [error, setError] = useState('')
   const [svg, setSvg] = useState('')
   const [renderedKey, setRenderedKey] = useState('')
@@ -53,6 +56,8 @@ export function MermaidLab({ theme, initialSource }: MermaidLabProps) {
     let cancelled = false
     const timer = window.setTimeout(async () => {
       try {
+        // Invalid buffers are recoverable, but never bypass rendering guards.
+        mermaidProjectText({ text: source, file: new Blob([source]), name: 'diagram.mmd' })
         mermaid.initialize({
           startOnLoad: false,
           securityLevel: 'strict',

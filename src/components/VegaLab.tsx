@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { LabDraftContext } from '../lab/LabDraftContext'
 import embed, { type Result } from 'vega-embed'
 import type { TopLevelSpec } from 'vega-lite'
 import { LabCaptureButton } from '../lab/LabCaptureButton'
@@ -134,6 +135,7 @@ function createSampleSpec(kind: ChartKind, theme: VegaTheme): TopLevelSpec {
  * board, Canvas, or Assembly object is read or written from this component.
  */
 export function VegaLab({ theme, initialSource }: VegaLabProps) {
+  const reportDraft = useContext(LabDraftContext)
   const chartHostRef = useRef<HTMLDivElement | null>(null)
   const renderVersionRef = useRef(0)
   const resultRef = useRef<{ result: Result; spec: TopLevelSpec } | null>(null)
@@ -141,14 +143,17 @@ export function VegaLab({ theme, initialSource }: VegaLabProps) {
   const [embedError, setEmbedError] = useState<string | null>(null)
   const [renderedSpec, setRenderedSpec] = useState<TopLevelSpec | null>(null)
   const [savedSpec, setSavedSpec] = useState<TopLevelSpec | null>(() => initialSource ? parseVegaProjectSource(initialSource) : null)
-  const [editorText, setEditorText] = useState(() => initialSource?.text ?? '')
-  const [appliedText, setAppliedText] = useState(() => initialSource?.text ?? '')
+  const [editorText, setEditorText] = useState(() => initialSource?.editorText ?? initialSource?.text ?? '')
+  const [appliedText, setAppliedText] = useState(() => initialSource?.appliedText ?? initialSource?.text ?? '')
   const [sourceError, setSourceError] = useState('')
   const [isApplyingSource, setIsApplyingSource] = useState(false)
   const sourceEditVersionRef = useRef(0)
   const mountedRef = useRef(true)
   const hasUnappliedSource = Boolean(savedSpec) && editorText !== appliedText
   const spec = useMemo(() => savedSpec ?? createSampleSpec(chartKind, theme), [chartKind, savedSpec, theme])
+  useEffect(() => { reportDraft?.(() => ({ name: 'chart.vega-draft.json', blob: new Blob([
+    JSON.stringify({ osaVegaDraft: 1, spec, editorText: savedSpec ? editorText : JSON.stringify(spec, null, 2),
+      appliedText: savedSpec ? appliedText : JSON.stringify(spec, null, 2) })], { type: 'application/json' }) })) }, [spec, savedSpec, editorText, appliedText, reportDraft])
 
   useEffect(() => {
     mountedRef.current = true

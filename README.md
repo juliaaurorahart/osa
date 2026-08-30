@@ -87,8 +87,9 @@ does not mean the address has been activated. The old
 for browser-only files that have not been synced or backed up.
 
 The **Lab** menu opens isolated visual workbenches. Each engine loads only
-when selected. Workbench drafts remain temporary; use **Save to notebook**
-where available, or download the image/native source before leaving the tool.
+when selected. New note ideas and the eight reopenable editors below keep
+automatic recovery drafts. Use **Notebook → Drafts** to resume work.
+Each project has one current draft slot, separate from its explicit saved version.
 Saved notebook notes, files, and topics persist independently of project
 boards. Original editable files and their previews are separate attachments.
 
@@ -98,8 +99,21 @@ there). Saving updates the current notebook file; **Save a copy** creates a
 separate item. Earlier saves remain available in **History**, with immutable
 source and preview bytes for each saved version.
 Notebook visits keep the current editor mounted; **Return to [tool]** resumes
-it. Replacing the editor or leaving the Lab asks first. This is not draft
-autosave, and closing the browser still requires an explicit save.
+it. **Saved · read only / Working draft** switches between the last deliberate
+save and current work without discarding either. Replacing the editor or leaving
+the Lab flushes supported drafts first. Save only consumes the exact checkpoint
+included in that save; newer edits remain drafts. Already-added text notes keep
+their existing automatic-save behavior.
+
+Drafts checkpoint locally as you work (frequent events coalesce over 400 ms),
+and participate in private account sync and portable backups. Klecks saves
+source-only PSD checkpoints after interaction and an idle safety check; no PNG
+preview is generated for autosave. The local draft status is separate from
+account-sync status. A sudden shutdown can still lose edits since the last
+completed checkpoint, and browser storage is not a backup. Export important work.
+Fabric, p5, Pixi, Three, CodeMirror, and remote Strudel do not yet expose a
+complete reopenable draft path here; their workbenches explicitly say to use
+Save/export/Share before leaving. No new database migration is needed.
 
 Notebook browsing/search and focused note editing are separate views. Files
 can be moved to **Trash** and restored; removing a file does not permanently

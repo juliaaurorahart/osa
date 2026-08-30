@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import ts from 'typescript'
+import { draftTestDependency } from './lab-draft-test-loader.mjs'
 
 // Fabric already depends on jsdom. Resolve through Fabric so this check does
 // not depend on a particular package-manager hoisting layout.
@@ -23,7 +24,7 @@ function loadModule(path, mocks = {}) {
   }).outputText
   const module = { exports: {} }
   const localRequire = createRequire(filename)
-  const importModule = (id) => Object.hasOwn(mocks, id) ? mocks[id] : id.endsWith('.css') ? {} : localRequire(id)
+  const importModule = (id) => Object.hasOwn(mocks, id) ? mocks[id] : id.endsWith('.css') ? {} : draftTestDependency(id) ?? localRequire(id)
   new Function('require', 'module', 'exports', code)(importModule, module, module.exports)
   return module.exports
 }

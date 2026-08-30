@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import ts from 'typescript'
+import { draftTestDependency } from './lab-draft-test-loader.mjs'
 
 // Exercise the real hook boundary, not a shell-render timing approximation.
 // Cache/cloud functions are in-memory doubles; no user data or API is touched.
@@ -24,7 +25,7 @@ function loadModule(path, mocks = {}) {
   }).outputText
   const module = { exports: {} }
   const localRequire = createRequire(filename)
-  new Function('require', 'module', 'exports', code)((id) => Object.hasOwn(mocks, id) ? mocks[id] : localRequire(id), module, module.exports)
+  new Function('require', 'module', 'exports', code)((id) => Object.hasOwn(mocks, id) ? mocks[id] : draftTestDependency(id) ?? localRequire(id), module, module.exports)
   return module.exports
 }
 
@@ -40,6 +41,7 @@ const documentWrites = []
 const fileReads = []
 const files = new Map()
 let deferredRead = null
+let failNextWrite = false
 const topics = loadModule('src/lab/labNotebookTopics.ts')
 const storage = loadModule('src/lab/labNotebookStorage.ts', { './labNotebookTopics': topics })
 class LocalConflict extends Error {}
@@ -59,6 +61,7 @@ const { useSyncedLabNotebook } = loadModule('src/lab/useSyncedLabNotebook.ts', {
     readLatestLabRecovery: async () => null,
     keepLabRecovery: async () => {},
     writeLabDocument: async (next, expected) => {
+      if (failNextWrite) { failNextWrite = false; throw new Error('Fixture disk write failed') }
       assert.equal(cached.get(next.scope)?.localVersion ?? null, expected)
       documentWrites.push(next); cached.set(next.scope, next)
     },
@@ -66,6 +69,7 @@ const { useSyncedLabNotebook } = loadModule('src/lab/useSyncedLabNotebook.ts', {
       fileWrites.push({ scope: key, files: storedFiles })
       for (const file of storedFiles) files.set(`${key}:${file.id}`, file)
     },
+    readLabDocumentFile: async (key, id) => files.get(`${key}:${id}`) ?? null,
   },
   './labNotebookCloud': {
     fetchLabSession: async () => email,
@@ -142,6 +146,63 @@ try {
   assert.equal(notebook.trashedArtifacts.length, 0)
   assert.equal(notebook.getArtifact(savedId).fileId, restoredFileId)
 
+  const projectId = 'reserved-draft-project'
+  const sourceA = { name: 'drawing.osa-ink.json', blob: new Blob(['draft A'], { type: 'application/json' }) }
+  const input = { projectId, name: 'Recoverable project', toolId: 'ink', source: sourceA }
+  let draft
+  await React.act(async () => { draft = await notebook.saveProjectDraft(input, scope) })
+  assert.equal(notebook.projectDrafts.length, 1)
+  assert.equal(notebook.artifacts.length, 2, 'Autosave is not an extra saved file')
+  assert.equal(notebook.getProjectDraft(projectId).id, draft.id)
+  const initialDraftFile = draft.fileId
+  const beforeDedup = fileWrites.length
+  await React.act(async () => { draft = await notebook.saveProjectDraft({ ...input, expectedDraftFileId: draft.fileId }, scope) })
+  assert.equal(fileWrites.length, beforeDedup, 'Unchanged source does not duplicate bytes')
+  await assert.rejects(() => notebook.saveProjectDraft({ ...input, expectedDraftFileId: 'stale' }, scope), /changed elsewhere/)
+  await assert.rejects(() => notebook.saveProjectDraft(input, 'guest'), /unavailable/)
+  await React.act(async () => {
+    assert.equal(await notebook.captureVisual({ ...capture, name: input.name, source: sourceA }, [], scope, { newArtifactId: projectId }), projectId)
+  })
+  const savedDraftFile = notebook.getArtifact(projectId).fileId
+  assert.equal(notebook.projectDrafts.length, 0, 'Explicit Save consumes the exact checkpoint')
+  assert.equal(notebook.getProjectDraft(projectId).fileId, initialDraftFile, 'Clean slot remains addressable')
+  await React.act(async () => { draft = await notebook.saveProjectDraft({ ...input, baseFileId: savedDraftFile, expectedDraftFileId: initialDraftFile }, scope) })
+  assert.equal(draft.draftActive, false, 'Merely reopening a clean checkpoint is not a new draft')
+  const sourceB = { ...sourceA, blob: new Blob(['draft B'], { type: sourceA.blob.type }) }
+  await React.act(async () => { draft = await notebook.saveProjectDraft({ ...input, source: sourceB, baseFileId: savedDraftFile, expectedDraftFileId: draft.fileId }, scope) })
+  assert.equal(notebook.projectDrafts.length, 1)
+  assert.equal(await files.get(`${scope}:${initialDraftFile}`).file.text(), 'draft A', 'Older recovery bytes are immutable')
+  await React.act(async () => { await notebook.captureVisual({ ...capture, name: input.name, source: sourceA }, [], scope,
+    { artifactId: projectId, expectedFileId: savedDraftFile }) })
+  assert.equal(notebook.projectDrafts[0].fileId, draft.fileId, 'Save of older capture cannot consume newer working edits')
+  assert.equal(notebook.projectDrafts[0].draftBaseFileId, savedDraftFile, 'Unconsumed checkpoints retain their original base')
+  const nextBase = notebook.getArtifact(projectId).fileId
+  await React.act(async () => { draft = await notebook.saveProjectDraft({ ...input, source: sourceB, baseFileId: nextBase, expectedDraftFileId: draft.fileId }, scope) })
+  await React.act(async () => { await notebook.captureVisual({ ...capture, name: input.name, source: sourceB }, [], scope,
+    { artifactId: projectId, expectedFileId: nextBase }) })
+  assert.equal(notebook.projectDrafts.length, 0)
+  const cleanB = notebook.getProjectDraft(projectId)
+  await React.act(async () => { await notebook.captureVisual({ ...capture, name: input.name, source: sourceA }, [], scope,
+    { artifactId: projectId, expectedFileId: notebook.getArtifact(projectId).fileId }) })
+  await React.act(async () => { draft = await notebook.saveProjectDraft({ ...input, source: sourceB,
+    baseFileId: notebook.getArtifact(projectId).fileId, expectedDraftFileId: cleanB.fileId }, scope) })
+  assert.equal(draft.draftActive, true, 'Old clean bytes edited against a different saved base become recoverable')
+
+  const noteDraft = { id: 'unadded-idea', title: '', body: 'Do not lose this', createdAt: date, updatedAt: date, artifactIds: [savedId] }
+  await React.act(async () => { await notebook.saveNoteDraft(noteDraft, [topicId], scope) })
+  assert.equal(notebook.noteDrafts[0].body, noteDraft.body)
+  assert.equal(notebook.notes.some((note) => note.id === noteDraft.id), false)
+  const nextNoteDate = '2026-08-30T01:00:00.000Z'
+  await React.act(async () => { await notebook.saveNoteDraft({ ...noteDraft, body: 'Latest text', updatedAt: nextNoteDate }, [topicId], scope, date) })
+  assert.equal(notebook.noteDrafts.length, 1)
+  await assert.rejects(() => notebook.saveNoteDraft(noteDraft, [], scope, date), /changed elsewhere/)
+  await assert.rejects(() => notebook.promoteNoteDraft(noteDraft.id, scope, date), /changed/)
+  assert.equal(notebook.noteDrafts[0].body, 'Latest text', 'Stale composer cannot overwrite an accepted newer draft')
+  await React.act(async () => assert.equal(await notebook.promoteNoteDraft(noteDraft.id, scope, nextNoteDate), noteDraft.id))
+  assert.equal(notebook.noteDrafts.length, 0)
+  assert.equal(notebook.notes.find((note) => note.id === noteDraft.id).body, 'Latest text')
+  await assert.rejects(() => notebook.saveNoteDraft(noteDraft, [], scope), /already|saved|draft/i)
+
   const staleCapture = notebook.captureVisual
   const staleSourceLoad = notebook.loadArtifactSource
   let finishRead
@@ -163,6 +224,12 @@ try {
   const readsBeforeMismatch = fileReads.length
   await assert.rejects(() => staleSourceLoad(savedId, scope), /changed|scope/i)
   assert.equal(fileReads.length, readsBeforeMismatch, 'A stale source callback is rejected before reading bytes after the switch')
+  await assert.rejects(() => notebook.saveProjectDraft(input, scope), /unavailable/)
+  await React.act(async () => { await notebook.saveNoteDraft(noteDraft, [], 'guest') })
+  failNextWrite = true
+  await React.act(async () => { await assert.rejects(() => notebook.promoteNoteDraft(noteDraft.id, 'guest', date), /could not|failed|confirm/i) })
+  assert.equal(cached.get('guest').snapshot.contents.notes[0].isDraft, true, 'Failed promotion leaves the durable draft intact')
+  assert.equal(notebook.isReady, false, 'A failed durability acknowledgement cannot report success')
   console.log('Lab project scope checks passed: atomic pre-write guard, pre/post-read guard, same-scope success, and late callbacks after notebook switching.')
 } finally {
   await React.act(async () => root.unmount())

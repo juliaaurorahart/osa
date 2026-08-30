@@ -10,6 +10,9 @@ import { LabCaptureContext } from './LabCaptureContext'
 import { useSyncedLabNotebook } from './useSyncedLabNotebook'
 import { LabNotebookSync } from './LabNotebookSync'
 import { readSavedLabProject } from './labSavedProjects'
+import { LabDraftContext, type LabDraftReader } from './LabDraftContext'
+import { DRAFT_TOOLS, readLabDraftSource } from './labDrafts'
+import { useLabWorkingDrafts } from './useLabWorkingDrafts'
 import './CanvasLab.css'
 
 export type CanvasLabProps = {
@@ -32,6 +35,10 @@ type ProjectSession = {
   artifactId?: string
   fileId?: string
   savedAt?: string
+  draftOf?: string
+  draftFileId?: string
+  draftSessionId?: string
+  mode?: 'draft' | 'saved'
 }
 
 type PendingAction = { scope: string; project: ProjectSession } | { scope: string; exit: true }
@@ -50,6 +57,9 @@ export function CanvasLab({
   const [route, setRoute] = useState<LabRoute>({ page: 'home' })
   const [hasUnaddedIdea, setHasUnaddedIdea] = useState(false)
   const notebook = useSyncedLabNotebook()
+  const workingDrafts = useLabWorkingDrafts(notebook.saveProjectDraft)
+  const noteFlushRef = useRef<() => Promise<void>>(async () => undefined)
+  const registerNoteFlush = useCallback((flush: () => Promise<void>) => { noteFlushRef.current = flush }, [])
   const [session, setSession] = useState<ProjectSession | null>(null)
   const project = session?.scope === notebook.scope ? session : null
   const [pending, setPending] = useState<PendingAction | null>(null)
@@ -124,6 +134,19 @@ export function CanvasLab({
     return () => window.removeEventListener('beforeunload', warn)
   }, [project, isExitApproved])
   const activeLab = route.page === 'workbench' ? findLab(route.workbenchId) : null
+  const supportsDrafts = Boolean(project && DRAFT_TOOLS.has(project.toolId))
+  const flushDrafts = async () => { await noteFlushRef.current(); await workingDrafts.flush() }
+  const checkpoint = workingDrafts.report
+  const renameDraft = workingDrafts.rename
+  useEffect(() => {
+    if (project && project.mode !== 'saved') renameDraft(project.draftSessionId || project.id, project.name.trim() || `${findLab(project.toolId).name} project`)
+  }, [project, renameDraft])
+  const reportDraft = useCallback((source: LabDraftReader) => {
+    if (!project || project.mode === 'saved') return
+    checkpoint({ source, scope: project.scope, sessionId: project.draftSessionId || project.id,
+      projectId: project.draftOf || project.artifactId || project.id, name: project.name.trim() || `${findLab(project.toolId).name} project`,
+      toolId: project.toolId, baseFileId: project.fileId, expectedDraftFileId: project.draftFileId })
+  }, [project, checkpoint])
 
   const startProject = (next: ProjectSession) => {
     setSession(next)
@@ -135,20 +158,58 @@ export function CanvasLab({
     else startProject(next)
   }
   const openWorkbench = (workbenchId: LabWorkbenchId) => {
+    if (!notebook.isReady) return
     if (project?.toolId === workbenchId) setRoute({ page: 'workbench', workbenchId })
     else requestProject({ id: crypto.randomUUID(), scope: notebook.scope, toolId: workbenchId, name: `${findLab(workbenchId).name} project` })
   }
+  const loadDraft = async (draft: LabArtifact, scope: string) => {
+    const source = await readLabDraftSource(draft, await notebook.loadArtifactSource(draft.id, scope))
+    // Only unfinished text buffers bypass saved-file validation. Native drawing
+    // formats still receive the same bounded preflight before replacing an editor.
+    if (draft.toolId !== 'mermaid') await readSavedLabProject({ ...draft, sourceName: source.name }, source.file)
+    return source
+  }
   const openSavedProject = async (artifact: LabArtifact) => {
+    await flushDrafts()
     const startingScope = notebook.scope
     const startingProjectId = project?.id
+    const draft = notebook.getProjectDraft(artifact.draftOf || artifact.id)
+    if (draft?.draftActive) {
+      const source = await loadDraft(draft, startingScope)
+      if (!mountedRef.current || currentRef.current.scope !== startingScope || currentRef.current.projectId !== startingProjectId) {
+        throw new Error('The notebook changed while this draft was loading. Please open it again.')
+      }
+      const saved = notebook.getArtifact(draft.draftOf!)
+      requestProject({ id: crypto.randomUUID(), scope: startingScope, toolId: draft.toolId as LabWorkbenchId,
+        source, name: draft.name, draftOf: draft.draftOf, draftFileId: draft.fileId,
+        artifactId: saved?.id, fileId: draft.draftBaseFileId, mode: 'draft' })
+      return
+    }
     const { toolId, source } = await readSavedLabProject(artifact, await notebook.loadArtifactSource(artifact.id, startingScope))
     if (!mountedRef.current || currentRef.current.scope !== startingScope || currentRef.current.projectId !== startingProjectId) {
       throw new Error('The notebook or editor changed while this file was loading. Please open it again.')
     }
     requestProject({ id: crypto.randomUUID(), scope: startingScope, toolId, source, name: artifact.name,
-      artifactId: artifact.id, fileId: artifact.fileId || artifact.id })
+      artifactId: artifact.id, fileId: artifact.fileId || artifact.id, draftFileId: draft?.fileId })
+  }
+  const switchVersion = async (mode: 'draft' | 'saved') => {
+    if (!project?.artifactId || savingRef.current) return
+    try {
+      await flushDrafts()
+      const saved = notebook.getArtifact(project.artifactId)
+      if (!saved) throw new Error('The saved file is no longer available.')
+      const draft = notebook.getProjectDraft(saved.id)
+      const source = mode === 'draft' && draft?.draftActive
+        ? await loadDraft(draft, project.scope)
+        : (await readSavedLabProject(saved, await notebook.loadArtifactSource(saved.id, project.scope))).source
+      if (currentRef.current.projectId !== project.id || currentRef.current.scope !== project.scope) return
+      startProject({ ...project, id: crypto.randomUUID(), draftSessionId: undefined, source, mode,
+        name: mode === 'draft' && draft?.draftActive ? draft.name : saved.name,
+        draftFileId: draft?.fileId, fileId: mode === 'draft' && draft?.draftActive ? draft.draftBaseFileId : saved.fileId })
+    } catch (error) { setProjectMessage(error instanceof Error ? error.message : 'Could not switch versions.') }
   }
   const saveProject = async (capture: LabCapture, options?: { asCopy?: boolean }): Promise<string> => {
+    if (project?.mode === 'saved') throw new Error('Switch to Working draft before saving edits.')
     if (!project || !mountedRef.current || currentRef.current.scope !== project.scope || currentRef.current.projectId !== project.id) {
       throw new Error('The project or notebook changed. Return to the original editor before saving.')
     }
@@ -157,18 +218,26 @@ export function CanvasLab({
     savingRef.current = true
     setSaving(true)
     try {
+      try { await workingDrafts.flush() } catch (error) { if (!options?.asCopy) throw error }
+      workingDrafts.pause()
       const topicIds = notebook.topicLinks.filter((link) => link.objectType === 'artifact' && link.objectId === project.artifactId).map((link) => link.topicId)
       const name = `${currentRef.current.projectName?.trim() || project.name.trim() || capture.name}${options?.asCopy ? ' (copy)' : ''}`
       const id = await notebook.captureVisual({ ...capture, name }, topicIds, project.scope,
-        options?.asCopy ? undefined : { artifactId: project.artifactId, expectedFileId: project.fileId })
+        options?.asCopy ? undefined : { artifactId: project.artifactId, expectedFileId: project.fileId,
+          newArtifactId: project.draftOf || project.id })
       if (mountedRef.current && currentRef.current.scope === project.scope && currentRef.current.projectId === project.id) {
         const savedAt = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
         const fileId = notebook.getArtifact(id)?.fileId || id
-        setSession((current) => current?.id === project.id ? { ...current, name, artifactId: id, fileId, savedAt } : current)
+        const draftSessionId = project.draftSessionId || project.id
+        if (options?.asCopy) workingDrafts.savedCopy(draftSessionId, id, fileId)
+        workingDrafts.acceptedSave(draftSessionId, fileId)
+        setSession((current) => current?.id === project.id ? { ...current, name, artifactId: id, fileId, savedAt,
+          draftOf: id, draftSessionId, draftFileId: options?.asCopy ? undefined : notebook.getProjectDraft(id)?.fileId } : current)
         setProjectMessage(`${options?.asCopy ? 'Separate copy saved' : 'Saved'} at ${savedAt}. Earlier saves are available in History.`)
       }
       return id
     } finally {
+      workingDrafts.resume()
       savingRef.current = false
       if (mountedRef.current) setSaving(false)
     }
@@ -192,7 +261,14 @@ export function CanvasLab({
           <button type="button" onClick={() => setRoute({ page: 'notebook' })}>Back to notebook</button>
           <button type="button" disabled={saving} onClick={() => requestProject({ id: crypto.randomUUID(), scope: notebook.scope,
             toolId: activeLab.id, name: `${activeLab.name} project` })}>New project</button>
-          <span>{saving ? 'Saving project…' : projectMessage || 'Save updates this project. Editor changes are not autosaved to the notebook.'}</span>
+          {supportsDrafts && project?.artifactId ? <div className="lab-shell__versions" role="group" aria-label="Project version">
+            <button type="button" aria-pressed={project.mode === 'saved'} disabled={saving} onClick={() => void switchVersion('saved')}>Saved · read only</button>
+            <button type="button" aria-pressed={project.mode !== 'saved'} disabled={saving} onClick={() => void switchVersion('draft')}>Working draft</button>
+          </div> : null}
+          <span role="status">{saving ? 'Saving project…' : projectMessage}</span>
+          <span role="status">{supportsDrafts ? project?.mode === 'saved' ? 'Viewing the last saved version. Your working draft is kept separately.' : workingDrafts.state.message
+            : 'Recovery drafts are not available in this workbench yet. Use its Save, export, or Share controls before leaving.'}</span>
+          {supportsDrafts && workingDrafts.state.kind === 'error' ? <button type="button" onClick={() => void workingDrafts.flush().catch(() => undefined)}>Retry draft save</button> : null}
         </>
       )
     }
@@ -268,6 +344,7 @@ export function CanvasLab({
           <span>instrument</span>
           <select
             aria-label="Choose Lab instrument"
+            disabled={!notebook.isReady}
             value={route.page === 'workbench' ? route.workbenchId : ''}
             onChange={(event) => {
               if (event.target.value) openWorkbench(event.target.value as LabWorkbenchId)
@@ -312,10 +389,16 @@ export function CanvasLab({
         ) : null}
 
         <div hidden={route.page !== 'notebook'}>
-          <LabNotebookSync notebook={notebook} hasDraft={hasUnaddedIdea} hasProject={Boolean(project)} />
+          <LabNotebookSync notebook={notebook} hasDraft={hasUnaddedIdea} hasProject={Boolean(project)} beforeSwitch={flushDrafts} />
           <LabNotebook
             key={notebook.scope}
             notes={notebook.notes}
+            noteDrafts={notebook.noteDrafts}
+            projectDrafts={notebook.projectDrafts}
+            notebookScope={notebook.scope}
+            onSaveNoteDraft={notebook.saveNoteDraft}
+            onPromoteNoteDraft={notebook.promoteNoteDraft}
+            onRegisterDraftFlush={registerNoteFlush}
             artifacts={notebook.artifacts}
             trashedArtifacts={notebook.trashedArtifacts}
             artifactRevisions={notebook.artifactRevisions}
@@ -353,12 +436,14 @@ export function CanvasLab({
         ) : null}
 
         {project ? (
-          <div hidden={route.page !== 'workbench'}>
+          <div hidden={route.page !== 'workbench'} inert={project.mode === 'saved' ? true : undefined}>
+          <LabDraftContext.Provider value={supportsDrafts && project.mode !== 'saved' ? reportDraft : null}>
           <LabErrorBoundary key={project.id} labName={findLab(project.toolId).name}>
             <Suspense fallback={<div className="lab-shell__loading">Loading {findLab(project.toolId).name}…</div>}>
               <LabWorkbench workbenchId={project.toolId} theme={theme} initialSource={project.source} />
             </Suspense>
           </LabErrorBoundary>
+          </LabDraftContext.Provider>
           </div>
         ) : null}
       </main>
@@ -366,12 +451,17 @@ export function CanvasLab({
         onCancel={() => setPending(null)} onClose={() => setPending(null)}>
         {pending?.scope === notebook.scope ? <>
           <h2>{'exit' in pending ? 'Leave the Lab?' : `Open ${pending.project.name}?`}</h2>
-          {project ? <p>Save your current project before replacing or closing it. Changes since your last save are not kept automatically. Saved notebook versions stay untouched.</p> : null}
-          {'exit' in pending && hasUnaddedIdea ? <p>Your new notebook idea has not been added yet. Leaving will discard that draft.</p> : null}
+          {project ? <p>{supportsDrafts ? 'Your working draft will be kept in the notebook before continuing. Your last saved version stays separate.' : 'This workbench cannot keep recovery drafts. Save or export your work before closing it.'}</p> : null}
+          {'exit' in pending && hasUnaddedIdea ? <p>Your unadded idea will be kept in Drafts.</p> : null}
+          {projectMessage ? <p role="status">{projectMessage}</p> : null}
           {'project' in pending && pending.project.toolId === 'drawio' ? <p>draw.io runs at <strong>embed.diagrams.net</strong>, outside OSA. Opening here sends the diagram content to that embedded editor. Only continue with material you are comfortable opening there.</p> : null}
           <div>
-            <button type="button" disabled={saving} onClick={() => {
+            <button type="button" disabled={saving} onClick={async () => {
               const action = pending
+              try { await flushDrafts() } catch (error) {
+                setProjectMessage(error instanceof Error ? error.message : 'The draft could not be saved. Please keep this editor open.')
+                return
+              }
               setPending(null)
               if ('exit' in action) {
                 approvedExitRef.current = { scope: notebook.scope, projectId: project?.id }

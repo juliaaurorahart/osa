@@ -36,7 +36,7 @@ export async function readLabDocument(scope: string): Promise<LabNotebookDocumen
 export async function writeLabDocument(next: LabNotebookDocument, expectedVersion: number | null) {
   const database = await openLabDatabase()
   try {
-    const transaction = database.transaction(['documents', 'recoveries'], 'readwrite')
+    const transaction = database.transaction(['documents', 'recoveries'], 'readwrite', { durability: 'strict' })
     const done = labTransactionComplete(transaction)
     let conflict = false
     const write = labRequestResult(transaction.objectStore('documents').get(next.scope) as IDBRequest<LabNotebookDocument | undefined>).then((current) => {
@@ -72,7 +72,7 @@ export async function readLatestLabRecovery(scope: string): Promise<LabNotebookD
 export async function storeLabDocumentFiles(scope: string, files: readonly StoredLabArtifact[]) {
   const database = await openLabDatabase()
   try {
-    const transaction = database.transaction(scope === GUEST_LAB_SCOPE ? ['documentFiles', 'artifacts'] : 'documentFiles', 'readwrite')
+    const transaction = database.transaction(scope === GUEST_LAB_SCOPE ? ['documentFiles', 'artifacts'] : 'documentFiles', 'readwrite', { durability: 'strict' })
     const done = labTransactionComplete(transaction)
     const store = transaction.objectStore('documentFiles')
     // Cache records are immutable. A losing tab's write or a repeated download

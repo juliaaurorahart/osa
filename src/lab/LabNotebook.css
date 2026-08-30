@@ -680,3 +680,20 @@ button.lab-notebook__preview { cursor: zoom-in; }
   .lab-notebook__page footer { flex-wrap: wrap; gap: 12px; }
   .lab-notebook__add-idea { margin-left: auto; }
 }
+.lab-notebook__drafts {
+  padding: 18px;
+  margin-bottom: 20px;
+  border: 1px solid #71839966;
+  border-radius: 14px;
+  background: #71839912;
+}
+.lab-notebook__drafts h3 { margin: 0 0 8px; }
+.lab-notebook__drafts p { margin: 0 0 12px; }
+.lab-notebook__drafts ul { list-style: none; padding: 0; margin: 0; }
+.lab-notebook__drafts li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid #71839944; }
+.lab-notebook__drafts li > div { min-width: 0; overflow-wrap: anywhere; }
+.lab-notebook__drafts small { display: block; opacity: .75; }
+.lab-notebook__drafts button { flex-shrink: 0; min-height: 44px; }
+.lab-shell__versions { display: flex; flex-wrap: wrap; gap: 6px; }
+.lab-shell__versions button { min-height: 44px; }
+.lab-shell__versions button[aria-pressed="true"] { outline: 2px solid #68bfff; outline-offset: -2px; }

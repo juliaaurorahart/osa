@@ -11,6 +11,8 @@ export const LAB_PROPERTY = {
   sourceName: 'lab:sourceName', source: 'source:url', preview: 'asset:image',
   previewMimeType: 'lab:previewMimeType', relation: 'lab:relation',
   fileId: 'lab:fileId', revisionOf: 'lab:revisionOf', deletedAt: 'lab:deletedAt',
+  isDraft: 'lab:isDraft', draftOf: 'lab:draftOf', draftBaseFileId: 'lab:draftBaseFileId',
+  draftActive: 'lab:draftActive', draftHash: 'lab:draftHash',
 } as const
 
 export type LabNotebookContents = LabNotebookOrganization & { notes: LabNote[]; artifacts: LabArtifact[] }
@@ -41,10 +43,14 @@ export function labContentsFromSnapshot(snapshot: BoardSnapshot): LabNotebookCon
         ...(p[LAB_PROPERTY.updatedAt] ? { updatedAt: dateOrDefault(p[LAB_PROPERTY.updatedAt]) } : {}),
         ...(p[LAB_PROPERTY.revisionOf] ? { revisionOf: p[LAB_PROPERTY.revisionOf] } : {}),
         ...(p[LAB_PROPERTY.deletedAt] ? { deletedAt: dateOrDefault(p[LAB_PROPERTY.deletedAt]) } : {}),
+        ...(p[LAB_PROPERTY.draftOf] ? { draftOf: p[LAB_PROPERTY.draftOf],
+          draftBaseFileId: p[LAB_PROPERTY.draftBaseFileId] || undefined,
+          draftActive: p[LAB_PROPERTY.draftActive] === 'true', draftHash: p[LAB_PROPERTY.draftHash] || undefined } : {}),
       })
     } else if (p[LAB_PROPERTY.role] === 'note' || (node.data.kind === 'note' && !p[LAB_PROPERTY.role])) {
       notes.push({ id: node.id, title: node.data.name, body: node.data.text,
-        createdAt, updatedAt: dateOrDefault(p[LAB_PROPERTY.updatedAt] || p[LAB_PROPERTY.createdAt]) })
+        createdAt, updatedAt: dateOrDefault(p[LAB_PROPERTY.updatedAt] || p[LAB_PROPERTY.createdAt]),
+        ...(p[LAB_PROPERTY.isDraft] === 'true' ? { isDraft: true } : {}) })
     }
   }
   const noteIds = new Set(notes.map((note) => note.id))
@@ -83,6 +89,7 @@ export function labSnapshotFromContents(contents: LabNotebookContents, previous 
   }
   for (const note of contents.notes) add(note.id, note.title, note.body, 'note', {
     [LAB_PROPERTY.role]: 'note', [LAB_PROPERTY.createdAt]: note.createdAt, [LAB_PROPERTY.updatedAt]: note.updatedAt,
+    [LAB_PROPERTY.isDraft]: note.isDraft ? 'true' : '',
   })
   for (const artifact of contents.artifacts) {
     const fileId = artifact.fileId || artifact.id
@@ -95,6 +102,8 @@ export function labSnapshotFromContents(contents: LabNotebookContents, previous 
       [LAB_PROPERTY.updatedAt]: artifact.updatedAt ?? '',
       [LAB_PROPERTY.revisionOf]: artifact.revisionOf ?? '',
       [LAB_PROPERTY.deletedAt]: artifact.deletedAt ?? '',
+      [LAB_PROPERTY.draftOf]: artifact.draftOf ?? '', [LAB_PROPERTY.draftBaseFileId]: artifact.draftBaseFileId ?? '',
+      [LAB_PROPERTY.draftActive]: artifact.draftActive ? 'true' : '', [LAB_PROPERTY.draftHash]: artifact.draftHash ?? '',
       [LAB_PROPERTY.mimeType]: artifact.mimeType, [LAB_PROPERTY.size]: String(artifact.size),
       [LAB_PROPERTY.tool]: artifact.toolId ?? '', [LAB_PROPERTY.sourceName]: artifact.sourceName ?? artifact.name,
       [LAB_PROPERTY.previewMimeType]: artifact.previewMimeType ?? '',
@@ -125,6 +134,8 @@ export function labSnapshotFromContents(contents: LabNotebookContents, previous 
 /** Copies an independent notebook without colliding with an account's existing IDs. */
 export function copyLabContents(contents: LabNotebookContents, createId: () => string) {
   const ids = new Map([...contents.notes, ...contents.artifacts, ...contents.topics].map((item) => [item.id, createId()]))
+  // Unsaved projects reserve an identity before a saved artifact exists.
+  for (const artifact of contents.artifacts) if (artifact.draftOf && !ids.has(artifact.draftOf)) ids.set(artifact.draftOf, createId())
   const fileIds = new Map([...new Set(contents.artifacts.map((artifact) => artifact.fileId || artifact.id))]
     .map((fileId) => [fileId, createId()]))
   return { ids, fileIds, contents: {
@@ -132,7 +143,9 @@ export function copyLabContents(contents: LabNotebookContents, createId: () => s
       ...(note.artifactIds ? { artifactIds: note.artifactIds.map((id) => ids.get(id)).filter((id): id is string => Boolean(id)) } : {}) })),
     artifacts: contents.artifacts.map((artifact) => ({ ...artifact, id: ids.get(artifact.id)!,
       fileId: fileIds.get(artifact.fileId || artifact.id)!,
-      ...(artifact.revisionOf ? { revisionOf: ids.get(artifact.revisionOf) ?? artifact.revisionOf } : {}) })),
+      ...(artifact.revisionOf ? { revisionOf: ids.get(artifact.revisionOf) ?? artifact.revisionOf } : {}),
+      ...(artifact.draftOf ? { draftOf: ids.get(artifact.draftOf)!,
+        draftBaseFileId: artifact.draftBaseFileId ? fileIds.get(artifact.draftBaseFileId) ?? artifact.draftBaseFileId : undefined } : {}) })),
     ...normalizeLabOrganization({ topics: contents.topics.map((topic) => ({ ...topic, id: ids.get(topic.id)! })),
       topicLinks: contents.topicLinks.map((link) => ({ ...link, objectId: ids.get(link.objectId)!, topicId: ids.get(link.topicId)! })) }),
   } satisfies LabNotebookContents }

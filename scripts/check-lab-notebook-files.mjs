@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import ts from 'typescript'
+import { draftTestDependency } from './lab-draft-test-loader.mjs'
 
 const require = createRequire(import.meta.url)
 const { JSDOM } = createRequire(require.resolve('fabric'))('jsdom')
@@ -27,7 +28,7 @@ function loadModule(path, mocks = {}) {
   const module = { exports: {} }
   const localRequire = createRequire(filename)
   new Function('require', 'module', 'exports', code)((id) => Object.hasOwn(mocks, id)
-    ? mocks[id] : id.endsWith('.css') ? {} : localRequire(id), module, module.exports)
+    ? mocks[id] : id.endsWith('.css') ? {} : draftTestDependency(id) ?? localRequire(id), module, module.exports)
   return module.exports
 }
 const { LabNotebook } = loadModule('src/lab/LabNotebook.tsx', {
@@ -224,7 +225,82 @@ try {
     URL.createObjectURL = originalCreate
     URL.revokeObjectURL = originalRevoke
   }
-  console.log('Notebook Browse/Edit, stable previews, History, recoverable Trash, and visible file errors passed.')
+  let draftStore = { notes: [], noteDrafts: [] }
+  let updateDraftStore, flushNoteDrafts, rejectPromotion = false
+  const saveNoteDraft = async (note, topicIds, scope, expectedUpdatedAt) => {
+    assert.equal(scope, 'guest')
+    const previous = draftStore.noteDrafts.find((item) => item.id === note.id)
+    if (previous && previous.updatedAt !== expectedUpdatedAt) throw new Error('Idea changed elsewhere')
+    draftStore = { ...draftStore, noteDrafts: [...draftStore.noteDrafts.filter((item) => item.id !== note.id), structuredClone(note)] }
+    updateDraftStore(draftStore)
+  }
+  const promoteNoteDraft = async (id, _scope, expectedUpdatedAt) => {
+    if (rejectPromotion) throw new Error('Fixture promotion failed')
+    const note = draftStore.noteDrafts.find((item) => item.id === id)
+    assert.ok(note)
+    assert.equal(note.updatedAt, expectedUpdatedAt)
+    draftStore = { notes: [...draftStore.notes, { ...note, isDraft: false }], noteDrafts: draftStore.noteDrafts.filter((item) => item.id !== id) }
+    updateDraftStore(draftStore)
+    return id
+  }
+  function DraftHarness() {
+    const [data, setData] = React.useState(draftStore)
+    updateDraftStore = setData
+    return React.createElement(LabNotebook, { ...data, notebookScope: 'guest', artifacts: [current],
+      isReady: true, status: 'ready', message: 'Saved', onDraftChange() {},
+      onCreateNote: () => { throw new Error('Draft promotion must not allocate another note') }, onUpdateNote() {},
+      onSaveNoteDraft: saveNoteDraft, onPromoteNoteDraft: promoteNoteDraft,
+      onRegisterDraftFlush: (flush) => { flushNoteDrafts = flush },
+      onImportFiles: async () => [], onLoadPreview: async () => null,
+      onDownloadArtifact: async () => {}, onOpenProject: async () => {}, onCreateTopic: () => null, onSetObjectTopics() {},
+    })
+  }
+  const draftRoot = createRoot(document.getElementById('root'))
+  try {
+    await React.act(async () => draftRoot.render(React.createElement(DraftHarness)))
+    await clickButton('+ new note')
+    await changeValue(document.querySelector('textarea'), 'First checkpoint')
+    await React.act(async () => flushNoteDrafts())
+    const draftId = draftStore.noteDrafts[0].id
+    await changeValue(document.querySelector('textarea'), 'Latest text before fast navigation')
+    await clickButton('← Back to notebook')
+    await clickButton('Resume idea')
+    assert.equal(document.querySelector('textarea').value, 'Latest text before fast navigation', 'Resume must not restore the stale pre-flush row over current writing')
+    await React.act(async () => flushNoteDrafts())
+    assert.equal(draftStore.noteDrafts.length, 1)
+    assert.equal(draftStore.noteDrafts[0].id, draftId)
+    await React.act(async () => draftRoot.render(React.createElement(DraftHarness, { key: 'reopened-notebook' })))
+    assert.equal(document.querySelector('textarea'), null)
+    await clickButton('Resume idea')
+    assert.equal(document.querySelector('textarea').value, 'Latest text before fast navigation', 'Drafts survive editor unmount/remount')
+    rejectPromotion = true
+    await clickButton('Add idea')
+    assert.match(document.querySelector('[role="alert"]').textContent, /promotion failed/)
+    assert.equal(document.querySelector('textarea').value, 'Latest text before fast navigation', 'Failed Add never clears the editor')
+    assert.equal(draftStore.noteDrafts[0].id, draftId)
+    rejectPromotion = false
+    await clickButton('Add idea')
+    assert.equal(draftStore.noteDrafts.length, 0)
+    assert.equal(draftStore.notes[0].id, draftId, 'Add promotes the same object, not a duplicate')
+    assert.equal(document.querySelector('textarea'), null)
+    await clickButton('+ new note')
+    await changeValue(document.querySelector('textarea'), 'My original working text')
+    await React.act(async () => flushNoteDrafts())
+    const conflictingId = draftStore.noteDrafts[0].id
+    await React.act(async () => {
+      draftStore = { ...draftStore, noteDrafts: [{ ...draftStore.noteDrafts[0], body: 'Newer remote text', updatedAt: '2099-01-01T00:00:00Z' }] }
+      updateDraftStore(draftStore)
+    })
+    await changeValue(document.querySelector('textarea'), 'My local writing continues')
+    await React.act(async () => assert.rejects(flushNoteDrafts(), /changed elsewhere/))
+    assert.equal(draftStore.noteDrafts[0].body, 'Newer remote text')
+    await clickButton('Add as separate idea')
+    assert.equal(draftStore.noteDrafts[0].id, conflictingId)
+    assert.equal(draftStore.noteDrafts[0].body, 'Newer remote text', 'Conflict escape keeps the newer remote draft')
+    assert.equal(draftStore.notes.at(-1).body, 'My local writing continues')
+    assert.notEqual(draftStore.notes.at(-1).id, conflictingId, 'Conflicting writing is preserved as a separate object')
+  } finally { await React.act(async () => draftRoot.unmount()) }
+  console.log('Notebook Browse/Edit, draft autosave/reopen, stale-resume protection, failed promotion recovery, History, Trash, and file errors passed.')
 } finally {
   dom.window.close()
 }

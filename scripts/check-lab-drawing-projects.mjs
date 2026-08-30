@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import ts from 'typescript'
+import { draftTestDependency } from './lab-draft-test-loader.mjs'
 
 const require = createRequire(import.meta.url)
 const { JSDOM } = createRequire(require.resolve('fabric'))('jsdom')
@@ -26,7 +27,7 @@ function loadModule(path, mocks = {}) {
   const module = { exports: {} }
   const localRequire = createRequire(filename)
   new Function('require', 'module', 'exports', code)((id) => Object.hasOwn(mocks, id)
-    ? mocks[id] : id.endsWith('.css') ? {} : localRequire(id), module, module.exports)
+    ? mocks[id] : id.endsWith('.css') ? {} : draftTestDependency(id) ?? localRequire(id), module, module.exports)
   return module.exports
 }
 
