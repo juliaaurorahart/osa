@@ -13,6 +13,7 @@ export function savedProjectTool(artifact: LabArtifact): LabWorkbenchId | null {
   if (name.endsWith('.excalidraw')) return 'excalidraw'
   if (name.endsWith('.mmd')) return 'mermaid'
   if (name.endsWith('.vl.json')) return 'vega'
+  if (name.endsWith('.osa-p5.json') || (name.endsWith('.js') && (artifact.toolId === 'p5' || name === 'osa-p5-sketch.js'))) return 'p5'
   if (name.endsWith('.json')) {
     if (artifact.toolId === 'konva' || name.endsWith('osa-konva-lab.json')) return 'konva'
     if (artifact.toolId === 'paper' || name.endsWith('paper-lab.json')) return 'paper'
@@ -40,6 +41,9 @@ export async function readSavedLabProject(artifact: LabArtifact, file: Blob | nu
   } else if (STRUCTURED_TOOLS.has(toolId)) {
     const { validateStructuredProjectSource } = await import('./labStructuredProjectSource')
     await validateStructuredProjectSource(toolId, source)
+  } else if (toolId === 'p5') {
+    const { readP5ProjectSource } = await import('./labP5ProjectSource')
+    readP5ProjectSource(source, 'dark')
   }
   return { toolId, source }
 }

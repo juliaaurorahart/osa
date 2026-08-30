@@ -28,7 +28,7 @@ const HEX_COLOR = /^#[\da-f]{6}$/i
 
 /** Defaults apply only to fresh pages; imported documents keep their own color. */
 export function createInkDocument(): InkDocument {
-  return { format: 'osa-ink', version: 1, width: 1600, height: 1000, background: '#000000', strokes: [] }
+  return { format: 'osa-ink', version: 1, width: 1600, height: 1000, background: 'transparent', strokes: [] }
 }
 
 export function inkStrokePath(stroke: InkStroke, complete = true): string {

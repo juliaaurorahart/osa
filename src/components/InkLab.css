@@ -32,7 +32,7 @@
 .ink-lab__zoom output { min-width: 42px; text-align: center; font-size: .8rem; }
 .ink-lab__downloads { position: relative; }
 .ink-lab__downloads > div { position: absolute; z-index: 3; top: 100%; right: 0; display: grid; gap: 5px; width: 190px; padding: 8px; border: 1px solid var(--osa-border); border-radius: 8px; background: var(--osa-surface); box-shadow: 0 5px 20px var(--osa-shadow); }
-.ink-lab__stage { min-width: 0; height: clamp(370px, 59vh, 760px); padding: 14px; border-top: 1px solid var(--osa-border); background: repeating-conic-gradient(#c3c5c9 0% 25%, #b9bcc2 0% 50%) 0 0 / 16px 16px; }
+.ink-lab__stage { min-width: 0; height: clamp(370px, 59vh, 760px); padding: 14px; border-top: 1px solid var(--osa-border); background: repeating-conic-gradient(var(--osa-surface) 0% 25%, var(--osa-surface-raised) 0% 50%) 0 0 / 16px 16px; }
 .ink-lab__stage svg { display: block; width: 100%; height: 100%; touch-action: none; cursor: crosshair; user-select: none; -webkit-user-select: none; }
 .ink-lab__stage svg.is-panning { cursor: grab; }
 .ink-lab__stage svg.is-panning:active { cursor: grabbing; }

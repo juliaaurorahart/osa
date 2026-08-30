@@ -26,7 +26,7 @@ export const LAB_GROUPS: readonly LabGroup[] = [
     name: 'Creative code',
     description: 'Generate motion, sound, images, and spatial experiments.',
     labs: [
-      { id: 'p5', name: 'p5.js', note: 'coded generative art', output: 'source and PNG', glyph: '✣' },
+      { id: 'p5', name: 'p5.js', note: 'coded generative art', output: 'editable code, presets, and PNG', glyph: '✣' },
       { id: 'pixi', name: 'PixiJS', note: 'fast animated 2D graphics', output: 'PNG', glyph: '✦' },
       { id: 'strudel', name: 'Strudel REPL', note: 'live-coded music', output: 'pattern code and share links', glyph: '♫' },
       { id: 'three', name: 'Three.js', note: 'interactive 3D scenes', output: 'scene JSON and PNG', glyph: '◈' },

@@ -440,7 +440,7 @@ export function CanvasLab({
           <LabDraftContext.Provider value={supportsDrafts && project.mode !== 'saved' ? reportDraft : null}>
           <LabErrorBoundary key={project.id} labName={findLab(project.toolId).name}>
             <Suspense fallback={<div className="lab-shell__loading">Loading {findLab(project.toolId).name}…</div>}>
-              <LabWorkbench workbenchId={project.toolId} theme={theme} initialSource={project.source} />
+              <LabWorkbench workbenchId={project.toolId} theme={theme} initialSource={project.source} beforeRun={flushDrafts} />
             </Suspense>
           </LabErrorBoundary>
           </LabDraftContext.Provider>

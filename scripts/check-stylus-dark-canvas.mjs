@@ -12,11 +12,11 @@ try {
   const { createElement } = await import('react')
   const { renderToStaticMarkup } = await import('react-dom/server')
   const fresh = createInkDocument()
-  assert.equal(fresh.background, '#000000')
+  assert.equal(fresh.background, 'transparent')
   assert.notEqual(createInkDocument().strokes, fresh.strokes)
-  assert.match(inkDocumentSvg(fresh), /<rect[^>]+fill="#000000"/)
+  assert.equal(inkDocumentSvg(fresh).includes('<rect'), false, 'The display checkerboard is not exported')
   const stroke = { points: [[10, 10, 0.5], [50, 30, 0.8]], pen: 'ink', color: '#e04693', size: 8, opacity: 0.7, stabilization: 0.35, pressure: true }
-  for (const background of ['#fff9ee', '#ffffff', '#202533', '#abcdef', 'transparent']) {
+  for (const background of ['#000000', '#fff9ee', '#ffffff', '#202533', '#abcdef', 'transparent']) {
     const saved = { ...fresh, background, strokes: [stroke] }
     const opened = parseInkDocument(JSON.stringify(saved))
     assert.deepEqual(opened, saved, 'Opening old ink must preserve its canvas and marks')
@@ -27,7 +27,7 @@ try {
     assert.equal(inkDocumentSvg(opened).includes('<rect'), background !== 'transparent')
   }
   const inkMarkup = renderToStaticMarkup(createElement(InkLab))
-  assert.match(inkMarkup, /value="#000000" selected=""/)
+  assert.match(inkMarkup, /value="transparent" selected=""/)
   assert.match(inkMarkup, /type="color" value="#f5e9d6"/)
   const painterMarkup = renderToStaticMarkup(createElement(KlecksLab))
   assert.match(painterMarkup, /New canvas/)
@@ -99,4 +99,6 @@ for (const file of manifest.files) {
 }
 const mainBundle = manifest.files.find((file) => /^main-embed\..+\.js$/.test(file.name))
 assert.match(readFileSync(new URL(mainBundle.name, vendor), 'utf8'), /initialBrushColor/)
-console.log('Stylus dark-canvas checks passed: black defaults, visible new brush, separate layers, untouched imports, export colors, and pinned patch/artifact hashes.')
+const inkCss = readFileSync(new URL('../src/components/InkLab.css', import.meta.url), 'utf8')
+assert.match(inkCss, /repeating-conic-gradient\(var\(--osa-surface\) 0% 25%, var\(--osa-surface-raised\) 0% 50%\)/)
+console.log('Stylus dark-canvas checks passed: transparent Ink with theme-aware checkerboard, black Klecks, visible new brush, untouched imports, export colors, and pinned artifact hashes.')

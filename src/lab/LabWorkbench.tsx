@@ -44,10 +44,11 @@ const CodeEditorLab = lazy(() => import('../components/CodeEditorLab').then((mod
 })))
 
 /** The one place where a catalog ID is connected to its executable workbench. */
-export function LabWorkbench({ workbenchId, theme, initialSource }: {
+export function LabWorkbench({ workbenchId, theme, initialSource, beforeRun }: {
   workbenchId: LabWorkbenchId
   theme: LabTheme
   initialSource?: LabProjectSource
+  beforeRun?: () => Promise<void>
 }) {
   const report = useContext(LabDraftContext)
   const drawioChange = useCallback((xml: string) => report?.({ blob: new Blob([xml], { type: 'application/xml' }), name: 'diagram.drawio' }), [report])
@@ -68,7 +69,7 @@ export function LabWorkbench({ workbenchId, theme, initialSource }: {
     case 'paper':
       return <PaperLab theme={theme} initialSource={initialSource} />
     case 'p5':
-      return <P5Lab theme={theme} />
+      return <P5Lab theme={theme} initialSource={initialSource} beforeRun={beforeRun} />
     case 'pixi':
       return <PixiLab theme={theme} />
     case 'strudel':

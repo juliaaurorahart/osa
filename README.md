@@ -111,7 +111,7 @@ source-only PSD checkpoints after interaction and an idle safety check; no PNG
 preview is generated for autosave. The local draft status is separate from
 account-sync status. A sudden shutdown can still lose edits since the last
 completed checkpoint, and browser storage is not a backup. Export important work.
-Fabric, p5, Pixi, Three, CodeMirror, and remote Strudel do not yet expose a
+Fabric, Pixi, Three, CodeMirror, and remote Strudel do not yet expose a
 complete reopenable draft path here; their workbenches explicitly say to use
 Save/export/Share before leaving. No new database migration is needed.
 
@@ -119,13 +119,30 @@ Notebook browsing/search and focused note editing are separate views. Files
 can be moved to **Trash** and restored; removing a file does not permanently
 delete its saved bytes or history. In **Notebook → Visuals & files**, use **Open in [tool]**, or filter to
 **Editable projects only**. Supported native files currently include Ink,
-Klecks PSD, draw.io, Excalidraw, Konva Lab, Paper, Mermaid, and Vega-Lite.
+Klecks PSD, draw.io, Excalidraw, Konva Lab, Paper, Mermaid, Vega-Lite, and p5.
 Preview images cannot restore layers or editable shapes. Other exports remain
-downloadable; p5 source is not executed, and Pixi/Three/OSA Draw restoration is
+downloadable; Pixi/Three/OSA Draw restoration is
 not implemented here. Opening draw.io requires confirmation because its
 editor is hosted at `embed.diagrams.net`, outside OSA. Saved native files are
 validated before opening; Klecks additionally parses PSD layers inside its
 local iframe. Imported Paper geometry is kept paused rather than regenerated.
+
+The p5 workbench offers preset controls and a JavaScript editor. Native
+`.osa-p5.json` files retain controls, artwork theme, edited source, and the last
+run source; old p5 `.js` exports also open in the editor. Opening saved code or
+a recovery draft never executes it. **Run code** flushes drafts, then starts an
+opaque `allow-scripts` iframe with a bundled p5 runtime. The frame receives no
+notebook data and exposes only status/errors and requested PNG captures.
+Remote scripts/files, nested frames, and camera/microphone access are disabled.
+This is not a CPU sandbox: endless loops can freeze the tab, and iframe
+self-navigation is not prevented by CSP. Only run trusted code. **Stop** destroys
+the frame. Run is limited to 250,000 characters; larger unrun text remains
+recoverable within the existing 25 MB notebook file limit. Preview/export is a
+still PNG, not a recorded animation. Raw JavaScript export is available separately.
+
+New Ink pages are transparent; their display-only checkerboard follows the Lab
+theme and is not baked into exported images. Existing artwork keeps its chosen
+background. Klecks and remote Strudel retain their editors' independent themes.
 
 The private-notebook implementation keeps a local IndexedDB copy and a
 separate account notebook in D1, with its files in private R2 storage. Moving
