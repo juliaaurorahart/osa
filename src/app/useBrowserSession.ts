@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   isCanvasLabRequested,
+  isDedicatedLabLocation,
   readOsaTheme,
   readWorkspaceView,
   setCanvasLabRequested,
@@ -51,7 +52,9 @@ export function useCanvasLabLocation() {
 
   const closeCanvasLab = useCallback(() => {
     setCanvasLabRequested(false, 'replace')
-    setCanvasLabVisible(false)
+    // On the dedicated host, leave the Lab on-screen until navigation to OSA
+    // completes; briefly rendering another workspace would suggest data moved.
+    if (!isDedicatedLabLocation()) setCanvasLabVisible(false)
   }, [])
 
   return { canvasLabVisible, openCanvasLab, closeCanvasLab }

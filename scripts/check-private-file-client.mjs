@@ -24,7 +24,9 @@ try {
   const scoped = assets.scopeLegacyAssets({ nested: [{ frozen: legacy }] }, 'shako')
   assert.equal(assets.assetReference(scoped.nested[0].frozen).boardId, 'shako')
   assert.equal(assets.assetReference(scoped.nested[0].frozen).legacyKey, 'images/' + 'a'.repeat(64) + '.png')
-  const privateUrl = '/api/assets?id=file-one&boardId=shako'
+  const assetId = '11111111-1111-4111-8111-111111111111'
+  const uploadedId = '22222222-2222-4222-8222-222222222222'
+  const privateUrl = `/api/assets?id=${assetId}&boardId=shako`
   let fileReads = 0
   globalThis.fetch = async () => { fileReads += 1; return new Response(file, { headers: { 'content-type': 'image/png' } }) }
   const portable = await assets.makeDocumentPortable({ image: privateUrl, version: { image: privateUrl } })
@@ -40,8 +42,8 @@ try {
   const unguardedReads = [
     '/shared/public-test?asset=file-one',
     `${globalThis.location.origin}/shared/public-test?asset=file-one`,
-    'https://foreign.example/api/assets?id=file-one',
-    'https://osa.juliaaurorahart.com/api/assets?id=file-one',
+    'https://foreign.example/public-image.png',
+    'https://foreign.example/media/public-image.png',
     'blob:https://osa.example.test/local-preview',
     inline,
   ]
@@ -58,6 +60,11 @@ try {
       `Expected-account identity is attached only to same-origin private reads: ${request.url}`)
     assert.equal(request.redirect, 'error', 'Private identity headers must never follow redirects')
   }
+  const readsBeforeRejected = readRequests.length
+  for (const origin of ['https://foreign.example', 'https://osa.juliaaurorahart.com', 'https://lab.juliaaurorahart.com']) {
+    await assert.rejects(() => assets.readAssetBlob(`${origin}${privateUrl}`), /no accessible private copy/)
+  }
+  assert.equal(readRequests.length, readsBeforeRejected, 'Untrusted/development origins cannot fetch production managed assets')
 
   const htmlSource = '<!doctype html><title>Saved source</title><h1>A local idea</h1>'
   const htmlData = await assets.blobToDataUrl(new Blob([htmlSource], { type: 'text/html' }))
@@ -107,7 +114,7 @@ try {
       assert.equal(url.searchParams.get('boardId'), 'new-board')
       assert.equal(headers.get('x-osa-account'), 'julia@example.test')
       assert.equal(await init.body.text(), 'pixels')
-      return Response.json({ url: '/api/assets?id=new-file&boardId=new-board' })
+      return Response.json({ url: `/api/assets?id=${uploadedId}&boardId=new-board` })
     }
     if (String(input).startsWith('data:')) return originalFetch(input)
     throw new Error('Unexpected request: ' + input)
@@ -121,7 +128,7 @@ try {
   assert.equal(saved.revision, 2)
   assert.equal(writes[0].snapshot.nodes.length, 0)
   assert.ok(!JSON.stringify(writes).includes('base64'), 'Neither D1 write contains image bytes')
-  assert.equal(saved.snapshot.nodes[0].data.properties.image, '/api/assets?id=new-file&boardId=new-board')
+  assert.equal(saved.snapshot.nodes[0].data.properties.image, `/api/assets?id=${uploadedId}&boardId=new-board`)
   assert.equal(board.snapshot.nodes[0].data.properties.image, inline, 'Source data is not mutated while syncing')
 
   const cache = new Map()

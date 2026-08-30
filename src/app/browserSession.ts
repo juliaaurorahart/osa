@@ -1,5 +1,7 @@
 import { parseBoardSnapshot } from '../graph/boardSnapshot'
 import type { SavedBoard } from '../graph/boardStorage'
+import { LAB_ORIGIN, OSA_ORIGIN } from '../config/osaDeployment'
+import { sharedAssemblyReferenceFromLocation } from '../graph/sharedAssemblyRoute'
 
 const LOCAL_DRAFT_KEY = 'osa:current-draft'
 const WORKSPACE_VIEW_KEY = 'osa:workspace-view'
@@ -137,14 +139,30 @@ export function writeLocalDraft(draft: LocalDraft, identity: string | null = nul
   window.localStorage.setItem(`${key}:board:${draft.id}`, value)
 }
 
-/** The Canvas Lab is a temporary browser route, never durable board state. */
+/** The dedicated Lab address is a front door to the same app, not another board. */
+export function isDedicatedLabLocation(url = new URL(window.location.href)) {
+  return url.origin === LAB_ORIGIN
+}
+
+/** Keep the old query route available for browser-only files and local development. */
 export function isCanvasLabRequested() {
-  return new URLSearchParams(window.location.search).get('lab') === 'canvas'
+  const url = new URL(window.location.href)
+  // An explicit public document wins over the host's default landing page.
+  if (sharedAssemblyReferenceFromLocation(url)) return false
+  return isDedicatedLabLocation(url) || url.searchParams.get('lab') === 'canvas'
 }
 
 export function setCanvasLabRequested(requested: boolean, mode: 'push' | 'replace') {
   const url = new URL(window.location.href)
-  if (requested) {
+  if (isDedicatedLabLocation(url)) {
+    if (!requested) {
+      // The Lab's existing save/discard confirmation runs before this call.
+      // Don't carry notebook IDs, account hints, or draft content across URLs.
+      window.location.assign(`${OSA_ORIGIN}/`)
+      return
+    }
+    url.searchParams.delete('lab')
+  } else if (requested) {
     url.searchParams.set('lab', 'canvas')
   } else {
     url.searchParams.delete('lab')

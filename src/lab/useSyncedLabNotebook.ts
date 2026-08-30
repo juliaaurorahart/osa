@@ -6,7 +6,7 @@ import { copyLabContents, LAB_PROPERTY, labContentsFromSnapshot, labSnapshotFrom
 import { accountLabScope, GUEST_LAB_SCOPE, keepLabRecovery, LabLocalConflictError, openGuestLabDocument,
   readLabDocument, readLatestLabRecovery, storeLabDocumentFiles, writeLabDocument, type LabNotebookDocument } from './labNotebookDocumentStorage'
 import { checkLabAccount, fetchCloudNotebook, fetchLabSession, loadLabFile, portableLabSnapshot, saveCloudNotebook } from './labNotebookCloud'
-import type { LabCapture, LabNote, LabNotebookObjectType, StoredLabArtifact } from './labTypes'
+import type { LabArtifact, LabCapture, LabNote, LabNotebookObjectType, StoredLabArtifact } from './labTypes'
 import type { LabNotebookStatus } from './useLabNotebook'
 
 export type LabNotebookSyncStatus = 'local' | 'syncing' | 'synced' | 'pending' | 'conflict' | 'offline'
@@ -120,7 +120,8 @@ export function useSyncedLabNotebook() {
         const snapshot = unchanged ? saved.snapshot : { ...current.snapshot,
           nodes: current.snapshot.nodes.map((node) => {
             const savedProperties = urls.get(node.id)
-            if (!savedProperties || node.data.properties[LAB_PROPERTY.role] !== 'artifact') return node
+            if (!savedProperties || node.data.properties[LAB_PROPERTY.role] !== 'artifact'
+              || (savedProperties[LAB_PROPERTY.fileId] || node.id) !== (node.data.properties[LAB_PROPERTY.fileId] || node.id)) return node
             return { ...node, data: { ...node.data, properties: { ...node.data.properties,
               [LAB_PROPERTY.source]: savedProperties[LAB_PROPERTY.source],
               ...(savedProperties[LAB_PROPERTY.preview] ? { [LAB_PROPERTY.preview]: savedProperties[LAB_PROPERTY.preview] } : {}) } } }
@@ -295,9 +296,70 @@ export function useSyncedLabNotebook() {
       }), topicIds)
     } catch (error) { reportError(error); return [] }
   }, [addFiles, reportError])
-  const captureVisual = useCallback(async (capture: LabCapture, topicIds: readonly string[] = [], expectedScope?: string) => {
-    return (await addFiles([createStoredLabCapture(capture, id(), new Date().toISOString())], topicIds, expectedScope))[0]
-  }, [addFiles])
+  const getArtifact = useCallback((artifactId: string) => currentRef.current
+    ? labContentsFromSnapshot(currentRef.current.snapshot).artifacts.find((item) => item.id === artifactId) : undefined, [])
+  const captureVisual = useCallback(async (capture: LabCapture, topicIds: readonly string[] = [], expectedScope?: string,
+    options?: { artifactId?: string; expectedFileId?: string }) => {
+    if (!options?.artifactId) return (await addFiles([createStoredLabCapture(capture, id(), new Date().toISOString())], topicIds, expectedScope))[0]
+    const current = currentRef.current
+    if (!current || switching.current || localFailure.current) throw new Error('Open the notebook before saving files.')
+    if (expectedScope !== undefined && current.scope !== expectedScope) throw new Error('The notebook changed before this project could save.')
+    const previous = getArtifact(options.artifactId)
+    if (!previous || previous.revisionOf) throw new Error('This project is no longer available. Use Save a copy to keep your work.')
+    if (previous.deletedAt) throw new Error('This project is in Trash. Restore it in the notebook or use Save a copy.')
+    if (options.expectedFileId && options.expectedFileId !== (previous.fileId || previous.id)) {
+      throw new Error('This project changed since you opened it. Use Save a copy to preserve your edits, or reopen the latest file.')
+    }
+    const now = new Date().toISOString()
+    const file = createStoredLabCapture(capture, id(), now)
+    fileOperations.current += 1
+    try {
+      // Every save gets fresh bytes. A failed metadata write cannot damage the
+      // old project or the files referenced by a conflict/recovery snapshot.
+      await storeLabDocumentFiles(current.scope, [file])
+      if (currentRef.current?.scope !== current.scope) throw new Error('The notebook changed while saving. No file was changed in the other notebook.')
+      const existing = labContentsFromSnapshot(currentRef.current.snapshot)
+      const latest = existing.artifacts.find((item) => item.id === previous.id)
+      if (!latest || latest.deletedAt || (latest.fileId || latest.id) !== (previous.fileId || previous.id)) {
+        throw new Error('This project changed while saving. Your previous saved file is safe. Use Save a copy to keep these edits.')
+      }
+      const revision: LabArtifact = { ...previous, id: id(), revisionOf: previous.id, fileId: previous.fileId || previous.id }
+      const updated: LabArtifact = { ...labArtifactMetadata(file), id: previous.id, fileId: file.id,
+        createdAt: previous.createdAt, updatedAt: now }
+      if (!commit({ ...existing, artifacts: [revision, ...existing.artifacts.map((item) => item.id === previous.id ? updated : item)] })) {
+        throw new Error('The project could not be updated. The previous saved version is unchanged.')
+      }
+      await writeQueue.current
+      if (localFailure.current) throw new Error('The notebook could not finish saving. Your earlier version is preserved; download a recovery copy before continuing.')
+      return previous.id
+    } finally { fileOperations.current -= 1 }
+  }, [addFiles, commit, getArtifact])
+  const changeArtifact = useCallback(async (artifactId: string, change: (artifact: LabArtifact, all: LabArtifact[]) => LabArtifact[]) => {
+    const current = currentRef.current
+    if (!current || switching.current || localFailure.current || fileOperations.current) throw new Error('Wait for the current save or notebook switch to finish.')
+    const existing = labContentsFromSnapshot(current.snapshot)
+    const artifact = existing.artifacts.find((item) => item.id === artifactId && !item.revisionOf)
+    if (!artifact) throw new Error('That notebook file is no longer available.')
+    fileOperations.current += 1
+    try {
+      if (!commit({ ...existing, artifacts: change(artifact, existing.artifacts) })) throw new Error('The notebook could not save this change.')
+      await writeQueue.current
+      if (localFailure.current) throw new Error('The notebook change could not be saved. Reload the latest notebook before continuing.')
+    } finally { fileOperations.current -= 1 }
+  }, [commit])
+  const trashArtifact = useCallback((artifactId: string) => changeArtifact(artifactId, (artifact, all) =>
+    all.map((item) => item.id === artifact.id ? { ...item, deletedAt: new Date().toISOString() } : item)), [changeArtifact])
+  const restoreArtifact = useCallback((artifactId: string) => changeArtifact(artifactId, (artifact, all) =>
+    all.map((item) => item.id === artifact.id ? { ...item, deletedAt: undefined } : item)), [changeArtifact])
+  const restoreRevision = useCallback((artifactId: string, revisionId: string) => changeArtifact(artifactId, (artifact, all) => {
+    if (artifact.deletedAt) throw new Error('Restore the file from Trash before restoring a version.')
+    const revision = all.find((item) => item.id === revisionId && item.revisionOf === artifactId)
+    if (!revision) throw new Error('That earlier version is no longer available.')
+    const archived: LabArtifact = { ...artifact, id: id(), revisionOf: artifactId, fileId: artifact.fileId || artifact.id }
+    const restored: LabArtifact = { ...revision, id: artifactId, revisionOf: undefined, deletedAt: undefined,
+      name: artifact.name, createdAt: artifact.createdAt, updatedAt: new Date().toISOString(), fileId: revision.fileId || revision.id }
+    return [archived, ...all.map((item) => item.id === artifactId ? restored : item)]
+  }), [changeArtifact])
   const loadArtifactPreview = useCallback(async (artifactId: string) => {
     if (!currentRef.current) return null
     const file = await loadLabFile(currentRef.current, artifactId)
@@ -315,11 +377,11 @@ export function useSyncedLabNotebook() {
   }, [])
   const downloadArtifact = useCallback(async (artifactId: string) => {
     try {
-      if (!currentRef.current) return
+      if (!currentRef.current) throw new Error('Open the notebook before downloading files.')
       const file = await loadLabFile(currentRef.current, artifactId)
       if (!file) throw new Error('That saved file is unavailable.')
       downloadBlob(file.file, file.sourceName || file.name)
-    } catch (error) { reportError(error) }
+    } catch (error) { reportError(error); throw error }
   }, [reportError])
   const exportNotebook = useCallback(async () => {
     try {
@@ -380,12 +442,13 @@ export function useSyncedLabNotebook() {
       const cached = await readLabDocument(scope)
       if (cached?.dirty) throw new Error('This account has unsynced notebook changes on this device. Open its offline copy and sync or export it first.')
       const guest = currentRef.current?.scope === GUEST_LAB_SCOPE ? currentRef.current : await openGuestLabDocument()
-      const { contents: copied, ids } = copyLabContents(labContentsFromSnapshot(guest.snapshot), id)
+      const { contents: copied, fileIds } = copyLabContents(labContentsFromSnapshot(guest.snapshot), id)
       const files: StoredLabArtifact[] = []
       for (const artifact of labContentsFromSnapshot(guest.snapshot).artifacts) {
         const file = await loadLabFile(guest, artifact.id)
         if (!file) throw new Error(`The original file “${artifact.name}” is missing. No notebook contents were copied.`)
-        files.push({ ...file, id: ids.get(file.id)! })
+        const copiedFileId = fileIds.get(artifact.fileId || artifact.id)!
+        files.push({ ...file, id: copiedFileId, fileId: copiedFileId })
       }
       await checkLabAccount(account)
       await storeLabDocumentFiles(scope, files)
@@ -425,7 +488,12 @@ export function useSyncedLabNotebook() {
     finally { switching.current = false; setBusy(false) }
   }, [email, offlineAccount, reportError, showDocument])
 
-  return { ...contents, status, message, isReady: Boolean(document) && !busy && !storageFailed,
+  return { ...contents,
+    artifacts: contents.artifacts.filter((artifact) => !artifact.revisionOf && !artifact.deletedAt),
+    trashedArtifacts: contents.artifacts.filter((artifact) => !artifact.revisionOf && artifact.deletedAt),
+    artifactRevisions: contents.artifacts.filter((artifact) => artifact.revisionOf),
+    getArtifact, trashArtifact, restoreArtifact, restoreRevision,
+    status, message, isReady: Boolean(document) && !busy && !storageFailed,
     createNote, updateNote, createTopic, setObjectTopics, importFiles, captureVisual,
     loadArtifactPreview, loadArtifactSource, downloadArtifact,
     scope: document?.scope ?? 'loading', email, offlineAccount, syncStatus, syncMessage, busy, conflict,

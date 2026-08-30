@@ -10,11 +10,14 @@ import './LabNotebook.css'
 type LabNotebookProps = {
   notes: readonly LabNote[]
   artifacts: readonly LabArtifact[]
+  trashedArtifacts?: readonly LabArtifact[]
+  artifactRevisions?: readonly LabArtifact[]
   topics: readonly LabTopic[]
   topicLinks: readonly LabTopicLink[]
   isReady: boolean
   isActive?: boolean
   onDraftChange: (hasDraft: boolean) => void
+  isExitApproved?: (event: BeforeUnloadEvent) => boolean
   status: LabNotebookStatus
   message: string
   onCreateNote: (topicIds?: readonly string[]) => string
@@ -23,6 +26,9 @@ type LabNotebookProps = {
   onLoadPreview: (artifactId: string) => Promise<Blob | null>
   onDownloadArtifact: (artifactId: string) => Promise<void>
   onOpenProject: (artifact: LabArtifact) => Promise<void>
+  onTrashArtifact?: (artifactId: string) => Promise<void>
+  onRestoreArtifact?: (artifactId: string) => Promise<void>
+  onRestoreRevision?: (artifactId: string, revisionId: string) => Promise<void>
   onCreateTopic: (name: string) => string | null
   onSetObjectTopics: (objectType: LabNotebookObjectType, objectId: string, topicIds: readonly string[]) => void
 }
@@ -95,11 +101,14 @@ function titleFromIdea(body: string) {
 export function LabNotebook({
   notes,
   artifacts,
+  trashedArtifacts = [],
+  artifactRevisions = [],
   topics = [],
   topicLinks = [],
   isReady,
   isActive = true,
   onDraftChange,
+  isExitApproved,
   status,
   message,
   onCreateNote,
@@ -108,9 +117,13 @@ export function LabNotebook({
   onLoadPreview,
   onDownloadArtifact,
   onOpenProject,
+  onTrashArtifact,
+  onRestoreArtifact,
+  onRestoreRevision,
   onCreateTopic,
   onSetObjectTopics,
 }: LabNotebookProps) {
+  const [view, setView] = useState<'browse' | 'edit'>('browse')
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)
   const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null)
   const [newTopicName, setNewTopicName] = useState('')
@@ -122,8 +135,12 @@ export function LabNotebook({
   const [query, setQuery] = useState('')
   const [isImporting, setIsImporting] = useState(false)
   const [captureError, setCaptureError] = useState('')
-  const [openedArtifact, setOpenedArtifact] = useState<LabArtifact | null>(null)
+  const [openedArtifactId, setOpenedArtifactId] = useState<string | null>(null)
   const [openingProjectId, setOpeningProjectId] = useState<string | null>(null)
+  const [fileOperation, setFileOperation] = useState<{ id: string; label: string } | null>(null)
+  const [fileMessage, setFileMessage] = useState('')
+  const [fileError, setFileError] = useState('')
+  const fileOperationRef = useRef(false)
   const [projectsOnly, setProjectsOnly] = useState(false)
   const openPendingRef = useRef(false)
   const previewDialogRef = useRef<HTMLDialogElement>(null)
@@ -131,11 +148,15 @@ export function LabNotebook({
   const importPendingRef = useRef(false)
   useEffect(() => { latestNotesRef.current = notes }, [notes])
   const writingRef = useRef<HTMLTextAreaElement>(null)
+  const newNoteButtonRef = useRef<HTMLButtonElement>(null)
   const activeTopicFilterRef = useRef<HTMLButtonElement>(null)
   const selectedNote = notes.find((note) => note.id === selectedNoteId) ?? null
+  const openedArtifact = [...artifacts, ...trashedArtifacts, ...artifactRevisions]
+    .find((artifact) => artifact.id === openedArtifactId) ?? null
   const selectedTopic = topics.find((topic) => topic.id === selectedTopicId) ?? null
   const isLoading = status === 'loading'
   const isUnavailable = isLoading || !isReady
+  const isFileBusy = fileOperation !== null || openingProjectId !== null || isImporting
   const canAddIdea = !isUnavailable && !isImporting && Boolean(draftTitle.trim() || draftBody.trim() || draftArtifactIds.length)
   const hasUnaddedIdea = Boolean(draftTitle || draftBody || draftArtifactIds.length)
   useEffect(() => { onDraftChange(hasUnaddedIdea || isImporting) }, [hasUnaddedIdea, isImporting, onDraftChange])
@@ -164,15 +185,47 @@ export function LabNotebook({
     && (!projectsOnly || savedProjectTool(artifact) !== null)
     && matchesNotebookSearch(query, artifact.name, artifact.description, artifact.toolId, topicNamesFor('artifact', artifact.id)))
   const selectedNoteOutsideFilter = selectedNote && selectedTopic && !topicIdsFor('note', selectedNote.id).includes(selectedTopic.id)
+  const revisionsByArtifact = useMemo(() => {
+    const revisions = new Map<string, LabArtifact[]>()
+    for (const revision of artifactRevisions) {
+      if (!revision.revisionOf) continue
+      const versions = revisions.get(revision.revisionOf) ?? []
+      versions.push(revision)
+      revisions.set(revision.revisionOf, versions)
+    }
+    for (const versions of revisions.values()) versions.sort((a, b) =>
+      (b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt))
+    return revisions
+  }, [artifactRevisions])
+
+  const runFileAction = async (artifact: LabArtifact, label: string, action: () => Promise<void>, success: string) => {
+    if (isUnavailable || fileOperationRef.current || openPendingRef.current || importPendingRef.current) return
+    fileOperationRef.current = true
+    setFileOperation({ id: artifact.id, label })
+    setFileError('')
+    setFileMessage('')
+    try {
+      await action()
+      setFileMessage(success)
+    } catch (error) {
+      setFileError(error instanceof Error ? error.message : 'This file action did not finish. Please try again.')
+    } finally {
+      fileOperationRef.current = false
+      setFileOperation(null)
+    }
+  }
+
+  const downloadArtifact = (artifact: LabArtifact) => runFileAction(artifact, 'Downloading…',
+    () => onDownloadArtifact(artifact.id), `Download started for “${artifact.name}”.`)
 
   const openProject = async (artifact: LabArtifact) => {
-    if (openPendingRef.current) return
+    if (openPendingRef.current || fileOperationRef.current || importPendingRef.current) return
     openPendingRef.current = true
     setOpeningProjectId(artifact.id)
     setCaptureError('')
     try {
       await onOpenProject(artifact)
-      setOpenedArtifact(null)
+      setOpenedArtifactId(null)
     } catch (error) {
       setCaptureError(error instanceof Error ? error.message : 'This project could not open. The saved file is unchanged.')
     } finally {
@@ -182,16 +235,20 @@ export function LabNotebook({
   }
 
   const editProjectButton = (artifact: LabArtifact) => {
+    if (artifact.deletedAt || artifact.revisionOf) return null
     const tool = savedProjectTool(artifact)
-    return tool ? <button type="button" disabled={isUnavailable || openingProjectId !== null}
+    return tool ? <button type="button" disabled={isUnavailable || isFileBusy}
       onClick={() => void openProject(artifact)}>
       {openingProjectId === artifact.id ? 'Opening…' : `Open in ${findLab(tool).name}`}
     </button> : null
   }
 
   useEffect(() => {
-    if (!isUnavailable && isActive) writingRef.current?.focus()
-  }, [isUnavailable, isActive, selectedNote?.id])
+    if (!isUnavailable && isActive) {
+      if (view === 'edit') writingRef.current?.focus()
+      else newNoteButtonRef.current?.focus()
+    }
+  }, [isUnavailable, isActive, selectedNote?.id, view])
 
   useEffect(() => {
     if (openedArtifact && isActive) previewDialogRef.current?.showModal()
@@ -200,10 +257,13 @@ export function LabNotebook({
 
   useEffect(() => {
     if (!hasUnaddedIdea) return
-    const warnBeforeLeaving = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      if (isExitApproved?.(event)) return
+      event.preventDefault(); event.returnValue = ''
+    }
     window.addEventListener('beforeunload', warnBeforeLeaving)
     return () => window.removeEventListener('beforeunload', warnBeforeLeaving)
-  }, [hasUnaddedIdea])
+  }, [hasUnaddedIdea, isExitApproved])
 
   const chooseTopic = (topicId: string | null) => {
     setSelectedTopicId(topicId)
@@ -234,6 +294,7 @@ export function LabNotebook({
   const openNewNote = () => {
     // A draft is only a form until Add idea is used; returning here preserves it.
     setSelectedNoteId(null)
+    setView('edit')
     if (!selectedNote) writingRef.current?.focus()
   }
 
@@ -253,7 +314,8 @@ export function LabNotebook({
     setDraftArtifactIds([])
     setDraftTopicIds(selectedTopic ? [selectedTopic.id] : [])
     setDraftTopicsCustomized(false)
-    writingRef.current?.focus()
+    setSelectedNoteId(noteId)
+    setView('browse')
   }
 
   const submitIdea = (event: FormEvent<HTMLFormElement>) => {
@@ -271,7 +333,13 @@ export function LabNotebook({
   const importFiles = (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.currentTarget.files ?? [])
     event.currentTarget.value = ''
-    if (!isUnavailable) void onImportFiles(files, selectedTopic ? [selectedTopic.id] : [])
+    if (isUnavailable || !files.length || importPendingRef.current) return
+    setIsImporting(true)
+    importPendingRef.current = true
+    setFileError('')
+    void onImportFiles(files, selectedTopic ? [selectedTopic.id] : []).catch((error: unknown) => {
+      setFileError(error instanceof Error ? error.message : 'The files could not be added.')
+    }).finally(() => { setIsImporting(false); importPendingRef.current = false })
   }
 
   const attachIds = (ids: readonly string[], targetNoteId: string | null = selectedNote?.id ?? null) => {
@@ -332,7 +400,7 @@ export function LabNotebook({
     {attachedIds.map((id) => {
       const artifact = artifacts.find((item) => item.id === id)
       return artifact ? <figure key={id}>
-        <LabArtifactPreview artifact={artifact} loadPreview={onLoadPreview} onOpen={() => setOpenedArtifact(artifact)} />
+        <LabArtifactPreview artifact={artifact} loadPreview={onLoadPreview} onOpen={() => setOpenedArtifactId(artifact.id)} />
         <figcaption>{artifact.name}<button type="button" disabled={isUnavailable} onClick={() => removeAttachment(id)} aria-label={`Detach ${artifact.name}`}>detach</button></figcaption>
       </figure> : null
     })}
@@ -340,7 +408,7 @@ export function LabNotebook({
   </section>
 
   const downloadPreview = async (artifact: LabArtifact) => {
-    try {
+    await runFileAction(artifact, 'Downloading…', async () => {
       const blob = await onLoadPreview(artifact.id)
       if (!blob) throw new Error('No image preview is available.')
       const url = URL.createObjectURL(blob)
@@ -349,23 +417,53 @@ export function LabNotebook({
       link.download = `${artifact.name.replace(/\.[^.]+$/, '')}.${blob.type.includes('svg') ? 'svg' : blob.type.includes('jpeg') ? 'jpg' : blob.type.split('/')[1] || 'png'}`
       link.click()
       window.setTimeout(() => URL.revokeObjectURL(url), 1000)
-    } catch (error) { setCaptureError(error instanceof Error ? error.message : 'The image could not download.') }
+    }, `Image download started for “${artifact.name}”.`)
+  }
+
+  const fileHistory = (artifact: LabArtifact) => {
+    const revisions = revisionsByArtifact.get(artifact.id) ?? []
+    return <details className="lab-notebook__history">
+      <summary aria-label={`History for ${artifact.name}`}>History <span>{revisions.length ? `(${revisions.length} earlier ${revisions.length === 1 ? 'save' : 'saves'})` : ''}</span></summary>
+      <div className="lab-notebook__history-content">
+        <p>{revisions.length ? 'Restoring an earlier save keeps the current version in history.' : 'No earlier saves yet. Save updates this item; earlier versions appear here.'}</p>
+        {revisions.length ? <ol>
+          {revisions.map((revision) => <li key={revision.id}>
+            <div><strong>{revision.name}</strong><time dateTime={revision.updatedAt ?? revision.createdAt}>{formatSavedTime(revision.updatedAt ?? revision.createdAt)}</time></div>
+            <div className="lab-notebook__file-actions">
+              {(revision.previewMimeType ?? revision.mimeType).startsWith('image/') ? <button type="button" onClick={() => setOpenedArtifactId(revision.id)}>Preview</button> : null}
+              <button type="button" disabled={isUnavailable || isFileBusy} onClick={() => void downloadArtifact(revision)}>Download</button>
+              {onRestoreRevision ? <button type="button" disabled={isUnavailable || isFileBusy}
+                aria-label={`Restore version of ${artifact.name} saved ${formatSavedTime(revision.updatedAt ?? revision.createdAt)}`}
+                onClick={() => void runFileAction(revision, 'Restoring…', () => onRestoreRevision(artifact.id, revision.id), `Earlier version restored for “${artifact.name}”. The previous version is in History.`)}>
+                {fileOperation?.id === revision.id && fileOperation.label === 'Restoring…' ? 'Restoring…' : 'Restore version'}
+              </button> : null}
+            </div>
+          </li>)}
+        </ol> : null}
+      </div>
+    </details>
   }
 
   return (
-    <section className="lab-notebook" aria-labelledby="lab-notebook-title">
+    <section className={`lab-notebook lab-notebook--${view}`} aria-labelledby="lab-notebook-title">
       <header className="lab-notebook__header">
         <div>
           <h2 id="lab-notebook-title">Lab notebook</h2>
-          <p>Catch an idea while it&apos;s here.</p>
+          <p>{view === 'browse' ? 'Find, filter, and organize your notes and visuals.' : 'A little room to think. Your notebook stays one click away.'}</p>
         </div>
         <div className="lab-notebook__header-actions">
-          <button type="button" disabled={isUnavailable} onClick={openNewNote}>+ new note</button>
+          {view === 'edit' ? <button type="button" onClick={() => setView('browse')}>← Back to notebook</button> : null}
+          {view === 'browse' && (hasUnaddedIdea || selectedNote) ? <button type="button" disabled={isUnavailable} onClick={() => {
+            if (hasUnaddedIdea) setSelectedNoteId(null)
+            setView('edit')
+          }}>{hasUnaddedIdea ? 'Continue idea' : 'Continue note'}</button> : null}
+          <button type="button" ref={newNoteButtonRef} disabled={isUnavailable} onClick={openNewNote}>+ new note</button>
         </div>
       </header>
 
       <p className={`lab-notebook__status is-${status}`} role="status">{statusText}</p>
 
+      {view === 'browse' ? <>
       <label className="lab-notebook__search">Search notebook
         <input type="search" placeholder="Find text, visuals, or topics…" value={query} onChange={(event) => setQuery(event.target.value)} />
       </label>
@@ -400,9 +498,10 @@ export function LabNotebook({
           <button type="submit" disabled={isUnavailable || !newTopicName.trim()}>Add topic</button>
         </form>
       </section>
+      </> : null}
 
       <div className="lab-notebook__workspace">
-        <section className="lab-notebook__page" aria-label={selectedNote ? 'Edit note' : 'Capture an idea'}
+        {view === 'edit' ? <section className="lab-notebook__page" aria-label={selectedNote ? 'Edit note' : 'Capture an idea'}
           onPaste={pasteImages} onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) event.preventDefault() }} onDrop={dropFiles}>
           {selectedNote ? (
             <div className="lab-notebook__editor">
@@ -419,6 +518,7 @@ export function LabNotebook({
                 onChange={(event) => onUpdateNote(selectedNote.id, {
                   title: event.target.value,
                   body: selectedNote.body,
+                  artifactIds: selectedNote.artifactIds,
                 })}
               />
               <textarea
@@ -430,6 +530,7 @@ export function LabNotebook({
                 onChange={(event) => onUpdateNote(selectedNote.id, {
                   title: selectedNote.title,
                   body: event.target.value,
+                  artifactIds: selectedNote.artifactIds,
                 })}
               />
               <TopicPicker
@@ -483,9 +584,9 @@ export function LabNotebook({
               </footer>
             </form>
           )}
-        </section>
+        </section> : null}
 
-        <aside className="lab-notebook__library" aria-label="Your saved notebook material">
+        {view === 'browse' ? <aside className="lab-notebook__library" aria-label="Your saved notebook material">
           <section className="lab-notebook__pages" aria-labelledby="lab-notebook-notes-title">
             <header>
               <h3 id="lab-notebook-notes-title">Notes</h3>
@@ -499,11 +600,11 @@ export function LabNotebook({
                     type="button"
                     aria-current={note.id === selectedNote?.id ? 'true' : undefined}
                     key={note.id}
-                    onClick={() => setSelectedNoteId(note.id)}
+                    onClick={() => { setSelectedNoteId(note.id); setView('edit') }}
                   >
                     <strong>{note.title.trim() || 'Untitled note'}</strong>
                     <span className="lab-notebook__excerpt">{note.body.slice(0, 140)}{note.body.length > 140 ? '…' : ''}</span>
-                    {note.artifactIds?.length ? <span>{note.artifactIds.length} attached visual/file{note.artifactIds.length === 1 ? '' : 's'}</span> : null}
+                    {note.artifactIds?.some((id) => artifacts.some((item) => item.id === id)) ? <span>{note.artifactIds.filter((id) => artifacts.some((item) => item.id === id)).length} attached visual/file(s)</span> : null}
                     <span>{formatSavedTime(note.updatedAt)}</span>
                   </button>
                 ))}
@@ -525,32 +626,45 @@ export function LabNotebook({
               </label>
               <label className="lab-notebook__file-input">
                 + add files
-                <input type="file" multiple disabled={isUnavailable} onChange={importFiles} />
+                <input type="file" multiple disabled={isUnavailable || isImporting || isFileBusy} onChange={importFiles} />
               </label>
               {selectedTopic ? <small className="lab-notebook__import-topic">New files are added to “{selectedTopic.name}”.</small> : null}
+              {isImporting ? <small role="status">Saving files…</small> : null}
             </header>
+            {fileMessage ? <p className="lab-notebook__file-status" role="status">{fileMessage}</p> : null}
+            {fileError ? <p className="lab-notebook__file-status is-error" role="alert">{fileError}</p> : null}
+            {captureError ? <p className="lab-notebook__file-status is-error" role="alert">{captureError}</p> : null}
             {visibleArtifacts.length ? (
               <ul>
                 {visibleArtifacts.map((artifact) => (
                   <li key={artifact.id}>
-                    <LabArtifactPreview artifact={artifact} loadPreview={onLoadPreview} onOpen={() => setOpenedArtifact(artifact)} />
+                    <LabArtifactPreview artifact={artifact} loadPreview={onLoadPreview} onOpen={() => setOpenedArtifactId(artifact.id)} />
                     <span className="lab-notebook__file-copy">
                       <strong>{artifact.name}</strong>
-                      <small>{formatFileSize(artifact.size)} · {formatSavedTime(artifact.createdAt)}</small>
+                      <small>{formatFileSize(artifact.size)} · Saved {formatSavedTime(artifact.updatedAt ?? artifact.createdAt)}</small>
                       {artifact.toolId ? <small>From {artifact.toolId}</small> : null}
                     </span>
                     <div className="lab-notebook__file-actions">
                       {editProjectButton(artifact)}
-                      <button type="button" onClick={() => void onDownloadArtifact(artifact.id)}>{artifact.sourceName ? 'source file' : 'download'}</button>
-                      <button type="button" disabled={isUnavailable || attachedIds.includes(artifact.id)} onClick={() => attachIds([artifact.id])}>attach to {selectedNote ? 'note' : 'idea'}</button>
+                      <button type="button" disabled={isUnavailable || isFileBusy} onClick={() => void downloadArtifact(artifact)}>{artifact.sourceName ? 'source file' : 'download'}</button>
+                      <button type="button" disabled={isUnavailable || isFileBusy || attachedIds.includes(artifact.id)} onClick={() => {
+                        attachIds([artifact.id])
+                        setView('edit')
+                      }}>attach to {selectedNote ? 'note' : 'idea'}</button>
+                      {onTrashArtifact ? <button type="button" className="lab-notebook__remove-file" disabled={isUnavailable || isFileBusy || isImporting}
+                        aria-label={`Remove ${artifact.name}`} title="Move to Trash. You can restore it later."
+                        onClick={() => void runFileAction(artifact, 'Removing…', () => onTrashArtifact(artifact.id), `“${artifact.name}” moved to Trash. You can restore it below.`)}>
+                        {fileOperation?.id === artifact.id && fileOperation.label === 'Removing…' ? 'Removing…' : 'Remove'}
+                      </button> : null}
                     </div>
                     <TopicPicker
                       topics={topics}
                       selectedIds={topicIdsFor('artifact', artifact.id)}
                       objectLabel={artifact.name}
-                      disabled={isUnavailable}
+                      disabled={isUnavailable || isFileBusy}
                       onChange={(topicIds) => setObjectTopics('artifact', artifact.id, topicIds)}
                     />
+                    {fileHistory(artifact)}
                   </li>
                 ))}
               </ul>
@@ -561,19 +675,43 @@ export function LabNotebook({
               </div>
             )}
           </section>
-        </aside>
+          {onRestoreArtifact || trashedArtifacts.length ? <details className="lab-notebook__trash">
+            <summary>Trash <span>{trashedArtifacts.length}</span></summary>
+            <div className="lab-notebook__trash-content">
+              <p>Removed files stay here with their history and links. Restore returns them to your notebook. Files on your computer are not changed.</p>
+              {trashedArtifacts.length ? <ul>
+                {trashedArtifacts.map((artifact) => <li key={artifact.id}>
+                  <strong>{artifact.name}</strong>
+                  <small>Removed {formatSavedTime(artifact.deletedAt ?? artifact.updatedAt ?? artifact.createdAt)}</small>
+                  <div className="lab-notebook__file-actions">
+                    {onRestoreArtifact ? <button type="button" disabled={isUnavailable || isFileBusy}
+                      aria-label={`Restore ${artifact.name}`}
+                      onClick={() => void runFileAction(artifact, 'Restoring…', () => onRestoreArtifact(artifact.id), `“${artifact.name}” restored, with its topics and note links.`)}>
+                      {fileOperation?.id === artifact.id && fileOperation.label === 'Restoring…' ? 'Restoring…' : 'Restore'}
+                    </button> : null}
+                    <button type="button" disabled={isUnavailable || isFileBusy} onClick={() => void downloadArtifact(artifact)}>Download</button>
+                  </div>
+                </li>)}
+              </ul> : <p>Trash is empty.</p>}
+            </div>
+          </details> : null}
+        </aside> : null}
       </div>
-      <dialog className="lab-notebook__preview-dialog" aria-label="Saved visual preview" ref={previewDialogRef} onCancel={() => setOpenedArtifact(null)} onClose={() => setOpenedArtifact(null)}>
+      <dialog className="lab-notebook__preview-dialog" aria-label="Saved visual preview" ref={previewDialogRef} onCancel={() => setOpenedArtifactId(null)} onClose={() => setOpenedArtifactId(null)}>
         {openedArtifact ? <>
-          <header><h3>{openedArtifact.name}</h3><button type="button" onClick={() => setOpenedArtifact(null)}>close preview</button></header>
+          <header><h3>{openedArtifact.name}</h3><button type="button" onClick={() => setOpenedArtifactId(null)}>close preview</button></header>
+          {openedArtifact.revisionOf ? <p>Earlier save · {formatSavedTime(openedArtifact.updatedAt ?? openedArtifact.createdAt)}</p> : null}
+          {openedArtifact.deletedAt ? <p>This file is in Trash.</p> : null}
           <LabArtifactPreview artifact={openedArtifact} loadPreview={onLoadPreview} />
           <footer>
             {editProjectButton(openedArtifact)}
-            <button type="button" onClick={() => void onDownloadArtifact(openedArtifact.id)}>Download {openedArtifact.sourceName ? 'source' : 'file'}</button>
-            {(openedArtifact.previewMimeType ?? openedArtifact.mimeType).startsWith('image/') ? <button type="button" onClick={() => void downloadPreview(openedArtifact)}>Download image</button> : null}
+            <button type="button" disabled={isUnavailable || isFileBusy} onClick={() => void downloadArtifact(openedArtifact)}>Download {openedArtifact.sourceName ? 'source' : 'file'}</button>
+            {(openedArtifact.previewMimeType ?? openedArtifact.mimeType).startsWith('image/') ? <button type="button" disabled={isUnavailable || isFileBusy} onClick={() => void downloadPreview(openedArtifact)}>Download image</button> : null}
             <span>The original stays available for its creating tool.</span>
           </footer>
           {captureError ? <p role="alert">{captureError}</p> : null}
+          {fileError ? <p role="alert">{fileError}</p> : null}
+          {fileMessage ? <p role="status">{fileMessage}</p> : null}
         </> : null}
       </dialog>
     </section>

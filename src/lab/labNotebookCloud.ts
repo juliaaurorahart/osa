@@ -1,6 +1,6 @@
 import { parseBoardSnapshot, type BoardSnapshot } from '../graph/boardSnapshot'
 import { BoardAccessError, BoardConflictError, type SavedBoard } from '../graph/boardStorage'
-import { blobToDataUrl } from '../graph/portableAssets'
+import { blobToDataUrl, privateAssetUrl, scopeLegacyAssets } from '../graph/portableAssets'
 import { LAB_PROPERTY, labContentsFromSnapshot } from './labNotebookGraph'
 import { readLabDocumentFile, storeLabDocumentFiles, type LabNotebookDocument } from './labNotebookDocumentStorage'
 import type { StoredLabArtifact } from './labTypes'
@@ -11,7 +11,7 @@ export function parseLabCloudBoard(value: unknown): SavedBoard | null {
     || typeof value.updatedAt !== 'string' || !Number.isSafeInteger(value.revision) || Number(value.revision) < 1) return null
   const snapshot = parseBoardSnapshot(value.snapshot)
   return snapshot ? { id: value.id, name: value.name, updatedAt: value.updatedAt,
-    snapshot, revision: Number(value.revision), access: 'owner' } : null
+    snapshot: scopeLegacyAssets(snapshot, value.id), revision: Number(value.revision), access: 'owner' } : null
 }
 
 export async function labCloudRequest(url: string, init: RequestInit = {}) {
@@ -51,28 +51,25 @@ export async function fetchCloudNotebook(email: string, provision = false): Prom
   return board
 }
 
-/** Only same-origin authenticated assets are followed; arbitrary imported URLs cannot leak credentials. */
+/** Exact deployment aliases resolve locally; arbitrary URLs cannot leak credentials. */
 export function isPrivateLabAssetUrl(url: string, origin = globalThis.location?.origin ?? 'http://localhost') {
-  try {
-    const parsed = new URL(url, origin)
-    return parsed.origin === origin && !parsed.username && !parsed.password && parsed.pathname === '/api/assets'
-      && /^[A-Za-z0-9_-]+$/.test(parsed.searchParams.get('id') ?? '') && !parsed.hash
-      && [...parsed.searchParams.keys()].every((key) => key === 'id' || key === 'boardId')
-  } catch { return false }
+  return privateAssetUrl(url, origin) !== null
 }
 
 export async function fetchLabFile(url: string, email?: string): Promise<Blob> {
   if (url.startsWith('data:')) return (await fetch(url)).blob()
-  if (!isPrivateLabAssetUrl(url)) throw new Error('That notebook file has no accessible private saved copy.')
-  return (await labCloudRequest(url, { headers: email ? { 'x-osa-account': email } : {} })).blob()
+  const requestUrl = privateAssetUrl(url)
+  if (!requestUrl) throw new Error('That notebook file has no accessible private saved copy.')
+  return (await labCloudRequest(requestUrl, { headers: email ? { 'x-osa-account': email } : {} })).blob()
 }
 
 export async function loadLabFile(document: LabNotebookDocument, id: string): Promise<StoredLabArtifact | null> {
-  const cached = await readLabDocumentFile(document.scope, id)
-  if (cached) return cached
   const artifact = labContentsFromSnapshot(document.snapshot).artifacts.find((item) => item.id === id)
   const node = document.snapshot.nodes.find((item) => item.id === id)
   if (!artifact || !node) return null
+  const fileId = artifact.fileId || artifact.id
+  const cached = await readLabDocumentFile(document.scope, fileId)
+  if (cached) return { ...artifact, file: cached.file, ...(cached.preview ? { preview: cached.preview } : {}) }
   const sourceUrl = node.data.properties[LAB_PROPERTY.source]
   const previewUrl = node.data.properties[LAB_PROPERTY.preview]
   const email = document.scope.startsWith('account:') ? document.scope.slice('account:'.length) : undefined
@@ -80,7 +77,7 @@ export async function loadLabFile(document: LabNotebookDocument, id: string): Pr
   const file = source.type ? source : source.slice(0, source.size, artifact.mimeType)
   const preview = previewUrl && previewUrl !== sourceUrl ? await fetchLabFile(previewUrl, email) : undefined
   const stored = { ...artifact, file, ...(preview ? { preview } : {}) }
-  await storeLabDocumentFiles(document.scope, [stored])
+  await storeLabDocumentFiles(document.scope, [{ ...stored, id: fileId }])
   return stored
 }
 
@@ -94,15 +91,31 @@ export async function uploadLabNotebookFiles(document: LabNotebookDocument, emai
         'x-osa-file-name': encodeURIComponent(name), 'x-osa-account': email },
     })
     const result: unknown = await response.json()
-    if (!record(result) || typeof result.url !== 'string' || !isPrivateLabAssetUrl(result.url)) throw new Error('The file server returned an invalid private URL.')
-    return result.url
+    const savedUrl = record(result) && typeof result.url === 'string' ? privateAssetUrl(result.url) : null
+    if (!savedUrl) throw new Error('The file server returned an invalid private URL.')
+    return savedUrl
   }
-  const snapshot = structuredClone(document.snapshot)
+  const snapshot = scopeLegacyAssets(document.snapshot, document.boardId)
+  const uploadedFiles = new Map<string, { source: string; preview?: string }>()
+  for (const node of snapshot.nodes) {
+    const p = node.data.properties
+    if (p[LAB_PROPERTY.role] === 'artifact' && isPrivateLabAssetUrl(p[LAB_PROPERTY.source])
+      && (!p[LAB_PROPERTY.preview] || isPrivateLabAssetUrl(p[LAB_PROPERTY.preview]))) {
+      uploadedFiles.set(p[LAB_PROPERTY.fileId] || node.id, { source: p[LAB_PROPERTY.source], preview: p[LAB_PROPERTY.preview] })
+    }
+  }
   for (const node of snapshot.nodes) {
     const properties = node.data.properties
     if (properties[LAB_PROPERTY.role] !== 'artifact') continue
     const sourceUrl = properties[LAB_PROPERTY.source]
     const previewUrl = properties[LAB_PROPERTY.preview]
+    const fileId = properties[LAB_PROPERTY.fileId] || node.id
+    const uploaded = uploadedFiles.get(fileId)
+    if (uploaded && (!previewUrl || uploaded.preview)) {
+      properties[LAB_PROPERTY.source] = uploaded.source
+      if (previewUrl) properties[LAB_PROPERTY.preview] = uploaded.preview!
+      continue
+    }
     if (isPrivateLabAssetUrl(sourceUrl) && (!previewUrl || isPrivateLabAssetUrl(previewUrl))) continue
     const stored = await readFile(document, node.id)
     if (!stored) throw new Error(`The original file for “${node.data.name}” is missing. Nothing was synced.`)
@@ -110,6 +123,7 @@ export async function uploadLabNotebookFiles(document: LabNotebookDocument, emai
     if (previewUrl && !isPrivateLabAssetUrl(previewUrl)) properties[LAB_PROPERTY.preview] = stored.preview
       ? await upload(stored.preview, `${stored.name}-preview`)
       : properties[LAB_PROPERTY.source]
+    uploadedFiles.set(fileId, { source: properties[LAB_PROPERTY.source], preview: properties[LAB_PROPERTY.preview] })
   }
   return snapshot
 }

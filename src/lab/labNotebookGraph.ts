@@ -10,6 +10,7 @@ export const LAB_PROPERTY = {
   mimeType: 'lab:mimeType', size: 'lab:size', tool: 'lab:tool',
   sourceName: 'lab:sourceName', source: 'source:url', preview: 'asset:image',
   previewMimeType: 'lab:previewMimeType', relation: 'lab:relation',
+  fileId: 'lab:fileId', revisionOf: 'lab:revisionOf', deletedAt: 'lab:deletedAt',
 } as const
 
 export type LabNotebookContents = LabNotebookOrganization & { notes: LabNote[]; artifacts: LabArtifact[] }
@@ -36,6 +37,10 @@ export function labContentsFromSnapshot(snapshot: BoardSnapshot): LabNotebookCon
         ...(p[LAB_PROPERTY.tool] ? { toolId: p[LAB_PROPERTY.tool] as LabArtifact['toolId'] } : {}),
         ...(p[LAB_PROPERTY.sourceName] ? { sourceName: p[LAB_PROPERTY.sourceName] } : {}),
         ...(p[LAB_PROPERTY.previewMimeType] ? { previewMimeType: p[LAB_PROPERTY.previewMimeType] } : {}),
+        ...(p[LAB_PROPERTY.fileId] ? { fileId: p[LAB_PROPERTY.fileId] } : {}),
+        ...(p[LAB_PROPERTY.updatedAt] ? { updatedAt: dateOrDefault(p[LAB_PROPERTY.updatedAt]) } : {}),
+        ...(p[LAB_PROPERTY.revisionOf] ? { revisionOf: p[LAB_PROPERTY.revisionOf] } : {}),
+        ...(p[LAB_PROPERTY.deletedAt] ? { deletedAt: dateOrDefault(p[LAB_PROPERTY.deletedAt]) } : {}),
       })
     } else if (p[LAB_PROPERTY.role] === 'note' || (node.data.kind === 'note' && !p[LAB_PROPERTY.role])) {
       notes.push({ id: node.id, title: node.data.name, body: node.data.text,
@@ -63,6 +68,11 @@ export function labContentsFromSnapshot(snapshot: BoardSnapshot): LabNotebookCon
 /** Updates Lab-owned fields while preserving all other OSA node/edge information. */
 export function labSnapshotFromContents(contents: LabNotebookContents, previous = emptyLabSnapshot()): BoardSnapshot {
   const oldNodes = new Map(previous.nodes.map((node) => [node.id, node]))
+  // One immutable file may be referenced by a current item and its history.
+  // Preserve remote URLs when that file moves into a new history node.
+  const oldFiles = new Map(previous.nodes
+    .filter((node) => node.data.properties[LAB_PROPERTY.role] === 'artifact')
+    .map((node) => [node.data.properties[LAB_PROPERTY.fileId] || node.id, node.data.properties]))
   const nodes: BoardSnapshot['nodes'] = []
   const add = (id: string, name: string, text: string, kind: 'note' | 'sketch', properties: Record<string, string>) => {
     const old = oldNodes.get(id)
@@ -75,16 +85,21 @@ export function labSnapshotFromContents(contents: LabNotebookContents, previous 
     [LAB_PROPERTY.role]: 'note', [LAB_PROPERTY.createdAt]: note.createdAt, [LAB_PROPERTY.updatedAt]: note.updatedAt,
   })
   for (const artifact of contents.artifacts) {
-    const existing = oldNodes.get(artifact.id)?.data.properties
-    const preview = existing?.[LAB_PROPERTY.preview]
-      || (artifact.previewMimeType ? localLabFileUrl(artifact.id, 'preview') : '')
+    const fileId = artifact.fileId || artifact.id
+    const existing = oldFiles.get(fileId)
+    const preview = artifact.previewMimeType
+      ? existing?.[LAB_PROPERTY.preview] || localLabFileUrl(fileId, 'preview') : ''
     add(artifact.id, artifact.name, artifact.description ?? '', 'sketch', {
       [LAB_PROPERTY.role]: 'artifact', [LAB_PROPERTY.createdAt]: artifact.createdAt,
+      [LAB_PROPERTY.fileId]: artifact.fileId ?? '',
+      [LAB_PROPERTY.updatedAt]: artifact.updatedAt ?? '',
+      [LAB_PROPERTY.revisionOf]: artifact.revisionOf ?? '',
+      [LAB_PROPERTY.deletedAt]: artifact.deletedAt ?? '',
       [LAB_PROPERTY.mimeType]: artifact.mimeType, [LAB_PROPERTY.size]: String(artifact.size),
       [LAB_PROPERTY.tool]: artifact.toolId ?? '', [LAB_PROPERTY.sourceName]: artifact.sourceName ?? artifact.name,
       [LAB_PROPERTY.previewMimeType]: artifact.previewMimeType ?? '',
-      [LAB_PROPERTY.source]: existing?.[LAB_PROPERTY.source] || localLabFileUrl(artifact.id, 'source'),
-      ...(preview ? { [LAB_PROPERTY.preview]: preview } : {}),
+      [LAB_PROPERTY.source]: existing?.[LAB_PROPERTY.source] || localLabFileUrl(fileId, 'source'),
+      [LAB_PROPERTY.preview]: preview,
     })
   }
   for (const topic of contents.topics) add(topic.id, topic.name, '', 'note', {
@@ -110,10 +125,14 @@ export function labSnapshotFromContents(contents: LabNotebookContents, previous 
 /** Copies an independent notebook without colliding with an account's existing IDs. */
 export function copyLabContents(contents: LabNotebookContents, createId: () => string) {
   const ids = new Map([...contents.notes, ...contents.artifacts, ...contents.topics].map((item) => [item.id, createId()]))
-  return { ids, contents: {
+  const fileIds = new Map([...new Set(contents.artifacts.map((artifact) => artifact.fileId || artifact.id))]
+    .map((fileId) => [fileId, createId()]))
+  return { ids, fileIds, contents: {
     notes: contents.notes.map((note) => ({ ...note, id: ids.get(note.id)!,
       ...(note.artifactIds ? { artifactIds: note.artifactIds.map((id) => ids.get(id)).filter((id): id is string => Boolean(id)) } : {}) })),
-    artifacts: contents.artifacts.map((artifact) => ({ ...artifact, id: ids.get(artifact.id)! })),
+    artifacts: contents.artifacts.map((artifact) => ({ ...artifact, id: ids.get(artifact.id)!,
+      fileId: fileIds.get(artifact.fileId || artifact.id)!,
+      ...(artifact.revisionOf ? { revisionOf: ids.get(artifact.revisionOf) ?? artifact.revisionOf } : {}) })),
     ...normalizeLabOrganization({ topics: contents.topics.map((topic) => ({ ...topic, id: ids.get(topic.id)! })),
       topicLinks: contents.topicLinks.map((link) => ({ ...link, objectId: ids.get(link.objectId)!, topicId: ids.get(link.topicId)! })) }),
   } satisfies LabNotebookContents }

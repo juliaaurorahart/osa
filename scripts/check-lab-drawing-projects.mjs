@@ -120,6 +120,7 @@ try {
   }
   const { DrawioEmbedLab } = loadModule('src/components/DrawioEmbedLab.tsx', {
     ...sharedMocks, '../lab/labCaptureUtils': loadModule('src/lab/labCaptureUtils.ts'),
+    '../lab/LabCaptureContext': { LabCaptureContext: React.createContext(null) },
   })
   await render(DrawioEmbedLab, { theme: 'dark', initialSource: xmlSource })
   let iframe = document.querySelector('iframe')

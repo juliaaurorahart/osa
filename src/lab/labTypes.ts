@@ -59,10 +59,17 @@ export type LabNote = {
 /** Metadata shown in the notebook while the file Blob stays in IndexedDB. */
 export type LabArtifact = {
   id: string
+  /** Immutable source/preview cache key. Older notebook files use their id. */
+  fileId?: string
   name: string
   mimeType: string
   size: number
   createdAt: string
+  updatedAt?: string
+  /** Hidden previous save of this notebook item, not another visible file. */
+  revisionOf?: string
+  /** Trash is recoverable; the file and its history stay in the notebook. */
+  deletedAt?: string
   toolId?: LabCaptureToolId
   description?: string
   previewMimeType?: string

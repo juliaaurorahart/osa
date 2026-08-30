@@ -1,9 +1,14 @@
 # Private storage and deployment
 
-This describes the local implementation, not a completed production rollout.
-No production database migration, deployment, bucket setting, invitation, or
-file deletion has been performed as part of this change. Cloudflare sign-in
-and an authorized operator are needed for the deployment steps below.
+On 2026-08-30, the read-only preflight found missing private-file and notebook
+tables. After Julia's approval, the complete D1 export and all R2 objects were
+backed up outside the repository. SQL restore/rehearsal, content checksums,
+and referenced-file coverage passed before migrations 0007/0008 were applied.
+A second live export verified unchanged original schemas/records, the expected
+frozen grants, and clean integrity/foreign-key checks. No files were deleted
+or made public. See [Lab address rollout](lab-domain-rollout.md) for hosting
+status and the live user-flow checks; database verification alone is not a
+claim that every browser/account workflow has been exercised in production.
 
 ## Storage and permission boundaries
 
@@ -137,7 +142,11 @@ shared by recipients.
 5. **Apply `0007_private_assets.sql`, then `0008_lab_notebooks.sql`, before
    deploying the new code.** Use the approved deployment configuration with
    the confirmed database name and this repository's migrations directory.
-   D1 records migration history; inspect pending migrations first.
+   Wrangler-managed migrations normally record history; the confirmed live
+   database has no migration-history table. Compare the actual schema with
+   `0001`–`0006`, then apply only the reviewed missing `0007`/`0008` files to
+   that database. Do not use a blanket migration replay against this existing
+   database, or assume an absent history table means an empty database.
    [Cloudflare migration documentation](https://developers.cloudflare.com/d1/reference/migrations/).
    Check the new tables/seed marker and expected historical grants, including
    intentionally shared Shako references. Do not delete/reset the seed marker

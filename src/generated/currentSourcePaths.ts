@@ -91,6 +91,7 @@ export const CURRENT_SOURCE_PATHS = [
   "src/components/visualCanvasCapture.tsx",
   "src/components/WorkspaceSettingsMenu.css",
   "src/components/WorkspaceSettingsMenu.tsx",
+  "src/config/osaDeployment.ts",
   "src/graph/boardSnapshot.ts",
   "src/graph/boardStorage.ts",
   "src/graph/currentSourceHierarchy.ts",

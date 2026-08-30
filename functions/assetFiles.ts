@@ -1,3 +1,5 @@
+import { isSameOsaDeploymentOrigin } from '../src/config/osaDeployment'
+
 /** Shared file handling; a storage key is never an authorization credential. */
 export type FileEnv = { OSA_DB?: D1Database; OSA_ASSETS?: R2Bucket }
 
@@ -79,21 +81,36 @@ export type ManagedFileReference =
   | { kind: 'file'; id: string }
   | { kind: 'legacy'; key: string; boardId?: string }
 
-/** Only exact same-origin managed URLs count; substrings and foreign hosts do not. */
+function hasControlCharacters(value: string) {
+  return Array.from(value).some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)
+}
+
+/** Same-origin or the two exact production aliases; never arbitrary foreign hosts. */
 export function managedFileReference(value: unknown, origin: string): ManagedFileReference | null {
-  if (typeof value !== 'string' || !value || value !== value.trim()) return null
+  if (typeof value !== 'string' || !value || value !== value.trim() || hasControlCharacters(value)) return null
+  // Compare the written route with the parsed route so URL normalization cannot
+  // turn a dot segment, backslash, userinfo, or fragment into a managed path.
+  const route = /^(?:https?:\/\/[^/?#@\\\s]+)?(\/[^?#\\\s]*)(?:\?[^#\\\s]*)?$/i.exec(value)
+  if (!route) return null
   let url: URL
   try { url = new URL(value, origin) } catch { return null }
-  if (url.origin !== origin || url.username || url.password || url.hash) return null
+  if (!isSameOsaDeploymentOrigin(url.origin, origin) || url.username || url.password || url.hash || url.pathname !== route[1]) return null
   if (url.pathname.startsWith('/media/')) {
     const key = url.pathname.slice('/media/'.length)
-    return LEGACY_IMAGE_KEY.test(key) && !url.search ? { kind: 'legacy', key } : null
+    return LEGACY_IMAGE_KEY.test(key) && !value.includes('?') ? { kind: 'legacy', key } : null
   }
   if (url.pathname !== '/api/assets') return null
+  try { decodeURIComponent(url.search) } catch { return null }
+  const fields = new Set<string>()
+  for (const key of url.searchParams.keys()) {
+    if (!['id', 'boardId', 'legacyKey'].includes(key) || fields.has(key)) return null
+    fields.add(key)
+  }
   const id = url.searchParams.get('id')
-  if (id && FILE_ID.test(id)) return { kind: 'file', id }
   const key = url.searchParams.get('legacyKey')
   const boardId = url.searchParams.get('boardId')
+  if (boardId !== null && (!boardId.trim() || hasControlCharacters(boardId))) return null
+  if (id !== null) return FILE_ID.test(id) && key === null ? { kind: 'file', id } : null
   return key && LEGACY_IMAGE_KEY.test(key) && boardId ? { kind: 'legacy', key, boardId } : null
 }
 
@@ -142,7 +159,9 @@ export function fileResult(file: StoredFile, requestUrl: string) {
   url.searchParams.set('id', file.id)
   // Useful provenance for copies; authorization always uses the database row.
   url.searchParams.set('boardId', file.board_id)
-  return { id: file.id, url: url.toString(), key: file.storage_key, contentType: file.content_type, size: file.byte_size }
+  // Both production aliases use this storage. Keep future references on the
+  // host that opens the document, without changing ownership or authorization.
+  return { id: file.id, url: `${url.pathname}${url.search}`, key: file.storage_key, contentType: file.content_type, size: file.byte_size }
 }
 
 /** Deduplicate only within one board. The immutable blob is not publicly routable. */

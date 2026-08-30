@@ -23,9 +23,12 @@ publication, not a private invitation. Public links receive only their scoped
 Assembly data and eligible files. Bare legacy `/media/...` links are no longer
 public file credentials in this implementation.
 
-The repository changes have not been deployed or applied to production.
-Read [Private storage and deployment](docs/private-storage-deployment.md)
-before releasing: migrations **0007 and 0008 must precede the new code**.
+On 2026-08-30, migrations **0007 and 0008** were applied after complete
+database and file backups. An independent post-migration export verified that
+the existing board, share, and collaborator records were unchanged and the
+historical file grants matched the rehearsal. See
+[Private storage and deployment](docs/private-storage-deployment.md) and the
+[Lab address rollout](docs/lab-domain-rollout.md) for the remaining live checks.
 
 ## Import the Shako source data
 
@@ -59,17 +62,29 @@ ORDER BY updated_at DESC;
 The board document is JSON in `content`; that database export does **not**
 include R2 file bytes or unsynced browser drafts. Back up those separately.
 After confirming the actual database and signing into the correct Cloudflare
-account, a database-only backup can be made with Wrangler:
+account, a database-only backup can be made with Wrangler. Choose a new,
+private dated directory **outside this repository** for the output:
 
 ```sh
-npx wrangler d1 export <database-name> --remote --output=./osa-backup.sql
+npx wrangler d1 export <database-name> --remote --output=<private-backup-directory>/osa-backup.sql
 ```
 
 The repository intentionally does not contain a D1 database ID, so the deployed `OSA_DB` binding in Cloudflare is the source of truth for which database receives saves.
 
+See [Development data and recovery](docs/development-data-recovery.md) for
+test-data isolation, complete backup contents, and restore checks.
+
 Cloudflare references: [Pages bindings](https://developers.cloudflare.com/pages/functions/bindings/), [D1 SQL](https://developers.cloudflare.com/d1/sql-api/sql-statements/), and [D1 export](https://developers.cloudflare.com/d1/best-practices/import-export-data/).
 
 ## Visual tools Lab
+
+The app supports a dedicated Lab front door at
+`https://lab.juliaaurorahart.com/`, using the same deployment and account
+notebook as OSA. Hosting setup is tracked separately in the
+[Lab address rollout checklist](docs/lab-domain-rollout.md); source support
+does not mean the address has been activated. The old
+`https://osa.juliaaurorahart.com/?lab=canvas` route stays available, especially
+for browser-only files that have not been synced or backed up.
 
 The **Lab** menu opens isolated visual workbenches. Each engine loads only
 when selected. Workbench drafts remain temporary; use **Save to notebook**
@@ -78,13 +93,17 @@ Saved notebook notes, files, and topics persist independently of project
 boards. Original editable files and their previews are separate attachments.
 
 For an editable project, set **Project name**, then use the workbench's
-**Save to notebook** (Klecks' **Submit** also saves there). Each save keeps a
-separate named version; reopening and saving never overwrites the old file.
+**Save to notebook** (draw.io's **Save** and Klecks' **Submit** also save
+there). Saving updates the current notebook file; **Save a copy** creates a
+separate item. Earlier saves remain available in **History**, with immutable
+source and preview bytes for each saved version.
 Notebook visits keep the current editor mounted; **Return to [tool]** resumes
 it. Replacing the editor or leaving the Lab asks first. This is not draft
 autosave, and closing the browser still requires an explicit save.
 
-In **Notebook → Visuals & files**, use **Open in [tool]**, or filter to
+Notebook browsing/search and focused note editing are separate views. Files
+can be moved to **Trash** and restored; removing a file does not permanently
+delete its saved bytes or history. In **Notebook → Visuals & files**, use **Open in [tool]**, or filter to
 **Editable projects only**. Supported native files currently include Ink,
 Klecks PSD, draw.io, Excalidraw, Konva Lab, Paper, Mermaid, and Vega-Lite.
 Preview images cannot restore layers or editable shapes. Other exports remain

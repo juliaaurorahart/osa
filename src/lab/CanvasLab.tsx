@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { LAB_GROUPS, findLab } from './labCatalog'
 import { LabErrorBoundary } from './LabErrorBoundary'
 import { LabHome } from './LabHome'
@@ -30,6 +30,7 @@ type ProjectSession = {
   name: string
   source?: LabProjectSource
   artifactId?: string
+  fileId?: string
   savedAt?: string
 }
 
@@ -55,11 +56,25 @@ export function CanvasLab({
   const [saving, setSaving] = useState(false)
   const [projectMessage, setProjectMessage] = useState('')
   const [sessionScope, setSessionScope] = useState(notebook.scope)
-  const currentRef = useRef({ scope: notebook.scope, projectId: project?.id })
+  const currentRef = useRef({ scope: notebook.scope, projectId: project?.id, projectName: project?.name })
   const savingRef = useRef(false)
   const mountedRef = useRef(true)
   const confirmationRef = useRef<HTMLDialogElement>(null)
   const bodyRef = useRef<HTMLElement>(null)
+  const approvedExitRef = useRef<{ scope: string; projectId?: string } | null>(null)
+  const approvedUnloadRef = useRef<BeforeUnloadEvent | null>(null)
+  const isExitApproved = useCallback((event: BeforeUnloadEvent) => {
+    // The project and notebook guards see the same event. Consume the approval
+    // once, without clearing a warning supplied by another part of the app.
+    if (approvedUnloadRef.current === event) return true
+    const approval = approvedExitRef.current
+    approvedExitRef.current = null
+    if (!approval || approval.scope !== currentRef.current.scope
+      || approval.projectId !== currentRef.current.projectId) return false
+    approvedUnloadRef.current = event
+    queueMicrotask(() => { if (approvedUnloadRef.current === event) approvedUnloadRef.current = null })
+    return true
+  }, [])
   // A closed account session must not reappear as a stale starter/source when
   // returning to that notebook later. Saved artifacts remain in its storage.
   if (sessionScope !== notebook.scope) {
@@ -69,7 +84,10 @@ export function CanvasLab({
     setProjectMessage('')
     if (route.page === 'workbench') setRoute({ page: 'notebook' })
   }
-  useEffect(() => { currentRef.current = { scope: notebook.scope, projectId: project?.id } }, [notebook.scope, project?.id])
+  useEffect(() => {
+    currentRef.current = { scope: notebook.scope, projectId: project?.id, projectName: project?.name }
+    approvedExitRef.current = null
+  }, [notebook.scope, project?.id, project?.name])
   useEffect(() => {
     mountedRef.current = true
     return () => { mountedRef.current = false }
@@ -82,16 +100,34 @@ export function CanvasLab({
     if (route.page === 'workbench' && bodyRef.current) bodyRef.current.scrollTop = 0
   }, [route.page, project?.id])
   useEffect(() => {
+    // A failed/no-op navigation cannot carry approval into resumed editing or
+    // a later visit restored from the browser's back/forward cache.
+    const resume = () => { approvedExitRef.current = null }
+    window.addEventListener('pointerdown', resume, true)
+    window.addEventListener('keydown', resume, true)
+    window.addEventListener('focus', resume)
+    window.addEventListener('pageshow', resume)
+    return () => {
+      window.removeEventListener('pointerdown', resume, true)
+      window.removeEventListener('keydown', resume, true)
+      window.removeEventListener('focus', resume)
+      window.removeEventListener('pageshow', resume)
+    }
+  }, [])
+  useEffect(() => {
     if (!project) return
-    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
+    const warn = (event: BeforeUnloadEvent) => {
+      if (isExitApproved(event)) return
+      event.preventDefault(); event.returnValue = ''
+    }
     window.addEventListener('beforeunload', warn)
     return () => window.removeEventListener('beforeunload', warn)
-  }, [project])
+  }, [project, isExitApproved])
   const activeLab = route.page === 'workbench' ? findLab(route.workbenchId) : null
 
   const startProject = (next: ProjectSession) => {
     setSession(next)
-    setProjectMessage(next.source ? 'Opened a saved version. Save to notebook keeps a new version; the original stays unchanged.' : '')
+    setProjectMessage(next.source ? 'Opened your project. Save updates this file; Save a copy starts a separate file.' : '')
     setRoute({ page: 'workbench', workbenchId: next.toolId })
   }
   const requestProject = (next: ProjectSession) => {
@@ -109,9 +145,10 @@ export function CanvasLab({
     if (!mountedRef.current || currentRef.current.scope !== startingScope || currentRef.current.projectId !== startingProjectId) {
       throw new Error('The notebook or editor changed while this file was loading. Please open it again.')
     }
-    requestProject({ id: crypto.randomUUID(), scope: startingScope, toolId, source, name: artifact.name, artifactId: artifact.id })
+    requestProject({ id: crypto.randomUUID(), scope: startingScope, toolId, source, name: artifact.name,
+      artifactId: artifact.id, fileId: artifact.fileId || artifact.id })
   }
-  const saveProject = async (capture: LabCapture): Promise<string> => {
+  const saveProject = async (capture: LabCapture, options?: { asCopy?: boolean }): Promise<string> => {
     if (!project || !mountedRef.current || currentRef.current.scope !== project.scope || currentRef.current.projectId !== project.id) {
       throw new Error('The project or notebook changed. Return to the original editor before saving.')
     }
@@ -121,11 +158,14 @@ export function CanvasLab({
     setSaving(true)
     try {
       const topicIds = notebook.topicLinks.filter((link) => link.objectType === 'artifact' && link.objectId === project.artifactId).map((link) => link.topicId)
-      const id = await notebook.captureVisual({ ...capture, name: project.name.trim() || capture.name }, topicIds, project.scope)
+      const name = `${currentRef.current.projectName?.trim() || project.name.trim() || capture.name}${options?.asCopy ? ' (copy)' : ''}`
+      const id = await notebook.captureVisual({ ...capture, name }, topicIds, project.scope,
+        options?.asCopy ? undefined : { artifactId: project.artifactId, expectedFileId: project.fileId })
       if (mountedRef.current && currentRef.current.scope === project.scope && currentRef.current.projectId === project.id) {
         const savedAt = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-        setSession((current) => current?.id === project.id ? { ...current, artifactId: id, savedAt } : current)
-        setProjectMessage(`Version saved at ${savedAt}. Earlier versions are kept in the notebook.`)
+        const fileId = notebook.getArtifact(id)?.fileId || id
+        setSession((current) => current?.id === project.id ? { ...current, name, artifactId: id, fileId, savedAt } : current)
+        setProjectMessage(`${options?.asCopy ? 'Separate copy saved' : 'Saved'} at ${savedAt}. Earlier saves are available in History.`)
       }
       return id
     } finally {
@@ -149,10 +189,10 @@ export function CanvasLab({
             <input aria-label="Project name" maxLength={160} value={project.name} disabled={saving}
               onChange={(event) => setSession({ ...project, name: event.target.value })} />
           </label> : null}
-          <button type="button" onClick={() => setRoute({ page: 'notebook' })}>Saved projects</button>
+          <button type="button" onClick={() => setRoute({ page: 'notebook' })}>Back to notebook</button>
           <button type="button" disabled={saving} onClick={() => requestProject({ id: crypto.randomUUID(), scope: notebook.scope,
             toolId: activeLab.id, name: `${activeLab.name} project` })}>New project</button>
-          <span>{saving ? 'Saving version…' : projectMessage || 'Save to notebook keeps a version. Editor changes are not autosaved.'}</span>
+          <span>{saving ? 'Saving project…' : projectMessage || 'Save updates this project. Editor changes are not autosaved to the notebook.'}</span>
         </>
       )
     }
@@ -277,11 +317,14 @@ export function CanvasLab({
             key={notebook.scope}
             notes={notebook.notes}
             artifacts={notebook.artifacts}
+            trashedArtifacts={notebook.trashedArtifacts}
+            artifactRevisions={notebook.artifactRevisions}
             topics={notebook.topics}
             topicLinks={notebook.topicLinks}
             isReady={notebook.isReady}
             isActive={route.page === 'notebook'}
             onDraftChange={setHasUnaddedIdea}
+            isExitApproved={isExitApproved}
             status={notebook.status}
             message={notebook.message}
             onCreateNote={notebook.createNote}
@@ -292,6 +335,9 @@ export function CanvasLab({
             onOpenProject={openSavedProject}
             onCreateTopic={notebook.createTopic}
             onSetObjectTopics={notebook.setObjectTopics}
+            onTrashArtifact={notebook.trashArtifact}
+            onRestoreArtifact={notebook.restoreArtifact}
+            onRestoreRevision={notebook.restoreRevision}
           />
         </div>
 
@@ -327,7 +373,10 @@ export function CanvasLab({
             <button type="button" disabled={saving} onClick={() => {
               const action = pending
               setPending(null)
-              if ('exit' in action) onExit()
+              if ('exit' in action) {
+                approvedExitRef.current = { scope: notebook.scope, projectId: project?.id }
+                try { onExit() } catch (error) { approvedExitRef.current = null; throw error }
+              }
               else startProject(action.project)
             }}>{saving ? 'Saving…' : 'exit' in pending ? 'Leave Lab' : 'Open project'}</button>
             <button type="button" onClick={() => setPending(null)}>Cancel</button>

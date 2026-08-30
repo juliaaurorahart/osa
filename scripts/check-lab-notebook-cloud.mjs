@@ -48,9 +48,10 @@ try {
   assert.equal(copied.contents.topicLinks[1].objectId, copied.contents.artifacts[0].id)
   assert.equal(contents.notes[0].id, 'note', 'Copy does not mutate local originals')
 
-  assert.ok(cloud.isPrivateLabAssetUrl('/api/assets?id=uuid&boardId=notebook'))
-  assert.ok(cloud.isPrivateLabAssetUrl('http://localhost/api/assets?id=uuid&boardId=notebook'))
-  assert.ok(cloud.isPrivateLabAssetUrl('https://osa.test/api/assets?id=uuid&boardId=notebook', 'https://osa.test'))
+  const assetId = '11111111-1111-4111-8111-111111111111'
+  assert.ok(cloud.isPrivateLabAssetUrl(`/api/assets?id=${assetId}&boardId=notebook`))
+  assert.ok(cloud.isPrivateLabAssetUrl(`http://localhost/api/assets?id=${assetId}&boardId=notebook`))
+  assert.ok(cloud.isPrivateLabAssetUrl(`https://osa.test/api/assets?id=${assetId}&boardId=notebook`, 'https://osa.test'))
   for (const bad of ['https://other.test/api/assets?id=x', '//other.test/api/assets?id=x', '/media/x.png', '/api/assets?id=x&url=secret', 'javascript:alert(1)']) {
     assert.equal(cloud.isPrivateLabAssetUrl(bad), false, bad)
   }
@@ -58,8 +59,8 @@ try {
   const requests = []
   globalThis.fetch = async (url, init = {}) => {
     requests.push({ url: String(url), init })
-    if (String(url).startsWith('/api/assets?')) return Response.json({ id: `asset-${requests.length}`,
-      url: `http://localhost/api/assets?id=asset-${requests.length}&boardId=notebook` })
+    if (String(url).startsWith('/api/assets?')) return Response.json({ id: `11111111-1111-4111-8111-${String(requests.length).padStart(12, '0')}`,
+      url: `http://localhost/api/assets?id=11111111-1111-4111-8111-${String(requests.length).padStart(12, '0')}&boardId=notebook` })
     throw new Error(`Unexpected request ${url}`)
   }
   const uploaded = await cloud.uploadLabNotebookFiles(doc, 'julia@example.test', async () => ({ ...contents.artifacts[0], file: source, preview }))
@@ -68,11 +69,75 @@ try {
   assert.equal(requests[1].init.body, preview)
   assert.equal(requests[0].init.headers['x-osa-account'], 'julia@example.test')
   assert.equal(decodeURIComponent(requests[0].init.headers['x-osa-file-name']), 'diagram.drawio')
-  assert.ok(uploaded.nodes[1].data.properties['source:url'].startsWith('http://localhost/api/assets'))
-  assert.ok(uploaded.nodes[1].data.properties['asset:image'].startsWith('http://localhost/api/assets'))
+  assert.ok(uploaded.nodes[1].data.properties['source:url'].startsWith('/api/assets'))
+  assert.ok(uploaded.nodes[1].data.properties['asset:image'].startsWith('/api/assets'))
   assert.equal(JSON.stringify(uploaded).includes('base64'), false, 'Cloud metadata never inlines source or image bytes')
   assert.equal(JSON.stringify(uploaded).includes('original source'), false)
   assert.equal(snapshot.nodes[1].data.properties['source:url'], 'lab-file:file:source', 'Upload preserves local pending snapshot')
+
+  const nextDate = '2026-08-30T01:00:00.000Z'
+  const currentFile = { ...contents.artifacts[0], fileId: 'version-two', updatedAt: nextDate }
+  const historyFile = { ...contents.artifacts[0], id: 'history-one', fileId: 'file', revisionOf: 'file' }
+  const versionedContents = { ...contents, artifacts: [currentFile, historyFile] }
+  const versioned = graph.labSnapshotFromContents(versionedContents, uploaded)
+  const currentNode = versioned.nodes.find((node) => node.id === 'file')
+  const historyNode = versioned.nodes.find((node) => node.id === 'history-one')
+  assert.equal(currentNode.data.properties['source:url'], 'lab-file:version-two:source')
+  assert.equal(currentNode.data.properties['asset:image'], 'lab-file:version-two:preview')
+  assert.equal(historyNode.data.properties['source:url'], uploaded.nodes[1].data.properties['source:url'],
+    'Moving an old save into a history node retains its remote native source')
+  assert.equal(historyNode.data.properties['asset:image'], uploaded.nodes[1].data.properties['asset:image'])
+  assert.deepEqual(graph.labContentsFromSnapshot(versioned), versionedContents)
+  assert.equal(versioned.edges.filter((edge) => edge.target === 'file').length, 1,
+    'Updating a file keeps note attachment relationships on the stable item')
+  const trashedContents = { ...versionedContents, artifacts: [{ ...currentFile, deletedAt: nextDate }, historyFile] }
+  const trashed = graph.labSnapshotFromContents(trashedContents, versioned)
+  assert.deepEqual(graph.labContentsFromSnapshot(trashed), trashedContents, 'Trash and hidden history survive the ordinary OSA schema')
+  const restored = graph.labSnapshotFromContents(versionedContents, trashed)
+  assert.equal(graph.labContentsFromSnapshot(restored).artifacts[0].deletedAt, undefined,
+    'Restoring clears the old tombstone rather than merging it back')
+  const noPreview = graph.labSnapshotFromContents({ ...contents,
+    artifacts: [{ ...currentFile, previewMimeType: undefined }] }, uploaded)
+  assert.equal(noPreview.nodes.find((node) => node.id === 'file').data.properties['asset:image'], '',
+    'Replacing with a file without a preview cannot retain the previous image')
+
+  // A restored version can be the current item and also remain in history.
+  const sharedVersionContents = { ...versionedContents,
+    artifacts: [{ ...currentFile, fileId: 'file' }, historyFile, { ...currentFile, id: 'history-two', revisionOf: 'file' }] }
+  const copiedVersions = graph.copyLabContents(sharedVersionContents, () => `copy-${++nextId}`)
+  const [copiedCurrent, copiedHistory, copiedSecondHistory] = copiedVersions.contents.artifacts
+  assert.equal(copiedHistory.revisionOf, copiedCurrent.id)
+  assert.equal(copiedSecondHistory.revisionOf, copiedCurrent.id)
+  assert.equal(copiedCurrent.fileId, copiedHistory.fileId, 'Shared immutable versions are copied once')
+  assert.notEqual(copiedCurrent.fileId, copiedSecondHistory.fileId)
+  assert.equal(copiedVersions.fileIds.get('file'), copiedCurrent.fileId)
+  assert.equal(copiedVersions.fileIds.get('version-two'), copiedSecondHistory.fileId)
+  assert.equal(copiedVersions.fileIds.size, 2)
+  assert.ok([...copiedVersions.fileIds.values()].every((id) => !['file', 'version-two'].includes(id)))
+
+  requests.length = 0
+  const syncedVersions = await cloud.uploadLabNotebookFiles({ ...doc, snapshot: trashed }, 'julia@example.test', async (_, artifactId) => {
+    assert.equal(artifactId, 'file', 'An already-uploaded history version does not need reloading')
+    return { ...currentFile, file: source, preview }
+  })
+  assert.equal(requests.length, 2, 'Only the new source and preview are uploaded; trash is still safely synced')
+  assert.equal(syncedVersions.nodes.find((node) => node.id === 'history-one').data.properties['source:url'],
+    historyNode.data.properties['source:url'])
+  const exportVersions = []
+  await cloud.portableLabSnapshot({ ...doc, snapshot: trashed }, async (_, artifactId) => {
+    exportVersions.push(artifactId)
+    return { ...currentFile, id: artifactId, file: source, preview }
+  })
+  assert.deepEqual(exportVersions.sort(), ['file', 'history-one'], 'Portable backups include trash and hidden history')
+
+  requests.length = 0
+  const sharedLocal = graph.labSnapshotFromContents(sharedVersionContents)
+  const syncedShared = await cloud.uploadLabNotebookFiles({ ...doc, snapshot: sharedLocal }, 'julia@example.test', async (_, artifactId) => ({
+    ...sharedVersionContents.artifacts.find((artifact) => artifact.id === artifactId), file: source, preview,
+  }))
+  assert.equal(requests.length, 4, 'A source/preview shared with history is uploaded once per immutable file key')
+  assert.equal(syncedShared.nodes.find((node) => node.id === 'file').data.properties['source:url'],
+    syncedShared.nodes.find((node) => node.id === 'history-one').data.properties['source:url'])
 
   const exportInput = { ...doc, snapshot: uploaded }
   const beforeExport = structuredClone(exportInput)

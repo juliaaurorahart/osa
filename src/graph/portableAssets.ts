@@ -1,20 +1,53 @@
 import { requestAccountHeaders } from './requestAccount'
+import { isSameOsaDeploymentOrigin } from '../config/osaDeployment'
+
+const FILE_ID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i
+const LEGACY_IMAGE_KEY = /^images\/[a-f0-9]{64}\.(jpg|png|gif|webp|avif)$/
+const hasControlCharacters = (value: string) => {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index)
+    if (code < 32 || code === 127) return true
+  }
+  return false
+}
 
 /** Shared file boundaries: keep local JSON portable and cloud files board-scoped. */
 export function assetReference(value: string, origin = globalThis.location?.origin ?? 'http://localhost') {
+  // Check the unnormalized path too: URL() otherwise repairs dot segments,
+  // backslashes and whitespace into something that resembles a managed route.
+  if (!value || value !== value.trim()) return null
+  const route = /^(?:https?:\/\/[^/?#@\\\s]+)?(\/[^?#\\\s]*)(?:\?[^#\\\s]*)?$/i.exec(value)
+  if (!route || hasControlCharacters(value)) return null
   let url: URL
   try { url = new URL(value, origin) } catch { return null }
-  if (url.origin !== origin && url.origin !== 'https://osa.juliaaurorahart.com') return null
-  const legacyKey = url.pathname.startsWith('/media/')
-    ? url.pathname.slice('/media/'.length)
-    : url.pathname === '/api/assets' ? url.searchParams.get('legacyKey') : null
-  if (legacyKey && /^images\/[a-f0-9]{64}\.(jpg|png|gif|webp|avif)$/.test(legacyKey)) {
-    return { url, legacyKey, id: null, boardId: url.searchParams.get('boardId') }
+  if (!isSameOsaDeploymentOrigin(url.origin, origin) || url.username || url.password || url.hash || url.pathname !== route[1]) return null
+  if (url.pathname.startsWith('/media/')) {
+    const legacyKey = url.pathname.slice('/media/'.length)
+    return LEGACY_IMAGE_KEY.test(legacyKey) && !value.includes('?')
+      ? { url, legacyKey, id: null, boardId: null } : null
   }
-  if (url.pathname === '/api/assets' && url.searchParams.get('id')) {
-    return { url, legacyKey: null, id: url.searchParams.get('id'), boardId: url.searchParams.get('boardId') }
+  if (url.pathname !== '/api/assets') return null
+  try { decodeURIComponent(url.search) } catch { return null }
+  const keys = [...url.searchParams.keys()]
+  if (keys.length !== new Set(keys).size || keys.some((key) => !['id', 'boardId', 'legacyKey'].includes(key))) return null
+  const id = url.searchParams.get('id')
+  const boardId = url.searchParams.get('boardId')
+  const legacyKey = url.searchParams.get('legacyKey')
+  if (boardId !== null && (!boardId.trim() || hasControlCharacters(boardId))) return null
+  if (id !== null) {
+    return FILE_ID.test(id) && legacyKey === null ? { url, legacyKey: null, id, boardId } : null
   }
-  return null
+  return legacyKey && LEGACY_IMAGE_KEY.test(legacyKey) && boardId
+    ? { url, legacyKey, id: null, boardId } : null
+}
+
+/** Stored production aliases are references, never cross-origin fetch targets. */
+export function privateAssetUrl(value: string, origin = globalThis.location?.origin ?? 'http://localhost') {
+  const asset = assetReference(value, origin)
+  if (!asset?.id) return null
+  const query = new URLSearchParams({ id: asset.id })
+  if (asset.boardId) query.set('boardId', asset.boardId)
+  return `/api/assets?${query}`
 }
 
 /** Walk JSON values, including immutable visual versions, without editing the input. */
@@ -30,13 +63,12 @@ export function mapDocumentStrings<T>(document: T, replace: (value: string) => s
   return visit(document) as T
 }
 
-/** Older URLs remain readable to viewers through the board-authorized endpoint. */
+/** All managed previews render on this host through the board-authorized endpoint. */
 export function scopeLegacyAssets<T>(document: T, boardId: string): T {
   return mapDocumentStrings(document, (value) => {
     const asset = assetReference(value)
-    return asset?.legacyKey && !asset.boardId
-      ? `/api/assets?${new URLSearchParams({ boardId, legacyKey: asset.legacyKey })}`
-      : value
+    if (asset?.legacyKey) return `/api/assets?${new URLSearchParams({ boardId: asset.boardId || boardId, legacyKey: asset.legacyKey })}`
+    return privateAssetUrl(value) ?? value
   })
 }
 
@@ -50,17 +82,20 @@ export async function blobToDataUrl(blob: Blob): Promise<string> {
 }
 
 export async function readAssetBlob(url: string): Promise<Blob> {
-  let headers: Record<string, string> | undefined
-  try {
-    const origin = globalThis.location?.origin ?? 'http://localhost'
-    const target = new URL(url, origin)
-    // Guard private reads in stale tabs without disclosing account identity to
-    // public links, foreign hosts, or local data/blob URLs.
-    if (target.origin === origin && target.pathname === '/api/assets' && !target.username && !target.password) {
-      headers = requestAccountHeaders()
-    }
-  } catch { /* Let fetch report an invalid URL without attaching account data. */ }
-  const response = await fetch(url, { redirect: 'error', ...(headers ? { headers } : {}) })
+  const origin = globalThis.location?.origin ?? 'http://localhost'
+  let target: URL
+  try { target = new URL(url, origin) } catch (error) { throw new Error('That saved file URL is invalid.', { cause: error }) }
+  const asset = assetReference(url, origin)
+  // Guard private reads in stale tabs without disclosing account identity to
+  // public links, foreign hosts, or local data/blob URLs. Trusted aliases are
+  // rewritten to this origin; local development never contacts production.
+  if (!asset && (target.pathname === '/api/assets'
+    || (target.pathname.startsWith('/media/') && LEGACY_IMAGE_KEY.test(target.pathname.slice('/media/'.length))))) {
+    throw new Error('That saved file has no accessible private copy on this deployment.')
+  }
+  const requestUrl = asset ? privateAssetUrl(url, origin) ?? `${asset.url.pathname}${asset.url.search}` : url
+  const headers = asset?.url.pathname === '/api/assets' ? requestAccountHeaders() : undefined
+  const response = await fetch(requestUrl, { redirect: 'error', ...(headers ? { headers } : {}) })
   if (!response.ok) throw new Error(`A saved file could not be read (${response.status}).`)
   if (response.headers.get('content-type')?.includes('text/html')
     && !url.startsWith('data:') && !response.headers.get('content-disposition')?.startsWith('attachment')) {
@@ -99,7 +134,9 @@ export async function uploadBoardFile(blob: Blob, boardId: string, name = 'visua
   if (!response.ok || !result || typeof result !== 'object' || !('url' in result) || typeof result.url !== 'string') {
     throw new Error('The file could not sync. Your local copy has been kept.')
   }
-  return result.url
+  const savedUrl = privateAssetUrl(result.url)
+  if (!savedUrl) throw new Error('The file server returned an invalid private URL.')
+  return savedUrl
 }
 
 /** Upload local/imported bytes before saving the small graph document to D1. */
@@ -118,8 +155,9 @@ export async function prepareDocumentAssets<T>(document: T, boardId: string): Pr
         method: 'POST', redirect: 'error', headers: requestAccountHeaders(),
       })
       const result = await response.json().catch(() => null) as { url?: unknown } | null
-      if (!response.ok || typeof result?.url !== 'string') throw new Error('An existing image could not be protected yet.')
-      replacements.set(value, result.url)
+      const savedUrl = typeof result?.url === 'string' ? privateAssetUrl(result.url) : null
+      if (!response.ok || !savedUrl) throw new Error('An existing image could not be protected yet.')
+      replacements.set(value, savedUrl)
     } else {
       const readable = ref?.legacyKey && !ref.boardId
         ? `/api/assets?${new URLSearchParams({ boardId, legacyKey: ref.legacyKey })}`
@@ -127,7 +165,7 @@ export async function prepareDocumentAssets<T>(document: T, boardId: string): Pr
       replacements.set(value, await uploadBoardFile(await readAssetBlob(readable), boardId))
     }
   }
-  return mapDocumentStrings(document, (value) => replacements.get(value) ?? value)
+  return mapDocumentStrings(document, (value) => replacements.get(value) ?? privateAssetUrl(value) ?? value)
 }
 
 export function documentNeedsAssetSync(document: unknown, boardId: string) {

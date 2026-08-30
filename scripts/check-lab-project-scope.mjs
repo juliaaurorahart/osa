@@ -73,7 +73,8 @@ const { useSyncedLabNotebook } = loadModule('src/lab/useSyncedLabNotebook.ts', {
     fetchCloudNotebook: async () => ({ id: 'account-notebook', name: 'Lab notebook', updatedAt: date, revision: 1, snapshot: emptySnapshot() }),
     loadLabFile: async (document, id) => {
       fileReads.push({ scope: document.scope, id })
-      return deferredRead ?? files.get(`${document.scope}:${id}`) ?? null
+      const artifact = document.snapshot.contents.artifacts.find((item) => item.id === id)
+      return deferredRead ?? files.get(`${document.scope}:${artifact?.fileId || id}`) ?? null
     },
     saveCloudNotebook: async () => { throw new Error('This boundary test must not perform a cloud save') },
   },
@@ -102,6 +103,44 @@ try {
   assert.equal(fileWrites[0].scope, scope)
   assert.equal(await fileWrites[0].files[0].file.text(), 'native source')
   assert.equal(await (await notebook.loadArtifactSource(savedId, scope)).text(), 'native source')
+
+  let topicId, noteId
+  await React.act(async () => {
+    topicId = notebook.createTopic('Drawings')
+    notebook.setObjectTopics('artifact', savedId, [topicId])
+    noteId = notebook.createNote()
+    notebook.updateNote(noteId, { title: 'Linked idea', body: 'Keep this relationship', artifactIds: [savedId] })
+  })
+  const edited = { ...capture, name: 'Renamed drawing', source: { ...capture.source, blob: new Blob(['edited source'], { type: 'application/json' }) } }
+  await React.act(async () => assert.equal(await notebook.captureVisual(edited, [], scope, { artifactId: savedId, expectedFileId: savedId }), savedId))
+  assert.equal(notebook.artifacts.length, 1, 'Save updates the visible item rather than adding a duplicate')
+  assert.equal(notebook.artifacts[0].name, 'Renamed drawing')
+  assert.equal(notebook.artifactRevisions.length, 1)
+  assert.equal(await files.get(`${scope}:${savedId}`).file.text(), 'native source', 'Original bytes remain immutable')
+  assert.equal(await (await notebook.loadArtifactSource(savedId, scope)).text(), 'edited source')
+  const revision = notebook.artifactRevisions[0]
+  assert.equal(await (await notebook.loadArtifactSource(revision.id, scope)).text(), 'native source')
+  assert.deepEqual(notebook.notes[0].artifactIds, [savedId], 'Updating preserves note attachment identity')
+  assert.ok(notebook.topicLinks.some((link) => link.objectId === savedId && link.topicId === topicId))
+  await assert.rejects(() => notebook.captureVisual(capture, [], scope, { artifactId: savedId, expectedFileId: savedId }), /changed since/i)
+  await React.act(async () => notebook.restoreRevision(savedId, revision.id))
+  assert.equal(await (await notebook.loadArtifactSource(savedId, scope)).text(), 'native source')
+  assert.equal(notebook.artifactRevisions.length, 2, 'Restoring a version archives the previous current content')
+  const restoredFileId = notebook.getArtifact(savedId).fileId
+  await React.act(async () => notebook.trashArtifact(savedId))
+  assert.equal(notebook.artifacts.length, 0)
+  assert.equal(notebook.trashedArtifacts.length, 1)
+  assert.deepEqual(notebook.notes[0].artifactIds, [savedId], 'Trash keeps links recoverable')
+  const beforeTrashSave = fileWrites.length
+  await assert.rejects(() => notebook.captureVisual(capture, [], scope, { artifactId: savedId, expectedFileId: restoredFileId }), /Trash/)
+  assert.equal(fileWrites.length, beforeTrashSave, 'An open editor cannot silently resurrect a removed file')
+  let copyId
+  await React.act(async () => { copyId = await notebook.captureVisual(edited, [topicId], scope) })
+  assert.notEqual(copyId, savedId, 'Save a copy creates an independent file')
+  await React.act(async () => notebook.restoreArtifact(savedId))
+  assert.equal(notebook.artifacts.length, 2)
+  assert.equal(notebook.trashedArtifacts.length, 0)
+  assert.equal(notebook.getArtifact(savedId).fileId, restoredFileId)
 
   const staleCapture = notebook.captureVisual
   const staleSourceLoad = notebook.loadArtifactSource

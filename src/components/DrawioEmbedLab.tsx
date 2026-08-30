@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { LabCaptureButton } from '../lab/LabCaptureButton'
+import { LabCaptureContext } from '../lab/LabCaptureContext'
 import { dataUrlToBlob } from '../lab/labCaptureUtils'
 import type { LabCapture, LabProjectSource } from '../lab/labTypes'
 import './DrawioEmbedLab.css'
@@ -15,7 +16,7 @@ import './DrawioEmbedLab.css'
 const DRAWIO_ORIGIN = 'https://embed.diagrams.net'
 // `themes=1` keeps draw.io's Theme menu available in the embedded editor.
 function drawioEmbedUrl(theme: 'dark' | 'light') {
-  return `${DRAWIO_ORIGIN}/?embed=1&proto=json&libraries=1&themes=1&ui=${theme}&dark=${theme === 'dark' ? '1' : '0'}`
+  return `${DRAWIO_ORIGIN}/?embed=1&proto=json&libraries=1&themes=1&keepmodified=1&ui=${theme}&dark=${theme === 'dark' ? '1' : '0'}`
 }
 
 /** A harmless starter diagram for testing the editor and shape libraries. */
@@ -42,6 +43,7 @@ type PendingCapture = {
 type LabStatus = {
   kind: 'waiting' | 'loaded' | 'autosaved' | 'saved' | 'closed' | 'error'
   label: string
+  failed?: boolean
 }
 
 type DrawioEmbedLabProps = {
@@ -88,7 +90,7 @@ function parseDrawioEvent(data: unknown): DrawioEvent | null {
 }
 
 function statusClassName(status: LabStatus) {
-  return `drawio-embed-lab__status drawio-embed-lab__status--${status.kind}`
+  return `drawio-embed-lab__status drawio-embed-lab__status--${status.failed ? 'error' : status.kind}`
 }
 
 /**
@@ -102,12 +104,22 @@ export function DrawioEmbedLab({
   initialSource,
   onXmlChange,
 }: DrawioEmbedLabProps) {
+  const contextSave = useContext(LabCaptureContext)
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
   // `initialXml` is read only on mount. After that the current iframe draft is
   // authoritative until it emits an autosave or explicit save event.
   const currentXmlRef = useRef(initialSource?.text ?? initialXml)
+  const lastSavedXmlRef = useRef<string | undefined>(undefined)
   const editorInitializedRef = useRef(false)
   const pendingCaptureRef = useRef<PendingCapture | null>(null)
+  const capturingRef = useRef(false)
+  const savingRef = useRef(false)
+  const nativeSaveRef = useRef(false)
+  const nativeSaveHandlerRef = useRef<(() => Promise<void>) | null>(null)
+  const draftVersionRef = useRef(0)
+  const editorGenerationRef = useRef(0)
+  const mountedRef = useRef(true)
+  const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState<LabStatus>({
     kind: 'waiting',
     label: 'waiting for draw.io',
@@ -121,7 +133,14 @@ export function DrawioEmbedLab({
     pending.reject(new Error(reason))
   }, [])
 
-  useEffect(() => () => cancelCapture('The draw.io workbench closed before the capture completed.'), [cancelCapture])
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      editorGenerationRef.current += 1
+      cancelCapture('The draw.io workbench closed before the capture completed.')
+    }
+  }, [cancelCapture])
 
   const sendLoad = useCallback(() => {
     const editorWindow = iframeRef.current?.contentWindow
@@ -133,7 +152,9 @@ export function DrawioEmbedLab({
       // Autosave remains in memory. A notebook capture is a separate,
       // explicit export action and does not turn autosave into a board save.
       autosave: 1,
-      modified: 0,
+      // Keep draw.io's unsaved marker until a notebook write succeeds. See
+      // https://www.drawio.com/docs/reference/embed-mode/ (status action).
+      modified: 'unsavedChanges',
       // This matches OSA's current theme. The diagram content itself remains
       // independent, and people can still pick an editor theme in draw.io.
       dark: theme === 'dark' ? 1 : 0,
@@ -171,6 +192,7 @@ export function DrawioEmbedLab({
       }
 
       if (event.event === 'init') {
+        editorGenerationRef.current += 1
         cancelCapture('draw.io restarted before the capture completed. Please try again.')
         editorInitializedRef.current = true
         setStatus({ kind: 'waiting', label: 'loading local sample' })
@@ -181,22 +203,28 @@ export function DrawioEmbedLab({
       }
 
       if (event.event === 'load') {
-        setStatus({ kind: 'loaded', label: 'sample loaded — edits stay in this page' })
+        setStatus({ kind: 'loaded', label: 'diagram loaded — save changes to notebook to keep them' })
         return
       }
 
       if (event.event === 'autosave' || event.event === 'save') {
         if (event.xml) {
+          if (event.xml !== currentXmlRef.current) draftVersionRef.current += 1
           currentXmlRef.current = event.xml
           onXmlChange?.(event.xml)
         }
-        setStatus(event.event === 'autosave'
-          ? { kind: 'autosaved', label: 'autosaved locally in this lab' }
-          : { kind: 'saved', label: 'saved locally in this lab' })
+        if (event.event === 'save') {
+          void nativeSaveHandlerRef.current?.()
+        } else if (!nativeSaveRef.current && !savingRef.current) {
+          setStatus(currentXmlRef.current === lastSavedXmlRef.current
+            ? { kind: 'saved', label: 'saved to notebook' }
+            : { kind: 'autosaved', label: 'draft updated — not saved to notebook' })
+        }
         return
       }
 
       if (event.event === 'exit') {
+        editorGenerationRef.current += 1
         cancelCapture('draw.io closed before the capture completed.')
         setStatus({
           kind: 'closed',
@@ -216,39 +244,106 @@ export function DrawioEmbedLab({
     if (!editorWindow || !editorInitializedRef.current || !['loaded', 'autosaved', 'saved'].includes(status.kind)) {
       throw new Error('Wait for the draw.io diagram to finish loading before capturing it.')
     }
-    if (pendingCaptureRef.current) throw new Error('A draw.io capture is already in progress.')
-
-    const exported = await new Promise<DrawioExport>((resolve, reject) => {
-      const requestId = `lab-capture-${Date.now()}-${Math.random().toString(36).slice(2)}`
-      const timer = window.setTimeout(() => {
-        if (pendingCaptureRef.current?.requestId === requestId) {
-          cancelCapture('draw.io did not return a capture within 20 seconds. Please try again.')
+    if (capturingRef.current || savingRef.current) throw new Error('A draw.io save is already in progress.')
+    capturingRef.current = true
+    const capturedVersion = draftVersionRef.current
+    const generation = editorGenerationRef.current
+    try {
+      const exported = await new Promise<DrawioExport>((resolve, reject) => {
+        const requestId = `lab-capture-${Date.now()}-${Math.random().toString(36).slice(2)}`
+        const timer = window.setTimeout(() => {
+          if (pendingCaptureRef.current?.requestId === requestId) {
+            cancelCapture('draw.io did not return a capture within 20 seconds. Please try again.')
+          }
+        }, 20_000)
+        pendingCaptureRef.current = { requestId, timer, resolve, reject }
+        try {
+          // Official protocol only: commit any in-place label edit, then export
+          // the current page and its matching full, editable diagram XML.
+          editorWindow.postMessage(JSON.stringify({ action: 'resetEditor' }), DRAWIO_ORIGIN)
+          editorWindow.postMessage(JSON.stringify({
+            action: 'export', format: 'png', currentPage: true, keepTheme: true, scale: 1, requestId,
+          }), DRAWIO_ORIGIN)
+        } catch (error) {
+          cancelCapture(error instanceof Error ? error.message : 'The draw.io capture request could not be sent.')
         }
-      }, 20_000)
-      pendingCaptureRef.current = { requestId, timer, resolve, reject }
-      try {
-        // Official protocol only: commit any in-place label edit, then export
-        // the current page and its matching full, editable diagram XML.
-        editorWindow.postMessage(JSON.stringify({ action: 'resetEditor' }), DRAWIO_ORIGIN)
-        editorWindow.postMessage(JSON.stringify({
-          action: 'export', format: 'png', currentPage: true, keepTheme: true, scale: 1, requestId,
-        }), DRAWIO_ORIGIN)
-      } catch (error) {
-        cancelCapture(error instanceof Error ? error.message : 'The draw.io capture request could not be sent.')
+      })
+      const preview = await dataUrlToBlob(exported.data)
+      if (generation !== editorGenerationRef.current) throw new Error('The draw.io editor changed before this capture finished. Please save the current diagram again.')
+      if (capturedVersion === draftVersionRef.current) currentXmlRef.current = exported.xml
+      if (preview.type !== 'image/png') throw new Error('draw.io did not return a PNG image.')
+      return {
+        name: 'draw.io diagram',
+        toolId: 'drawio',
+        preview,
+        source: { blob: new Blob([exported.xml], { type: 'application/xml' }), name: 'diagram.drawio' },
+        description: 'Current page preview with the complete editable draw.io document.',
       }
-    })
-    const preview = await dataUrlToBlob(exported.data)
-    if (preview.type !== 'image/png') throw new Error('draw.io did not return a PNG image.')
-    return {
-      name: 'draw.io diagram',
-      toolId: 'drawio',
-      preview,
-      source: { blob: new Blob([exported.xml], { type: 'application/xml' }), name: 'diagram.drawio' },
-      description: 'Current page preview with the complete editable draw.io document.',
+    } finally {
+      capturingRef.current = false
     }
   }, [cancelCapture, status.kind])
 
+  const saveCapture = useCallback(async (visual: LabCapture, options?: { asCopy?: boolean }) => {
+    if (savingRef.current) throw new Error('A notebook save is already in progress.')
+    if (!contextSave) throw new Error('The notebook is unavailable here. Export a file from draw.io to keep this diagram.')
+    const generation = editorGenerationRef.current
+    savingRef.current = true
+    setSaving(true)
+    setStatus({ kind: 'saved', label: 'saving diagram to notebook…' })
+    try {
+      const savedXml = await visual.source?.blob.text()
+      const id = await contextSave(visual, options)
+      if (!id) throw new Error('The notebook could not save this diagram. Please try again.')
+      if (generation === editorGenerationRef.current) {
+        lastSavedXmlRef.current = savedXml
+        const newerEdits = savedXml !== currentXmlRef.current
+        const label = newerEdits ? 'saved to notebook — newer edits are not saved yet' : options?.asCopy ? 'copy saved to notebook' : 'saved to notebook'
+        setStatus({ kind: newerEdits ? 'autosaved' : 'saved', label })
+        iframeRef.current?.contentWindow?.postMessage(JSON.stringify({ action: 'status', message: label, modified: newerEdits }), DRAWIO_ORIGIN)
+      }
+      return id
+    } catch (error) {
+      if (generation === editorGenerationRef.current) {
+        const label = error instanceof Error ? error.message : 'The diagram could not be saved to notebook.'
+        setStatus({ kind: 'autosaved', label, failed: true })
+        iframeRef.current?.contentWindow?.postMessage(JSON.stringify({ action: 'status', message: label, modified: true }), DRAWIO_ORIGIN)
+      }
+      throw error
+    } finally {
+      savingRef.current = false
+      if (mountedRef.current) setSaving(nativeSaveRef.current)
+    }
+  }, [contextSave])
+
+  useEffect(() => {
+    nativeSaveHandlerRef.current = async () => {
+      // A native Save and a header Save share one capture/persistence path.
+      // Ignore repeated native events while it runs; never turn autosave into
+      // a file write or recursively send Save back into the editor.
+      if (nativeSaveRef.current || capturingRef.current || savingRef.current) return
+      const generation = editorGenerationRef.current
+      nativeSaveRef.current = true
+      setSaving(true)
+      try {
+        if (!contextSave) throw new Error('The notebook is unavailable here. Export a file from draw.io to keep this diagram.')
+        await saveCapture(await capture())
+      } catch (error) {
+        if (generation === editorGenerationRef.current) {
+          const label = error instanceof Error ? error.message : 'The diagram could not be saved to notebook.'
+          setStatus({ kind: 'autosaved', label, failed: true })
+        }
+      } finally {
+        nativeSaveRef.current = false
+        if (mountedRef.current) setSaving(false)
+      }
+    }
+    return () => { nativeSaveHandlerRef.current = null }
+  }, [capture, contextSave, saveCapture])
+
   const resetSample = () => {
+    if (capturingRef.current || savingRef.current || nativeSaveRef.current) return
+    editorGenerationRef.current += 1
     cancelCapture('The diagram was reset before its capture completed.')
     currentXmlRef.current = DRAWIO_SAMPLE_XML
     onXmlChange?.(DRAWIO_SAMPLE_XML)
@@ -270,8 +365,10 @@ export function DrawioEmbedLab({
         <h2>draw.io <small>sample only</small></h2>
         <div className="drawio-embed-lab__controls">
           <output className={statusClassName(status)} aria-live="polite">{status.label}</output>
-          <LabCaptureButton capture={capture} disabled={!['loaded', 'autosaved', 'saved'].includes(status.kind)} />
-          <button type="button" onClick={resetSample}>reset sample</button>
+          <LabCaptureContext.Provider value={contextSave ? saveCapture : null}>
+            <LabCaptureButton capture={capture} disabled={saving || !['loaded', 'autosaved', 'saved'].includes(status.kind)} />
+          </LabCaptureContext.Provider>
+          <button type="button" disabled={saving} onClick={resetSample}>reset sample</button>
         </div>
       </header>
 
@@ -285,6 +382,7 @@ export function DrawioEmbedLab({
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
           referrerPolicy="no-referrer"
           onLoad={() => {
+            editorGenerationRef.current += 1
             cancelCapture('The draw.io editor reloaded before the capture completed.')
             editorInitializedRef.current = false
             setStatus({ kind: 'waiting', label: 'waiting for draw.io' })

@@ -1,5 +1,6 @@
 import type { useSyncedLabNotebook } from './useSyncedLabNotebook'
 import { useState } from 'react'
+import { LAB_ORIGIN, OSA_ORIGIN } from '../config/osaDeployment'
 
 type Props = { notebook: ReturnType<typeof useSyncedLabNotebook>; hasDraft: boolean; hasProject?: boolean }
 
@@ -12,6 +13,11 @@ export function LabNotebookSync({ notebook, hasDraft, hasProject = false }: Prop
   }
   return <aside className="lab-notebook-sync" aria-label="Notebook storage and sync">
     <p role="status"><strong>{notebook.isLocal ? 'This device' : 'Private account notebook'}</strong> · {notebook.syncMessage}</p>
+    {globalThis.location?.origin === LAB_ORIGIN ? <details className="lab-notebook-sync__old-address">
+      <summary>Looking for files from the previous Lab address?</summary>
+      <p>Your account notebook uses the same storage. Files saved only in the old address&apos;s browser storage stay there until you sync or back them up.</p>
+      <a href={`${OSA_ORIGIN}/?lab=canvas`} target="_blank" rel="noopener noreferrer">Open the previous Lab to sync or download a backup</a>
+    </details> : null}
     <div className="lab-notebook-sync__actions">
       <button type="button" disabled={blocked || notebook.scope === 'loading'} onClick={() => { void notebook.exportNotebook() }}>Download backup with files</button>
       {notebook.hasRecovery ? <button type="button" disabled={blocked} onClick={() => { void notebook.exportRecovery() }}>Download previous recovery copy</button> : null}

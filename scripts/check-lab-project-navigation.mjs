@@ -84,13 +84,16 @@ function useNotebookFixture() {
     loadArtifactPreview: async () => new Blob(['preview'], { type: 'image/png' }),
     loadArtifactSource: (id) => loadOverrides.has(id) ? loadOverrides.get(id) : Promise.resolve(files.get(id) ?? null),
     downloadArtifact: async () => {}, createTopic: () => 'drawings', setObjectTopics() {},
-    captureVisual: async (capture, selectedTopics) => {
-      const id = `saved-version-${++nextVersion}`
-      const stored = storage.createStoredLabCapture(capture, id, date)
+    getArtifact: (id) => storedVersions.get(id) || artifacts.find((item) => item.id === id),
+    captureVisual: async (capture, selectedTopics, expectedScope, options) => {
+      assert.equal(expectedScope, scope)
+      const fileId = `saved-version-${++nextVersion}`
+      const id = options?.artifactId || fileId
+      const stored = { ...storage.createStoredLabCapture(capture, id, date), fileId }
       saveCalls.push({ capture, selectedTopics: [...selectedTopics], id })
       storedVersions.set(id, stored)
       files.set(id, stored.file)
-      setArtifacts((current) => [...current, storage.labArtifactMetadata(stored)])
+      setArtifacts((current) => [...current.filter((item) => item.id !== id), storage.labArtifactMetadata(stored)])
       setTopicLinks((current) => [...current, ...selectedTopics.map((topicId) => ({ objectType: 'artifact', objectId: id, topicId }))])
       return id
     },
@@ -153,9 +156,16 @@ const shellBody = () => document.querySelector('main.lab-shell__body')
 const projectDialog = () => document.querySelector('dialog[aria-label="Open or leave a Lab project"]')
 const artifactRow = (name) => [...document.querySelectorAll('.lab-notebook__artifacts li')]
   .find((row) => row.querySelector('.lab-notebook__file-copy strong')?.textContent === name)
+const warnsBeforeUnload = () => {
+  const event = new window.Event('beforeunload', { cancelable: true })
+  window.dispatchEvent(event)
+  return event.defaultPrevented
+}
+const exitWarnings = []
+let exitAction = () => { exitWarnings.push(warnsBeforeUnload()) }
 
 try {
-  await React.act(async () => root.render(React.createElement(CanvasLab, { theme: 'dark', onToggleTheme() {}, onExit() {} })))
+  await React.act(async () => root.render(React.createElement(CanvasLab, { theme: 'dark', onToggleTheme() {}, onExit: () => exitAction() })))
   shellBody().scrollTop = 640
   await changeValue(document.querySelector('[aria-label="Choose Lab instrument"]'), 'ink', 'change')
   assert.equal(shellBody().scrollTop, 0, 'Entering a workbench resets the shared main scroller.')
@@ -171,13 +181,19 @@ try {
   const firstSavedBytes = await firstSaved.file.text()
   await changeValue(editorText(), 'Later edited drawing')
   await clickButton('Save to notebook', firstEditor)
-  assert.notEqual(saveCalls[1].id, firstSavedId)
-  assert.equal(currentNotebook.artifacts.filter((artifact) => artifact.name === 'Named study').length, 2, 'Each explicit save adds a new notebook version.')
-  assert.strictEqual(storedVersions.get(firstSavedId), firstSaved)
+  assert.equal(saveCalls[1].id, firstSavedId)
+  assert.equal(currentNotebook.artifacts.filter((artifact) => artifact.name === 'Named study').length, 1, 'Save updates the same visible notebook project.')
+  assert.notStrictEqual(storedVersions.get(firstSavedId), firstSaved)
   assert.equal(await firstSaved.file.text(), firstSavedBytes, 'Earlier native source bytes are not overwritten by a later save.')
   assert.equal(currentNotebook.artifacts.find((artifact) => artifact.id === originalArtifact.id), originalArtifact)
 
-  await clickButton('Saved projects')
+  await clickButton('Save a copy', firstEditor)
+  assert.notEqual(saveCalls.at(-1).id, firstSavedId, 'Save a copy creates a separate identity')
+  assert.equal(saveCalls.at(-1).capture.name, 'Named study (copy)')
+  const copiedId = saveCalls.at(-1).id
+  await clickButton('Save to notebook', firstEditor)
+  assert.equal(saveCalls.at(-1).id, copiedId, 'Later Save updates the new copy')
+  await clickButton('Back to notebook')
   assert.strictEqual(editor(), firstEditor, 'Visiting the notebook hides, rather than unmounts, the active editor.')
   assert.equal(editor().closest('[hidden]')?.hidden, true)
   assert.equal(editorText().value, 'Later edited drawing')
@@ -192,7 +208,7 @@ try {
   assert.equal(editor().closest('[hidden]'), null)
   assert.equal(editorText().value, 'Later edited drawing')
 
-  await clickButton('Saved projects')
+  await clickButton('Back to notebook')
   await clickButton('Open in Ink', artifactRow(originalArtifact.name))
   assert.equal(projectDialog().open, true)
   assert.strictEqual(editor(), firstEditor, 'Source loading and the replacement question do not replace the editor.')
@@ -219,7 +235,7 @@ try {
   assert.equal(saveCalls.at(-1).capture.name, originalArtifact.name)
   assert.ok(currentNotebook.artifacts.some((artifact) => artifact.id === originalArtifact.id), 'Opening and saving never removes the earlier project artifact.')
 
-  await clickButton('Saved projects')
+  await clickButton('Back to notebook')
   let finishLoading
   const delayed = new Promise((resolveFile) => { finishLoading = resolveFile })
   loadOverrides.set(delayedArtifact.id, delayed)
@@ -258,7 +274,55 @@ try {
   assert.equal(editorText().value, 'Unsaved starter', 'Opening an instrument after sign-in starts a fresh editor.')
   assert.equal(document.querySelector('[aria-label="Project name"]').value, 'Ink project')
 
-  console.log('Lab project navigation passed: named saves, retained versions, editor lifetime, safe replacement, native source handoff, image-only actions, viewport reset, stale-scope rejection, and sign-out session disposal.')
+  assert.equal(warnsBeforeUnload(), true, 'An ordinary tab close still warns about the open project.')
+  await clickButton('exit lab')
+  await clickButton('Cancel', projectDialog())
+  assert.equal(exitWarnings.length, 0)
+  assert.equal(warnsBeforeUnload(), true, 'Cancelling Leave Lab never approves a later unload.')
+  await clickButton('exit lab')
+  await clickButton('Leave Lab', projectDialog())
+  assert.equal(exitWarnings.at(-1), false, 'A confirmed exit does not warn twice for the project.')
+  assert.equal(warnsBeforeUnload(), true, 'Approval is consumed by exactly one unload event.')
+
+  await clickButton('Notebook')
+  await clickButton('+ new note')
+  await changeValue(document.querySelector('textarea'), 'Keep this unsaved idea if navigation is cancelled.')
+  const draftText = document.querySelector('textarea').value
+  assert.equal(warnsBeforeUnload(), true)
+  await clickButton('exit lab')
+  await clickButton('Leave Lab', projectDialog())
+  assert.equal(exitWarnings.at(-1), false, 'Both project and idea guards share one approved event.')
+  assert.equal(document.querySelector('textarea').value, draftText, 'Approving navigation does not clear the draft in advance.')
+  assert.equal(warnsBeforeUnload(), true)
+
+  const unrelatedWarning = (event) => event.preventDefault()
+  window.addEventListener('beforeunload', unrelatedWarning)
+  await clickButton('exit lab')
+  await clickButton('Leave Lab', projectDialog())
+  assert.equal(exitWarnings.at(-1), true, 'Approval cannot cancel a warning from another part of the app.')
+  window.removeEventListener('beforeunload', unrelatedWarning)
+  assert.equal(warnsBeforeUnload(), true, 'Cancelling another warning leaves the next close protected.')
+
+  exitAction = () => {} // A blocked/no-op navigation must not leave approval armed during resumed editing.
+  await clickButton('exit lab')
+  await clickButton('Leave Lab', projectDialog())
+  window.dispatchEvent(new window.Event('keydown'))
+  assert.equal(warnsBeforeUnload(), true)
+  await clickButton('exit lab')
+  await clickButton('Leave Lab', projectDialog())
+  await React.act(async () => changeScope('guest'))
+  await clickButton('+ new note')
+  await changeValue(document.querySelector('textarea'), 'New scope, new draft.')
+  assert.equal(editor(), null)
+  assert.equal(warnsBeforeUnload(), true, 'An approval never crosses an account boundary.')
+
+  exitAction = () => { exitWarnings.push(warnsBeforeUnload()) }
+  await clickButton('exit lab')
+  await clickButton('Leave Lab', projectDialog())
+  assert.equal(exitWarnings.at(-1), false, 'A notebook-only draft gets the same confirmed-exit protection.')
+  assert.equal(warnsBeforeUnload(), true)
+
+  console.log('Lab project navigation passed: named saves, retained versions, editor lifetime, safe replacement, native source handoff, image-only actions, viewport reset, stale-scope rejection, sign-out session disposal, and one-event confirmed exit.')
 } finally {
   await React.act(async () => root.unmount())
   dom.window.close()

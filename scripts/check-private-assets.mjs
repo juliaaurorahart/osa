@@ -9,6 +9,7 @@ const fixture = createPrivateStorageFixture({ migrateThrough: 6 })
 const { sqlite, env, objects, stats } = fixture
 try {
   const origin = 'https://osa.juliaaurorahart.com'
+  const labOrigin = 'https://lab.juliaaurorahart.com'
   const legacyKey = `images/${'a'.repeat(64)}.png`
   const hiddenLegacyKey = `images/${'b'.repeat(64)}.png`
   const unrelatedLegacyKey = `images/${'c'.repeat(64)}.png`
@@ -52,18 +53,18 @@ try {
   const { onRequestGet: session } = await server.ssrLoadModule('/functions/api/session.ts')
   const { expectedAccountGuard } = await server.ssrLoadModule('/functions/accountGuard.ts')
   const { onRequestGet: boards, onRequestPut: saveBoard } = await server.ssrLoadModule('/functions/api/boards.ts')
-  const { MAX_FILE_BYTES, boardReferencesLegacy, referencedFiles, fileNameHeader } = await server.ssrLoadModule('/functions/assetFiles.ts')
-  const uploadFile = (email, boardId = 'board-a', body = image, extra = {}) => upload({
-    env, data: data(email), request: new Request(`${origin}/api/assets?boardId=${boardId}`, {
+  const { MAX_FILE_BYTES, boardReferencesLegacy, referencedFiles, fileNameHeader, managedFileReference } = await server.ssrLoadModule('/functions/assetFiles.ts')
+  const uploadFile = (email, boardId = 'board-a', body = image, extra = {}, requestOrigin = origin) => upload({
+    env, data: data(email), request: new Request(`${requestOrigin}/api/assets?boardId=${boardId}`, {
       method: 'POST', headers: { 'content-type': 'image/png', ...extra }, body,
     }),
   })
-  const readFile = (email, url) => read({ env, data: data(email), request: new Request(url) })
-  const sharedFile = (query = '', reference = 'shako', handler = shared) => handler({
-    env, params: { token: reference }, request: new Request(`${origin}/shared/${reference}${query}`),
+  const readFile = (email, url, requestOrigin = origin) => read({ env, data: data(email), request: new Request(new URL(url, requestOrigin)) })
+  const sharedFile = (query = '', reference = 'shako', handler = shared, requestOrigin = origin) => handler({
+    env, params: { token: reference }, request: new Request(`${requestOrigin}/shared/${reference}${query}`),
   })
-  const migrate = (email, key = legacyKey, boardId = 'board-a') => upload({
-    env, data: data(email), request: new Request(`${origin}/api/assets?boardId=${boardId}&legacyKey=${encodeURIComponent(key)}`, { method: 'POST' }),
+  const migrate = (email, key = legacyKey, boardId = 'board-a', requestOrigin = origin) => upload({
+    env, data: data(email), request: new Request(`${requestOrigin}/api/assets?boardId=${boardId}&legacyKey=${encodeURIComponent(key)}`, { method: 'POST' }),
   })
 
   assert.equal((await uploadFile(null)).status, 403, 'Anonymous upload is forbidden.')
@@ -78,7 +79,8 @@ try {
   assert.equal(uploadedResponse.status, 201)
   const uploaded = await uploadedResponse.json()
   assert.match(uploaded.key, /^private\//)
-  assert.equal(new URL(uploaded.url).searchParams.get('boardId'), 'board-a')
+  assert.equal(uploaded.url, `/api/assets?id=${uploaded.id}&boardId=board-a`, 'New file URLs stay relative to the host opening a document.')
+  assert.equal(new URL(uploaded.url, origin).searchParams.get('boardId'), 'board-a')
   assert.equal((await uploadFile(editor)).status, 200, 'Editors can upload; identical files deduplicate within one board.')
   assert.equal(stats.objectWrites, 1)
   const otherResponse = await uploadFile(outsider, 'board-b')
@@ -99,7 +101,7 @@ try {
   assert.equal((await readFile(owner, otherFile.url)).status, 404)
   assert.equal((await readFile(owner, `${otherFile.url.replace('board-b', 'board-a')}`)).status, 404, 'Query boardId never overrides file ownership.')
   assert.equal(stats.objectReads, readsBeforeDenied, 'Authorization precedes R2 reads.')
-  const headResponse = await head({ env, data: data(viewer), request: new Request(uploaded.url, { method: 'HEAD' }) })
+  const headResponse = await head({ env, data: data(viewer), request: new Request(new URL(uploaded.url, origin), { method: 'HEAD' }) })
   assert.equal(headResponse.status, 200)
   assert.equal((await headResponse.arrayBuffer()).byteLength, 0)
   assert.equal((await readFile(owner, `${origin}/api/assets?id=${uploaded.id}`)).status, 200, 'Older ID-only URLs remain supported.')
@@ -181,10 +183,125 @@ try {
   assert.equal((await bareMedia({ env, params: { key: legacyKey } })).status, 404)
   assert.equal((await bareMediaHead({ env, params: { key: legacyKey } })).status, 404)
 
+  const originalPartProperties = structuredClone(boardA.snapshot.nodes[1].data.properties)
+  const unchangedOtherBoard = sqlite.prepare('SELECT content FROM boards WHERE id = ?').get('board-b').content
+  const frozenGrants = sqlite.prepare('SELECT * FROM legacy_asset_grants ORDER BY board_id, storage_key').all()
+  for (const requestOrigin of [origin, labOrigin]) {
+    const alternateOrigin = requestOrigin === origin ? labOrigin : origin
+    const sameHostUpload = await uploadFile(editor, 'board-a', image, { origin: requestOrigin }, requestOrigin)
+    assert.equal(sameHostUpload.status, 200)
+    assert.equal((await sameHostUpload.json()).url, uploaded.url, 'Uploads from either alias return the same root-relative URL.')
+    assert.equal((await uploadFile(editor, 'board-a', image, { origin: alternateOrigin }, requestOrigin)).status, 403,
+      'Alias recognition does not permit cross-origin writes.')
+    for (const email of [owner, editor, viewer]) {
+      assert.equal((await readFile(email, uploaded.url, requestOrigin)).status, 200)
+    }
+    assert.equal((await readFile(null, uploaded.url, requestOrigin)).status, 403)
+    assert.equal((await readFile(outsider, uploaded.url, requestOrigin)).status, 404)
+    assert.equal((await readFile(owner, otherFile.url.replace('board-b', 'board-a'), requestOrigin)).status, 404)
+    assert.equal((await read({ env, data: data(owner), request: new Request(new URL(uploaded.url, requestOrigin), {
+      headers: { 'x-osa-account': outsider },
+    }) })).status, 409, 'The account guard still applies on either alias.')
+
+    for (const referenceOrigin of [origin, labOrigin]) {
+      for (const oldLegacyUrl of [`${referenceOrigin}/media/${legacyKey}`,
+        `${referenceOrigin}/api/assets?${new URLSearchParams({ boardId: 'board-a', legacyKey })}`]) {
+        Object.assign(boardA.snapshot.nodes[1].data.properties, {
+          'private:file': new URL(uploaded.url, referenceOrigin).toString(),
+          'foreign:file': new URL(otherFile.url, referenceOrigin).toString(),
+          'asset:image': oldLegacyUrl,
+        })
+        updateFixture(boardA)
+        const savedContent = JSON.stringify(boardA)
+        assert.equal(boardReferencesLegacy(savedContent, 'board-a', legacyKey, requestOrigin), true,
+          'Both original and scoped historical references remain recognizable across the exact aliases.')
+        const scopedLegacyUrl = `/api/assets?${new URLSearchParams({ boardId: 'board-a', legacyKey })}`
+        assert.equal((await readFile(viewer, scopedLegacyUrl, requestOrigin)).status, 200)
+        assert.equal((await readFile(outsider, scopedLegacyUrl, requestOrigin)).status, 404)
+        assert.equal((await readFile(null, scopedLegacyUrl, requestOrigin)).status, 403)
+        assert.equal((await migrate(editor, legacyKey, 'board-a', requestOrigin)).status, 200)
+        assert.equal((await migrate(viewer, legacyKey, 'board-a', requestOrigin)).status, 403)
+        assert.equal((await migrate(outsider, legacyKey, 'board-a', requestOrigin)).status, 404)
+        assert.equal((await migrate(owner, legacyKey, forgedBoard.id, requestOrigin)).status, 404,
+          'Recognizing an alias never creates a frozen legacy grant.')
+
+        const aliasPacket = await (await sharedFile('', 'shako', shared, requestOrigin)).json()
+        const aliasPart = aliasPacket.board.snapshot.nodes.find((node) => node.id === 'part')
+        assert.equal(aliasPart.data.properties['private:file'], `${requestOrigin}/shared/shako?asset=${uploaded.id}`)
+        assert.equal(new URL(aliasPart.data.properties['asset:image']).origin, requestOrigin)
+        assert.equal(new URL(aliasPart.data.properties['asset:image']).searchParams.get('legacyKey'), legacyKey)
+        assert.equal(aliasPart.data.properties['foreign:file'], '', 'Cross-alias rewriting still enforces the owning board.')
+        assert.equal((await sharedFile(`?asset=${uploaded.id}`, 'shako', shared, requestOrigin)).status, 200)
+        assert.equal((await sharedFile(`?legacyKey=${encodeURIComponent(legacyKey)}`, 'shako', shared, requestOrigin)).status, 200)
+        assert.equal((await sharedFile(`?asset=${otherFile.id}`, 'shako', shared, requestOrigin)).status, 404)
+        assert.equal((await sharedFile(`?asset=${source.id}`, 'shako', shared, requestOrigin)).status, 404)
+        assert.equal((await sharedFile(`?legacyKey=${encodeURIComponent(hiddenLegacyKey)}`, 'shako', shared, requestOrigin)).status, 404)
+        assert.equal((await sharedFile(`?legacyKey=${encodeURIComponent(legacyKey)}`, 'forged', shared, requestOrigin)).status, 404)
+        assert.equal(sqlite.prepare('SELECT content FROM boards WHERE id = ?').get('board-a').content, savedContent,
+          'Alias reads, shares, and legacy copies do not rewrite the stored graph or Shako content.')
+      }
+    }
+  }
+
+  for (const untrustedOrigin of ['https://unrelated.example', 'https://osa.juliaaurorahart.com.unrelated.example',
+    'http://osa.juliaaurorahart.com', 'https://lab.juliaaurorahart.com:444']) {
+    Object.assign(boardA.snapshot.nodes[1].data.properties, {
+      'private:file': new URL(uploaded.url, untrustedOrigin).toString(),
+      'asset:image': `${untrustedOrigin}/media/${legacyKey}`,
+    })
+    updateFixture(boardA)
+    for (const requestOrigin of [origin, labOrigin]) {
+      assert.equal((await sharedFile(`?asset=${uploaded.id}`, 'shako', shared, requestOrigin)).status, 404)
+      assert.equal((await sharedFile(`?legacyKey=${encodeURIComponent(legacyKey)}`, 'shako', shared, requestOrigin)).status, 404)
+      assert.equal((await migrate(owner, legacyKey, 'board-a', requestOrigin)).status, 404,
+        'A foreign URL cannot validate a legacy reference, even where a historical grant exists.')
+    }
+  }
+  boardA.snapshot.nodes[1].data.properties = originalPartProperties
+  updateFixture(boardA)
+  assert.deepEqual(sqlite.prepare('SELECT * FROM legacy_asset_grants ORDER BY board_id, storage_key').all(), frozenGrants)
+  assert.equal(sqlite.prepare('SELECT content FROM boards WHERE id = ?').get('board-b').content, unchangedOtherBoard)
+
+  for (const devOrigin of ['http://localhost:5173', 'https://preview.pages.dev']) {
+    assert.deepEqual(managedFileReference(uploaded.url, devOrigin), { kind: 'file', id: uploaded.id })
+    assert.deepEqual(managedFileReference(new URL(uploaded.url, devOrigin).toString(), devOrigin), { kind: 'file', id: uploaded.id })
+    for (const prodOrigin of [origin, labOrigin]) {
+      assert.equal(managedFileReference(new URL(uploaded.url, prodOrigin).toString(), devOrigin), null,
+        'A preview/local deployment does not gain access to the production alias pair.')
+      assert.equal(managedFileReference(new URL(uploaded.url, devOrigin).toString(), prodOrigin), null)
+    }
+    assert.equal((await sharedFile(`?legacyKey=${encodeURIComponent(legacyKey)}`, 'shako', shared, devOrigin)).status, 404)
+  }
+
+  for (const requestOrigin of [origin, labOrigin]) {
+    const idOnly = `/api/assets?id=${uploaded.id}`
+    assert.deepEqual(managedFileReference(idOnly, requestOrigin), { kind: 'file', id: uploaded.id })
+    const encodedBoardId = ' board / α?# '
+    assert.deepEqual(managedFileReference(`/api/assets?${new URLSearchParams({ legacyKey, boardId: encodedBoardId })}`, requestOrigin),
+      { kind: 'legacy', key: legacyKey, boardId: encodedBoardId }, 'Ordinary encoded board IDs remain supported.')
+    for (const invalid of [
+      `https://user@osa.juliaaurorahart.com${idOnly}`, `https://@osa.juliaaurorahart.com${idOnly}`,
+      `${origin}${idOnly}#`, `${origin}${idOnly}#fragment`, ` ${idOnly}`, `${idOnly}\n`,
+      `${origin}/api/../api/assets?id=${uploaded.id}`, `${origin}/%2e/api/assets?id=${uploaded.id}`,
+      `${origin}/api\\assets?id=${uploaded.id}`, `//osa.juliaaurorahart.com${idOnly}`,
+      `${idOnly}&id=${uploaded.id}`, `${idOnly}&boardId=board-a&boardId=board-a`,
+      `${idOnly}&legacyKey=${encodeURIComponent(legacyKey)}`, `${idOnly}&url=https://foreign.example`,
+      `${idOnly}&boardId=`, `${idOnly}&boardId=%00`, `${idOnly}&boardId=%`,
+      `/api/assets?boardId=board-a&legacyKey=${encodeURIComponent(legacyKey)}&legacyKey=${encodeURIComponent(legacyKey)}`,
+      `/api/assets?legacyKey=${encodeURIComponent(legacyKey)}`, '/api/assets?id=not-a-file-id',
+      `/api/assets/?id=${uploaded.id}`, `/untrusted/api/assets?id=${uploaded.id}`, `/shared/shako?asset=${uploaded.id}`,
+      `${origin}/media/${legacyKey}?`, `${origin}/media/${legacyKey}?id=${uploaded.id}`,
+    ]) {
+      assert.equal(managedFileReference(invalid, requestOrigin), null, `Malformed or ambiguous managed reference must be rejected: ${invalid}`)
+    }
+  }
+
   sqlite.prepare('DELETE FROM board_collaborators WHERE board_id = ? AND email = ?').run('board-a', viewer)
   assert.equal((await readFile(viewer, uploaded.url)).status, 404, 'Revoking board access also revokes future file reads.')
+  assert.equal((await readFile(viewer, uploaded.url, labOrigin)).status, 404, 'Revocation also applies on the other alias.')
   sqlite.prepare('DELETE FROM board_shares WHERE board_id = ?').run('board-a')
   assert.equal((await sharedFile(`?asset=${uploaded.id}`)).status, 404, 'A removed share cannot fetch files through an old scoped URL.')
+  assert.equal((await sharedFile(`?asset=${uploaded.id}`, 'shako', shared, labOrigin)).status, 404)
   sqlite.prepare('UPDATE boards SET archived = 1 WHERE id = ?').run('board-a')
   assert.equal((await uploadFile(owner)).status, 409)
 
@@ -206,7 +323,7 @@ try {
     assert.ok(!(await response.json()).boards.some((board) => board.id === notebook.id), 'Notebook backing boards stay out of regular lists.')
   }
   assert.equal((await boards({ env, data: data(owner), request: new Request(`${origin}/api/boards?id=${notebook.id}`) })).status, 200, 'Direct authorized notebook-board access remains available.')
-  console.log('Private asset authorization, legacy migration, public scope, account guard, and hidden notebook checks passed.')
+  console.log('Private asset authorization, exact deployment aliases, legacy migration, public scope, account guard, and hidden notebook checks passed.')
 } finally {
   fixture.close()
   await server.close()

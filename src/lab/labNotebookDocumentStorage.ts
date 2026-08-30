@@ -72,10 +72,19 @@ export async function readLatestLabRecovery(scope: string): Promise<LabNotebookD
 export async function storeLabDocumentFiles(scope: string, files: readonly StoredLabArtifact[]) {
   const database = await openLabDatabase()
   try {
-    const transaction = database.transaction('documentFiles', 'readwrite')
+    const transaction = database.transaction(scope === GUEST_LAB_SCOPE ? ['documentFiles', 'artifacts'] : 'documentFiles', 'readwrite')
     const done = labTransactionComplete(transaction)
-    for (const file of files) transaction.objectStore('documentFiles').put({ ...file, scope })
-    await done
+    const store = transaction.objectStore('documentFiles')
+    // Cache records are immutable. A losing tab's write or a repeated download
+    // must never change the bytes referenced by an older snapshot/recovery.
+    const uniqueFiles = [...new Map(files.map((file) => [file.id, file])).values()]
+    const writes = uniqueFiles.map((file) => Promise.all([
+      labRequestResult(store.get([scope, file.id]) as IDBRequest<StoredLabArtifact | undefined>),
+      scope === GUEST_LAB_SCOPE
+        ? labRequestResult(transaction.objectStore('artifacts').get(file.id) as IDBRequest<StoredLabArtifact | undefined>)
+        : undefined,
+    ]).then(([existing, legacy]) => { if (!existing && !legacy) store.put({ ...file, scope }) }))
+    await Promise.all([...writes, done])
   } finally { database.close() }
 }
 
