@@ -23,6 +23,38 @@
   box-shadow: 0 8px 28px var(--osa-shadow);
 }
 
+/* Home is an instrument surface. Keep its entrance clear; the spatial stations
+   provide Notebook, Settings, and workbench navigation inside the scene. */
+.lab-shell.is-home .lab-shell__header {
+  grid-template-columns: minmax(150px, 1fr) auto;
+  grid-template-areas: 'brand actions';
+  grid-template-rows: auto;
+  min-height: 58px;
+  border-bottom-color: rgb(255 255 255 / 5%);
+  background: #09070e;
+  box-shadow: none;
+}
+
+.lab-shell.is-home .lab-shell__brand {
+  color: #f7f1f8;
+}
+
+.lab-shell.is-home .lab-shell__brand span {
+  color: #a99dad;
+}
+
+.lab-shell.is-home .lab-shell__nav,
+.lab-shell.is-home .lab-shell__picker,
+.lab-shell.is-home .lab-shell__context {
+  display: none;
+}
+
+.lab-shell.is-home .lab-shell__actions button {
+  border-color: rgb(239 218 244 / 17%);
+  background: rgb(255 255 255 / 4%);
+  color: #e8dde9;
+}
+
 .lab-shell__brand {
   display: grid;
   gap: 1px;
@@ -90,6 +122,18 @@
   border-color: color-mix(in srgb, var(--osa-focus) 54%, var(--osa-border));
   color: var(--osa-text);
   box-shadow: inset 0 -2px var(--osa-focus);
+}
+
+.lab-shell.is-home .lab-shell__brand:hover,
+.lab-shell.is-home .lab-shell__brand:focus-visible {
+  background: #211725;
+}
+
+.lab-shell.is-home .lab-shell__brand:focus-visible,
+.lab-shell.is-home .lab-shell__actions button:focus-visible {
+  border-color: #d97cbd;
+  outline: 2px solid #d97cbd;
+  outline-offset: 2px;
 }
 
 .lab-shell__picker {

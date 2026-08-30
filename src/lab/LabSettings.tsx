@@ -1,5 +1,6 @@
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { LAB_GROUPS } from './labCatalog'
-import type { ReactNode } from 'react'
+import { LabAbout } from './LabAbout'
 import type { LabTheme } from './labTypes'
 import './LabSettings.css'
 
@@ -21,11 +22,35 @@ export function LabSettings({
   onToggleTheme,
   workspaceSettingsMenu,
 }: LabSettingsProps) {
+  const [page, setPage] = useState<'settings' | 'about'>('settings')
+  const pageTopRef = useRef<HTMLDivElement>(null)
+  const settingsHeadingRef = useRef<HTMLHeadingElement>(null)
+  const hasOpenedAboutRef = useRef(false)
+
+  useEffect(() => {
+    pageTopRef.current?.scrollIntoView({ block: 'start' })
+
+    if (page === 'settings' && hasOpenedAboutRef.current) {
+      settingsHeadingRef.current?.focus({ preventScroll: true })
+    }
+  }, [page])
+
+  if (page === 'about') {
+    return (
+      <>
+        <div ref={pageTopRef} />
+        <LabAbout onBack={() => setPage('settings')} />
+      </>
+    )
+  }
+
   return (
-    <section className="lab-settings" aria-labelledby="lab-settings-title">
+    <>
+      <div ref={pageTopRef} />
+      <section className="lab-settings" aria-labelledby="lab-settings-title">
       <header className="lab-settings__header">
         <p>Facility controls</p>
-        <h2 id="lab-settings-title">Lab settings</h2>
+        <h2 id="lab-settings-title" ref={settingsHeadingRef} tabIndex={-1}>Lab settings</h2>
         <span>Shared preferences are mirrored. Instrument controls remain available inside each workbench.</span>
       </header>
 
@@ -59,7 +84,7 @@ export function LabSettings({
             <div><dt>Notes</dt><dd>{noteCount}</dd></div>
             <div><dt>Saved files</dt><dd>{artifactCount}</dd></div>
             <div><dt>Status</dt><dd>{storageMessage}</dd></div>
-            <div><dt>OSA boards</dt><dd>separate and untouched</dd></div>
+            <div><dt>OSA boards</dt><dd>not used by Lab storage</dd></div>
           </dl>
           <p className="lab-settings__note">
             Local Lab storage is working space, not a backup. Keep downloadable source files for important experiments.
@@ -92,6 +117,29 @@ export function LabSettings({
             <p>Keeping those controls beside their canvas makes experimentation faster. This page remains the inventory and shared-settings home.</p>
           </div>
         </section>
+
+        <section className="lab-settings__panel" aria-labelledby="lab-settings-about">
+          <header>
+            <span aria-hidden="true">i</span>
+            <div>
+              <h3 id="lab-settings-about">About OSA Lab</h3>
+              <p>Licensing, credits, acknowledgements, and development transparency.</p>
+            </div>
+          </header>
+          <div className="lab-settings__workspace-mirror">
+            <p>See who made the Lab&apos;s paint art, which software supports it, how AI tools contributed, and where to inspect the source and history.</p>
+            <button
+              className="lab-settings__about-button"
+              type="button"
+              onClick={() => {
+                hasOpenedAboutRef.current = true
+                setPage('about')
+              }}
+            >
+              Open About OSA Lab
+            </button>
+          </div>
+        </section>
       </div>
 
       <section className="lab-settings__modules" aria-labelledby="lab-settings-modules">
@@ -119,6 +167,7 @@ export function LabSettings({
           ))}
         </div>
       </section>
-    </section>
+      </section>
+    </>
   )
 }

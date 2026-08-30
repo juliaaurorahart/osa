@@ -107,6 +107,8 @@ export const CURRENT_SOURCE_PATHS = [
   "src/index.css",
   "src/lab/CanvasLab.css",
   "src/lab/CanvasLab.tsx",
+  "src/lab/LabAbout.css",
+  "src/lab/LabAbout.tsx",
   "src/lab/labCatalog.ts",
   "src/lab/LabErrorBoundary.tsx",
   "src/lab/LabHome.css",

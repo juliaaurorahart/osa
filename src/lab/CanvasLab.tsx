@@ -21,8 +21,9 @@ function navButtonClass(active: boolean) {
 }
 
 /**
- * The Lab is its own routed shell. It receives no nodes, edges, board IDs,
- * Assembly records, or Shako data, so experiments cannot silently mutate OSA.
+ * Lab experiments keep their own routed state and storage. The Settings view
+ * deliberately mirrors App-owned workspace controls, but Lab instruments do
+ * not automatically write experiments into OSA graph or Assembly data.
  */
 export function CanvasLab({
   theme,
@@ -80,7 +81,7 @@ export function CanvasLab({
   })()
 
   return (
-    <section className="lab-shell" aria-label="OSA Lab">
+    <section className={`lab-shell${route.page === 'home' ? ' is-home' : ''}`} aria-label="OSA Lab">
       <header className="lab-shell__header">
         <button className="lab-shell__brand" type="button" onClick={() => setRoute({ page: 'home' })}>
           <strong>OSA Lab</strong>

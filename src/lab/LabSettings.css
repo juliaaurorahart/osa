@@ -119,8 +119,23 @@
   font-weight: 650;
 }
 
+.lab-settings__about-button {
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--osa-focus) 54%, var(--osa-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--osa-focus) 10%, var(--osa-surface-raised));
+  color: var(--osa-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
 .lab-settings__workspace-mirror .workspace-settings-menu__trigger:hover,
-.lab-settings__workspace-mirror .workspace-settings-menu__trigger:focus-visible {
+.lab-settings__workspace-mirror .workspace-settings-menu__trigger:focus-visible,
+.lab-settings__about-button:hover,
+.lab-settings__about-button:focus-visible {
   border-color: var(--osa-focus);
   outline: none;
 }
