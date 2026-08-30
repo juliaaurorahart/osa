@@ -48,14 +48,17 @@ const savedProjects = loadModule('src/lab/labSavedProjects.ts', {
   './labDrawingProjectSource': { async validateDrawingProjectSource(toolId, source) { validations.push({ toolId, source }) } },
   './labStructuredProjectSource': { async validateStructuredProjectSource(toolId, source) { validations.push({ toolId, source }) } },
 })
-const { LabNotebook } = loadModule('src/lab/LabNotebook.tsx', {
+const notebookMocks = {
   './labSavedProjects': savedProjects,
   './labCatalog': catalog,
   './labNotebookSearch': loadModule('src/lab/labNotebookSearch.ts'),
   './LabArtifactPreview': { LabArtifactPreview: ({ artifact, onOpen }) => React.createElement('button', {
     type: 'button', onClick: onOpen, 'aria-label': `Preview ${artifact.name}`,
   }, 'Preview') },
-})
+}
+notebookMocks['./labNotebookBrowse'] = loadModule('src/lab/labNotebookBrowse.ts', notebookMocks)
+notebookMocks['./LabNotebookBrowser'] = loadModule('src/lab/LabNotebookBrowser.tsx', notebookMocks)
+const { LabNotebook } = loadModule('src/lab/LabNotebook.tsx', notebookMocks)
 const date = '2026-08-30T12:00:00.000Z'
 const nativeText = JSON.stringify({ format: 'osa-ink', version: 1, strokes: [], title: 'Original native source' })
 const nativeFile = new Blob([nativeText], { type: 'application/json' })
@@ -155,11 +158,13 @@ const { CanvasLab } = loadModule('src/lab/CanvasLab.tsx', {
   './LabWorkbench': { LabWorkbench: WorkbenchFixture },
   './LabErrorBoundary': loadModule('src/lab/LabErrorBoundary.tsx'),
   './LabHome': { LabHome: () => React.createElement('p', null, 'Fixture Lab home') },
-  './LabSettings': { LabSettings: () => React.createElement('p', null, 'Fixture Lab settings') },
+  './LabSettings': { LabSettings: ({ liveOpenVersion, onChangeLiveOpenVersion }) => React.createElement('select', {
+    'aria-label': 'Open live items as', value: liveOpenVersion, onChange: (event) => onChangeLiveOpenVersion(event.target.value),
+  }, React.createElement('option', { value: 'saved' }, 'Live'), React.createElement('option', { value: 'draft' }, 'Working draft')) },
   './LabNotebookSync': { LabNotebookSync: () => null },
   './LabNotebook': { LabNotebook: (props) => React.createElement(LabNotebook, { ...props,
-    onOpenProject: (artifact) => {
-      const promise = props.onOpenProject(artifact)
+    onOpenProject: (artifact, version) => {
+      const promise = props.onOpenProject(artifact, version)
       openAttempts.push({ artifactId: artifact.id, promise })
       return promise
     },
@@ -186,8 +191,8 @@ const editorText = () => document.querySelector('[aria-label="Fixture editor tex
 const shellBody = () => document.querySelector('main.lab-shell__body')
 const workbar = () => document.querySelector('[aria-label="Project work bar"]')
 const projectDialog = () => document.querySelector('dialog[aria-label="Open or leave a Lab project"]')
-const artifactRow = (name) => [...document.querySelectorAll('.lab-notebook__artifacts li')]
-  .find((row) => row.querySelector('.lab-notebook__file-copy strong')?.textContent === name)
+const artifactRow = (name) => [...document.querySelectorAll('.lab-notebook-browser__card[data-kind="artifact"]')]
+  .find((row) => row.querySelector('.lab-notebook-browser__title strong')?.textContent === name)
 const warnsBeforeUnload = () => {
   const event = new window.Event('beforeunload', { cancelable: true })
   window.dispatchEvent(event)
@@ -248,7 +253,7 @@ try {
   assert.equal(editorText().value, 'Later edited drawing')
 
   await clickButton('Notebook', workbar())
-  await clickButton('Open in Ink', artifactRow(originalArtifact.name))
+  await clickButton('Open', artifactRow(originalArtifact.name))
   assert.equal(projectDialog().open, true)
   assert.strictEqual(editor(), firstEditor, 'Source loading and the replacement question do not replace the editor.')
   await clickButton('Cancel', projectDialog())
@@ -257,7 +262,7 @@ try {
   assert.equal(editorText().value, 'Later edited drawing', 'Cancelling replacement keeps unsaved editor state.')
   assert.equal(unmountedEditors, 0)
 
-  await clickButton('Open in Ink', artifactRow(originalArtifact.name))
+  await clickButton('Open', artifactRow(originalArtifact.name))
   await clickButton('Open project', projectDialog())
   assert.equal(mountedEditors, 2)
   assert.equal(unmountedEditors, 1)
@@ -278,7 +283,7 @@ try {
   let finishLoading
   const delayed = new Promise((resolveFile) => { finishLoading = resolveFile })
   loadOverrides.set(delayedArtifact.id, delayed)
-  await clickButton('Open in Ink', artifactRow(delayedArtifact.name))
+  await clickButton('Open', artifactRow(delayedArtifact.name))
   const delayedOpen = openAttempts.at(-1).promise
   const rejectedOpen = assert.rejects(delayedOpen, /notebook or editor changed/i)
   assert.ok(findButton('Opening…', artifactRow(delayedArtifact.name)))
@@ -383,7 +388,26 @@ try {
   await clickButton('Open project', projectDialog())
   assert.equal(editorText().value, 'Unsaved starter')
   await clickButton('Notebook')
-  const draftRow = [...document.querySelectorAll('.lab-notebook__drafts li')].find((row) => row.querySelector('strong')?.textContent === 'Ink project')
+  const liveRow = () => document.querySelector(`[data-object-id="${draftSaved}"][data-state="live"]`)
+  const recoveryFileBeforeOpen = drafts.get(draftSaved).fileId
+  await clickButton('Open', liveRow())
+  await clickButton('Open project', projectDialog())
+  assert.equal(editorText().value, 'First saved text', 'Default live click opens the saved bytes, not the newer draft.')
+  assert.ok(editor().closest('[inert]'), 'Opening saved bytes cannot checkpoint over an existing draft.')
+  assert.equal(drafts.get(draftSaved).fileId, recoveryFileBeforeOpen)
+  await clickButton('Settings')
+  assert.equal(document.querySelector('[aria-label="Open live items as"]').value, 'saved')
+  await changeValue(document.querySelector('[aria-label="Open live items as"]'), 'draft', 'change')
+  assert.equal(window.localStorage.getItem('osa-lab:live-open-version'), 'draft')
+  await clickButton('Notebook')
+  await clickButton('Open', liveRow())
+  await clickButton('Open project', projectDialog())
+  assert.equal(editorText().value, 'Latest before closing', 'The Settings preference can make a live click resume its working draft.')
+  await clickButton('Settings')
+  await changeValue(document.querySelector('[aria-label="Open live items as"]'), 'saved', 'change')
+  await clickButton('Notebook')
+  await changeValue(document.querySelector('[aria-label="Filter notebook by status"]'), 'draft', 'change')
+  const draftRow = document.querySelector(`[data-object-id="${drafts.get(draftSaved).id}"][data-state="draft"]`)
   await clickButton('Resume draft', draftRow)
   await clickButton('Open project', projectDialog())
   assert.equal(editorText().value, 'Latest before closing', 'Editor replacement preserves its latest working draft')

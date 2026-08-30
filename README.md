@@ -136,8 +136,23 @@ Save/export/Share before leaving. Draft checkpoints use the existing notebook gr
 
 Notebook browsing/search and focused note editing are separate views. Files
 can be moved to **Trash** and restored; removing a file does not permanently
-delete its saved bytes or history. In **Notebook → Visuals & files**, use **Open in [tool]**, or filter to
-**Editable projects only**. Supported native files currently include Ink,
+delete its saved bytes or history. The browser uses a mixed column-card view,
+with an optional **Table** that exposes topic checkboxes beside each item.
+Independent filters select topics (**All**, **None / untagged**, or a topic),
+types/tools, and **Live**, **Live and draft**, **Draft only**, or **Trash**.
+History stays inside each file's **More** menu, not in the live/draft list.
+Draft-only native sources do not display a misleading saved-image preview.
+Newly added notes return to the Live view. Topic edits survive note autosave
+and promotion; a saved project and its working draft share topic memberships,
+including a never-saved draft's first Save. No database migration is needed.
+
+Click **Open**, or filter to **Editable projects**. In **Lab Settings → Opening
+notebook projects**, choose which version opens for a live item. The default
+is **Live · saved version**; **Working draft · when available** resumes recovery
+work instead. Clicking a draft always opens that draft. When another working
+draft exists, the saved view remains read-only so opening it cannot overwrite
+that draft. Both this preference and Cards/Table presentation are device-local.
+Supported native files currently include Ink,
 Klecks PSD, draw.io, Excalidraw, Konva Lab, Paper, Mermaid, Vega-Lite, and p5.
 Preview images cannot restore layers or editable shapes. Other exports remain
 downloadable; Pixi/Three/OSA Draw restoration is

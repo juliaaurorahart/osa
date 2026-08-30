@@ -6,6 +6,11 @@
 }
 
 .lab-settings__header { max-width: 760px; }
+.lab-settings__opening { display: grid; gap: 10px; padding: 20px; }
+.lab-settings__opening label { font-size: .85rem; }
+.lab-settings__opening select { width: 100%; min-width: 0; min-height: 44px; padding: 10px; border: 1px solid var(--osa-border); border-radius: 8px; background: var(--osa-surface-raised); color: var(--osa-text); font: inherit; }
+.lab-settings__opening select:focus-visible { outline: 2px solid var(--osa-focus); outline-offset: 2px; }
+.lab-settings__opening p { color: var(--osa-muted); font-size: .8rem; line-height: 1.5; }
 .lab-settings__header p,
 .lab-settings__header h2,
 .lab-settings__header span { margin: 0; }

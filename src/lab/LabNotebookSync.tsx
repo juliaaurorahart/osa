@@ -25,6 +25,9 @@ export function LabNotebookSync({ notebook, hasDraft, hasProject = false, before
     finally { setActing(false) }
   }
   const choices = notebook.notebooks ?? []
+  const needsAttention = notebook.status === 'error' || notebook.syncStatus === 'offline' || notebook.syncStatus === 'conflict'
+  const syncLabel = notebook.isLocal ? 'This device' : ({ local: 'Private account', syncing: 'Syncing…',
+    synced: 'Synced', pending: 'Waiting to sync', conflict: 'Sync needs attention', offline: 'Offline' }[notebook.syncStatus])
   return <aside className="lab-notebook-sync" aria-label="Notebook storage and sync">
     <div className="lab-notebook-sync__actions lab-notebook-sync__picker">
       <label>Notebook <select aria-label="Switch notebook" value={notebook.scope} disabled={blocked || !notebook.isReady || Boolean(naming) || pendingCopy}
@@ -57,10 +60,11 @@ export function LabNotebookSync({ notebook, hasDraft, hasProject = false, before
         <button type="button" disabled={blocked} onClick={() => setNaming(null)}>Cancel</button></div>
       <small>{naming === 'new' ? 'Starts empty. Your current notebook stays intact.' : 'Changes the name only. Files, drafts, and topics stay together.'}</small>
     </form> : null}
-    <p role="status"><strong>{notebook.isLocal ? 'This device' : 'Private account'}</strong> · {notebook.syncMessage}</p>
+    {needsAttention ? <p role="alert">{notebook.syncMessage}</p> : null}
     {switchError ? <p role="alert">{switchError}</p> : null}
     {notebook.notebookListError ? <p role="alert">{notebook.notebookListError}</p> : null}
-    <details className="lab-notebook-sync__storage"><summary>Sync &amp; backups</summary>
+    <details className="lab-notebook-sync__storage"><summary><span role="status">{syncLabel}</span> · Sync &amp; backups</summary>
+    {!needsAttention ? <p>{notebook.syncMessage}</p> : null}
     {globalThis.location?.origin === LAB_ORIGIN ? <details className="lab-notebook-sync__old-address">
       <summary>Looking for files from the previous Lab address?</summary>
       <p>Your account notebook uses the same storage. Files saved only in the old address&apos;s browser storage stay there until you sync or back them up.</p>

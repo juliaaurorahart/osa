@@ -11,6 +11,9 @@ type LabSettingsProps = {
   storageMessage: string
   onToggleTheme: () => void
   workspaceSettingsMenu?: ReactNode
+  liveOpenVersion: 'saved' | 'draft'
+  onChangeLiveOpenVersion: (version: 'saved' | 'draft') => void
+  preferenceMessage?: string
 }
 
 /** Mirrors shared controls without creating a second settings source of truth. */
@@ -21,6 +24,9 @@ export function LabSettings({
   storageMessage,
   onToggleTheme,
   workspaceSettingsMenu,
+  liveOpenVersion,
+  onChangeLiveOpenVersion,
+  preferenceMessage,
 }: LabSettingsProps) {
   const [page, setPage] = useState<'settings' | 'about'>('settings')
   const pageTopRef = useRef<HTMLDivElement>(null)
@@ -55,6 +61,20 @@ export function LabSettings({
       </header>
 
       <div className="lab-settings__grid">
+        <section className="lab-settings__panel" aria-labelledby="lab-settings-opening">
+          <header><div><h3 id="lab-settings-opening">Opening notebook projects</h3>
+            <p>Choose what opens when you click a live project.</p></div></header>
+          <div className="lab-settings__opening">
+            <label htmlFor="lab-live-open-version">Open live items as</label>
+            <select id="lab-live-open-version" value={liveOpenVersion}
+              onChange={(event) => onChangeLiveOpenVersion(event.target.value as 'saved' | 'draft')}>
+              <option value="saved">Live · saved version</option>
+              <option value="draft">Working draft · when available</option>
+            </select>
+            <p>Draft items always open the draft. This preference stays on this device.</p>
+            {preferenceMessage ? <p role="status">{preferenceMessage}</p> : null}
+          </div>
+        </section>
         <section className="lab-settings__panel" aria-labelledby="lab-settings-appearance">
           <header>
             <span aria-hidden="true">◐</span>

@@ -139,8 +139,11 @@ try {
     topicId = notebook.createTopic('Drawings')
     notebook.setObjectTopics('artifact', savedId, [topicId])
     noteId = notebook.createNote()
+    notebook.setObjectTopics('note', noteId, [topicId])
     notebook.updateNote(noteId, { title: 'Linked idea', body: 'Keep this relationship', artifactIds: [savedId] })
   })
+  await React.act(async () => notebook.updateNote(noteId, { title: 'Linked idea', body: 'Edited again', artifactIds: [savedId] }))
+  assert.deepEqual(notebook.topicLinks.filter((link) => link.objectType === 'note' && link.objectId === noteId).map((link) => link.topicId), [topicId], 'Editing a saved note preserves its topics.')
   const edited = { ...capture, name: 'Renamed drawing', source: { ...capture.source, blob: new Blob(['edited source'], { type: 'application/json' }) } }
   await React.act(async () => assert.equal(await notebook.captureVisual(edited, [], scope, { artifactId: savedId, expectedFileId: savedId }), savedId))
   assert.equal(notebook.artifacts.length, 1, 'Save updates the visible item rather than adding a duplicate')
@@ -182,21 +185,36 @@ try {
   assert.equal(notebook.getProjectDraft(projectId).id, draft.id)
   const initialDraftFile = draft.fileId
   const beforeDedup = fileWrites.length
+  await React.act(async () => notebook.setObjectTopics('artifact', draft.id, [topicId]))
   await React.act(async () => { draft = await notebook.saveProjectDraft({ ...input, expectedDraftFileId: draft.fileId }, scope) })
   assert.equal(fileWrites.length, beforeDedup, 'Unchanged source does not duplicate bytes')
   await assert.rejects(() => notebook.saveProjectDraft({ ...input, expectedDraftFileId: 'stale' }, scope), /changed elsewhere/)
   await assert.rejects(() => notebook.saveProjectDraft(input, 'guest'), /unavailable/)
+  // A changed checkpoint for a never-saved project must retain its own topics.
+  const sourceTagged = { ...sourceA, blob: new Blob(['tagged draft'], { type: 'application/json' }) }
+  await React.act(async () => { draft = await notebook.saveProjectDraft({ ...input, source: sourceTagged, expectedDraftFileId: draft.fileId }, scope) })
+  assert.deepEqual(notebook.topicLinks.filter((link) => link.objectId === draft.id).map((link) => link.topicId), [topicId])
+  await React.act(async () => { draft = await notebook.saveProjectDraft({ ...input, expectedDraftFileId: draft.fileId }, scope) })
+  const finalDraftFile = draft.fileId
   await React.act(async () => {
     assert.equal(await notebook.captureVisual({ ...capture, name: input.name, source: sourceA }, [], scope, { newArtifactId: projectId }), projectId)
   })
   const savedDraftFile = notebook.getArtifact(projectId).fileId
   assert.equal(notebook.projectDrafts.length, 0, 'Explicit Save consumes the exact checkpoint')
-  assert.equal(notebook.getProjectDraft(projectId).fileId, initialDraftFile, 'Clean slot remains addressable')
-  await React.act(async () => { draft = await notebook.saveProjectDraft({ ...input, baseFileId: savedDraftFile, expectedDraftFileId: initialDraftFile }, scope) })
+  assert.equal(notebook.getProjectDraft(projectId).fileId, finalDraftFile, 'Clean slot remains addressable')
+  for (const objectId of [projectId, draft.id]) assert.deepEqual(notebook.topicLinks.filter((link) => link.objectId === objectId).map((link) => link.topicId), [topicId], 'First Save keeps draft topics on both versions.')
+  await React.act(async () => notebook.setObjectTopics('artifact', draft.id, []))
+  assert.equal(notebook.topicLinks.some((link) => [projectId, draft.id].includes(link.objectId)), false, 'Removing tags on a draft updates the saved project too.')
+  await React.act(async () => notebook.setObjectTopics('artifact', projectId, [topicId]))
+  assert.ok(notebook.topicLinks.some((link) => link.objectId === draft.id && link.topicId === topicId))
+  await React.act(async () => notebook.setObjectTopics('artifact', projectId, []))
+  await React.act(async () => { draft = await notebook.saveProjectDraft({ ...input, baseFileId: savedDraftFile, expectedDraftFileId: finalDraftFile }, scope) })
   assert.equal(draft.draftActive, false, 'Merely reopening a clean checkpoint is not a new draft')
   const sourceB = { ...sourceA, blob: new Blob(['draft B'], { type: sourceA.blob.type }) }
   await React.act(async () => { draft = await notebook.saveProjectDraft({ ...input, source: sourceB, baseFileId: savedDraftFile, expectedDraftFileId: draft.fileId }, scope) })
   assert.equal(notebook.projectDrafts.length, 1)
+  assert.equal(notebook.topicLinks.some((link) => [projectId, draft.id].includes(link.objectId)), false, 'Another checkpoint cannot resurrect removed tags.')
+  assert.ok(notebook.topicLinks.some((link) => link.objectId === savedId && link.topicId === topicId), 'Other projects keep their topics.')
   assert.equal(await files.get(`${scope}:${initialDraftFile}`).file.text(), 'draft A', 'Older recovery bytes are immutable')
   await React.act(async () => { await notebook.captureVisual({ ...capture, name: input.name, source: sourceA }, [], scope,
     { artifactId: projectId, expectedFileId: savedDraftFile }) })

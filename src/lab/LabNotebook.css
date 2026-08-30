@@ -2,7 +2,7 @@
   box-sizing: border-box;
   width: min(1240px, 100%);
   margin: 0 auto;
-  padding: clamp(16px, 3vw, 34px);
+  padding: clamp(16px, 2.5vw, 28px);
 }
 
 .lab-notebook-sync {
@@ -81,7 +81,7 @@
 }
 
 .lab-notebook__header h2 {
-  font-size: clamp(1.65rem, 3vw, 2.4rem);
+  font-size: clamp(1.45rem, 2.2vw, 1.9rem);
   letter-spacing: -0.04em;
 }
 

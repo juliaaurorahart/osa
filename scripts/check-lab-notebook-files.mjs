@@ -31,14 +31,17 @@ function loadModule(path, mocks = {}) {
     ? mocks[id] : id.endsWith('.css') ? {} : draftTestDependency(id) ?? localRequire(id), module, module.exports)
   return module.exports
 }
-const { LabNotebook } = loadModule('src/lab/LabNotebook.tsx', {
+const notebookMocks = {
   './labSavedProjects': { savedProjectTool: (artifact) => artifact.toolId === 'ink' ? 'ink' : null },
   './labCatalog': { findLab: () => ({ name: 'Ink' }) },
   './labNotebookSearch': loadModule('src/lab/labNotebookSearch.ts'),
   './LabArtifactPreview': { LabArtifactPreview: ({ artifact, onOpen }) => React.createElement('button', {
     type: 'button', onClick: onOpen, 'aria-label': `View ${artifact.name}`, 'data-preview-file': artifact.fileId,
   }, 'Preview') },
-})
+}
+notebookMocks['./labNotebookBrowse'] = loadModule('src/lab/labNotebookBrowse.ts', notebookMocks)
+notebookMocks['./LabNotebookBrowser'] = loadModule('src/lab/LabNotebookBrowser.tsx', notebookMocks)
+const { LabNotebook } = loadModule('src/lab/LabNotebook.tsx', notebookMocks)
 const { LabArtifactPreview } = loadModule('src/lab/LabArtifactPreview.tsx')
 const date = '2026-08-30T12:00:00.000Z'
 const later = '2026-08-30T12:05:00.000Z'
@@ -103,13 +106,13 @@ const findButton = (text, container) => buttons(container).find((button) => butt
 const click = (element) => React.act(async () => { assert.ok(element, 'The requested control exists.'); element.click() })
 const clickButton = (text, container) => click(findButton(text, container))
 const named = (name) => document.querySelector(`[aria-label="${name}"]`)
-const rows = () => [...document.querySelectorAll('.lab-notebook__artifacts > ul > li')]
-const row = (name) => rows().find((item) => item.querySelector('.lab-notebook__file-copy strong')?.textContent === name)
-async function changeValue(element, value) {
+const rows = () => [...document.querySelectorAll('.lab-notebook-browser__card[data-kind="artifact"]')]
+const row = (name) => rows().find((item) => item.querySelector('.lab-notebook-browser__title strong')?.textContent === name)
+async function changeValue(element, value, eventType = 'input') {
   await React.act(async () => {
     assert.ok(element)
     Object.getOwnPropertyDescriptor(Object.getPrototypeOf(element), 'value').set.call(element, value)
-    element.dispatchEvent(new window.Event('input', { bubbles: true }))
+    element.dispatchEvent(new window.Event(eventType, { bubbles: true }))
   })
 }
 
@@ -138,13 +141,15 @@ try {
   window.dispatchEvent(unloadWithoutDraft)
   assert.equal(unloadWithoutDraft.defaultPrevented, false, 'Saving the idea removes its ordinary unload warning.')
 
-  await click(buttons(document.querySelector('[aria-label="Saved notes"]')).find((button) => button.querySelector('strong')?.textContent === 'Ideas'))
+  await click(document.querySelector('[data-object-id="note"] .lab-notebook-browser__title'))
   assert.equal(document.querySelectorAll('.lab-notebook__attachments figure').length, 1, 'Trashed attachments stay hidden.')
   await changeValue(named('Note text'), 'Edited without losing hidden attachment links')
   assert.deepEqual(calls.note.at(-1).patch.artifactIds, ['drawing', 'removed'], 'Editing text preserves hidden attachments for Restore.')
   await clickButton('← Back to notebook')
+  await changeValue(named('Filter notebook by status'), 'trash', 'change')
   await click(named('Restore Removed drawing'))
   assert.deepEqual(calls.restore, ['removed'])
+  await changeValue(named('Filter notebook by status'), 'live', 'change')
   await clickButton('Continue note')
   assert.equal(document.querySelectorAll('.lab-notebook__attachments figure').length, 2, 'Restore brings linked visuals back to the note.')
   await clickButton('← Back to notebook')
@@ -158,9 +163,11 @@ try {
   await React.act(async () => { finishTrash(); await blockTrash })
   blockTrash = null
   assert.equal(row('Current drawing'), undefined)
-  assert.match(document.querySelector('.lab-notebook__trash').textContent, /Current drawing/)
+  await changeValue(named('Filter notebook by status'), 'trash', 'change')
+  assert.ok(row('Current drawing'))
   assert.deepEqual(fixture.notes.find((note) => note.id === 'note').artifactIds, ['drawing', 'removed'])
   await click(named('Restore Current drawing'))
+  await changeValue(named('Filter notebook by status'), 'live', 'change')
   assert.ok(row('Current drawing'))
   assert.deepEqual(calls.restore, ['removed', 'drawing'])
 
@@ -185,17 +192,21 @@ try {
 
   rejectTrash = true
   await click(named('Remove Latest name'))
-  assert.match(document.querySelector('.lab-notebook__artifacts [role="alert"]').textContent, /Fixture save failed/)
+  assert.match(document.querySelector('.lab-notebook > [role="alert"]').textContent, /Fixture save failed/)
   assert.ok(row('Latest name'), 'A failed removal leaves the row available.')
   rejectTrash = false
   rejectDownload = true
-  await clickButton('source file', row('Latest name'))
-  assert.match(document.querySelector('.lab-notebook__artifacts [role="alert"]').textContent, /Fixture download failed/)
+  await clickButton('Download source', row('Latest name'))
+  assert.match(document.querySelector('.lab-notebook > [role="alert"]').textContent, /Fixture download failed/)
   rejectDownload = false
   await changeValue(document.querySelector('input[type="search"]'), 'does not match')
   assert.equal(rows().length, 0)
   await React.act(async () => setActions.onTrashArtifact('removed'))
-  assert.match(document.querySelector('.lab-notebook__trash').textContent, /Removed drawing/, 'Trash remains reachable regardless of the active library search.')
+  await changeValue(named('Filter notebook by status'), 'trash', 'change')
+  assert.equal(rows().length, 0, 'Trash respects search, just like every other status.')
+  await clickButton('Clear filters')
+  await changeValue(named('Filter notebook by status'), 'trash', 'change')
+  assert.ok(row('Removed drawing'), 'Clearing filters reveals recoverable files in Trash.')
 
   await React.act(async () => root.unmount())
   const previewRoot = createRoot(document.getElementById('root'))
@@ -262,11 +273,11 @@ try {
   try {
     // StrictMode replays modal setup/cleanup; it must not accidentally cancel.
     await React.act(async () => pickerRoot.render(React.createElement(React.StrictMode, null, React.createElement(PickerHarness))))
-    await click(buttons(named('Saved notes'))[0])
+    await click(document.querySelector('[data-object-id="picker-note"] .lab-notebook-browser__title'))
     await clickButton('← Back to notebook')
-    await clickButton('Art', named('Filter notebook by topic'))
+    await changeValue(named('Filter notebook by topic'), 'art', 'change')
     await changeValue(document.querySelector('input[type="search"]'), 'unrelated browser search')
-    await click(document.querySelector('.lab-notebook__project-filter input'))
+    await changeValue(named('Filter notebook by type'), 'projects', 'change')
     await clickButton('Continue note')
     const before = structuredClone(pickerData)
     await openPicker()
@@ -359,13 +370,14 @@ try {
     assert.equal(picker(), null, 'Escape cancels the chooser without changing the note.')
   } finally { await React.act(async () => pickerRoot.unmount()) }
 
-  let draftStore = { notes: [], noteDrafts: [] }
+  let draftStore = { notes: [], noteDrafts: [], topicLinks: [] }
   let updateDraftStore, flushNoteDrafts, rejectPromotion = false
   const saveNoteDraft = async (note, topicIds, scope, expectedUpdatedAt) => {
     assert.equal(scope, 'guest')
     const previous = draftStore.noteDrafts.find((item) => item.id === note.id)
     if (previous && previous.updatedAt !== expectedUpdatedAt) throw new Error('Idea changed elsewhere')
-    draftStore = { ...draftStore, noteDrafts: [...draftStore.noteDrafts.filter((item) => item.id !== note.id), structuredClone(note)] }
+    draftStore = { ...draftStore, noteDrafts: [...draftStore.noteDrafts.filter((item) => item.id !== note.id), structuredClone(note)],
+      topicLinks: [...draftStore.topicLinks.filter((link) => link.objectId !== note.id), ...topicIds.map((topicId) => ({ objectType: 'note', objectId: note.id, topicId }))] }
     updateDraftStore(draftStore)
   }
   const promoteNoteDraft = async (id, _scope, expectedUpdatedAt) => {
@@ -373,7 +385,7 @@ try {
     const note = draftStore.noteDrafts.find((item) => item.id === id)
     assert.ok(note)
     assert.equal(note.updatedAt, expectedUpdatedAt)
-    draftStore = { notes: [...draftStore.notes, { ...note, isDraft: false }], noteDrafts: draftStore.noteDrafts.filter((item) => item.id !== id) }
+    draftStore = { ...draftStore, notes: [...draftStore.notes, { ...note, isDraft: false }], noteDrafts: draftStore.noteDrafts.filter((item) => item.id !== id) }
     updateDraftStore(draftStore)
     return id
   }
@@ -381,12 +393,18 @@ try {
     const [data, setData] = React.useState(draftStore)
     updateDraftStore = setData
     return React.createElement(LabNotebook, { ...data, notebookScope: 'guest', artifacts: [current],
+      topics: [{ id: 'art', name: 'Art', createdAt: date }, { id: 'food', name: 'Food', createdAt: date }],
       isReady: true, status: 'ready', message: 'Saved', onDraftChange() {},
       onCreateNote: () => { throw new Error('Draft promotion must not allocate another note') }, onUpdateNote() {},
       onSaveNoteDraft: saveNoteDraft, onPromoteNoteDraft: promoteNoteDraft,
       onRegisterDraftFlush: (flush) => { flushNoteDrafts = flush },
       onImportFiles: async () => [], onLoadPreview: async () => null,
-      onDownloadArtifact: async () => {}, onOpenProject: async () => {}, onCreateTopic: () => null, onSetObjectTopics() {},
+      onDownloadArtifact: async () => {}, onOpenProject: async () => {}, onCreateTopic: () => null,
+      onSetObjectTopics: (kind, id, ids) => {
+        draftStore = { ...draftStore, topicLinks: [...draftStore.topicLinks.filter((link) => link.objectId !== id),
+          ...ids.map((topicId) => ({ objectType: kind, objectId: id, topicId }))] }
+        updateDraftStore(draftStore)
+      },
     })
   }
   const draftRoot = createRoot(document.getElementById('root'))
@@ -400,15 +418,30 @@ try {
     await React.act(async () => flushNoteDrafts())
     const draftId = draftStore.noteDrafts[0].id
     assert.deepEqual(draftStore.noteDrafts[0].artifactIds, ['drawing'], 'The recovery draft keeps references to existing visuals.')
+    await click(document.querySelector('.lab-notebook__topic-picker input'))
+    await React.act(async () => flushNoteDrafts())
+    assert.deepEqual(draftStore.topicLinks.map((link) => link.topicId), ['art'], 'Editor topic selections enter the recovery draft.')
+    await clickButton('← Back to notebook')
+    await changeValue(named('Filter notebook by status'), 'draft', 'change')
+    await clickButton('Table')
+    await click(named('Art topic for First checkpoint (draft)'))
+    await click(named('Food topic for First checkpoint (draft)'))
+    await React.act(async () => flushNoteDrafts())
+    await clickButton('Continue idea')
+    assert.equal(document.querySelectorAll('.lab-notebook__topic-picker input')[1].checked, true)
+    assert.deepEqual(draftStore.topicLinks.map((link) => link.topicId), ['food'], 'Table edits update the hidden editor instead of being overwritten by it.')
     await changeValue(document.querySelector('textarea'), 'Latest text before fast navigation')
     await clickButton('← Back to notebook')
+    await changeValue(named('Filter notebook by status'), 'draft', 'change')
     await clickButton('Resume idea')
     assert.equal(document.querySelector('textarea').value, 'Latest text before fast navigation', 'Resume must not restore the stale pre-flush row over current writing')
     await React.act(async () => flushNoteDrafts())
     assert.equal(draftStore.noteDrafts.length, 1)
+    assert.deepEqual(draftStore.topicLinks.map((link) => link.topicId), ['food'], 'Typing and resuming preserve topic selections.')
     assert.equal(draftStore.noteDrafts[0].id, draftId)
     await React.act(async () => draftRoot.render(React.createElement(DraftHarness, { key: 'reopened-notebook' })))
     assert.equal(document.querySelector('textarea'), null)
+    await changeValue(named('Filter notebook by status'), 'draft', 'change')
     await clickButton('Resume idea')
     assert.equal(document.querySelector('textarea').value, 'Latest text before fast navigation', 'Drafts survive editor unmount/remount')
     assert.equal(document.querySelectorAll('.lab-notebook__attachments figure').length, 1, 'Reopened drafts still show linked visuals.')
@@ -421,6 +454,7 @@ try {
     await clickButton('Add idea')
     assert.equal(draftStore.noteDrafts.length, 0)
     assert.equal(draftStore.notes[0].id, draftId, 'Add promotes the same object, not a duplicate')
+    assert.deepEqual(draftStore.topicLinks.map((link) => link.topicId), ['food'], 'Promotion preserves the chosen topics.')
     assert.deepEqual(draftStore.notes[0].artifactIds, ['drawing'], 'Promotion preserves links to existing visuals.')
     assert.equal(document.querySelector('textarea'), null)
     await clickButton('+ new note')

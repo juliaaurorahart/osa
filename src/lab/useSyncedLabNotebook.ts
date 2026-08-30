@@ -339,7 +339,13 @@ export function useSyncedLabNotebook() {
     if (!currentRef.current) return
     const current = labContentsFromSnapshot(currentRef.current.snapshot)
     if (!(objectType === 'note' ? current.notes : current.artifacts).some((object) => object.id === objectId)) return
-    const organization = setLabObjectTopics(current, objectType, objectId, topicIds)
+    const artifact = objectType === 'artifact' ? current.artifacts.find((item) => item.id === objectId) : undefined
+    const projectId = artifact?.draftOf || artifact?.id
+    const objectIds = projectId ? current.artifacts.filter((item) => !item.revisionOf
+      && (item.id === projectId || item.draftOf === projectId)).map((item) => item.id) : [objectId]
+    // Live and working source are versions of one project, with shared topics.
+    let organization: Pick<LabNotebookContents, 'topics' | 'topicLinks'> = current
+    for (const id of objectIds) organization = setLabObjectTopics(organization, objectType, id, topicIds)
     if (organization !== current) commit({ ...current, ...organization })
   }, [commit])
 
@@ -403,7 +409,9 @@ export function useSyncedLabNotebook() {
       existing = labContentsFromSnapshot(currentRef.current.snapshot)
       const latest = existing.artifacts.find((item) => item.draftOf === input.projectId)
       if (latest?.fileId !== previous?.fileId) throw new Error('A newer draft was saved before this one finished. Neither saved file was changed.')
-      const topicIds = existing.topicLinks.filter((link) => link.objectType === 'artifact' && link.objectId === input.projectId).map((link) => link.topicId)
+      const parent = existing.artifacts.find((item) => item.id === input.projectId && !item.draftOf && !item.revisionOf)
+      const topicObjectId = parent?.id ?? latest?.id ?? draft.id
+      const topicIds = existing.topicLinks.filter((link) => link.objectType === 'artifact' && link.objectId === topicObjectId).map((link) => link.topicId)
       if (!commit({ ...existing, ...setLabObjectTopics(existing, 'artifact', draft.id, topicIds),
         artifacts: previous ? existing.artifacts.map((item) => item.id === previous.id ? draft : item) : [draft, ...existing.artifacts] })) throw new Error('The draft could not be recorded.')
       await writeQueue.current
@@ -447,7 +455,15 @@ export function useSyncedLabNotebook() {
       const artifacts = existing.artifacts.map((item) => item.id === projectId ? updated : item.draftOf === projectId
         && consumesDraft && item.fileId === draft?.fileId && item.name === capture.name
         ? { ...item, draftBaseFileId: file.id, draftActive: false } : item)
-      if (!commit({ ...existing, ...(!previous ? setLabObjectTopics(existing, 'artifact', projectId, topicIds) : {}),
+      const latestDraft = existing.artifacts.find((item) => item.draftOf === projectId)
+      const topicObjectId = previous ? projectId : latestDraft?.id
+      const savedTopicIds = topicObjectId ? existing.topicLinks.filter((link) => link.objectType === 'artifact'
+        && link.objectId === topicObjectId).map((link) => link.topicId) : topicIds
+      let organization = setLabObjectTopics(existing, 'artifact', projectId, savedTopicIds)
+      for (const item of existing.artifacts.filter((item) => item.draftOf === projectId)) {
+        organization = setLabObjectTopics(organization, 'artifact', item.id, savedTopicIds)
+      }
+      if (!commit({ ...existing, ...organization,
         artifacts: [...revisions, ...(!previous ? [updated] : []), ...artifacts] })) {
         throw new Error('The project could not be updated. The previous saved version is unchanged.')
       }

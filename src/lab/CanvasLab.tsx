@@ -58,6 +58,16 @@ export function CanvasLab({
   workspaceSettingsMenu,
 }: CanvasLabProps) {
   const [route, setRoute] = useState<LabRoute>({ page: 'home' })
+  const [liveOpenVersion, setLiveOpenVersion] = useState<'saved' | 'draft'>(() => {
+    try { return window.localStorage.getItem('osa-lab:live-open-version') === 'draft' ? 'draft' : 'saved' }
+    catch { return 'saved' }
+  })
+  const [preferenceMessage, setPreferenceMessage] = useState('')
+  const changeLiveOpenVersion = (version: 'saved' | 'draft') => {
+    setLiveOpenVersion(version)
+    try { window.localStorage.setItem('osa-lab:live-open-version', version); setPreferenceMessage('') }
+    catch { setPreferenceMessage('Applied for this session. This browser could not remember the preference.') }
+  }
   const [hasUnaddedIdea, setHasUnaddedIdea] = useState(false)
   const notebook = useSyncedLabNotebook()
   const workingDrafts = useLabWorkingDrafts(notebook.saveProjectDraft)
@@ -178,12 +188,13 @@ export function CanvasLab({
     if (draft.toolId !== 'mermaid') await readSavedLabProject({ ...draft, sourceName: source.name }, source.file)
     return source
   }
-  const openSavedProject = async (artifact: LabArtifact) => {
+  const openSavedProject = async (artifact: LabArtifact, version?: 'saved' | 'draft') => {
     await flushDrafts()
     const startingScope = notebook.scope
     const startingProjectId = project?.id
     const draft = notebook.getProjectDraft(artifact.draftOf || artifact.id)
-    if (draft?.draftActive) {
+    if (artifact.draftOf && !draft?.draftActive) throw new Error('This draft is no longer current. Open the live item instead.')
+    if (draft?.draftActive && (version ?? liveOpenVersion) === 'draft') {
       const source = await loadDraft(draft, startingScope)
       if (!mountedRef.current || currentRef.current.scope !== startingScope || currentRef.current.projectId !== startingProjectId) {
         throw new Error('The notebook changed while this draft was loading. Please open it again.')
@@ -199,7 +210,8 @@ export function CanvasLab({
       throw new Error('The notebook or editor changed while this file was loading. Please open it again.')
     }
     requestProject({ id: crypto.randomUUID(), scope: startingScope, toolId, source, name: artifact.name,
-      artifactId: artifact.id, fileId: artifact.fileId || artifact.id, draftFileId: draft?.fileId })
+      artifactId: artifact.id, fileId: artifact.fileId || artifact.id, draftFileId: draft?.fileId,
+      mode: draft?.draftActive && (version ?? liveOpenVersion) === 'saved' ? 'saved' : undefined })
   }
   const switchVersion = async (mode: 'draft' | 'saved') => {
     if (!project?.artifactId || savingRef.current) return
@@ -229,7 +241,8 @@ export function CanvasLab({
     try {
       try { await workingDrafts.flush() } catch (error) { if (!options?.asCopy) throw error }
       workingDrafts.pause()
-      const topicIds = notebook.topicLinks.filter((link) => link.objectType === 'artifact' && link.objectId === project.artifactId).map((link) => link.topicId)
+      const topicObjectId = project.artifactId ?? notebook.getProjectDraft(project.draftOf || project.id)?.id
+      const topicIds = notebook.topicLinks.filter((link) => link.objectType === 'artifact' && link.objectId === topicObjectId).map((link) => link.topicId)
       const name = `${currentRef.current.projectName?.trim() || project.name.trim() || capture.name}${options?.asCopy ? ' (copy)' : ''}`
       const id = await notebook.captureVisual({ ...capture, name }, topicIds, project.scope,
         options?.asCopy ? undefined : { artifactId: project.artifactId, expectedFileId: project.fileId,
@@ -460,6 +473,9 @@ export function CanvasLab({
 
         {route.page === 'settings' ? (
           <LabSettings
+            liveOpenVersion={liveOpenVersion}
+            onChangeLiveOpenVersion={changeLiveOpenVersion}
+            preferenceMessage={preferenceMessage}
             theme={theme}
             noteCount={notebook.notes.length}
             artifactCount={notebook.artifacts.length}
