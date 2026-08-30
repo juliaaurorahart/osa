@@ -225,6 +225,140 @@ try {
     URL.createObjectURL = originalCreate
     URL.revokeObjectURL = originalRevoke
   }
+
+  // Attach existing objects from inside the editor, without reimporting files.
+  const photo = { id: 'photo', fileId: 'photo-bytes', name: 'Sunset photo', mimeType: 'image/png', size: 8, createdAt: date }
+  const chart = { ...current, id: 'chart', fileId: 'chart-bytes', name: 'Measurements', toolId: 'vega', description: 'Data comparison' }
+  let pickerData, setPickerData
+  const pickerImports = []
+  let rejectPickerImport = false
+  function PickerHarness() {
+    const [data, setData] = React.useState({ scope: 'guest', isReady: true,
+      notes: [{ id: 'picker-note', title: 'Unchanged title', body: 'Keep this writing.', createdAt: date, updatedAt: date, artifactIds: ['drawing', 'removed'] }],
+      artifacts: [current, photo, chart], trashedArtifacts: [removed], artifactRevisions: [old],
+      projectDrafts: [{ ...current, id: 'working-draft', name: 'Unfinished working draft', draftOf: 'drawing', draftActive: true }],
+      topics: [{ id: 'art', name: 'Art', createdAt: date }, { id: 'nature', name: 'Nature', createdAt: date }],
+      topicLinks: [{ objectType: 'artifact', objectId: 'photo', topicId: 'nature' }],
+    })
+    pickerData = data; setPickerData = setData
+    return React.createElement(LabNotebook, { ...data, key: data.scope, notebookScope: data.scope,
+      status: 'ready', message: 'Saved', onDraftChange() {},
+      onCreateNote: () => 'unused',
+      onUpdateNote: (id, patch) => setData((items) => ({ ...items, notes: items.notes.map((note) => note.id === id ? { ...note, ...patch } : note) })),
+      onImportFiles: async (files, topicIds) => {
+        pickerImports.push({ files, topicIds })
+        if (rejectPickerImport) throw new Error('Fixture upload failed; note unchanged.')
+        const added = files.map((file, index) => ({ ...photo, id: `upload-${pickerImports.length}-${index}`, name: file.name }))
+        setData((items) => ({ ...items, artifacts: [...items.artifacts, ...added] }))
+        return added.map((item) => item.id)
+      },
+      onLoadPreview: async () => null, onDownloadArtifact: async () => {}, onOpenProject: async () => {},
+      onCreateTopic: () => null, onSetObjectTopics() {},
+    })
+  }
+  const pickerRoot = createRoot(document.getElementById('root'))
+  const picker = () => document.querySelector('.lab-notebook__visual-picker')
+  const openPicker = () => clickButton('+ add visuals or files')
+  try {
+    // StrictMode replays modal setup/cleanup; it must not accidentally cancel.
+    await React.act(async () => pickerRoot.render(React.createElement(React.StrictMode, null, React.createElement(PickerHarness))))
+    await click(buttons(named('Saved notes'))[0])
+    await clickButton('← Back to notebook')
+    await clickButton('Art', named('Filter notebook by topic'))
+    await changeValue(document.querySelector('input[type="search"]'), 'unrelated browser search')
+    await click(document.querySelector('.lab-notebook__project-filter input'))
+    await clickButton('Continue note')
+    const before = structuredClone(pickerData)
+    await openPicker()
+    assert.equal(picker().open, true, 'The picker survives StrictMode effect replay.')
+    assert.equal(picker().querySelectorAll('input[type="checkbox"]').length, 3, 'Browse filters do not hide saved choices.')
+    assert.equal(named('Attach Current drawing').disabled, true)
+    assert.match(picker().textContent, /Already attached/)
+    for (const name of ['Removed drawing', 'Earlier drawing', 'Unfinished working draft']) assert.equal(named(`Attach ${name}`), null)
+    await click(named('Attach Sunset photo'))
+    await clickButton('Cancel', picker())
+    assert.deepEqual(pickerData, before, 'Cancel makes no notebook changes.')
+
+    await openPicker()
+    assert.equal(picker().querySelector('[role="status"]').textContent, '0 selected', 'A new picker starts with no leftover selection.')
+    await changeValue(named('Search saved visuals and files'), '#nature')
+    assert.equal(picker().querySelectorAll('input[type="checkbox"]').length, 1, 'Saved visuals are searchable by topic.')
+    await click(named('Attach Sunset photo'))
+    await changeValue(named('Search saved visuals and files'), 'data comparison')
+    await click(named('Attach Measurements'))
+    await changeValue(named('Search saved visuals and files'), 'no matching visual')
+    assert.match(picker().textContent, /No matching files/)
+    assert.equal(picker().querySelector('[role="status"]').textContent, '2 selected', 'Search does not discard selections.')
+    await clickButton('Add selected (2)', picker())
+    assert.equal(picker(), null)
+    assert.deepEqual(pickerData.notes[0], { ...before.notes[0], artifactIds: ['drawing', 'removed', 'photo', 'chart'] })
+    assert.deepEqual(pickerData.artifacts, before.artifacts, 'Choosing existing visuals does not make file copies.')
+    assert.deepEqual(pickerData.topicLinks, before.topicLinks, 'Attaching does not rewrite either item’s topics.')
+    assert.equal(pickerImports.length, 0, 'Existing visuals are never reimported.')
+    await openPicker()
+    assert.equal(named('Attach Sunset photo').disabled, true, 'An attachment cannot be added twice.')
+    await clickButton('Cancel', picker())
+    await click(named('Detach Sunset photo'))
+    assert.deepEqual(pickerData.notes[0].artifactIds, ['drawing', 'removed', 'chart'])
+    assert.ok(pickerData.artifacts.some((item) => item.id === 'photo'), 'Detach keeps the saved file.')
+
+    await openPicker()
+    await click(named('Attach Sunset photo'))
+    await React.act(async () => setPickerData((items) => ({ ...items, artifacts: items.artifacts.filter((item) => item.id !== 'photo'),
+      trashedArtifacts: [...items.trashedArtifacts, { ...photo, deletedAt: later }] })))
+    assert.equal(named('Attach Sunset photo'), null)
+    assert.equal(picker().querySelector('[role="status"]').textContent, '0 selected')
+    assert.equal(findButton('Add selected', picker()).disabled, true, 'A removed candidate cannot be attached from stale selection.')
+    await clickButton('Cancel', picker())
+
+    await openPicker()
+    await React.act(async () => setPickerData((items) => ({ ...items, isReady: false })))
+    assert.equal(picker().querySelector('input[type="file"]').disabled, true)
+    assert.equal(picker().querySelector('fieldset').disabled, true, 'Unavailable notebooks cannot accept attachments.')
+    await React.act(async () => setPickerData((items) => ({ ...items, isReady: true })))
+    const upload = new window.File(['image'], 'New image.png', { type: 'image/png' })
+    await React.act(async () => {
+      const input = picker().querySelector('input[type="file"]')
+      Object.defineProperty(input, 'files', { configurable: true, value: [upload] })
+      input.dispatchEvent(new window.Event('change', { bubbles: true }))
+    })
+    assert.equal(picker(), null)
+    assert.equal(pickerImports.length, 1)
+    assert.deepEqual(pickerImports[0].files, [upload])
+    assert.ok(pickerData.notes[0].artifactIds.includes('upload-1-0'), 'Device uploads still attach to the current note.')
+    rejectPickerImport = true
+    await openPicker()
+    const beforeFailure = structuredClone(pickerData.notes[0])
+    await React.act(async () => {
+      const input = picker().querySelector('input[type="file"]')
+      Object.defineProperty(input, 'files', { configurable: true, value: [upload] })
+      input.dispatchEvent(new window.Event('change', { bubbles: true }))
+    })
+    assert.match(document.querySelector('.lab-notebook__attachments [role="alert"]').textContent, /upload failed/)
+    assert.deepEqual(pickerData.notes[0], beforeFailure, 'Failed uploads leave the note and its links intact.')
+    rejectPickerImport = false
+    for (const eventName of ['paste', 'drop']) {
+      await React.act(async () => {
+        const event = new window.Event(eventName, { bubbles: true, cancelable: true })
+        Object.defineProperty(event, eventName === 'paste' ? 'clipboardData' : 'dataTransfer', { value: { files: [upload], types: ['Files'] } })
+        document.querySelector('textarea').dispatchEvent(event)
+        assert.equal(event.defaultPrevented, true)
+      })
+      assert.ok(pickerData.notes[0].artifactIds.includes(`upload-${pickerImports.length}-0`), `${eventName} still attaches images.`)
+    }
+
+    await openPicker()
+    await React.act(async () => setPickerData((items) => ({ ...items, scope: 'other-notebook', notes: [], artifacts: [],
+      trashedArtifacts: [], artifactRevisions: [], projectDrafts: [] })))
+    assert.equal(picker(), null, 'Changing notebook scope clears the old chooser and selection.')
+    await clickButton('+ new note')
+    await openPicker()
+    assert.match(picker().textContent, /No saved visuals or files yet/)
+    assert.equal(picker().querySelectorAll('input[type="checkbox"]').length, 0)
+    await React.act(async () => picker().dispatchEvent(new window.Event('cancel', { cancelable: true })))
+    assert.equal(picker(), null, 'Escape cancels the chooser without changing the note.')
+  } finally { await React.act(async () => pickerRoot.unmount()) }
+
   let draftStore = { notes: [], noteDrafts: [] }
   let updateDraftStore, flushNoteDrafts, rejectPromotion = false
   const saveNoteDraft = async (note, topicIds, scope, expectedUpdatedAt) => {
@@ -260,8 +394,12 @@ try {
     await React.act(async () => draftRoot.render(React.createElement(DraftHarness)))
     await clickButton('+ new note')
     await changeValue(document.querySelector('textarea'), 'First checkpoint')
+    await openPicker()
+    await click(named('Attach Current drawing'))
+    await clickButton('Add selected (1)', picker())
     await React.act(async () => flushNoteDrafts())
     const draftId = draftStore.noteDrafts[0].id
+    assert.deepEqual(draftStore.noteDrafts[0].artifactIds, ['drawing'], 'The recovery draft keeps references to existing visuals.')
     await changeValue(document.querySelector('textarea'), 'Latest text before fast navigation')
     await clickButton('← Back to notebook')
     await clickButton('Resume idea')
@@ -273,6 +411,7 @@ try {
     assert.equal(document.querySelector('textarea'), null)
     await clickButton('Resume idea')
     assert.equal(document.querySelector('textarea').value, 'Latest text before fast navigation', 'Drafts survive editor unmount/remount')
+    assert.equal(document.querySelectorAll('.lab-notebook__attachments figure').length, 1, 'Reopened drafts still show linked visuals.')
     rejectPromotion = true
     await clickButton('Add idea')
     assert.match(document.querySelector('[role="alert"]').textContent, /promotion failed/)
@@ -282,6 +421,7 @@ try {
     await clickButton('Add idea')
     assert.equal(draftStore.noteDrafts.length, 0)
     assert.equal(draftStore.notes[0].id, draftId, 'Add promotes the same object, not a duplicate')
+    assert.deepEqual(draftStore.notes[0].artifactIds, ['drawing'], 'Promotion preserves links to existing visuals.')
     assert.equal(document.querySelector('textarea'), null)
     await clickButton('+ new note')
     await changeValue(document.querySelector('textarea'), 'My original working text')
@@ -299,8 +439,17 @@ try {
     assert.equal(draftStore.noteDrafts[0].body, 'Newer remote text', 'Conflict escape keeps the newer remote draft')
     assert.equal(draftStore.notes.at(-1).body, 'My local writing continues')
     assert.notEqual(draftStore.notes.at(-1).id, conflictingId, 'Conflicting writing is preserved as a separate object')
+    await clickButton('+ new note')
+    await openPicker()
+    await click(named('Attach Current drawing'))
+    await clickButton('Add selected (1)', picker())
+    assert.equal(findButton('Add idea').disabled, false, 'A visual-only idea can be saved without text.')
+    await clickButton('Add idea')
+    assert.deepEqual(draftStore.notes.at(-1).artifactIds, ['drawing'])
+    assert.equal(draftStore.notes.at(-1).body, '')
+    assert.equal(draftStore.notes.at(-1).title, 'Current drawing')
   } finally { await React.act(async () => draftRoot.unmount()) }
-  console.log('Notebook Browse/Edit, draft autosave/reopen, stale-resume protection, failed promotion recovery, History, Trash, and file errors passed.')
+  console.log('Notebook Browse/Edit, existing-visual picker, uploads/paste/drop, draft autosave/reopen, stale-resume protection, failed promotion recovery, History, Trash, and file errors passed.')
 } finally {
   dom.window.close()
 }

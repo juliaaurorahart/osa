@@ -123,6 +123,7 @@
 }
 
 .lab-notebook__header-actions button:disabled,
+.lab-notebook__file-input:disabled,
 .lab-notebook__file-input:has(input:disabled),
 .lab-notebook__add-idea:disabled {
   cursor: not-allowed;
@@ -645,6 +646,48 @@ button.lab-notebook__preview { cursor: zoom-in; }
 .lab-notebook__preview-dialog button { min-height: 38px; padding: 8px 12px; border: 1px solid var(--osa-border); border-radius: 6px; color: var(--osa-text); background: var(--osa-surface-raised); font: inherit; cursor: pointer; }
 .lab-notebook__preview-dialog button:disabled { opacity: 0.55; cursor: not-allowed; }
 .lab-notebook__preview-dialog .lab-notebook__preview img { max-height: 65vh; }
+
+.lab-notebook__visual-picker {
+  box-sizing: border-box; width: min(760px, calc(100vw - 24px));
+  max-height: min(88vh, 860px); max-height: min(88dvh, 860px);
+  padding: 20px; border: 1px solid var(--osa-border); border-radius: 14px;
+  color: var(--osa-text); background: var(--osa-surface); box-shadow: 0 20px 80px #0008;
+}
+.lab-notebook__visual-picker[open] { display: flex; flex-direction: column; gap: 16px; }
+.lab-notebook__visual-picker::backdrop { background: #000a; }
+.lab-notebook__visual-picker header,
+.lab-notebook__visual-picker footer { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; flex-shrink: 0; }
+.lab-notebook__visual-picker header { justify-content: space-between; }
+.lab-notebook__visual-picker h3 { margin: 0; font-size: 1.15rem; }
+.lab-notebook__visual-picker > p { margin: 0; color: var(--osa-muted); font-size: 0.84rem; line-height: 1.5; }
+.lab-notebook__visual-picker > .lab-notebook__search { margin: 0; flex-shrink: 0; }
+.lab-notebook__visual-picker-results { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px; }
+.lab-notebook__visual-picker-results fieldset {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(min(170px, 100%), 1fr));
+  gap: 12px; min-width: 0; padding: 0; margin: 0; border: 0;
+}
+.lab-notebook__visual-choice {
+  position: relative; display: grid; grid-template-rows: 128px auto; gap: 10px; min-width: 0;
+  padding: 10px; border: 1px solid var(--osa-border); border-radius: 10px;
+  background: var(--osa-surface-raised); cursor: pointer;
+}
+.lab-notebook__visual-choice:has(input:checked) { border-color: var(--osa-focus); background: color-mix(in srgb, var(--osa-focus) 10%, var(--osa-surface)); }
+.lab-notebook__visual-choice:focus-within { outline: 2px solid var(--osa-focus); outline-offset: 2px; }
+.lab-notebook__visual-choice input { position: absolute; z-index: 1; top: 16px; right: 16px; width: 20px; height: 20px; margin: 0; accent-color: var(--osa-focus); }
+.lab-notebook__visual-choice[data-attached='true'] { opacity: 0.65; cursor: default; }
+.lab-notebook__visual-choice .lab-notebook__preview { min-height: 0; height: 128px; pointer-events: none; }
+.lab-notebook__visual-choice .lab-notebook__preview img { max-height: 126px; }
+.lab-notebook__visual-choice .lab-notebook__file-glyph { display: grid; place-items: center; width: auto; height: 128px; font-size: 2rem; }
+.lab-notebook__visual-choice > span { display: grid; gap: 4px; align-content: start; overflow-wrap: anywhere; }
+.lab-notebook__visual-choice strong { font-size: 0.88rem; }
+.lab-notebook__visual-choice small { color: var(--osa-muted); font-size: 0.75rem; }
+.lab-notebook__visual-picker-empty { margin: 0; padding: 20px 0; color: var(--osa-muted); line-height: 1.5; }
+.lab-notebook__visual-picker footer { justify-content: flex-end; }
+.lab-notebook__visual-picker footer > span { margin-right: auto; color: var(--osa-muted); font-size: 0.8rem; }
+.lab-notebook__visual-picker footer button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--osa-border); border-radius: 8px; color: var(--osa-text); background: var(--osa-surface-raised); font: inherit; cursor: pointer; }
+.lab-notebook__visual-picker footer button:disabled { opacity: 0.55; cursor: not-allowed; }
+.lab-notebook__visual-picker .lab-notebook__file-input { min-height: 44px; box-sizing: border-box; }
+.lab-notebook__visual-picker footer .lab-notebook__add-idea { border-color: var(--osa-focus); font-weight: 650; }
 
 @media (max-width: 820px) {
   .lab-notebook__topics {

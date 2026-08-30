@@ -104,6 +104,78 @@ function titleFromIdea(body: string) {
   return firstLine.length > 80 ? `${firstLine.slice(0, 79)}…` : firstLine || 'Untitled note'
 }
 
+/** Choose existing objects, not new copies of their source/preview files. */
+function NotebookVisualPicker({ artifacts, attachedIds, topicNamesFor, disabled, loadPreview, onAdd, onUpload, onClose }: {
+  artifacts: readonly LabArtifact[]
+  attachedIds: readonly string[]
+  topicNamesFor: (id: string) => string
+  disabled: boolean
+  loadPreview: (id: string) => Promise<Blob | null>
+  onAdd: (ids: readonly string[]) => void
+  onUpload: (files: readonly File[]) => void
+  onClose: () => void
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  const [query, setQuery] = useState('')
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  // Do not inherit the file browser's topic, search, or editable-project filters.
+  const availableArtifacts = artifacts.filter((item) => !item.deletedAt && !item.revisionOf && !item.draftOf)
+  const availableIds = new Set(availableArtifacts.map((item) => item.id))
+  const validSelection = selectedIds.filter((id) => availableIds.has(id) && !attachedIds.includes(id))
+  const matches = availableArtifacts.filter((item) => matchesNotebookSearch(query,
+    item.name, item.description, item.sourceName, item.toolId, topicNamesFor(item.id)))
+
+  useEffect(() => {
+    const dialog = dialogRef.current
+    dialog?.showModal()
+    return () => dialog?.close()
+  }, [])
+
+  return <dialog ref={dialogRef} className="lab-notebook__visual-picker" aria-labelledby="lab-notebook-visual-picker-title"
+    aria-describedby="lab-notebook-visual-picker-help" onCancel={(event) => { event.preventDefault(); onClose() }}>
+    <header>
+      <h3 id="lab-notebook-visual-picker-title">Add visuals or files</h3>
+      <label className="lab-notebook__file-input">Upload from device
+        <input type="file" multiple disabled={disabled} onChange={(event) => {
+          const files = Array.from(event.currentTarget.files ?? [])
+          event.currentTarget.value = ''
+          if (!files.length || disabled) return
+          onUpload(files)
+          onClose()
+        }} />
+      </label>
+    </header>
+    <p id="lab-notebook-visual-picker-help">Choose from your notebook. This links the saved file without making another copy.</p>
+    <label className="lab-notebook__search">From notebook
+      <input type="search" aria-label="Search saved visuals and files" autoFocus
+        placeholder="Search names, topics, or tools…" value={query} onChange={(event) => setQuery(event.target.value)} />
+    </label>
+    <div className="lab-notebook__visual-picker-results">
+      {matches.length ? <fieldset disabled={disabled}>
+        <legend className="lab-notebook__visually-hidden">Saved visuals and files</legend>
+        {matches.map((artifact) => {
+          const attached = attachedIds.includes(artifact.id)
+          return <label key={artifact.id} className="lab-notebook__visual-choice" data-attached={attached}>
+            <input type="checkbox" aria-label={`Attach ${artifact.name}`} disabled={attached}
+              checked={attached || selectedIds.includes(artifact.id)} onChange={(event) => setSelectedIds((ids) => event.target.checked
+                ? [...new Set([...ids, artifact.id])] : ids.filter((id) => id !== artifact.id))} />
+            <LabArtifactPreview artifact={artifact} loadPreview={loadPreview} />
+            <span><strong>{artifact.name}</strong><small>{attached ? 'Already attached' : artifact.sourceName || artifact.toolId || 'Saved file'}</small></span>
+          </label>
+        })}
+      </fieldset> : <p className="lab-notebook__visual-picker-empty">{availableArtifacts.length
+        ? 'No matching files. Try another name, topic, or tool.'
+        : 'No saved visuals or files yet. Upload from your device, or save something from a workbench.'}</p>}
+    </div>
+    <footer>
+      <span role="status">{validSelection.length} selected</span>
+      <button type="button" onClick={onClose}>Cancel</button>
+      <button type="button" className="lab-notebook__add-idea" disabled={disabled || !validSelection.length}
+        onClick={() => onAdd(validSelection)}>Add selected{validSelection.length ? ` (${validSelection.length})` : ''}</button>
+    </footer>
+  </dialog>
+}
+
 /** A Lab-only notebook for loose thoughts and imported experiment files. */
 export function LabNotebook({
   notes,
@@ -160,6 +232,7 @@ export function LabNotebook({
   const [query, setQuery] = useState('')
   const [isImporting, setIsImporting] = useState(false)
   const [captureError, setCaptureError] = useState('')
+  const [visualPickerTarget, setVisualPickerTarget] = useState<string | null>(null)
   const [openedArtifactId, setOpenedArtifactId] = useState<string | null>(null)
   const [openingProjectId, setOpeningProjectId] = useState<string | null>(null)
   const [fileOperation, setFileOperation] = useState<{ id: string; label: string } | null>(null)
@@ -472,15 +545,11 @@ export function LabNotebook({
   }
 
   const attachedIds = selectedNote?.artifactIds ?? (selectedNote ? [] : draftArtifactIds)
+  const attachmentTarget = selectedNote ? `note:${selectedNote.id}` : `draft:${draftIdentity.id}`
   const attachments = <section className="lab-notebook__attachments" aria-label="Visuals and files for this note">
     <div className="lab-notebook__attachment-actions">
-      <label className="lab-notebook__file-input">+ add visuals or files
-        <input type="file" multiple disabled={isUnavailable || isImporting} onChange={(event) => {
-          const files = Array.from(event.currentTarget.files ?? [])
-          event.currentTarget.value = ''
-          void attachFiles(files)
-        }} />
-      </label>
+      <button type="button" className="lab-notebook__file-input" disabled={isUnavailable || isFileBusy}
+        aria-haspopup="dialog" onClick={() => setVisualPickerTarget(attachmentTarget)}>+ add visuals or files</button>
       <span>{isImporting ? 'Saving files…' : 'Or paste an image / drop files here'}</span>
     </div>
     {attachedIds.map((id) => {
@@ -805,6 +874,18 @@ export function LabNotebook({
           </details> : null}
         </aside> : null}
       </div>
+      {visualPickerTarget === attachmentTarget && view === 'edit' && isActive ? <NotebookVisualPicker
+        key={`${notebookScope}:${attachmentTarget}`}
+        artifacts={artifacts} attachedIds={attachedIds} topicNamesFor={(id) => topicNamesFor('artifact', id)}
+        disabled={isUnavailable || isFileBusy} loadPreview={onLoadPreview}
+        onAdd={(ids) => {
+          if (isUnavailable || isFileBusy) return
+          const availableIds = new Set(artifacts.filter((item) => !item.deletedAt && !item.revisionOf && !item.draftOf).map((item) => item.id))
+          attachIds(ids.filter((id) => availableIds.has(id)))
+          setVisualPickerTarget(null)
+        }}
+        onUpload={(files) => { void attachFiles(files) }} onClose={() => setVisualPickerTarget(null)}
+      /> : null}
       <dialog className="lab-notebook__preview-dialog" aria-label="Saved visual preview" ref={previewDialogRef} onCancel={() => setOpenedArtifactId(null)} onClose={() => setOpenedArtifactId(null)}>
         {openedArtifact ? <>
           <header><h3>{openedArtifact.name}</h3><button type="button" onClick={() => setOpenedArtifactId(null)}>close preview</button></header>
