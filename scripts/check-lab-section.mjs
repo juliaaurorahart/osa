@@ -10,6 +10,7 @@ const { JSDOM } = createRequire(require.resolve('fabric'))('jsdom')
 const dom = new JSDOM('<div id="root"></div>', { url: 'http://localhost' })
 globalThis.window = dom.window; globalThis.document = dom.window.document
 globalThis.HTMLElement = dom.window.HTMLElement; globalThis.IS_REACT_ACT_ENVIRONMENT = true
+globalThis.DOMParser = dom.window.DOMParser
 const React = await import('react')
 const { createRoot } = await import('react-dom/client')
 const modules = new Map(), overrides = new Map(), packages = new Map()
@@ -58,6 +59,24 @@ overrides.set(resolve('src/components/CodeEditorLab.tsx'), { CodeEditorLab: Fake
 overrides.set(resolve('src/components/ExcalidrawLab.tsx'), { ExcalidrawLab: FakeEditor })
 overrides.set(resolve('src/components/MermaidLab.tsx'), { MermaidLab: FakeEditor })
 overrides.set(resolve('src/components/VegaLab.tsx'), { VegaLab: FakeEditor })
+let drawio, drawioFailure = '', drawioNewerCapture = '', drawioLoads = true, sectionLocked = false
+const lockSection = (locked) => { sectionLocked = locked }
+function FakeDrawio({ initialSource, onXmlChange, draftSession }) {
+  const text = React.useRef(initialSource.text)
+  const save = React.useContext(LabCaptureContext)
+  const capture = React.useCallback(async () => {
+    if (drawioFailure) throw new Error(drawioFailure)
+    onXmlChange(text.current)
+    if (drawioNewerCapture) onXmlChange(drawioNewerCapture)
+    return { toolId: 'drawio', name: 'diagram', source: { name: 'diagram.drawio', blob: new Blob([text.current], { type: 'application/xml' }) }, preview: new Blob(['png'], { type: 'image/png' }) }
+  }, [onXmlChange])
+  React.useEffect(() => { if (drawioLoads) { draftSession.onStarted(); onXmlChange(text.current) } }, [onXmlChange, draftSession.onStarted])
+  React.useEffect(() => { draftSession.registerCheckpoint(async () => { if (drawioLoads) await capture() }); return () => draftSession.registerCheckpoint(null) }, [capture, draftSession.registerCheckpoint])
+  drawio = { initial: initialSource.text, capture, save, draftSession, report: onXmlChange,
+    edit: (xml, report = true) => { text.current = xml; if (report) onXmlChange(xml) } }
+  return React.createElement('iframe', { title: 'Fixture draw.io editor' })
+}
+overrides.set(resolve('src/components/DrawioEmbedLab.tsx'), { DrawioEmbedLab: FakeDrawio })
 // Preflight renderers have separate format tests; keep the cell lifecycle fixture local and lightweight.
 const structured = load('src/lab/labStructuredProjectSource.ts')
 overrides.set(resolve('src/lab/labStructuredProjectSource.ts'), { ...structured, validateStructuredProjectSource: async (tool, source) => {
@@ -104,6 +123,8 @@ const notebook = {
     if (failDraft) throw new Error('Fixture draft changed elsewhere')
     const previous = projectDrafts.find((draft) => draft.draftOf === input.projectId)
     if (previous) assert.equal(input.expectedDraftFileId, previous.fileId)
+    if (input.toolId === 'drawio' && previous && await files.get(previous.id).text() === await input.source.blob.text()
+      && previous.draftBaseFileId === input.baseFileId) return previous
     const draft = { id: `draft:${input.projectId}`, draftOf: input.projectId, fileId: uid(), sourceName: input.source.name,
       draftBaseFileId: input.baseFileId, draftActive: true, toolId: input.toolId, name: input.name }
     if (previous) Object.assign(previous, draft); else projectDrafts.push(draft)
@@ -116,6 +137,10 @@ const notebook = {
     const artifact = artifacts.find((item) => item.id === options.artifactId)
     assert.equal(options.expectedFileId, artifact.fileId || artifact.id)
     artifact.name = capture.name; artifact.fileId = uid(); files.set(artifact.id, capture.source.blob); refresh()
+    const draft = notebook.getProjectDraft(artifact.id)
+    if (capture.toolId === 'drawio' && draft && await files.get(draft.id).text() === await capture.source.blob.text()) {
+      draft.draftActive = false; draft.draftBaseFileId = artifact.fileId
+    }
     return artifact.id
   },
   changeSection: async (sectionId, action, scope) => {
@@ -139,7 +164,7 @@ const notebook = {
 }
 const register = (flush) => { closeSection = flush; return () => {} }
 function Harness() { const [, setVersion] = React.useState(0); refresh = () => setVersion((version) => version + 1)
-  return React.createElement(LabSection, { notebook: { ...notebook }, theme: 'dark', isActive: true, onRegisterFlush: register, onOpenProject: () => {} }) }
+  return React.createElement(LabSection, { notebook: { ...notebook }, theme: 'dark', isActive: true, onRegisterFlush: register, onOpenProject: () => {}, onEditorLockChange: lockSection }) }
 const root = createRoot(document.getElementById('root'))
 const button = (label) => [...document.querySelectorAll('button')].find((node) => node.textContent === label || node.getAttribute('aria-label') === label)
 const click = async (label) => React.act(async () => { assert.ok(button(label), label); button(label).click() })
@@ -247,6 +272,69 @@ try {
   const css = readFileSync(resolve('src/lab/LabSection.css'), 'utf8')
   assert.match(css, /\.lab-section__creation\s*\{[^}]*position: sticky; top: 0/)
   assert.match(css, /scroll-margin-top: calc\(var\(--section-add-height\)/)
+
+  // draw.io stays a Saved preview until an explicit, consented editing session.
+  const xml = (label) => `<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/><mxCell id="2" parent="1" value="${label}"/></root></mxGraphModel>`
+  let allowOpen = true
+  const confirmations = []
+  window.confirm = (message) => { confirmations.push(message); return allowOpen }
+  await click('draw.ioDiagram editor · external')
+  const drawioCell = sections[0].cells[0], drawioArtifact = notebook.getArtifact(drawioCell.objectId)
+  const originalXml = await files.get(drawioArtifact.id).text()
+  assert.equal(document.querySelector('iframe'), null)
+  assert.equal(notebook.getProjectDraft(drawioArtifact.id), undefined, 'Browsing Saved does not create or overwrite a draft')
+  await click('Edit Saved')
+  assert.ok(confirmations.at(-1).includes('embed.diagrams.net'))
+  assert.equal(sectionLocked, true, document.body.textContent)
+  const frame = document.querySelector('iframe')
+  for (const mode of ['Split', 'Focus', 'In place']) { await click(mode); assert.equal(document.querySelector('iframe'), frame) }
+  const cellCount = sections[0].cells.length
+  await click('+ Text'); await selectCell(textCell.id)
+  assert.equal(sections[0].cells.length, cellCount); assert.equal(document.querySelector('iframe'), frame)
+  await React.act(async () => assert.rejects(closeSection, /Close the draw.io editor first/))
+  await React.act(async () => { drawio.edit(xml('autosaved')); await drawio.draftSession.saveDraft() })
+  assert.equal(await files.get(notebook.getProjectDraft(drawioArtifact.id).id).text(), xml('autosaved'))
+  await React.act(async () => drawio.edit(xml('unfinished label'), false))
+  drawioFailure = 'Fixture capture timed out'
+  await click('Close editor')
+  assert.equal(document.querySelector('iframe'), frame); assert.equal(sectionLocked, true)
+  assert.match(document.body.textContent, /Fixture capture timed out/)
+  drawioFailure = ''; failDraft = true
+  await click('Close editor'); assert.equal(document.querySelector('iframe'), frame)
+  failDraft = false
+  const staleReport = drawio.report
+  await click('Close editor')
+  assert.equal(document.querySelector('iframe'), null); assert.equal(sectionLocked, false)
+  assert.equal(await files.get(drawioArtifact.id).text(), originalXml, 'Close never updates Saved')
+  assert.equal(await files.get(notebook.getProjectDraft(drawioArtifact.id).id).text(), xml('unfinished label'), 'Close checkpoints the latest in-place edit, not only the last autosave')
+  await React.act(async () => staleReport(xml('too late')))
+  allowOpen = false; await click('Edit Saved')
+  assert.equal(document.querySelector('iframe'), null)
+  assert.match(confirmations.at(-1), /replace the current working Draft/)
+  assert.equal(await files.get(notebook.getProjectDraft(drawioArtifact.id).id).text(), xml('unfinished label'))
+  allowOpen = true; await click('Continue Draft')
+  assert.equal(drawio.initial, xml('unfinished label'))
+  await React.act(async () => { drawio.edit(xml('published'), false); await drawio.save(await drawio.capture()) })
+  assert.equal(await files.get(drawioArtifact.id).text(), xml('published'))
+  assert.equal(notebook.getProjectDraft(drawioArtifact.id).draftActive, false)
+  await click('Close editor')
+  assert.ok(button('Continue Draft'), 'Pushing keeps the matching Draft available')
+  await click('Continue Draft'); assert.equal(drawio.initial, xml('published'))
+  await React.act(async () => drawio.edit(xml('newer draft')))
+  await click('Close editor'); await click('Edit Saved')
+  assert.equal(drawio.initial, xml('published'), 'Explicit Edit Saved starts from Saved, not the newer draft')
+  await click('Close editor')
+  assert.equal(await files.get(notebook.getProjectDraft(drawioArtifact.id).id).text(), xml('published'), 'Confirmed Saved editing replaces the single working draft')
+  await click('Continue Draft')
+  drawioNewerCapture = xml('newer than close export')
+  await click('Close editor'); drawioNewerCapture = ''
+  assert.equal(await files.get(notebook.getProjectDraft(drawioArtifact.id).id).text(), xml('newer than close export'), 'Close never overwrites a newer autosave with older exported XML')
+  drawioLoads = false
+  await click('Edit Saved'); assert.equal(sectionLocked, true)
+  await click('Close editor'); assert.equal(sectionLocked, false)
+  assert.equal(document.querySelector('iframe'), null)
+  assert.equal(await files.get(notebook.getProjectDraft(drawioArtifact.id).id).text(), xml('newer than close export'), 'Cancelling an offline opening retains the previous draft')
+  drawioLoads = true
 
   // Exercise the real Ink checkpoint, including a pen stroke still in progress.
   overrides.delete(resolve('src/components/InkLab.tsx'))

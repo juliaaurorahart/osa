@@ -135,6 +135,55 @@ try {
   await assert.rejects(captureResult, /workbench closed/)
   assert.equal(timers.size, 0, 'draw.io capture timers must be released')
 
+  // In a managed section, native Save is a draft checkpoint, never a live Push.
+  let snapshot, checkpointCount = 0, closeCount = 0, liveCount = 0, latestXml, started = 0
+  const draftSession = { registerCheckpoint: (value) => { snapshot = value }, onStarted: () => { started += 1 },
+    saveDraft: async () => { checkpointCount += 1 }, close: async () => { closeCount += 1 } }
+  const managedProps = { theme: 'dark', draftSession, onXmlChange: (xml) => { latestXml = xml } }
+  const Managed = (props) => React.createElement(sharedMocks['../lab/LabCaptureContext'].LabCaptureContext.Provider,
+    { value: async () => { liveCount += 1; return 'saved' } }, React.createElement(DrawioEmbedLab, props))
+  await render(Managed, managedProps)
+  const managedFrame = document.querySelector('iframe'), managedSrc = managedFrame.src, managedSent = []
+  managedFrame.contentWindow.postMessage = (data) => managedSent.push(JSON.parse(data))
+  const managedSend = (data) => React.act(async () => window.dispatchEvent(new window.MessageEvent('message', {
+    data: JSON.stringify(data), origin: 'https://embed.diagrams.net', source: managedFrame.contentWindow,
+  })))
+  assert.match(managedSrc, /saveAndExit=0&noSaveBtn=1&noExitBtn=1/)
+  assert.equal(latestXml, undefined, 'An iframe that never loads cannot replace an existing draft')
+  await snapshot(); assert.equal(managedSent.length, 0, 'An unopened editor can safely cancel without an export')
+  await managedSend({ event: 'init' }); await managedSend({ event: 'load' })
+  assert.ok(started > 0)
+  await managedSend({ event: 'autosave', xml: '<mxfile>working draft</mxfile>' })
+  assert.equal(latestXml, '<mxfile>working draft</mxfile>')
+  await managedSend({ event: 'save', xml: '<mxfile>native save</mxfile>' })
+  assert.equal(checkpointCount, 1); assert.equal(liveCount, 0)
+  assert.equal(managedSent.filter((event) => event.action === 'export').length, 0)
+  await managedSend({ event: 'save', xml: '<mxfile>save and exit</mxfile>', exit: true })
+  assert.equal(closeCount, 1); assert.equal(liveCount, 0)
+  await managedSend({ event: 'exit', modified: true }); assert.equal(closeCount, 2)
+  await render(Managed, { ...managedProps, theme: 'light' })
+  assert.equal(document.querySelector('iframe'), managedFrame)
+  assert.equal(managedFrame.src, managedSrc, 'Theme changes cannot reload a managed editing session')
+  let finalCapture
+  await React.act(async () => { finalCapture = snapshot(); void finalCapture.catch(() => {}) })
+  assert.equal(managedSent.at(-2).action, 'resetEditor')
+  assert.equal(managedSent.at(-1).format, 'xml', 'Close captures the editable file without requiring a rendered picture')
+  await managedSend({ event: 'export', error: 'temporary export failure', message: managedSent.at(-1) })
+  await assert.rejects(finalCapture, /temporary export failure/)
+  // An export failure does not require reloading (and losing) the editor to retry.
+  await React.act(async () => { finalCapture = snapshot() })
+  await managedSend({ event: 'export', error: 'stale failed export', message: { requestId: 'old-request' } })
+  await managedSend({ event: 'export', format: 'xml', xml: '<mxfile>final label</mxfile>', message: managedSent.at(-1) })
+  await finalCapture
+  assert.equal(latestXml, '<mxfile>final label</mxfile>')
+  await React.act(async () => { finalCapture = snapshot() })
+  await managedSend({ event: 'autosave', xml: '<mxfile>newer while exporting</mxfile>' })
+  await managedSend({ event: 'export', format: 'xml', xml: '<mxfile>older captured picture</mxfile>', message: managedSent.at(-1) })
+  await finalCapture
+  assert.equal(latestXml, '<mxfile>newer while exporting</mxfile>', 'A slower Push capture never replaces a newer working draft')
+  assert.equal(liveCount, 0, 'A close checkpoint cannot implicitly publish')
+  await unmountComponent(); assert.equal(snapshot, null)
+
   const { MermaidLab } = loadModule('src/components/MermaidLab.tsx', {
     ...sharedMocks,
     mermaid: { __esModule: true, default: {

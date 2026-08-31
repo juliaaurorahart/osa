@@ -6,10 +6,11 @@ import type { LabCapture } from './labTypes'
 import './LabCaptureButton.css'
 
 /** Shared explicit capture action; the editor continues running after a save. */
-export function LabCaptureButton({ capture, disabled = false, onSave }: {
+export function LabCaptureButton({ capture, disabled = false, onSave, label }: {
   capture: () => LabCapture | Promise<LabCapture>
   disabled?: boolean
   onSave?: (capture: LabCapture) => Promise<string>
+  label?: string
 }) {
   const contextSave = useContext(LabCaptureContext)
   const sharedChrome = useContext(LabWorkbenchChromeContext)
@@ -47,7 +48,7 @@ export function LabCaptureButton({ capture, disabled = false, onSave }: {
   const controls = (
     <span className="lab-capture" aria-busy={Boolean(busy)}>
       <button type="button" title="Save the current project to the notebook" disabled={disabled || Boolean(busy) || chrome?.readOnly} onClick={() => void captureToNotebook()}>
-        {busy ? 'Saving…' : chrome ? 'Save' : 'Save to notebook'}
+        {busy ? 'Saving…' : label ?? (chrome ? 'Save' : 'Save to notebook')}
       </button>
       {!chrome?.fileTarget ? copyButton : null}
       {message && (!chrome || failed) ? <span className={failed ? 'is-error' : ''} role={failed ? 'alert' : 'status'}>{message}</span> : null}

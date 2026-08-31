@@ -40,7 +40,14 @@ export function useCanvasLabLocation() {
   const [canvasLabVisible, setCanvasLabVisible] = useState(isCanvasLabRequested)
 
   useEffect(() => {
-    const syncCanvasLab = () => setCanvasLabVisible(isCanvasLabRequested())
+    const syncCanvasLab = () => {
+      if (!isCanvasLabRequested() && !window.dispatchEvent(new window.Event('osa:lab-before-leave', { cancelable: true }))) {
+        // Keep the destination entry intact, so Back works after editing closes.
+        setCanvasLabRequested(true, 'push')
+        return
+      }
+      setCanvasLabVisible(isCanvasLabRequested())
+    }
     window.addEventListener('popstate', syncCanvasLab)
     return () => window.removeEventListener('popstate', syncCanvasLab)
   }, [])
@@ -51,6 +58,7 @@ export function useCanvasLabLocation() {
   }, [])
 
   const closeCanvasLab = useCallback(() => {
+    if (!window.dispatchEvent(new window.Event('osa:lab-before-leave', { cancelable: true }))) return
     setCanvasLabRequested(false, 'replace')
     // On the dedicated host, leave the Lab on-screen until navigation to OSA
     // completes; briefly rendering another workspace would suggest data moved.

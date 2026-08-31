@@ -55,6 +55,15 @@
 .lab-section__editor .ink-lab__header > div:first-child { display: none; }
 .lab-section__editor .ink-lab__page { min-height: 350px; }
 .lab-section__editor .code-editor-lab { border: 0; }
+.lab-section__drawio-versions { padding: 12px; }
+.lab-section__drawio-versions [role=group] { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.lab-section__drawio-versions > small { color: var(--osa-muted); }
+.lab-section__editor .drawio-embed-lab { border: 0; padding: 0; min-height: 0; }
+.lab-section__editor .drawio-embed-lab__header { padding: 8px 12px; }
+.lab-section__editor .drawio-embed-lab__header h2 { display: none; }
+.lab-section__editor .drawio-embed-lab__editor { height: clamp(400px, 65dvh, 850px); min-height: 400px; }
+.lab-section__editor .drawio-embed-lab__editor iframe { height: 100%; min-height: 0; }
+.lab-section__editor .drawio-embed-lab__controls { min-width: 0; flex-wrap: wrap; }
 .lab-section__editor :is(.excalidraw-lab, .vega-lab, .mermaid-lab) { padding: 8px; min-height: 0; }
 .lab-section__editor :is(.excalidraw-lab__header, .vega-lab__header, .mermaid-lab__header) > div:first-child { display: none; }
 .lab-section__editor .excalidraw-lab__stage { height: clamp(380px, 60dvh, 700px); min-height: 380px; }

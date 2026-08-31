@@ -5,6 +5,7 @@ import type { LabCapture, LabTheme } from './labTypes'
 export const SECTION_WORKSPACES = [
   { id: 'ink', name: 'Ink', description: 'Pen & handwriting' },
   { id: 'excalidraw', name: 'Excalidraw', description: 'Sketches & diagrams' },
+  { id: 'drawio', name: 'draw.io', description: 'Diagram editor · external' },
   { id: 'mermaid', name: 'Mermaid', description: 'Diagrams from text' },
   { id: 'vega', name: 'Vega-Lite', description: 'Charts from data' },
 ] as const
@@ -26,6 +27,8 @@ export function newSectionCapture(tool: SectionWorkspaceId, theme: LabTheme): La
   }
   const name = SECTION_WORKSPACES.find((workspace) => workspace.id === tool)!.name
   const preview = new Blob([`<svg xmlns="http://www.w3.org/2000/svg" width="640" height="160" viewBox="0 0 640 160"><text x="320" y="80" text-anchor="middle" font-family="sans-serif" font-size="18" fill="${theme === 'dark' ? '#9da7b3' : '#57606a'}">${name} · open to edit</text></svg>`], { type: 'image/svg+xml' })
+  if (tool === 'drawio') return { toolId: tool, name: 'Section diagram', preview, source: { name: 'diagram.drawio',
+    blob: new Blob(['<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/></root></mxGraphModel>'], { type: 'application/xml' }) } }
   if (tool === 'excalidraw') return { toolId: tool, name: 'Section sketch', preview, source: { name: 'drawing.excalidraw',
     blob: new Blob([JSON.stringify({ type: 'excalidraw', version: 2, source: 'OSA Lab', elements: [],
       appState: { viewBackgroundColor: 'transparent' }, files: {} })], { type: 'application/json' }) } }

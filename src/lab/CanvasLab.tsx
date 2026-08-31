@@ -58,7 +58,10 @@ export function CanvasLab({
   onExit,
   workspaceSettingsMenu,
 }: CanvasLabProps) {
-  const [route, setRoute] = useState<LabRoute>({ page: 'home' })
+  const [route, setRouteState] = useState<LabRoute>({ page: 'home' })
+  const [sectionLocked, setSectionLocked] = useState(false)
+  const sectionLockedRef = useRef(false)
+  const setSectionEditorLock = useCallback((locked: boolean) => { sectionLockedRef.current = locked; setSectionLocked(locked) }, [])
   const [liveOpenVersion, setLiveOpenVersion] = useState<'saved' | 'draft'>(() => {
     try { return window.localStorage.getItem('osa-lab:live-open-version') === 'draft' ? 'draft' : 'saved' }
     catch { return 'saved' }
@@ -87,6 +90,21 @@ export function CanvasLab({
   const [saving, setSaving] = useState(false)
   const [projectMessage, setProjectMessage] = useState('')
   const [projectFailure, setProjectFailure] = useState('')
+  const mayNavigate = () => {
+    if (!sectionLockedRef.current) return true
+    setProjectFailure('Close the draw.io editor first. Your working draft will be kept; Push updates Saved.')
+    return false
+  }
+  const setRoute = (next: LabRoute) => { if (mayNavigate()) setRouteState(next) }
+  useEffect(() => {
+    const guard = (event: Event) => {
+      if (!sectionLockedRef.current) return
+      event.preventDefault()
+      setProjectFailure('Close the draw.io editor before leaving the Lab.')
+    }
+    window.addEventListener('osa:lab-before-leave', guard)
+    return () => window.removeEventListener('osa:lab-before-leave', guard)
+  }, [])
   const [focusedEditor, setFocusedEditor] = useState(false)
   const [navigationHidden, setNavigationHidden] = useState(false)
   const [saveTarget, setSaveTarget] = useState<HTMLDivElement | null>(null)
@@ -119,7 +137,7 @@ export function CanvasLab({
     setPending(null)
     setProjectMessage('')
     setProjectFailure('')
-    if (route.page === 'workbench') setRoute({ page: 'notebook' })
+    if (route.page === 'workbench') setRouteState({ page: 'notebook' })
   }
   useEffect(() => {
     currentRef.current = { scope: notebook.scope, projectId: project?.id, projectName: project?.name }
@@ -182,11 +200,12 @@ export function CanvasLab({
     setRoute({ page: 'workbench', workbenchId: next.toolId })
   }
   const requestProject = (next: ProjectSession) => {
+    if (!mayNavigate()) return
     if (project || next.toolId === 'drawio') setPending({ scope: notebook.scope, project: next })
     else startProject(next)
   }
   const openWorkbench = (workbenchId: LabWorkbenchId) => {
-    if (!notebook.isReady) return
+    if (!notebook.isReady || !mayNavigate()) return
     if (project?.toolId === workbenchId) setRoute({ page: 'workbench', workbenchId })
     else requestProject({ id: crypto.randomUUID(), scope: notebook.scope, toolId: workbenchId, name: `${findLab(workbenchId).name} project` })
   }
@@ -274,6 +293,7 @@ export function CanvasLab({
     }
   }
   const requestExit = () => {
+    if (!mayNavigate()) return
     if (project || hasUnaddedIdea || sectionVisited) setPending({ scope: notebook.scope, exit: true })
     else onExit()
   }
@@ -386,6 +406,7 @@ export function CanvasLab({
           <button
             type="button"
             aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+            disabled={sectionLocked}
             onClick={onToggleTheme}
           >
             {theme === 'dark' ? 'light' : 'dark'}
@@ -449,7 +470,7 @@ export function CanvasLab({
         ) : null}
 
         <div hidden={route.page !== 'notebook'}>
-          <LabNotebookSync key={`sync:${notebook.scope}`} notebook={notebook} hasDraft={hasUnaddedIdea} hasProject={Boolean(project)} beforeSwitch={flushDrafts} />
+          <LabNotebookSync key={`sync:${notebook.scope}`} notebook={notebook} hasDraft={hasUnaddedIdea} hasProject={Boolean(project)} beforeSwitch={flushDrafts} locked={sectionLocked} />
           <nav className="lab-notebook-views" aria-label="Notebook view">
             {(['library', 'section'] as const).map((view) => <button key={view} type="button" aria-pressed={notebookView === view} disabled={!notebook.isReady}
               onClick={async () => { try { await flushDrafts(); setNotebookView(view); if (view === 'section') setSectionVisited(true); setProjectFailure('') }
@@ -457,7 +478,7 @@ export function CanvasLab({
           </nav>
           {projectFailure ? <p role="alert">{projectFailure}</p> : null}
           {sectionVisited ? <div hidden={notebookView !== 'section'}><LabSection key={`section:${notebook.scope}`} notebook={notebook} theme={theme}
-            isActive={route.page === 'notebook' && notebookView === 'section'} onRegisterFlush={registerSectionFlush} onOpenProject={openSavedProject} /></div> : null}
+            isActive={route.page === 'notebook' && notebookView === 'section'} onRegisterFlush={registerSectionFlush} onOpenProject={openSavedProject} onEditorLockChange={setSectionEditorLock} /></div> : null}
           <div hidden={notebookView !== 'library'}>
           <LabNotebook
             key={notebook.scope}

@@ -132,6 +132,12 @@ function useNotebookFixture() {
 let mountedEditors = 0
 let unmountedEditors = 0
 const sourceByInstance = new Map()
+let sectionFixture, syncFixture, sectionGuardLocked = false
+function SectionFixture(props) {
+  sectionFixture = props
+  React.useEffect(() => props.onRegisterFlush(async () => { if (sectionGuardLocked) throw new Error('Close the draw.io editor first') }), [props.onRegisterFlush])
+  return React.createElement('div', { 'data-section-fixture': true }, 'Section fixture')
+}
 function WorkbenchFixture({ workbenchId, initialSource }) {
   const reportDraft = React.useContext(draftTestDependency('LabDraftContext').LabDraftContext)
   const [instance] = React.useState(() => `editor-${++mountedEditors}`)
@@ -162,8 +168,8 @@ const { CanvasLab } = loadModule('src/lab/CanvasLab.tsx', {
   './LabSettings': { LabSettings: ({ liveOpenVersion, onChangeLiveOpenVersion }) => React.createElement('select', {
     'aria-label': 'Open live items as', value: liveOpenVersion, onChange: (event) => onChangeLiveOpenVersion(event.target.value),
   }, React.createElement('option', { value: 'saved' }, 'Live'), React.createElement('option', { value: 'draft' }, 'Working draft')) },
-  './LabNotebookSync': { LabNotebookSync: () => null },
-  './LabSection': { LabSection: () => null },
+  './LabNotebookSync': { LabNotebookSync: (props) => { syncFixture = props; return null } },
+  './LabSection': { LabSection: SectionFixture },
   './LabNotebook': { LabNotebook: (props) => React.createElement(LabNotebook, { ...props,
     onOpenProject: (artifact, version) => {
       const promise = props.onOpenProject(artifact, version)
@@ -427,6 +433,45 @@ try {
   assert.equal(saveCalls.at(-1).id, draftSaved)
   assert.equal(drafts.get(draftSaved).draftActive, false)
   assert.equal(currentNotebook.artifacts.filter((item) => item.id === draftSaved).length, 1)
+
+  // A managed draw.io edit cannot be abandoned through another Lab route.
+  await clickButton('Notebook'); await clickButton('Upside-down notebook')
+  const activeSection = document.querySelector('[data-section-fixture]')
+  await React.act(async () => { sectionGuardLocked = true; sectionFixture.onEditorLockChange(true) })
+  assert.equal(syncFixture.locked, true, 'Storage/notebook switching is locked during draw.io editing')
+  assert.equal(document.querySelector('[aria-label="Switch to light mode"]').disabled, true)
+  for (const label of ['Home', 'Settings', 'Library', 'Return to Ink', 'exit lab']) {
+    await clickButton(label)
+    assert.ok(document.querySelector('.lab-shell').classList.contains('is-notebook'), label)
+    assert.equal(activeSection.closest('[hidden]'), null, 'The editing section remains visible')
+    assert.equal(projectDialog().open, false)
+  }
+  await changeValue(document.querySelector('[aria-label="Choose Lab instrument"]'), 'drawio', 'change')
+  assert.equal(projectDialog().open, false)
+  await React.act(async () => assert.rejects(syncFixture.beforeSwitch, /Close the draw.io/))
+  const departure = new window.Event('osa:lab-before-leave', { cancelable: true })
+  await React.act(async () => { window.dispatchEvent(departure) }); assert.equal(departure.defaultPrevented, true)
+  await React.act(async () => { sectionGuardLocked = false; sectionFixture.onEditorLockChange(false) })
+  await clickButton('Home'); assert.ok(document.querySelector('.lab-shell').classList.contains('is-home'))
+
+  // Browser Back/Forward asks the Lab before unmounting an active editor.
+  let requested = true, locationApi
+  const changes = []
+  const { useCanvasLabLocation } = loadModule('src/app/useBrowserSession.ts', { './browserSession': {
+    isCanvasLabRequested: () => requested, isDedicatedLabLocation: () => false,
+    setCanvasLabRequested: (value, method) => { requested = value; changes.push({ value, method }) },
+  } })
+  function LocationHarness() { locationApi = useCanvasLabLocation(); return React.createElement('p', null, String(locationApi.canvasLabVisible)) }
+  await React.act(async () => root.render(React.createElement(LocationHarness)))
+  const preventDeparture = (event) => event.preventDefault()
+  window.addEventListener('osa:lab-before-leave', preventDeparture)
+  await React.act(async () => { requested = false; window.dispatchEvent(new window.Event('popstate')) })
+  assert.equal(locationApi.canvasLabVisible, true)
+  assert.deepEqual(changes.at(-1), { value: true, method: 'push' }, 'A blocked Back preserves its previous destination entry')
+  await React.act(async () => locationApi.closeCanvasLab()); assert.equal(locationApi.canvasLabVisible, true)
+  window.removeEventListener('osa:lab-before-leave', preventDeparture)
+  await React.act(async () => { requested = false; window.dispatchEvent(new window.Event('popstate')) })
+  assert.equal(locationApi.canvasLabVisible, false)
   console.log('Lab navigation and draft recovery passed: named saves, editor lifetime, scope/exit guards, readonly Saved/Draft switching, resume after replacement, and no duplicate saved files.')
 } finally {
   await React.act(async () => root.unmount())

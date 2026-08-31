@@ -198,7 +198,7 @@ try {
   assert.ok(diagramActions().every((button) => !button.disabled), 'persistence failure can be retried without reloading the editor')
   const saveCount = notebookSaves.length
   await send({ event: 'save', xml: secondXml })
-  await send({ event: 'export', error: 'PNG export failed' })
+  await send({ event: 'export', error: 'PNG export failed', message: exportRequests().at(-1).data })
   assert.equal(notebookSaves.length, saveCount, 'failed native exports never reach notebook persistence')
   assert.match(document.querySelector('output').textContent, /PNG export failed/)
   assert.ok(diagramActions().every((button) => !button.disabled))
