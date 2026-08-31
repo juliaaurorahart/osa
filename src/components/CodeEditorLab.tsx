@@ -36,10 +36,11 @@ function draw() {
 }
 ` }
 
-export type CodeEditorLabProps = { theme: LabTheme; initialSource?: LabProjectSource; beforeRun?: () => Promise<void> }
+export type CodeEditorLabProps = { theme: LabTheme; initialSource?: LabProjectSource; beforeRun?: () => Promise<void>;
+  active?: boolean; workspace?: { connected: boolean; onConnect: () => void } }
 
 /** Source is saved independently of execution; the p5 runner receives only a Run snapshot. */
-export function CodeEditorLab({ theme, initialSource, beforeRun }: CodeEditorLabProps) {
+export function CodeEditorLab({ theme, initialSource, beforeRun, active = true, workspace }: CodeEditorLabProps) {
   const [project, setProject] = useState<CodeProject>(() => initialSource ? readCodeProjectSource(initialSource) : { ...SAMPLE })
   const reportDraft = useContext(LabDraftContext)
   const readOnly = useContext(LabWorkbenchChromeContext)?.readOnly ?? false
@@ -55,6 +56,12 @@ export function CodeEditorLab({ theme, initialSource, beforeRun }: CodeEditorLab
     ? [javascript({ typescript: project.language === 'typescript', jsx: /\.(?:jsx|tsx)$/i.test(project.filename) })] : [], [project.language, project.filename])
   useEffect(() => { if (!readOnly) reportDraft?.({ blob: nativeSource, name: 'source.osa-code.json' }) }, [nativeSource, readOnly, reportDraft])
   useEffect(() => () => { requestRef.current += 1 }, [])
+  useEffect(() => { if (!active) requestRef.current += 1 }, [active])
+  const [wasActive, setWasActive] = useState(active)
+  if (wasActive !== active) {
+    setWasActive(active)
+    if (!active) { setRun(null); setRunStatus('stopped'); setPending(false) }
+  }
 
   const stop = () => { requestRef.current += 1; setRun(null); setRunStatus('stopped'); setPending(false) }
   const runCode = async () => {
@@ -85,7 +92,7 @@ export function CodeEditorLab({ theme, initialSource, beforeRun }: CodeEditorLab
     } finally { setDownloading(false) }
   }
 
-  return <section className="code-editor-lab" aria-label="Code editor lab">
+  return <section className={`code-editor-lab${workspace ? ' is-section-code' : ''}${workspace && !workspace.connected ? ' is-source-only' : ''}`} aria-label="Code editor lab">
     <header className="code-editor-lab__header">
       <div className="code-editor-lab__title"><h2>CodeMirror</h2></div>
       <div className="code-editor-lab__controls">
@@ -108,11 +115,11 @@ export function CodeEditorLab({ theme, initialSource, beforeRun }: CodeEditorLab
       <section className="code-editor-lab__source" aria-label="Source card">
         <div className="code-editor-lab__panel-label">Code <span>Notebook project</span></div>
         <CodeMirror value={project.code} height="100%" theme={theme === 'dark' ? oneDark : 'light'} extensions={extensions}
-          aria-label="Code source" readOnly={readOnly} editable={!readOnly}
+          aria-label="Code source" readOnly={readOnly} editable={!readOnly} autoFocus={Boolean(workspace)}
           basicSetup={{ lineNumbers: true, bracketMatching: true, closeBrackets: true, foldGutter: true }}
           onChange={(code) => { if (!readOnly) setProject((current) => ({ ...current, code })) }} />
       </section>
-      <section className="code-editor-lab__output" aria-label="p5 result card">
+      {workspace && !workspace.connected ? <button className="code-editor-lab__connect" type="button" onClick={workspace.onConnect}>+ Connected p5 workspace</button> : <section className="code-editor-lab__output" aria-label="p5 result card">
         <div className="code-editor-lab__controls code-editor-lab__run-controls">
           <strong>Code → p5 canvas</strong>
           <button type="button" disabled={readOnly || pending || project.language !== 'javascript'} onClick={() => void runCode()}>{pending ? 'Saving draft…' : 'Run with p5'}</button>
@@ -136,7 +143,7 @@ export function CodeEditorLab({ theme, initialSource, beforeRun }: CodeEditorLab
           <p>Only code goes to the runner—not your notebook data. Run trusted code: an endless loop can still freeze the tab. Stop closes the preview.</p>
           <p>Save keeps the editable code, even if it has errors. Download PNG exports the last run as a still image without replacing your source.</p>
         </details>
-      </section>
+      </section>}
     </div>
   </section>
 }

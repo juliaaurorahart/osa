@@ -5,7 +5,7 @@ import ts from 'typescript'
 
 // Shared real draft modules for the existing isolated React test harnesses.
 const modules = new Map()
-const allowed = new Set(['labDraftQueue', 'labDrafts', 'LabDraftContext', 'useLabWorkingDrafts', 'LabWorkbenchChromeContext', 'LabFileActions', 'LabMenu'])
+const allowed = new Set(['labDraftQueue', 'labDrafts', 'LabDraftContext', 'useLabWorkingDrafts', 'LabWorkbenchChromeContext', 'LabFileActions', 'LabMenu', 'labSections'])
 export function draftTestDependency(id) {
   const name = basename(id)
   if (!allowed.has(name)) return undefined

@@ -113,7 +113,11 @@ export type LabCapture = {
 })
 
 /** Topics organize notebook objects without moving them or changing OSA data. */
-export type LabNotebookObjectType = 'note' | 'artifact'
+export type LabNotebookObjectType = 'note' | 'artifact' | 'section'
+
+/** Cells refer to notebook objects. A code result belongs to its code cell, so they move together. */
+export type LabSectionCell = { id: string; objectType: 'note' | 'artifact'; objectId: string; workspace?: 'p5' }
+export type LabSection = { id: string; title: string; createdAt: string; updatedAt: string; cells: LabSectionCell[] }
 
 export type LabTopic = {
   id: string

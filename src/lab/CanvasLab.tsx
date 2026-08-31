@@ -3,6 +3,7 @@ import { LAB_GROUPS, findLab } from './labCatalog'
 import { LabErrorBoundary } from './LabErrorBoundary'
 import { LabHome } from './LabHome'
 import { LabNotebook } from './LabNotebook'
+import { LabSection } from './LabSection'
 import { LabSettings } from './LabSettings'
 import type { LabArtifact, LabCapture, LabProjectSource, LabRoute, LabTheme, LabWorkbenchId } from './labTypes'
 import { LabWorkbench } from './LabWorkbench'
@@ -69,10 +70,17 @@ export function CanvasLab({
     catch { setPreferenceMessage('Applied for this session. This browser could not remember the preference.') }
   }
   const [hasUnaddedIdea, setHasUnaddedIdea] = useState(false)
+  const [notebookView, setNotebookView] = useState<'library' | 'section'>('library')
+  const [sectionVisited, setSectionVisited] = useState(false)
   const notebook = useSyncedLabNotebook()
   const workingDrafts = useLabWorkingDrafts(notebook.saveProjectDraft)
   const noteFlushRef = useRef<() => Promise<void>>(async () => undefined)
   const registerNoteFlush = useCallback((flush: () => Promise<void>) => { noteFlushRef.current = flush }, [])
+  const sectionFlushRef = useRef<() => Promise<void>>(async () => undefined)
+  const registerSectionFlush = useCallback((flush: () => Promise<void>) => {
+    sectionFlushRef.current = flush
+    return () => { if (sectionFlushRef.current === flush) sectionFlushRef.current = async () => undefined }
+  }, [])
   const [session, setSession] = useState<ProjectSession | null>(null)
   const project = session?.scope === notebook.scope ? session : null
   const [pending, setPending] = useState<PendingAction | null>(null)
@@ -153,7 +161,7 @@ export function CanvasLab({
   }, [project, isExitApproved])
   const activeLab = route.page === 'workbench' ? findLab(route.workbenchId) : null
   const supportsDrafts = Boolean(project && DRAFT_TOOLS.has(project.toolId))
-  const flushDrafts = async () => { await noteFlushRef.current(); await workingDrafts.flush() }
+  const flushDrafts = async () => { await noteFlushRef.current(); await sectionFlushRef.current(); await workingDrafts.flush() }
   const checkpoint = workingDrafts.report
   const renameDraft = workingDrafts.rename
   useEffect(() => {
@@ -265,7 +273,7 @@ export function CanvasLab({
     }
   }
   const requestExit = () => {
-    if (project || hasUnaddedIdea) setPending({ scope: notebook.scope, exit: true })
+    if (project || hasUnaddedIdea || sectionVisited) setPending({ scope: notebook.scope, exit: true })
     else onExit()
   }
 
@@ -436,6 +444,15 @@ export function CanvasLab({
 
         <div hidden={route.page !== 'notebook'}>
           <LabNotebookSync key={`sync:${notebook.scope}`} notebook={notebook} hasDraft={hasUnaddedIdea} hasProject={Boolean(project)} beforeSwitch={flushDrafts} />
+          <nav className="lab-notebook-views" aria-label="Notebook view">
+            {(['library', 'section'] as const).map((view) => <button key={view} type="button" aria-pressed={notebookView === view} disabled={!notebook.isReady}
+              onClick={async () => { try { await flushDrafts(); setNotebookView(view); if (view === 'section') setSectionVisited(true); setProjectFailure('') }
+                catch (error) { setProjectFailure(error instanceof Error ? error.message : 'The current editor could not save.') } }}>{view === 'library' ? 'Library' : 'Section · try it'}</button>)}
+          </nav>
+          {projectFailure ? <p role="alert">{projectFailure}</p> : null}
+          {sectionVisited ? <div hidden={notebookView !== 'section'}><LabSection key={`section:${notebook.scope}`} notebook={notebook} theme={theme}
+            isActive={route.page === 'notebook' && notebookView === 'section'} onRegisterFlush={registerSectionFlush} onOpenProject={openSavedProject} /></div> : null}
+          <div hidden={notebookView !== 'library'}>
           <LabNotebook
             key={notebook.scope}
             notebookName={notebook.name}
@@ -452,7 +469,7 @@ export function CanvasLab({
             topics={notebook.topics}
             topicLinks={notebook.topicLinks}
             isReady={notebook.isReady}
-            isActive={route.page === 'notebook'}
+            isActive={route.page === 'notebook' && notebookView === 'library'}
             onDraftChange={setHasUnaddedIdea}
             isExitApproved={isExitApproved}
             status={notebook.status}
@@ -469,6 +486,7 @@ export function CanvasLab({
             onRestoreArtifact={notebook.restoreArtifact}
             onRestoreRevision={notebook.restoreRevision}
           />
+          </div>
         </div>
 
         {route.page === 'settings' ? (

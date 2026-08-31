@@ -2,7 +2,8 @@ import { createBoardSnapshot, type BoardSnapshot } from '../graph/boardSnapshot'
 import { createGraphEdge } from '../graph/graphEdge'
 import { createTextNode } from '../graph/textNode'
 import { normalizeLabOrganization } from './labNotebookTopics'
-import type { LabArtifact, LabNote, LabNotebookOrganization } from './labTypes'
+import type { LabArtifact, LabNote, LabNotebookOrganization, LabSection } from './labTypes'
+import { readSectionCells } from './labSections'
 
 /** Notebook vocabulary lives in ordinary OSA properties, not a second graph schema. */
 export const LAB_PROPERTY = {
@@ -13,9 +14,10 @@ export const LAB_PROPERTY = {
   fileId: 'lab:fileId', revisionOf: 'lab:revisionOf', deletedAt: 'lab:deletedAt',
   isDraft: 'lab:isDraft', draftOf: 'lab:draftOf', draftBaseFileId: 'lab:draftBaseFileId',
   draftActive: 'lab:draftActive', draftHash: 'lab:draftHash',
+  cells: 'lab:cells',
 } as const
 
-export type LabNotebookContents = LabNotebookOrganization & { notes: LabNote[]; artifacts: LabArtifact[] }
+export type LabNotebookContents = LabNotebookOrganization & { notes: LabNote[]; artifacts: LabArtifact[]; sections?: LabSection[] }
 export const emptyLabSnapshot = (): BoardSnapshot => ({ version: 7, nodes: [], edges: [] })
 const fallbackDate = '1970-01-01T00:00:00.000Z'
 const dateOrDefault = (value: string | undefined) => value && Number.isFinite(Date.parse(value)) ? value : fallbackDate
@@ -26,10 +28,15 @@ export function labContentsFromSnapshot(snapshot: BoardSnapshot): LabNotebookCon
   const notes: LabNote[] = []
   const artifacts: LabArtifact[] = []
   const topics: LabNotebookOrganization['topics'] = []
+  const sections: LabSection[] = []
   for (const node of snapshot.nodes) {
     const p = node.data.properties
     const createdAt = dateOrDefault(p[LAB_PROPERTY.createdAt])
-    if (p[LAB_PROPERTY.role] === 'topic') {
+    if (p[LAB_PROPERTY.role] === 'section') {
+      const cells = readSectionCells(p[LAB_PROPERTY.cells])
+      if (cells) sections.push({ id: node.id, title: node.data.name, createdAt,
+        updatedAt: dateOrDefault(p[LAB_PROPERTY.updatedAt]), cells })
+    } else if (p[LAB_PROPERTY.role] === 'topic') {
       topics.push({ id: node.id, name: node.data.name, createdAt })
     } else if (p[LAB_PROPERTY.role] === 'artifact') {
       artifacts.push({
@@ -55,10 +62,11 @@ export function labContentsFromSnapshot(snapshot: BoardSnapshot): LabNotebookCon
   }
   const noteIds = new Set(notes.map((note) => note.id))
   const artifactIds = new Set(artifacts.map((artifact) => artifact.id))
+  const sectionIds = new Set(sections.map((section) => section.id))
   const topicLinks: LabNotebookOrganization['topicLinks'] = []
   for (const edge of snapshot.edges) {
     if (edge.data.properties[LAB_PROPERTY.relation] === 'topic') {
-      const objectType = noteIds.has(edge.source) ? 'note' : artifactIds.has(edge.source) ? 'artifact' : null
+      const objectType = noteIds.has(edge.source) ? 'note' : artifactIds.has(edge.source) ? 'artifact' : sectionIds.has(edge.source) ? 'section' : null
       if (objectType) topicLinks.push({ objectType, objectId: edge.source, topicId: edge.target })
     }
     if (edge.data.properties[LAB_PROPERTY.relation] === 'attachment' && artifactIds.has(edge.target)) {
@@ -68,7 +76,7 @@ export function labContentsFromSnapshot(snapshot: BoardSnapshot): LabNotebookCon
   }
   return { notes: notes.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
     artifacts: artifacts.sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-    ...normalizeLabOrganization({ topics, topicLinks }) }
+    ...(sections.length ? { sections } : {}), ...normalizeLabOrganization({ topics, topicLinks }) }
 }
 
 /** Updates Lab-owned fields while preserving all other OSA node/edge information. */
@@ -114,9 +122,19 @@ export function labSnapshotFromContents(contents: LabNotebookContents, previous 
   for (const topic of contents.topics) add(topic.id, topic.name, '', 'note', {
     [LAB_PROPERTY.role]: 'topic', [LAB_PROPERTY.createdAt]: topic.createdAt,
   })
+  for (const section of contents.sections ?? []) add(section.id, section.title, '', 'note', {
+    [LAB_PROPERTY.role]: 'section', [LAB_PROPERTY.createdAt]: section.createdAt,
+    [LAB_PROPERTY.updatedAt]: section.updatedAt, [LAB_PROPERTY.cells]: JSON.stringify({ version: 1, cells: section.cells }),
+  })
   const knownIds = new Set(nodes.map((node) => node.id))
   nodes.push(...previous.nodes.filter((node) => !knownIds.has(node.id)))
-  const edges = previous.edges.filter((edge) => !['topic', 'attachment'].includes(edge.data.properties[LAB_PROPERTY.relation]))
+  const objectIds = new Set([...contents.notes, ...contents.artifacts, ...(contents.sections ?? [])].map((item) => item.id))
+  const topicIds = new Set(contents.topics.map((item) => item.id))
+  const noteIds = new Set(contents.notes.map((item) => item.id))
+  const artifactIds = new Set(contents.artifacts.map((item) => item.id))
+  const edges = previous.edges.filter((edge) => !(edge.data.properties[LAB_PROPERTY.relation] === 'topic'
+    && objectIds.has(edge.source) && topicIds.has(edge.target)) && !(edge.data.properties[LAB_PROPERTY.relation] === 'attachment'
+    && noteIds.has(edge.source) && artifactIds.has(edge.target)))
   const addEdge = (source: string, target: string, relation: 'topic' | 'attachment') => {
     const old = previous.edges.find((edge) => edge.source === source && edge.target === target
       && edge.data.properties[LAB_PROPERTY.relation] === relation)
@@ -133,12 +151,15 @@ export function labSnapshotFromContents(contents: LabNotebookContents, previous 
 
 /** Copies an independent notebook without colliding with an account's existing IDs. */
 export function copyLabContents(contents: LabNotebookContents, createId: () => string) {
-  const ids = new Map([...contents.notes, ...contents.artifacts, ...contents.topics].map((item) => [item.id, createId()]))
+  const ids = new Map([...contents.notes, ...contents.artifacts, ...contents.topics, ...(contents.sections ?? [])].map((item) => [item.id, createId()]))
+  for (const section of contents.sections ?? []) for (const cell of section.cells) if (!ids.has(cell.objectId)) ids.set(cell.objectId, createId())
   // Unsaved projects reserve an identity before a saved artifact exists.
   for (const artifact of contents.artifacts) if (artifact.draftOf && !ids.has(artifact.draftOf)) ids.set(artifact.draftOf, createId())
   const fileIds = new Map([...new Set(contents.artifacts.map((artifact) => artifact.fileId || artifact.id))]
     .map((fileId) => [fileId, createId()]))
   return { ids, fileIds, contents: {
+    ...(contents.sections ? { sections: contents.sections.map((section) => ({ ...section, id: ids.get(section.id)!,
+      cells: section.cells.map((cell) => ({ ...cell, id: createId(), objectId: ids.get(cell.objectId)! })) })) } : {}),
     notes: contents.notes.map((note) => ({ ...note, id: ids.get(note.id)!,
       ...(note.artifactIds ? { artifactIds: note.artifactIds.map((id) => ids.get(id)).filter((id): id is string => Boolean(id)) } : {}) })),
     artifacts: contents.artifacts.map((artifact) => ({ ...artifact, id: ids.get(artifact.id)!,

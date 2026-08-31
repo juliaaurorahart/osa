@@ -44,7 +44,7 @@ export function normalizeLabOrganization(value: unknown): LabNotebookOrganizatio
   const seen = new Set<string>()
   for (const entry of Array.isArray(record.topicLinks) ? record.topicLinks : []) {
     if (!isRecord(entry)
-      || (entry.objectType !== 'note' && entry.objectType !== 'artifact')
+      || (entry.objectType !== 'note' && entry.objectType !== 'artifact' && entry.objectType !== 'section')
       || typeof entry.objectId !== 'string'
       || typeof entry.topicId !== 'string') continue
 

@@ -78,6 +78,13 @@ Cloudflare references: [Pages bindings](https://developers.cloudflare.com/pages/
 
 ## Visual tools Lab
 
+**Notebook → Section · try it** adds a first working section alongside the
+Library: text, Ink, images/files and code, one active editor, and In-place,
+Split or Focus layouts. A connected p5 result moves with its code cell.
+Cells reference existing notebook objects; removing a cell does not delete its
+content. See the [section trial](docs/lab-section-trial.md) for saving behavior
+and the deliberately limited first set of inline editors.
+
 The app supports a dedicated Lab front door at
 `https://lab.juliaaurorahart.com/`, using the same deployment and account
 notebook as OSA. Hosting setup is tracked separately in the

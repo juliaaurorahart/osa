@@ -48,6 +48,33 @@ try {
   assert.equal(copied.contents.topicLinks[1].objectId, copied.contents.artifacts[0].id)
   assert.equal(contents.notes[0].id, 'note', 'Copy does not mutate local originals')
 
+  const section = { id: 'section', title: 'One thought', createdAt: date, updatedAt: date,
+    cells: [{ id: 'cell-note', objectType: 'note', objectId: 'note' }, { id: 'cell-file', objectType: 'artifact', objectId: 'file', workspace: 'p5' }] }
+  const sectionContents = { ...contents, sections: [section], topicLinks: [...contents.topicLinks, { objectType: 'section', objectId: 'section', topicId: 'topic' }] }
+  const sectionGraph = graph.labSnapshotFromContents(sectionContents)
+  assert.ok(snapshots.parseBoardSnapshot(sectionGraph), 'Sections retain the unchanged OSA graph schema')
+  assert.deepEqual(graph.labContentsFromSnapshot(sectionGraph), sectionContents)
+  const copiedSection = graph.copyLabContents(sectionContents, () => `section-copy-${++nextId}`)
+  assert.equal(copiedSection.contents.sections[0].cells[0].objectId, copiedSection.contents.notes[0].id)
+  assert.equal(copiedSection.contents.sections[0].cells[1].objectId, copiedSection.contents.artifacts[0].id)
+  assert.notEqual(copiedSection.contents.sections[0].cells[0].id, 'cell-note')
+  assert.equal(copiedSection.contents.sections[0].cells[1].workspace, 'p5')
+  assert.equal(copiedSection.contents.topicLinks.at(-1).objectId, copiedSection.contents.sections[0].id)
+  const futureGraph = structuredClone(sectionGraph)
+  const future = structuredClone(futureGraph.nodes.find((node) => node.id === 'section'))
+  future.id = 'future-section'; future.data.properties['lab:cells'] = '{"version":2,"future":"preserve me"}'
+  futureGraph.nodes.push(future)
+  const futureEdge = structuredClone(futureGraph.edges[0]); futureEdge.id = 'future-edge'; futureEdge.source = 'future-section'
+  futureGraph.edges.push(futureEdge)
+  const unknownAttachment = structuredClone(futureEdge); unknownAttachment.id = 'unknown-attachment'; unknownAttachment.source = 'section'
+  unknownAttachment.target = 'file'; unknownAttachment.data.properties['lab:relation'] = 'attachment'; futureGraph.edges.push(unknownAttachment)
+  const preservedGraph = graph.labSnapshotFromContents(graph.labContentsFromSnapshot(futureGraph), futureGraph)
+  assert.deepEqual(preservedGraph.nodes.find((node) => node.id === future.id), future)
+  assert.ok(preservedGraph.edges.some((edge) => edge.id === 'future-edge'))
+  assert.ok(preservedGraph.edges.some((edge) => edge.id === 'unknown-attachment'))
+  const portableSection = await cloud.portableLabSnapshot({ scope: 'fixture', snapshot: sectionGraph }, async () => ({ ...contents.artifacts[0], file: source, preview }))
+  assert.deepEqual(graph.labContentsFromSnapshot(snapshots.parseBoardSnapshot(portableSection)), sectionContents, 'Portable backup retains cell references, grouping and section topics')
+
   const assetId = '11111111-1111-4111-8111-111111111111'
   assert.ok(cloud.isPrivateLabAssetUrl(`/api/assets?id=${assetId}&boardId=notebook`))
   assert.ok(cloud.isPrivateLabAssetUrl(`http://localhost/api/assets?id=${assetId}&boardId=notebook`))

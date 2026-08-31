@@ -8,7 +8,8 @@ import { accountLabScope, GUEST_LAB_SCOPE, keepLabRecovery, LabLocalConflictErro
   storeLabDocumentFiles, writeLabDocument, type LabNotebookDocument, type LabNotebookChoice } from './labNotebookDocumentStorage'
 import { changeCloudNotebook, checkLabAccount, fetchCloudNotebook, fetchLabSession, listCloudNotebooks,
   loadLabFile, portableLabSnapshot, saveCloudNotebook, type LabCloudBoard } from './labNotebookCloud'
-import type { LabArtifact, LabCapture, LabNote, LabNotebookObjectType, StoredLabArtifact } from './labTypes'
+import type { LabArtifact, LabCapture, LabNote, LabNotebookObjectType, LabSection, LabSectionCell, StoredLabArtifact } from './labTypes'
+import { moveSectionCell, type LabSectionAction } from './labSections'
 import type { LabNotebookStatus } from './useLabNotebook'
 import { DRAFT_TOOLS, draftSlotId, draftMatchesSave, labDraftHash, type LabProjectDraftInput } from './labDrafts'
 
@@ -52,7 +53,7 @@ export function useSyncedLabNotebook() {
   const retryRequired = useRef(false)
   const creation = useRef<{ name: string; location: string; key: string } | null>(null)
 
-  const contents = useMemo(() => document ? labContentsFromSnapshot(document.snapshot)
+  const contents = useMemo<LabNotebookContents>(() => document ? labContentsFromSnapshot(document.snapshot)
     : { notes: [], artifacts: [], topics: [], topicLinks: [] }, [document])
   const showDocument = useCallback((next: LabNotebookDocument) => {
     currentRef.current = next
@@ -338,7 +339,7 @@ export function useSyncedLabNotebook() {
   const setObjectTopics = useCallback((objectType: LabNotebookObjectType, objectId: string, topicIds: readonly string[]) => {
     if (!currentRef.current) return
     const current = labContentsFromSnapshot(currentRef.current.snapshot)
-    if (!(objectType === 'note' ? current.notes : current.artifacts).some((object) => object.id === objectId)) return
+    if (!(objectType === 'note' ? current.notes : objectType === 'section' ? current.sections ?? [] : current.artifacts).some((object) => object.id === objectId)) return
     const artifact = objectType === 'artifact' ? current.artifacts.find((item) => item.id === objectId) : undefined
     const projectId = artifact?.draftOf || artifact?.id
     const objectIds = projectId ? current.artifacts.filter((item) => !item.revisionOf
@@ -348,6 +349,78 @@ export function useSyncedLabNotebook() {
     for (const id of objectIds) organization = setLabObjectTopics(organization, objectType, id, topicIds)
     if (organization !== current) commit({ ...current, ...organization })
   }, [commit])
+
+  const flushNotebookWrites = useCallback(async (expectedScope: string) => {
+    await writeQueue.current
+    if (currentRef.current?.scope !== expectedScope || localFailure.current || switching.current) {
+      throw new Error('The notebook save could not be confirmed. Keep this editor open.')
+    }
+  }, [])
+
+  /** One transaction adds an object and its place in a section. Removing a cell never deletes its object. */
+  const changeSection = useCallback(async (sectionId: string | null,
+    action: LabSectionAction | { kind: 'capture'; capture: LabCapture }, expectedScope: string, afterCellId?: string) => {
+    const check = () => {
+      const doc = currentRef.current
+      if (!doc || doc.scope !== expectedScope || switching.current || localFailure.current) throw new Error('Return to the original notebook before changing this section.')
+      return doc
+    }
+    check()
+    fileOperations.current += 1
+    try {
+      const file = action.kind === 'capture' ? createStoredLabCapture(action.capture, id(), new Date().toISOString()) : null
+      if (file) await storeLabDocumentFiles(expectedScope, [file])
+      const current = labContentsFromSnapshot(check().snapshot)
+      const now = new Date().toISOString()
+      const existing = sectionId ? current.sections?.find((item) => item.id === sectionId) : undefined
+      if (sectionId && !existing) throw new Error('That section is no longer available.')
+      if (!existing && action.kind !== 'create') throw new Error('Open a section first.')
+      const section: LabSection = existing ? { ...existing, cells: [...existing.cells], updatedAt: now }
+        : { id: id(), title: 'First section', createdAt: now, updatedAt: now, cells: [] }
+      let cell: LabSectionCell | undefined
+      if (action.kind === 'note') {
+        const note: LabNote = { id: id(), title: 'Untitled note', body: '', createdAt: now, updatedAt: now }
+        current.notes = [...current.notes, note]
+        cell = { id: id(), objectType: 'note', objectId: note.id }
+      } else if (file) {
+        current.artifacts = [...current.artifacts, labArtifactMetadata(file)]
+        cell = { id: id(), objectType: 'artifact', objectId: file.id }
+      } else if (action.kind === 'attach') {
+        const available = action.objectType === 'note' ? current.notes.some((item) => item.id === action.objectId && !item.isDraft)
+          : current.artifacts.some((item) => item.id === action.objectId && !item.draftOf && !item.revisionOf && !item.deletedAt)
+        if (!available) throw new Error('That object is not available in this notebook.')
+        cell = { id: id(), objectType: action.objectType, objectId: action.objectId }
+      } else if (action.kind === 'rename') {
+        section.title = action.title.trim().slice(0, 120) || 'Untitled section'
+      } else if (action.kind === 'remove') section.cells = section.cells.filter((item) => item.id !== action.cellId)
+      else if (action.kind === 'move') section.cells = moveSectionCell(section.cells, action.cellId, action.direction)
+      else if (action.kind === 'workspace') {
+        const target = section.cells.find((item) => item.id === action.cellId)
+        if (!target || target.objectType !== 'artifact' || !current.artifacts.some((item) => item.id === target.objectId && item.toolId === 'code')) throw new Error('Connect a p5 workspace to a code cell.')
+        section.cells = section.cells.map((item) => item.id === action.cellId ? { ...item, workspace: 'p5' } : item)
+      }
+      if (cell) {
+        const after = section.cells.findIndex((item) => item.id === afterCellId)
+        section.cells.splice(after < 0 ? section.cells.length : after + 1, 0, cell)
+      }
+      if (!commit({ ...current, sections: existing ? current.sections!.map((item) => item.id === section.id ? section : item)
+        : [...(current.sections ?? []), section] })) throw new Error('The section could not save.')
+      await flushNotebookWrites(expectedScope)
+      return { section, cell }
+    } finally { fileOperations.current -= 1 }
+  }, [commit, flushNotebookWrites])
+
+  const saveSectionNote = useCallback(async (note: LabNote, expectedScope: string, expectedUpdatedAt: string) => {
+    const doc = currentRef.current
+    if (!doc || doc.scope !== expectedScope || switching.current || localFailure.current) throw new Error('The notebook changed. Keep this text open.')
+    const current = labContentsFromSnapshot(doc.snapshot)
+    const existing = current.notes.find((item) => item.id === note.id)
+    if (!existing || existing.updatedAt !== expectedUpdatedAt) throw new Error('This note changed elsewhere. Copy your writing before reopening the note.')
+    const edited = applyLabNotePatch(existing, note, new Set(current.artifacts.map((file) => file.id)), new Date().toISOString())
+    if (edited !== existing && !commit({ ...current, notes: current.notes.map((item) => item.id === note.id ? edited : item) })) throw new Error('The note could not save.')
+    await flushNotebookWrites(expectedScope)
+    return edited
+  }, [commit, flushNotebookWrites])
 
   const addFiles = useCallback(async (files: StoredLabArtifact[], topicIds: readonly string[], expectedScope?: string) => {
     const current = currentRef.current
@@ -382,6 +455,8 @@ export function useSyncedLabNotebook() {
   }, [addFiles, reportError])
   const getArtifact = useCallback((artifactId: string) => currentRef.current
     ? labContentsFromSnapshot(currentRef.current.snapshot).artifacts.find((item) => item.id === artifactId) : undefined, [])
+  const getNote = useCallback((noteId: string) => currentRef.current
+    ? labContentsFromSnapshot(currentRef.current.snapshot).notes.find((item) => item.id === noteId && !item.isDraft) : undefined, [])
   const getProjectDraft = useCallback((projectId: string) => currentRef.current
     ? labContentsFromSnapshot(currentRef.current.snapshot).artifacts.find((item) => item.draftOf === projectId) : undefined, [])
   const saveProjectDraft = useCallback(async (input: LabProjectDraftInput, expectedScope: string): Promise<LabArtifact> => {
@@ -598,6 +673,7 @@ export function useSyncedLabNotebook() {
         topicLinks: [...remoteContents.topicLinks, ...copied.topicLinks] })
       const next: LabNotebookDocument = { ...fromBoard(remote, scope, (cached?.localVersion ?? 0) + 1, account), dirty: true,
         snapshot: labSnapshotFromContents({ ...organization, notes: [...copied.notes, ...remoteContents.notes],
+          sections: [...(copied.sections ?? []), ...(remoteContents.sections ?? [])],
           artifacts: [...copied.artifacts, ...remoteContents.artifacts] }, remote.snapshot) }
       await writeLabDocument(next, cached?.localVersion ?? null)
       generation.current += 1; showDocument(next); setEmail(account)
@@ -728,9 +804,10 @@ export function useSyncedLabNotebook() {
     artifacts: contents.artifacts.filter((artifact) => !artifact.draftOf && !artifact.revisionOf && !artifact.deletedAt),
     trashedArtifacts: contents.artifacts.filter((artifact) => !artifact.draftOf && !artifact.revisionOf && artifact.deletedAt),
     artifactRevisions: contents.artifacts.filter((artifact) => artifact.revisionOf),
-    getArtifact, getProjectDraft, trashArtifact, restoreArtifact, restoreRevision,
+    getArtifact, getNote, getProjectDraft, trashArtifact, restoreArtifact, restoreRevision,
     status, message, isReady: Boolean(document) && !busy && !storageFailed,
     createNote, updateNote, createTopic, setObjectTopics, importFiles, captureVisual,
+    changeSection, saveSectionNote, flushNotebookWrites,
     saveNoteDraft, promoteNoteDraft, saveProjectDraft,
     loadArtifactPreview, loadArtifactSource, downloadArtifact,
     scope: document?.scope ?? 'loading', email, offlineAccount, syncStatus, syncMessage, busy, conflict,

@@ -26,7 +26,6 @@ export function InkLab({ onSave, initialSource }: { onSave?: (capture: LabCaptur
   const reportDraft = useContext(LabDraftContext)
   const [document, setDocument] = useState<InkDocument>(() => initialSource
     ? parseInkDocument(initialSource.text ?? '') : createInkDocument())
-  useEffect(() => { reportDraft?.(() => ({ name: 'drawing.osa-ink.json', blob: new Blob([JSON.stringify(document)], { type: 'application/json' }) })) }, [document, reportDraft])
   const [past, setPast] = useState<InkDocument[]>([])
   const [future, setFuture] = useState<InkDocument[]>([])
   const [pen, setPen] = useState<InkPen>('ink')
@@ -43,6 +42,8 @@ export function InkLab({ onSave, initialSource }: { onSave?: (capture: LabCaptur
   const svgRef = useRef<SVGSVGElement>(null)
   const importRef = useRef<HTMLInputElement>(null)
   const gesture = useRef<{ pointerId: number; stroke?: InkStroke; pan?: { x: number; y: number; startX: number; startY: number } } | null>(null)
+  useEffect(() => { reportDraft?.(() => ({ name: 'drawing.osa-ink.json', blob: new Blob([JSON.stringify(gesture.current?.stroke
+    ? { ...document, strokes: [...document.strokes, gesture.current.stroke] } : document)], { type: 'application/json' }) })) }, [document, reportDraft])
   const clipId = useId().replace(/:/g, '')
   const pointCount = useMemo(() => document.strokes.reduce((sum, stroke) => sum + stroke.points.length, 0), [document.strokes])
   const completedPaths = useMemo(() => document.strokes.map((stroke, index) => <path key={index} d={inkStrokePath(stroke)} fill={stroke.color} opacity={stroke.opacity} />), [document.strokes])

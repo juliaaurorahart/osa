@@ -37,6 +37,11 @@
 .code-editor-lab__error { color: var(--osa-danger-text); overflow-wrap: anywhere; font-size: .85rem; }
 .code-editor-lab__help { margin-top: 12px; }
 .code-editor-lab__help summary { cursor: pointer; }
+.code-editor-lab.is-section-code { height: auto; overflow: visible; }
+.is-section-code .code-editor-lab__body { grid-template-columns: minmax(0, 1fr); }
+.is-section-code .code-editor-lab__source { height: 380px; border-right: 0; }
+.is-section-code .code-editor-lab__preview { height: 340px; }
+.code-editor-lab__connect { padding: 14px; color: var(--osa-text); background: var(--osa-surface); border: 0; border-top: 1px solid var(--osa-border); cursor: pointer; }
 @media (max-width: 850px) {
   .code-editor-lab { height: auto; overflow: visible; }
   .code-editor-lab__body { grid-template-columns: minmax(0, 1fr); }

@@ -110,10 +110,10 @@ const { CodeEditorLab } = loadModule('src/components/CodeEditorLab.tsx', {
 const beforeRun = async () => { flushes++; if (flushBlock) await flushBlock; if (failFlush) throw new Error('Draft storage unavailable') }
 const reportDraft = (draft) => { lastDraft = draft; draftCount++ }
 const root = createRoot(document.getElementById('root'))
-const mount = async (source, key, readOnly = false) => React.act(async () => root.render(React.createElement(React.StrictMode, {},
+const mount = async (source, key, readOnly = false, extra = {}) => React.act(async () => root.render(React.createElement(React.StrictMode, {},
   React.createElement(LabDraftContext.Provider, { value: reportDraft },
     React.createElement(LabWorkbenchChromeContext.Provider, { value: { saveTarget: null, fileTarget: null, readOnly } },
-      React.createElement(CodeEditorLab, { key, theme: 'dark', initialSource: source, beforeRun }))))))
+      React.createElement(CodeEditorLab, { key, theme: 'dark', initialSource: source, beforeRun, ...extra }))))))
 const button = (text) => [...document.querySelectorAll('button')].find((node) => node.textContent === text)
 const click = async (text) => React.act(async () => { assert.ok(button(text), text); button(text).click() })
 const edit = async (text) => React.act(async () => editor.onChange(text))
@@ -194,6 +194,23 @@ try {
   assert.match(document.body.textContent, /Run failed/)
   assert.doesNotMatch(document.body.textContent, /Starting…/)
   assert.ok(captureAction().source.blob.size)
+  failPreview = false
+  let connections = 0
+  const sectionSource = await sourceOf(project.codeProjectBlob(valueOf(sourceA)))
+  const disconnected = { connected: false, onConnect: () => { connections++ } }
+  const beforeSectionMounts = mounts
+  await mount(sectionSource, 'section-code', false, { workspace: disconnected })
+  assert.equal(button('Run with p5'), undefined)
+  await click('+ Connected p5 workspace'); assert.equal(connections, 1)
+  await edit(sourceA + '\n// kept while connecting')
+  await mount(sectionSource, 'section-code', false, { workspace: { ...disconnected, connected: true } })
+  assert.equal(editor.value, sourceA + '\n// kept while connecting')
+  assert.equal(mounts, beforeSectionMounts, 'Connecting output never starts code automatically')
+  await click('Run with p5'); assert.ok(document.querySelector('[data-code-preview]'))
+  await mount(sectionSource, 'section-code', false, { active: false, workspace: { ...disconnected, connected: true } })
+  assert.equal(document.querySelector('[data-code-preview]'), null, 'Leaving a section stops its runner')
+  await mount(sectionSource, 'section-code', false, { active: true, workspace: { ...disconnected, connected: true } })
+  assert.equal(document.querySelector('[data-code-preview]'), null, 'Returning cannot restart saved code')
 } finally {
   await React.act(async () => root.unmount())
   dom.window.close()

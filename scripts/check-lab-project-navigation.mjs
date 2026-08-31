@@ -163,6 +163,7 @@ const { CanvasLab } = loadModule('src/lab/CanvasLab.tsx', {
     'aria-label': 'Open live items as', value: liveOpenVersion, onChange: (event) => onChangeLiveOpenVersion(event.target.value),
   }, React.createElement('option', { value: 'saved' }, 'Live'), React.createElement('option', { value: 'draft' }, 'Working draft')) },
   './LabNotebookSync': { LabNotebookSync: () => null },
+  './LabSection': { LabSection: () => null },
   './LabNotebook': { LabNotebook: (props) => React.createElement(LabNotebook, { ...props,
     onOpenProject: (artifact, version) => {
       const promise = props.onOpenProject(artifact, version)
