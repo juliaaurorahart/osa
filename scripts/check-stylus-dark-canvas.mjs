@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 import { createServer } from 'vite'
 
-const server = await createServer({ appType: 'custom', server: { middlewareMode: true } })
+const server = await createServer({ appType: 'custom', cacheDir: 'node_modules/.vite-test-stylus', server: { middlewareMode: true } })
 try {
   const { createInkDocument, parseInkDocument, inkDocumentSvg } = await server.ssrLoadModule('/src/lab/inkDocument.ts')
   const { InkLab } = await server.ssrLoadModule('/src/components/InkLab.tsx')
@@ -55,7 +55,7 @@ async function initializePainter(init) {
   }
   vm.runInNewContext(bridge, {
     location: { hash: '#dark-test', origin: 'http://localhost', href: 'http://localhost/paint#dark-test' },
-    parent, window: { Klecks: Painter }, document: { body: { inert: false }, getElementById: () => null },
+    parent, window: { Klecks: Painter }, document: { body: { inert: false }, getElementById: () => null, querySelector: () => null },
     crypto: { randomUUID: () => 'capture' }, performance: { now: () => 0 }, Blob, ArrayBuffer,
     setInterval: (callback) => { intervals.set(++timer, callback); return timer }, clearInterval: (id) => intervals.delete(id),
     setTimeout: () => ++timer, clearTimeout: () => {},

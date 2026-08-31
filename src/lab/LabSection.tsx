@@ -21,10 +21,13 @@ const ExcalidrawLab = lazy(() => import('../components/ExcalidrawLab').then((mod
 const MermaidLab = lazy(() => import('../components/MermaidLab').then((module) => ({ default: module.MermaidLab })))
 const VegaLab = lazy(() => import('../components/VegaLab').then((module) => ({ default: module.VegaLab })))
 const DrawioEmbedLab = lazy(() => import('../components/DrawioEmbedLab').then((module) => ({ default: module.DrawioEmbedLab })))
+const KlecksLab = lazy(() => import('../components/KlecksLab').then((module) => ({ default: module.KlecksLab })))
 type Notebook = ReturnType<typeof useSyncedLabNotebook>
 type Mode = 'inline' | 'split' | 'focus'
 type Active = { cell: LabSectionCell; sessionId: string; note?: LabNote; artifact?: LabArtifact;
-  source?: LabProjectSource; baseFileId?: string; draftFileId?: string; drawioEditing?: boolean; drawioStarted?: boolean }
+  source?: LabProjectSource; baseFileId?: string; draftFileId?: string; managedEditing?: boolean; editorStarted?: boolean }
+const hasVersionedEditor = (tool?: string) => tool === 'drawio' || tool === 'klecks'
+const editorName = (session: Active | null) => session?.artifact?.toolId === 'klecks' ? 'Klecks' : 'draw.io'
 const failureText = (failure: unknown) => failure instanceof Error ? failure.message : 'Could not save. Keep this editor open.'
 
 /** A single active editor keeps the same React identity and DOM parent in every layout. */
@@ -52,15 +55,15 @@ export function LabSection({ notebook, theme, isActive, onRegisterFlush, onOpenP
   const activeRef = useRef(active)
   const notebookRef = useRef(notebook)
   const readerRef = useRef<LabDraftReader | null>(null)
-  const drawioCheckpointRef = useRef<(() => Promise<void>) | null>(null)
-  const registerDrawioCheckpoint = useCallback((checkpoint: (() => Promise<void>) | null) => { drawioCheckpointRef.current = checkpoint }, [])
+  const editorCheckpointRef = useRef<(() => Promise<void>) | null>(null)
+  const registerEditorCheckpoint = useCallback((checkpoint: (() => Promise<void>) | null) => { editorCheckpointRef.current = checkpoint }, [])
   const mounted = useRef(true)
   const openGeneration = useRef(0)
   const beginBusy = useCallback(() => { busyDepth.current += 1; busyRef.current = true; if (mounted.current) setBusy(true) }, [])
   const endBusy = useCallback(() => { busyDepth.current -= 1; busyRef.current = busyDepth.current > 0; if (mounted.current) setBusy(busyRef.current) }, [])
   const drafts = useLabWorkingDrafts(notebook.saveProjectDraft)
-  const drawioEditing = Boolean(active?.drawioEditing)
-  useEffect(() => { onEditorLockChange?.(drawioEditing); return () => onEditorLockChange?.(false) }, [drawioEditing, onEditorLockChange])
+  const managedEditing = Boolean(active?.managedEditing)
+  useEffect(() => { onEditorLockChange?.(managedEditing); return () => onEditorLockChange?.(false) }, [managedEditing, onEditorLockChange])
   useEffect(() => { activeRef.current = active; notebookRef.current = notebook }, [active, notebook])
   useEffect(() => { if (active?.sessionId) editorRef.current?.scrollIntoView?.({ block: 'nearest' }) }, [active?.sessionId])
   useEffect(() => {
@@ -100,26 +103,25 @@ export function LabSection({ notebook, theme, isActive, onRegisterFlush, onOpenP
     beginBusy()
     try {
       const session = activeRef.current
-      if (session?.drawioEditing) {
-        const checkpoint = drawioCheckpointRef.current
-        if (!checkpoint && session.drawioStarted) throw new Error('The draw.io editor is unavailable. Keep it open to recover your draft.')
+      if (session?.managedEditing) {
+        const checkpoint = editorCheckpointRef.current
+        if (!checkpoint && session.editorStarted) throw new Error(`The ${editorName(session)} editor is unavailable. Keep it open to recover your draft.`)
         await checkpoint?.()
         if (activeRef.current !== session) throw new Error('The editor changed before its draft could be captured. Keep it open.')
-        // capture publishes fresh XML, unless a newer autosave already arrived.
-        // Flush that authoritative reader, never the older image-matched export.
+        // Flush the latest native source, never an older picture-matched export.
       }
       await flush()
       openGeneration.current += 1
       readerRef.current = null
-      // A closed draw.io cell returns to its Saved preview. The working draft
+      // A closed hosted editor returns to its Saved preview. The working draft
       // remains a separate, single slot, including after a successful Push.
-      const next = session?.drawioEditing ? { ...session, sessionId: crypto.randomUUID(), drawioEditing: false, source: undefined } : null
+      const next = session?.managedEditing ? { ...session, sessionId: crypto.randomUUID(), managedEditing: false, source: undefined } : null
       activeRef.current = next
       if (mounted.current) setActive(next)
     } finally { endBusy() }
   }, [flush, beginBusy, endBusy])
   useEffect(() => onRegisterFlush(async () => {
-    if (activeRef.current?.drawioEditing) throw new Error('Close the draw.io editor first. Closing keeps your latest draft; Push updates Saved.')
+    if (activeRef.current?.managedEditing) throw new Error(`Close the ${editorName(activeRef.current)} editor first. Closing keeps your latest draft; Push updates Saved.`)
     await closeEditor()
   }), [closeEditor, onRegisterFlush])
   useEffect(() => {
@@ -130,7 +132,7 @@ export function LabSection({ notebook, theme, isActive, onRegisterFlush, onOpenP
     notes.activate(true)
     const hidden = () => { if (document.visibilityState === 'hidden') void flush().catch(() => undefined) }
     const unload = (event: BeforeUnloadEvent) => {
-      if (activeRef.current?.drawioEditing || notes.hasPending() || draftsController.current.hasPending() || busyRef.current) { event.preventDefault(); event.returnValue = '' }
+      if (activeRef.current?.managedEditing || notes.hasPending() || draftsController.current.hasPending() || busyRef.current) { event.preventDefault(); event.returnValue = '' }
     }
     document.addEventListener('visibilitychange', hidden); window.addEventListener('beforeunload', unload)
     return () => { mounted.current = false; notes.activate(false); notes.stop(); void notes.flush().catch(() => undefined)
@@ -139,7 +141,7 @@ export function LabSection({ notebook, theme, isActive, onRegisterFlush, onOpenP
 
   const run = async (action: () => Promise<void>) => {
     if (busyRef.current) return
-    if (activeRef.current?.drawioEditing) { setError('Close the draw.io editor before switching cells. Your draft saves in the background.'); return }
+    if (activeRef.current?.managedEditing) { setError(`Close the ${editorName(activeRef.current)} editor before switching cells. Your draft saves in the background.`); return }
     beginBusy(); setError('')
     try { await flush(); await action() } catch (failure) { if (mounted.current) setError(failureText(failure)) }
     finally { endBusy() }
@@ -161,7 +163,7 @@ export function LabSection({ notebook, theme, isActive, onRegisterFlush, onOpenP
       const draft = current.getProjectDraft(artifact.id)
       const working = draft?.draftActive ? draft : artifact
       let source: LabProjectSource | undefined
-      if (isSectionWorkspace(artifact.toolId) && artifact.toolId !== 'drawio') {
+      if (isSectionWorkspace(artifact.toolId) && !hasVersionedEditor(artifact.toolId)) {
         const blob = await current.loadArtifactSource(working.id, current.scope)
         if (!blob) throw new Error('The editable source is unavailable. Your file has not been changed.')
         source = working.draftOf ? await readLabDraftSource(working, blob) : (await readSavedLabProject(artifact, blob)).source
@@ -175,24 +177,27 @@ export function LabSection({ notebook, theme, isActive, onRegisterFlush, onOpenP
     if (!mounted.current || notebookRef.current.scope !== current.scope || openGeneration.current !== generation) return
     readerRef.current = null; activeRef.current = next; setActive(next); setNoteStatus(''); setPicker(false)
   }
-  const startDrawio = async (version: 'saved' | 'draft') => {
+  const startVersionedEditor = async (version: 'saved' | 'draft') => {
     const session = activeRef.current
-    if (!session?.artifact || session.artifact.toolId !== 'drawio') return
+    if (!session?.artifact || !hasVersionedEditor(session.artifact.toolId)) return
     const current = notebookRef.current
     const saved = current.getArtifact(session.artifact.id)
     const draft = current.getProjectDraft(session.artifact.id)
     const chosen = version === 'draft' ? draft : saved
     if (!chosen || chosen.deletedAt) throw new Error(`The ${version} version is unavailable. Your other version has not changed.`)
     const replacesDraft = version === 'saved' && draft && (draft.draftActive || draft.draftBaseFileId !== (saved?.fileId || saved?.id))
-    if (!window.confirm(`draw.io opens at embed.diagrams.net, outside OSA. This sends the selected diagram to that editor.${replacesDraft ? '\n\nStarting from Saved will replace the current working Draft. Saved itself will not change until you Push. Continue?' : '\n\nOpen this diagram?'}`)) return
+    const replaceMessage = 'Starting from Saved will replace the current working Draft. Saved itself will not change until you Push. Continue?'
+    if (session.artifact.toolId === 'drawio') {
+      if (!window.confirm(`draw.io opens at embed.diagrams.net, outside OSA. This sends the selected diagram to that editor.${replacesDraft ? `\n\n${replaceMessage}` : '\n\nOpen this diagram?'}`)) return
+    } else if (replacesDraft && !window.confirm(replaceMessage)) return
     const blob = await current.loadArtifactSource(chosen.id, current.scope)
     const source = chosen.draftOf ? await readLabDraftSource(chosen, blob) : (await readSavedLabProject(chosen, blob)).source
     if (chosen.draftOf) await readSavedLabProject({ ...chosen, sourceName: source.name }, source.file)
     if (!mounted.current || activeRef.current !== session || notebookRef.current.scope !== current.scope) return
     // Bind to both selected versions. A competing write fails the existing CAS
     // checks instead of overwriting a newer draft or Saved file.
-    const next: Active = { ...session, artifact: saved ?? session.artifact, source, drawioEditing: true,
-      drawioStarted: false,
+    const next: Active = { ...session, artifact: saved ?? session.artifact, source, managedEditing: true,
+      editorStarted: false,
       sessionId: crypto.randomUUID(), draftFileId: draft?.fileId,
       baseFileId: chosen.draftOf ? chosen.draftBaseFileId : chosen.fileId || chosen.id }
     readerRef.current = null; activeRef.current = next; setActive(next)
@@ -237,11 +242,11 @@ export function LabSection({ notebook, theme, isActive, onRegisterFlush, onOpenP
     } finally { draftsController.current.resume(); endBusy() }
   }, [flush, captureSessionId, captureScope, beginBusy, endBusy])
   const publishDrawioXml = useCallback((xml: string) => publishDraft({ blob: new Blob([xml], { type: 'application/xml' }), name: 'diagram.drawio' }), [publishDraft])
-  const drawioStarted = useCallback(() => {
+  const editorStarted = useCallback(() => {
     const session = activeRef.current
-    if (session && session.sessionId === captureSessionId) session.drawioStarted = true
+    if (session && session.sessionId === captureSessionId) session.editorStarted = true
   }, [captureSessionId])
-  const closeDrawio = useCallback(async () => {
+  const closeManagedEditor = useCallback(async () => {
     if (busyRef.current) throw new Error('Wait for the current save to finish before closing.')
     setError('')
     try { await closeEditor() } catch (failure) { setError(failureText(failure)); throw failure }
@@ -272,7 +277,7 @@ export function LabSection({ notebook, theme, isActive, onRegisterFlush, onOpenP
     <header className="lab-section__toolbar">
       {section ? <input key={section.id + section.title} className="lab-section__name" aria-label="Section name" defaultValue={section.title} maxLength={120}
         onBlur={(event) => { if (event.target.value !== section.title) void run(() => change({ kind: 'rename', title: event.target.value })) }} /> : <h2>A space to think</h2>}
-      <span className="lab-section__status" role="status">{error ? 'Save needs attention' : active?.artifact?.toolId === 'drawio' ? !drawioEditing ? 'Saved preview' : drafts.state.kind === 'error' ? 'Draft needs attention' : drafts.state.kind === 'saving' ? 'Saving draft…' : drafts.state.kind === 'saved' ? 'Draft saved on this device' : 'Draft autosaves · Push updates Saved' : active?.note ? noteStatus || 'Text autosaves' : active?.artifact && editableArtifact ? drafts.state.kind === 'error' ? 'Draft needs attention' : drafts.state.kind === 'saving' ? 'Saving draft…' : 'Working draft · Save updates live' : 'Upside-down notebook · new cells at the top'}</span>
+      <span className="lab-section__status" role="status">{error ? 'Save needs attention' : hasVersionedEditor(active?.artifact?.toolId) ? !managedEditing ? 'Saved preview' : drafts.state.kind === 'error' ? 'Draft needs attention' : drafts.state.kind === 'saving' ? 'Saving draft…' : drafts.state.kind === 'saved' ? 'Draft saved on this device' : 'Draft autosaves · Push updates Saved' : active?.note ? noteStatus || 'Text autosaves' : active?.artifact && editableArtifact ? drafts.state.kind === 'error' ? 'Draft needs attention' : drafts.state.kind === 'saving' ? 'Saving draft…' : 'Working draft · Save updates live' : 'Upside-down notebook · new cells at the top'}</span>
       <div className="lab-section__modes" role="group" aria-label="Editing layout">
         {(['inline', 'split', 'focus'] as const).map((value) => <button type="button" key={value} aria-pressed={mode === value}
           onClick={() => setMode(value)}>{value === 'inline' ? 'In place' : value === 'split' ? 'Split' : 'Focus'}</button>)}
@@ -293,10 +298,10 @@ export function LabSection({ notebook, theme, isActive, onRegisterFlush, onOpenP
         <button type="button" disabled={!notebook.isReady || busy} onClick={() => void run(() => change({ kind: 'note' }))}>+ Text</button>
         <LabMenu label="+ Workspace" className="lab-section__workspace-menu">
           {SECTION_WORKSPACES.map((workspace) => <button key={workspace.id} type="button" disabled={!notebook.isReady || busy}
-            onClick={() => void run(() => change({ kind: 'capture', capture: newSectionCapture(workspace.id, theme) }))}>
+            onClick={() => void run(async () => change({ kind: 'capture', capture: await newSectionCapture(workspace.id, theme) }))}>
             <strong>{workspace.name}</strong><small>{workspace.description}</small></button>)}
         </LabMenu>
-        <button type="button" disabled={!notebook.isReady || busy} onClick={() => void run(() => change({ kind: 'capture', capture: newSectionCapture('code', theme) }))}>+ Code</button>
+        <button type="button" disabled={!notebook.isReady || busy} onClick={() => void run(async () => change({ kind: 'capture', capture: await newSectionCapture('code', theme) }))}>+ Code</button>
         <button type="button" disabled={!notebook.isReady || busy} onClick={() => inputRef.current?.click()}>+ Image / file</button>
         <button type="button" disabled={!notebook.isReady || busy} aria-expanded={picker} onClick={() => setPicker(!picker)}>From notebook</button>
         <input type="file" multiple hidden ref={inputRef} onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; void run(() => addFiles(files)) }} />
@@ -319,7 +324,7 @@ export function LabSection({ notebook, theme, isActive, onRegisterFlush, onOpenP
         </article>)}
         <div ref={editorRef} className="lab-section__editor" hidden={!active} inert={busy || !isActive ? true : undefined}>
           <header className="lab-section__editor-bar"><strong>{active?.note ? 'Text' : active?.artifact?.toolId || 'File'}</strong><div ref={setSaveTarget} />
-            {drawioEditing ? <button type="button" disabled={busy} onClick={() => void closeDrawio().catch(() => undefined)}>Close editor</button> : null}
+            {managedEditing ? <button type="button" disabled={busy} onClick={() => void closeManagedEditor().catch(() => undefined)}>Close editor</button> : null}
             <button type="button" aria-label="Move active cell up" disabled={busy || index <= 0} onClick={() => active && void run(() => change({ kind: 'move', cellId: active.cell.id, direction: -1 }))}>↑</button>
             <button type="button" aria-label="Move active cell down" disabled={busy || index === section.cells.length - 1} onClick={() => active && void run(() => change({ kind: 'move', cellId: active.cell.id, direction: 1 }))}>↓</button>
             <button type="button" title="Keep the object in the notebook" aria-label="Remove active cell from section" disabled={busy} onClick={() => active && void run(() => change({ kind: 'remove', cellId: active.cell.id }))}>×</button>
@@ -337,16 +342,19 @@ export function LabSection({ notebook, theme, isActive, onRegisterFlush, onOpenP
                     : active?.artifact?.toolId === 'excalidraw' ? <ExcalidrawLab theme={theme} initialSource={active.source} />
                     : active?.artifact?.toolId === 'mermaid' ? <MermaidLab theme={theme} initialSource={active.source} />
                     : active?.artifact?.toolId === 'vega' ? <VegaLab theme={theme} initialSource={active.source} />
-                    : active?.artifact?.toolId === 'drawio' ? drawioEditing ? <DrawioEmbedLab theme={theme} initialSource={active.source} onXmlChange={publishDrawioXml}
-                      draftSession={{ registerCheckpoint: registerDrawioCheckpoint, onStarted: drawioStarted, saveDraft: flush, close: closeDrawio }} />
-                      : <div className="lab-section__drawio-versions"><CellPreview cell={active.cell} notebook={notebook} />
-                        <div role="group" aria-label="draw.io versions"><button type="button" disabled={busy} onClick={() => void run(() => startDrawio('saved'))}>Edit Saved</button>
-                          {selectedDraft ? <button type="button" disabled={busy} onClick={() => void run(() => startDrawio('draft'))}>Continue Draft</button> : null}</div>
+                    : active?.artifact && hasVersionedEditor(active.artifact.toolId) ? managedEditing
+                      ? active.artifact.toolId === 'klecks' ? <KlecksLab theme={theme} initialSource={active.source}
+                        draftSession={{ registerCheckpoint: registerEditorCheckpoint, onStarted: editorStarted, saveDraft: flush, close: closeManagedEditor }} />
+                        : <DrawioEmbedLab theme={theme} initialSource={active.source} onXmlChange={publishDrawioXml}
+                          draftSession={{ registerCheckpoint: registerEditorCheckpoint, onStarted: editorStarted, saveDraft: flush, close: closeManagedEditor }} />
+                      : <div className="lab-section__versions"><CellPreview cell={active.cell} notebook={notebook} />
+                        <div role="group" aria-label={`${editorName(active)} versions`}><button type="button" disabled={busy} onClick={() => void run(() => startVersionedEditor('saved'))}>Edit Saved</button>
+                          {selectedDraft ? <button type="button" disabled={busy} onClick={() => void run(() => startVersionedEditor('draft'))}>Continue Draft</button> : null}</div>
                         <small>{selectedDraft ? draftMatchesSaved ? 'Draft matches Saved. Both versions are available.' : 'Saved stays unchanged until you Push. A working draft is available.' : 'No draft yet. Opening the editor starts one.'}</small>
                       </div>
                     : active?.artifact?.toolId === 'code' ? <CodeEditorLab theme={theme} initialSource={active.source} beforeRun={flush} active={isActive}
                       workspace={{ connected: Boolean(selectedCell?.workspace), onConnect: () => void run(() => change({ kind: 'workspace', cellId: active.cell.id })),
-                        onExample: () => void run(() => change({ kind: 'capture', capture: newSectionCapture('code', theme), workspace: 'p5' })) }} />
+                        onExample: () => void run(async () => change({ kind: 'capture', capture: await newSectionCapture('code', theme), workspace: 'p5' })) }} />
                     : active ? <><CellPreview cell={active.cell} notebook={notebook} />{active.artifact?.toolId ? <button type="button" onClick={() => void run(async () => onOpenProject(active.artifact!))}>Open in {active.artifact.toolId}</button> : null}</> : null}
                 </Suspense>
               </LabErrorBoundary>

@@ -57,12 +57,7 @@ type DrawioEmbedLabProps = {
   /** Latest editable XML, for the host's recovery-draft queue. */
   onXmlChange?: (xml: string) => void
   /** The section owns closing and persistence; native Save must not publish live. */
-  draftSession?: {
-    registerCheckpoint: (checkpoint: (() => Promise<void>) | null) => void
-    onStarted: () => void
-    saveDraft: () => Promise<void>
-    close: () => Promise<void>
-  }
+  draftSession?: import('../lab/LabDraftContext').LabEditorDraftSession
 }
 
 function parseJsonRecord(data: unknown): Record<string, unknown> | null {

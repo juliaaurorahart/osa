@@ -1,7 +1,8 @@
-import { useContext, useEffect, useRef, useState } from 'react'
+import { useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { LabCaptureButton } from '../lab/LabCaptureButton'
 import { LabCaptureContext } from '../lab/LabCaptureContext'
-import { LabDraftContext } from '../lab/LabDraftContext'
+import { LabDraftContext, type LabEditorDraftSession } from '../lab/LabDraftContext'
+import { LabFileActions } from '../lab/LabFileActions'
 import type { LabCapture, LabDraftSource, LabProjectSource } from '../lab/labTypes'
 import { validateKlecksProjectSource } from '../lab/labDrawingProjectSource'
 import './KlecksLab.css'
@@ -28,18 +29,25 @@ function captureFromMessage(data: Record<string, unknown>): KlecksCapture {
 }
 
 /** The upstream singleton lives in its own same-origin document, not React's DOM. */
-export function KlecksLab({ onSave, initialSource }: { onSave?: (capture: LabCapture) => Promise<string>; theme?: 'dark' | 'light'; initialSource?: LabProjectSource } = {}) {
+export function KlecksLab({ onSave, initialSource, draftSession }: {
+  onSave?: (capture: LabCapture) => Promise<string>; theme?: 'dark' | 'light'; initialSource?: LabProjectSource
+  draftSession?: LabEditorDraftSession
+} = {}) {
   const contextSave = useContext(LabCaptureContext)
   const reportDraft = useContext(LabDraftContext)
   const draftReporter = useRef(reportDraft)
-  const draftReader = useRef<(() => Promise<LabDraftSource>) | null>(null)
+  const draftReader = useRef<((final?: boolean) => Promise<LabDraftSource>) | null>(null)
+  const readyRef = useRef(false)
+  const draftSessionRef = useRef(draftSession)
+  useEffect(() => { draftSessionRef.current = draftSession }, [draftSession])
   const save = onSave ?? contextSave
   const saveRef = useRef(save)
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const pendingRef = useRef(new Map<string, PendingCapture>())
   const validationRef = useRef(new Map<string, PendingValidation>())
-  const [frame, setFrame] = useState<{ token: string; file: Blob | null; background: string }>(() => ({ token: crypto.randomUUID(), file: initialSource?.file ?? null, background: '#000000' }))
+  const [frame, setFrame] = useState(() => ({ token: crypto.randomUUID(), file: initialSource?.file ?? null,
+    background: '#000000', freshCanvas: initialSource?.name === 'new-painting.psd' }))
   const [newCanvasBackground, setNewCanvasBackground] = useState('#000000')
   const [ready, setReady] = useState(false)
   const [message, setMessage] = useState('Loading the local painter…')
@@ -66,35 +74,40 @@ export function KlecksLab({ onSave, initialSource }: { onSave?: (capture: LabCap
       setFailed(true)
     }, 45000)
     const send = (type: string, data: Record<string, unknown> = {}) => iframeRef.current?.contentWindow?.postMessage({ channel: CHANNEL, token: frame.token, type, ...data }, location.origin)
-    const readDraft = () => new Promise<LabDraftSource>((resolve, reject) => {
+    const readDraft = (final = false) => new Promise<LabDraftSource>((resolve, reject) => {
+      if (disposed || !readyRef.current) { reject(new Error('The painter is not available to save a draft.')); return }
       const id = crypto.randomUUID()
       const timeout = window.setTimeout(() => { draftRequests.delete(id); reject(new Error('Painting draft timed out. Keep the painter open or download the PSD.')) }, 45000)
-      draftRequests.set(id, { resolve, reject, timeout }); send('draft', { id })
+      draftRequests.set(id, { resolve, reject, timeout }); send('draft', { id, final })
     })
     draftReader.current = readDraft
     const receive = async (event: MessageEvent) => {
       if (event.origin !== location.origin || event.source !== iframeRef.current?.contentWindow) return
       const data = event.data as Record<string, unknown> | null
       if (!data || data.channel !== CHANNEL || data.token !== frame.token) return
-      if (data.type === 'draft-changed') draftReporter.current?.(readDraft)
+      if (data.type === 'draft-changed' && readyRef.current) draftReporter.current?.(readDraft)
       if ((data.type === 'draft-result' || data.type === 'draft-error') && typeof data.id === 'string') {
         const request = draftRequests.get(data.id)
         if (!request) return
         window.clearTimeout(request.timeout); draftRequests.delete(data.id)
-        if (data.type === 'draft-result' && data.psd instanceof Blob && data.psd.size) request.resolve({ blob: data.psd, name: 'painting.psd' })
+        if (data.type === 'draft-result' && data.psd instanceof Blob && data.psd.size && data.psd.size <= MAX_BYTES) request.resolve({ blob: data.psd, name: 'painting.psd' })
         else request.reject(new Error(typeof data.message === 'string' ? data.message : 'The painting draft could not save. Download the PSD to keep your work.'))
       }
       if (data.type === 'boot') {
         try {
           const psd = frame.file ? await frame.file.arrayBuffer() : undefined
-          if (!disposed) send('init', psd ? { psd } : { background: frame.background })
+          // Only the notebook's named blank starter gets a light initial pen;
+          // this is a brush UI setting and never changes imported layer pixels.
+          if (!disposed) send('init', psd ? { psd, freshCanvas: frame.freshCanvas } : { background: frame.background })
         } catch { if (!disposed) { setMessage('The PSD file could not be read.'); setFailed(true) } }
       }
       if (data.type === 'ready') {
         window.clearTimeout(loadTimeout)
+        readyRef.current = true
+        draftSessionRef.current?.onStarted()
         setReady(true)
         setFailed(false)
-        setMessage('Ready. Save to notebook keeps the painting and its editable layers.')
+        setMessage(draftSessionRef.current ? 'Draft autosaves · Push updates Saved' : 'Ready. Save to notebook keeps the painting and its editable layers.')
       }
       if (data.type === 'error') {
         window.clearTimeout(loadTimeout)
@@ -111,21 +124,28 @@ export function KlecksLab({ onSave, initialSource }: { onSave?: (capture: LabCap
           request.resolve(captureFromMessage(data))
         } catch (error) { request.reject(error instanceof Error ? error : new Error('The painting could not be exported.')) }
       }
-      if ((data.type === 'psd-valid' || data.type === 'psd-error') && typeof data.id === 'string') {
+      if (['psd-valid', 'psd-error', 'checkpoint-ready', 'checkpoint-error'].includes(String(data.type)) && typeof data.id === 'string') {
         const request = validations.get(data.id)
         if (!request) return
         window.clearTimeout(request.timeout)
         validations.delete(data.id)
-        if (data.type === 'psd-valid') request.resolve()
+        if (data.type === 'psd-valid' || data.type === 'checkpoint-ready') request.resolve()
         else request.reject(new Error(typeof data.message === 'string' ? data.message : 'The PSD could not be read. Your current painting is still open.'))
       }
-      // Klecks' own Submit button is also an explicit save-to-notebook action.
+      // In a section, native Submit checkpoints only the draft. Publishing is
+      // always the host's deliberate Push action, just like the draw.io cell.
       if (data.type === 'submit' && typeof data.id === 'string') {
         if (submitted) { send('submit-result', { id: data.id, ok: false, message: 'A notebook save is already running.' }); return }
         submitted = true
         setSubmitting(true)
-        setMessage('Saving painting to notebook…')
+        setMessage(draftSessionRef.current ? 'Saving painting draft…' : 'Saving painting to notebook…')
         try {
+          if (draftSessionRef.current) {
+            draftReporter.current?.(readDraft)
+            await draftSessionRef.current.saveDraft()
+            if (!disposed) { setMessage('Draft saved. Push to notebook updates Saved.'); setFailed(false); send('submit-result', { id: data.id, ok: true }) }
+            return
+          }
           if (!saveRef.current) throw new Error('The notebook is not available here. Use Download to keep this painting.')
           const id = await saveRef.current(captureFromMessage(data))
           if (!id) throw new Error('The notebook could not save the painting. Please try again.')
@@ -139,6 +159,7 @@ export function KlecksLab({ onSave, initialSource }: { onSave?: (capture: LabCap
     window.addEventListener('message', receive)
     return () => {
       disposed = true
+      readyRef.current = false
       window.clearTimeout(loadTimeout)
       window.removeEventListener('message', receive)
       for (const request of pending.values()) { window.clearTimeout(request.timeout); request.reject(new Error('The painter was closed before export finished.')) }
@@ -150,6 +171,29 @@ export function KlecksLab({ onSave, initialSource }: { onSave?: (capture: LabCap
       if (draftReader.current === readDraft) draftReader.current = null
     }
   }, [frame])
+
+  const checkpoint = useCallback(async () => {
+    // A failed/cancelled initial load has not replaced the existing draft.
+    if (!readyRef.current) return
+    const read = draftReader.current
+    if (!read) throw new Error('The painter is unavailable. Keep it open to recover your draft.')
+    // Check immediately, outside the serialized background queue. Otherwise an
+    // older draft waiting for pen-up could block Close while the host is inert.
+    await new Promise<void>((resolve, reject) => {
+      const id = crypto.randomUUID()
+      const timeout = window.setTimeout(() => { validationRef.current.delete(id); reject(new Error('The painter did not respond. Keep it open and try closing again.')) }, 5000)
+      validationRef.current.set(id, { resolve, reject, timeout })
+      iframeRef.current?.contentWindow?.postMessage({ channel: CHANNEL, token: frame.token, type: 'check-close', id }, location.origin)
+    })
+    // The section's awaited flush reads this once after earlier writes finish;
+    // keep it live instead of replacing it with an older exported snapshot.
+    draftReporter.current?.(() => read(true))
+  }, [frame.token])
+  const registerCheckpoint = draftSession?.registerCheckpoint
+  useEffect(() => {
+    registerCheckpoint?.(checkpoint)
+    return () => registerCheckpoint?.(null)
+  }, [checkpoint, registerCheckpoint])
 
   const capture = () => new Promise<KlecksCapture>((resolve, reject) => {
     const child = iframeRef.current?.contentWindow
@@ -185,7 +229,7 @@ export function KlecksLab({ onSave, initialSource }: { onSave?: (capture: LabCap
       setReady(false)
       setFailed(false)
       setMessage('Opening the local PSD…')
-      setFrame({ token: crypto.randomUUID(), file, background: newCanvasBackground })
+      setFrame({ token: crypto.randomUUID(), file, background: newCanvasBackground, freshCanvas: false })
     } catch (error) { setMessage(error instanceof Error ? error.message : 'The PSD could not be opened.'); setFailed(true) } finally { setOpening(false) }
   }
   const newPainting = () => {
@@ -193,16 +237,16 @@ export function KlecksLab({ onSave, initialSource }: { onSave?: (capture: LabCap
     setReady(false)
     setFailed(false)
     setMessage('Loading a fresh page…')
-    setFrame({ token: crypto.randomUUID(), file: null, background: newCanvasBackground })
+    setFrame({ token: crypto.randomUUID(), file: null, background: newCanvasBackground, freshCanvas: false })
   }
 
   return <section className="klecks-lab" aria-label="Klecks painting workbench">
     <header className="klecks-lab__header"><div><h2>Klecks</h2><p>Paint, blend, smudge, and build up layers.</p></div><div className="klecks-lab__actions">
-      <label className="klecks-lab__canvas-color">New canvas <select value={newCanvasBackground} disabled={submitting || downloading || opening} onChange={(event) => setNewCanvasBackground(event.target.value)}><option value="#000000">Black</option><option value="#202533">Charcoal</option><option value="#fff9ee">Warm</option><option value="#ffffff">White</option><option value="transparent">Transparent</option></select></label>
-      <button type="button" disabled={submitting || downloading || opening} onClick={() => fileInputRef.current?.click()}>Open PSD</button>
-      <LabCaptureButton capture={capture} disabled={!ready || submitting || downloading || opening} onSave={onSave} />
-      <details><summary>Download</summary><div className="klecks-lab__downloads"><button type="button" disabled={!ready || downloading || submitting} onClick={() => void downloadPainting('psd')}>Editable PSD</button><button type="button" disabled={!ready || downloading || submitting} onClick={() => void downloadPainting('png')}>PNG image</button></div></details>
-      <button type="button" disabled={submitting || downloading || opening} onClick={newPainting}>{failed && !ready ? 'Reload painter' : 'New painting'}</button>
+      {!draftSession ? <><label className="klecks-lab__canvas-color">New canvas <select value={newCanvasBackground} disabled={submitting || downloading || opening} onChange={(event) => setNewCanvasBackground(event.target.value)}><option value="#000000">Black</option><option value="#202533">Charcoal</option><option value="#fff9ee">Warm</option><option value="#ffffff">White</option><option value="transparent">Transparent</option></select></label>
+        <button type="button" disabled={submitting || downloading || opening} onClick={() => fileInputRef.current?.click()}>Open PSD</button></> : null}
+      <LabCaptureButton capture={capture} label={draftSession ? 'Push to notebook' : undefined} disabled={!ready || submitting || downloading || opening} onSave={onSave} />
+      <LabFileActions><details><summary>Download painting</summary><div className="klecks-lab__downloads"><button type="button" disabled={!ready || downloading || submitting} onClick={() => void downloadPainting('psd')}>Editable PSD</button><button type="button" disabled={!ready || downloading || submitting} onClick={() => void downloadPainting('png')}>PNG image</button></div></details></LabFileActions>
+      {!draftSession ? <button type="button" disabled={submitting || downloading || opening} onClick={newPainting}>{failed && !ready ? 'Reload painter' : 'New painting'}</button> : null}
     </div></header>
     <p className={`klecks-lab__status${failed ? ' is-error' : ''}`} role={failed ? 'alert' : 'status'}>{message}</p>
     <iframe key={frame.token} ref={iframeRef} src={frameUrl} title="Klecks local painting canvas and tools" sandbox="allow-scripts allow-same-origin allow-downloads allow-modals" className="klecks-lab__frame" />

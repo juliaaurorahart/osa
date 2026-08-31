@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, resolve } from 'node:path'
 import ts from 'typescript'
+import { klecksPsdCodec } from './klecks-psd-fixture.mjs'
 
 // Isolated DOM/lifecycle checks, with no browser session, API or user storage access.
 const require = createRequire(import.meta.url)
@@ -19,7 +20,7 @@ function load(path) {
   if (overrides.has(filename)) return overrides.get(filename)
   if (modules.has(filename)) return modules.get(filename)
   const module = { exports: {} }
-  const code = ts.transpileModule(readFileSync(filename, 'utf8'), {
+  const code = ts.transpileModule(readFileSync(filename, 'utf8').replaceAll('import.meta.env.BASE_URL', "'/'"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText
   new Function('require', 'module', 'exports', code)((id) => {
@@ -77,6 +78,35 @@ function FakeDrawio({ initialSource, onXmlChange, draftSession }) {
   return React.createElement('iframe', { title: 'Fixture draw.io editor' })
 }
 overrides.set(resolve('src/components/DrawioEmbedLab.tsx'), { DrawioEmbedLab: FakeDrawio })
+const starter = readFileSync(resolve('public/lab-vendor/klecks/new-painting.psd'))
+const bytes = async (blob) => new Uint8Array(await blob.arrayBuffer())
+const equalBlobs = async (a, b) => Buffer.from(await a.arrayBuffer()).equals(Buffer.from(await b.arrayBuffer()))
+globalThis.fetch = async (url) => {
+  assert.equal(url, '/lab-vendor/klecks/new-painting.psd')
+  return new Response(starter, { headers: { 'Content-Type': 'image/vnd.adobe.photoshop' } })
+}
+const codec = klecksPsdCodec()
+const painting = (color) => new Blob([codec.writePsd({ width: 1, height: 1,
+  imageData: { width: 1, height: 1, data: new Uint8ClampedArray([color, 10, 20, 255]) }, children: [
+    { name: 'Test layer', imageData: { width: 1, height: 1, data: new Uint8ClampedArray([color, 10, 20, 255]) } },
+  ] })], { type: 'image/vnd.adobe.photoshop' })
+let klecks, klecksLoads = true, klecksFailure = ''
+function FakeKlecks({ initialSource, draftSession }) {
+  const file = React.useRef(initialSource.file)
+  const report = React.useContext(LabDraftContext), save = React.useContext(LabCaptureContext)
+  const checkpoint = React.useCallback(async () => {
+    if (!klecksLoads) return
+    if (klecksFailure) throw new Error(klecksFailure)
+    report(() => ({ name: 'painting.psd', blob: file.current }))
+  }, [report])
+  React.useEffect(() => { if (klecksLoads) { draftSession.onStarted(); void checkpoint() } }, [checkpoint, draftSession.onStarted])
+  React.useEffect(() => { draftSession.registerCheckpoint(checkpoint); return () => draftSession.registerCheckpoint(null) }, [checkpoint, draftSession.registerCheckpoint])
+  klecks = { initial: initialSource.file, report, save, draftSession,
+    edit: (blob, publish = true) => { file.current = blob; if (publish) report(() => ({ name: 'painting.psd', blob: file.current })) },
+    capture: () => ({ toolId: 'klecks', name: 'painting', source: { name: 'painting.psd', blob: file.current }, preview: new Blob(['png'], { type: 'image/png' }) }) }
+  return React.createElement('iframe', { title: 'Fixture Klecks editor' })
+}
+overrides.set(resolve('src/components/KlecksLab.tsx'), { KlecksLab: FakeKlecks })
 // Preflight renderers have separate format tests; keep the cell lifecycle fixture local and lightweight.
 const structured = load('src/lab/labStructuredProjectSource.ts')
 overrides.set(resolve('src/lab/labStructuredProjectSource.ts'), { ...structured, validateStructuredProjectSource: async (tool, source) => {
@@ -123,7 +153,7 @@ const notebook = {
     if (failDraft) throw new Error('Fixture draft changed elsewhere')
     const previous = projectDrafts.find((draft) => draft.draftOf === input.projectId)
     if (previous) assert.equal(input.expectedDraftFileId, previous.fileId)
-    if (input.toolId === 'drawio' && previous && await files.get(previous.id).text() === await input.source.blob.text()
+    if (['drawio', 'klecks'].includes(input.toolId) && previous && await equalBlobs(files.get(previous.id), input.source.blob)
       && previous.draftBaseFileId === input.baseFileId) return previous
     const draft = { id: `draft:${input.projectId}`, draftOf: input.projectId, fileId: uid(), sourceName: input.source.name,
       draftBaseFileId: input.baseFileId, draftActive: true, toolId: input.toolId, name: input.name }
@@ -138,7 +168,7 @@ const notebook = {
     assert.equal(options.expectedFileId, artifact.fileId || artifact.id)
     artifact.name = capture.name; artifact.fileId = uid(); files.set(artifact.id, capture.source.blob); refresh()
     const draft = notebook.getProjectDraft(artifact.id)
-    if (capture.toolId === 'drawio' && draft && await files.get(draft.id).text() === await capture.source.blob.text()) {
+    if (['drawio', 'klecks'].includes(capture.toolId) && draft && await equalBlobs(files.get(draft.id), capture.source.blob)) {
       draft.draftActive = false; draft.draftBaseFileId = artifact.fileId
     }
     return artifact.id
@@ -335,6 +365,56 @@ try {
   assert.equal(document.querySelector('iframe'), null)
   assert.equal(await files.get(notebook.getProjectDraft(drawioArtifact.id).id).text(), xml('newer than close export'), 'Cancelling an offline opening retains the previous draft')
   drawioLoads = true
+
+  // Klecks shares the explicit Saved/Draft lifecycle, but keeps native binary layers.
+  await click('KlecksPaint & layers')
+  const paintingCell = sections[0].cells[0], paintingArtifact = notebook.getArtifact(paintingCell.objectId)
+  assert.equal(document.querySelector('iframe'), null)
+  assert.equal(notebook.getProjectDraft(paintingArtifact.id), undefined)
+  const confirmationCount = confirmations.length
+  await click('Edit Saved')
+  assert.equal(confirmations.length, confirmationCount, 'The self-hosted painter needs no external sharing consent')
+  assert.deepEqual(await bytes(klecks.initial), new Uint8Array(starter))
+  const paintingFrame = document.querySelector('iframe')
+  for (const layout of ['Split', 'Focus', 'In place']) { await click(layout); assert.equal(document.querySelector('iframe'), paintingFrame) }
+  assert.equal(sectionLocked, true)
+  await React.act(async () => assert.rejects(closeSection, /Close the Klecks editor first/))
+  const painted = painting(125)
+  await React.act(async () => klecks.edit(painted, false))
+  klecksFailure = 'Apply the pending selection transform'
+  await click('Close editor'); assert.equal(document.querySelector('iframe'), paintingFrame)
+  assert.match(document.body.textContent, /pending selection transform/)
+  klecksFailure = ''; failDraft = true
+  await click('Close editor'); assert.equal(document.querySelector('iframe'), paintingFrame)
+  failDraft = false
+  const oldPaintingReport = klecks.report
+  await click('Close editor')
+  assert.equal(sectionLocked, false); assert.equal(document.querySelector('iframe'), null)
+  assert.deepEqual(await bytes(files.get(paintingArtifact.id)), new Uint8Array(starter), 'Closing never changes Saved')
+  const paintingDraft = notebook.getProjectDraft(paintingArtifact.id)
+  assert.deepEqual(await bytes(files.get(paintingDraft.id)), await bytes(painted), 'Close writes the latest layered file')
+  await React.act(async () => oldPaintingReport({ blob: painting(99), name: 'painting.psd' }))
+  allowOpen = false; await click('Edit Saved'); assert.equal(document.querySelector('iframe'), null)
+  assert.match(confirmations.at(-1), /replace the current working Draft/)
+  allowOpen = true; await click('Continue Draft')
+  assert.deepEqual(await bytes(klecks.initial), await bytes(painted), 'Continue Draft restores exact binary PSD bytes')
+  const reopenedFrame = document.querySelector('iframe')
+  await React.act(async () => klecks.save(klecks.capture()))
+  assert.equal(document.querySelector('iframe'), reopenedFrame, 'Push keeps the painter and its undo state mounted')
+  assert.deepEqual(await bytes(files.get(paintingArtifact.id)), await bytes(painted))
+  assert.equal(paintingDraft.draftActive, false)
+  const olderCapture = klecks.capture(), newerPainting = painting(220)
+  await React.act(async () => { klecks.edit(newerPainting); await klecks.save(olderCapture) })
+  await click('Close editor')
+  assert.deepEqual(await bytes(files.get(paintingArtifact.id)), await bytes(painted))
+  assert.deepEqual(await bytes(files.get(paintingDraft.id)), await bytes(newerPainting), 'Newer edits survive an older picture capture')
+  assert.equal(projectDrafts.filter((item) => item.draftOf === paintingArtifact.id).length, 1)
+  klecksLoads = false; await click('Edit Saved'); await click('Close editor'); klecksLoads = true
+  assert.deepEqual(await bytes(files.get(paintingDraft.id)), await bytes(newerPainting), 'Failed initialization never replaces the working draft')
+  await click('Edit Saved')
+  assert.deepEqual(await bytes(klecks.initial), await bytes(painted))
+  await click('Close editor')
+  assert.deepEqual(await bytes(files.get(paintingDraft.id)), await bytes(painted))
 
   // Exercise the real Ink checkpoint, including a pen stroke still in progress.
   overrides.delete(resolve('src/components/InkLab.tsx'))

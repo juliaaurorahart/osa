@@ -52,7 +52,7 @@ assert.deepEqual(JSON.parse(recovered.text), spec, 'Last valid preview remains s
 assert.equal(await draftMatchesSave({ toolId: 'vega' }, chart, new Blob([JSON.stringify(spec)])), false)
 assert.equal(await labDraftHash(new Blob(['one'])), await labDraftHash(new Blob(['one'])))
 
-const server = await createServer({ appType: 'custom', server: { middlewareMode: true } })
+const server = await createServer({ appType: 'custom', cacheDir: 'node_modules/.vite-test-drafts', server: { middlewareMode: true } })
 const originalFetch = globalThis.fetch
 try {
   const graph = await server.ssrLoadModule('/src/lab/labNotebookGraph.ts')

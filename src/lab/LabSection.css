@@ -55,9 +55,13 @@
 .lab-section__editor .ink-lab__header > div:first-child { display: none; }
 .lab-section__editor .ink-lab__page { min-height: 350px; }
 .lab-section__editor .code-editor-lab { border: 0; }
-.lab-section__drawio-versions { padding: 12px; }
-.lab-section__drawio-versions [role=group] { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
-.lab-section__drawio-versions > small { color: var(--osa-muted); }
+.lab-section__versions { padding: 12px; }
+.lab-section__versions [role=group] { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.lab-section__versions > small { color: var(--osa-muted); }
+.lab-section__editor .klecks-lab { border: 0; border-radius: 0; }
+.lab-section__editor .klecks-lab__header { display: none; }
+.lab-section__editor .klecks-lab__frame { height: clamp(570px, 70dvh, 900px); }
+.lab-section__editor .klecks-lab footer { display: none; }
 .lab-section__editor .drawio-embed-lab { border: 0; padding: 0; min-height: 0; }
 .lab-section__editor .drawio-embed-lab__header { padding: 8px 12px; }
 .lab-section__editor .drawio-embed-lab__header h2 { display: none; }

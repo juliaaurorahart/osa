@@ -92,7 +92,7 @@ export function CanvasLab({
   const [projectFailure, setProjectFailure] = useState('')
   const mayNavigate = () => {
     if (!sectionLockedRef.current) return true
-    setProjectFailure('Close the draw.io editor first. Your working draft will be kept; Push updates Saved.')
+    setProjectFailure('Close the active editor first. Your working draft will be kept; Push updates Saved.')
     return false
   }
   const setRoute = (next: LabRoute) => { if (mayNavigate()) setRouteState(next) }
@@ -100,7 +100,7 @@ export function CanvasLab({
     const guard = (event: Event) => {
       if (!sectionLockedRef.current) return
       event.preventDefault()
-      setProjectFailure('Close the draw.io editor before leaving the Lab.')
+      setProjectFailure('Close the active editor before leaving the Lab.')
     }
     window.addEventListener('osa:lab-before-leave', guard)
     return () => window.removeEventListener('osa:lab-before-leave', guard)

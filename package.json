@@ -13,8 +13,9 @@
     "test:p5": "node scripts/check-lab-p5.mjs",
     "test:code": "node scripts/check-lab-code.mjs",
     "test:section": "node scripts/check-lab-section.mjs",
+    "test:klecks": "node scripts/generate-klecks-starter.mjs --check && node scripts/check-lab-klecks.mjs",
     "test:notebooks": "node scripts/check-lab-notebook-catalog.mjs && node scripts/check-lab-notebook-picker.mjs && node scripts/check-lab-notebook-browser.mjs",
-    "posttest": "npm run test:notebooks && npm run test:code && npm run test:section",
+    "posttest": "npm run test:notebooks && npm run test:code && npm run test:section && npm run test:klecks",
     "test:backup": "node scripts/check-osa-backup-verifier.mjs",
     "lint": "eslint .",
     "preview": "vite preview"

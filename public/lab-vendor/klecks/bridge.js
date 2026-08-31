@@ -34,10 +34,18 @@
     if (ready && !captureBusy && !activePointers.size && document.visibilityState !== 'hidden') send('draft-changed')
   }, 10000)
   const fail = (error) => send('error', { message: error instanceof Error ? error.message : String(error) })
+  const assertCommitted = () => {
+    // Pinned Klecks exports committed layers, not temporary dialog/transform
+    // previews. These controls are removed when the operation is applied/cancelled.
+    if (document.querySelector('.kl-popup, select[name="move-to-layer"]')) {
+      throw new Error('Apply or cancel the current Klecks dialog or selection transform, then save or close again.')
+    }
+  }
   const capture = async () => {
     if (!ready || !painter?.getPNG || !painter?.getPSD) throw new Error('The painter is still preparing. Try again shortly.')
     if (captureBusy) throw new Error('A painting export is already running.')
     if (activePointers.size) throw new Error('Finish your brush stroke before saving the painting.')
+    assertCommitted()
     captureBusy = true
     const wasInert = document.body.inert
     document.body.inert = true
@@ -45,6 +53,7 @@
       // No active pointer remains; inert blocks edits between the two encodings.
       const png = await painter.getPNG()
       const psd = await painter.getPSD()
+      assertCommitted()
       return { png, psd }
     } finally { document.body.inert = wasInert; captureBusy = false }
   }
@@ -56,7 +65,7 @@
     painter = new window.Klecks({
       embedUrl: location.href.split('#')[0],
       enableImageDropperImport: true,
-      ...(!(data.psd instanceof ArrayBuffer) && (background === '#000000' || background === '#202533') ? { initialBrushColor: { r: 245, g: 233, b: 214 } } : {}),
+      ...((data.freshCanvas === true || !(data.psd instanceof ArrayBuffer)) && (background === '#000000' || background === '#202533') ? { initialBrushColor: { r: 245, g: 233, b: 214 } } : {}),
       onSubmit: async (onSuccess, onError) => {
         const id = crypto.randomUUID()
         try {
@@ -96,12 +105,27 @@
     const data = event.data
     if (!data || data.channel !== channel || data.token !== token) return
     if (data.type === 'init') { try { await initialize(data) } catch (error) { fail(error) } }
+    if (data.type === 'check-close' && typeof data.id === 'string') {
+      try {
+        if (!ready) throw new Error('The painter is not ready yet.')
+        assertCommitted()
+        if (activePointers.size) throw new Error('Finish your brush stroke, then close the editor again.')
+        if (captureBusy) throw new Error('A painting save is finishing. Try Close editor again in a moment.')
+        send('checkpoint-ready', { id: data.id })
+      } catch (error) { send('checkpoint-error', { id: data.id, message: error.message }) }
+    }
     if (data.type === 'capture' && typeof data.id === 'string') {
       try { send('capture-result', { id: data.id, ...await capture() }) } catch (error) { send('capture-error', { id: data.id, message: error instanceof Error ? error.message : 'The painting could not be exported.' }) }
     }
     if (data.type === 'draft' && typeof data.id === 'string') {
       const deadline = performance.now() + 40000
       const checkpoint = async () => {
+        try {
+          assertCommitted()
+          // Explicit Close must return control immediately so a user can finish
+          // the gesture. Background drafts can wait for an ordinary stroke end.
+          if (data.final && activePointers.size) throw new Error('Finish your brush stroke, then close the editor again.')
+        } catch (error) { send('draft-error', { id: data.id, message: error.message }); return }
         if (activePointers.size || captureBusy) {
           if (performance.now() < deadline) { setTimeout(checkpoint, 100); return }
           send('draft-error', { id: data.id, message: 'Finish the current brush stroke to save its draft.' }); return
@@ -110,7 +134,7 @@
         captureBusy = true
         const wasInert = document.body.inert
         document.body.inert = true
-        try { send('draft-result', { id: data.id, psd: await painter.getPSD() }) }
+        try { const psd = await painter.getPSD(); assertCommitted(); send('draft-result', { id: data.id, psd }) }
         catch (error) { send('draft-error', { id: data.id, message: error instanceof Error ? error.message : 'Could not save the painting draft.' }) }
         finally { document.body.inert = wasInert; captureBusy = false }
       }

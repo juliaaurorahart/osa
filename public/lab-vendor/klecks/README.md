@@ -50,3 +50,19 @@ has the limits of Klecks/ag-psd; keep the original file when opening other apps'
 PSD documents. The pinned source's `readPSD` type says Blob, but its implementation
 forwards directly to ag-psd; the bridge passes an ArrayBuffer, matching upstream's
 working embed example and ag-psd's actual input API.
+
+Notebook cells reuse this iframe with explicit Saved/Draft selection. The host
+waits for a native PSD draft before closing and publishes PNG+PSD only on Push.
+Native Submit checkpoints Draft inside a section; the full workbench retains its
+existing Submit behavior. Unapplied native dialogs and selection transforms block
+exports so their temporary pixels cannot be silently omitted. The bridge guards
+`.kl-popup` and `select[name="move-to-layer"]`, as reviewed in this pinned build;
+review those markers when upgrading. A fast Close preflight avoids waiting behind
+a background checkpoint while an unfinished pointer gesture is still active.
+
+`new-painting.psd` is the OSA notebook's native blank starter, not upstream artwork.
+Reproduce it with `node scripts/generate-klecks-starter.mjs`; `--check` validates
+without writing. The generator uses the pinned ag-psd bundle offline and verifies
+the black composite, Canvas background and transparent Drawing layer. The host
+does not ship an additional PSD writer. `npm run test:klecks` covers the starter,
+protocol, pending-edit guards and managed Submit/Close behavior.

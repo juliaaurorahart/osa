@@ -3,11 +3,11 @@
 Notebook → **Upside-down notebook** opens one working section per notebook. The existing Library remains available.
 
 - New text, workspaces, code, images/files, and reused notebook objects appear **at the top**. Existing cell order stays intact. The add controls stay visible while scrolling; new text/code editors receive focus.
-- **+ Workspace** offers Ink, Excalidraw, draw.io, Mermaid, and Vega-Lite. Editable native files are created first, with a clearly labeled placeholder until the first visual Save. Imported files for unsupported inline tools still open in their workbenches.
+- **+ Workspace** offers Ink, Klecks, Excalidraw, draw.io, Mermaid, and Vega-Lite. Editable native files are created first, with a clearly labeled placeholder until the first visual Save. Imported files for unsupported inline tools still open in their workbenches.
 - **Hide top bar** collapses Lab navigation without closing an editor. **Show Lab bar** restores it; saving errors remain visible.
 - Only one cell is editable. **In place**, **Split**, and **Focus** rearrange the same mounted editor, preserving its current state.
 - New code starts with an adjustable animated ribbon example. Connect p5, then choose **Run with p5**. Code stays above its output and they move together. **+ Example cell** creates a new connected example at the top without replacing existing code. Leaving the section stops execution; nothing runs automatically.
-- Text autosaves. Editable workspaces use the existing recovery-draft mechanism; **Save** updates their live notebook file. Section editing resumes the working draft, including invalid Mermaid text and unapplied Vega edits. Library opening keeps its existing live/draft preference.
+- Text autosaves. Editable workspaces use the existing recovery-draft mechanism; **Save** updates their live notebook file. Most editors resume the working draft, including invalid Mermaid text and unapplied Vega edits. draw.io and Klecks instead show Saved first, with explicit Saved/Draft editing as described below. Library opening keeps its existing live/draft preference.
 - Switching cells or leaving the section awaits its queued saves. Failure retains the editor; an in-flight image capture cannot save into another cell. Saved files and drafts remain subject to the existing notebook sync status.
 - Removing a cell removes its reference, not the underlying object or history.
 - Konva, Paper, and other tools remain preview/open-in-workbench objects in this trial. Native draft preflight finishes before an editor replaces the current one, and draft callbacks are bound to their originating cell session.
@@ -24,6 +24,16 @@ draw.io picture previews now export as 2× PNGs for clearer notebook display, in
 
 The notebook's sync indicator remains authoritative for cross-device availability: a local draft acknowledgement does not claim that cloud upload has finished. This uses the [official draw.io embed protocol](https://www.drawio.com/docs/reference/embed-mode/) (`autosave`, `resetEditor`, `export`, correlated messages); no iframe DOM access is needed.
 
+## Klecks Saved / Draft editing
+
+Klecks uses the same Saved preview → **Edit Saved** / **Continue Draft** → **Close editor** flow. It runs in a self-hosted iframe, not an external painting service. It keeps its own layers, brushes and editing tools in all three section layouts; only one editor is mounted. **From notebook** can reuse an existing painting in a section.
+
+New cells start from a real 1200×900 PSD with an opaque black Canvas background layer and a transparent Drawing layer. The blank file is generated and fully decoded by `scripts/generate-klecks-starter.mjs` using the already-pinned PSD codec. Only that named starter gets a light initial brush; existing/imported painting pixels are never recolored.
+
+Draft autosaves and Close preserve the layered PSD; **Push to notebook** updates the same Saved object with paired PNG and PSD files. Native **Submit** saves Draft only inside a section; standalone workbench Submit keeps its existing Save behavior. PSD preserves editable raster layers, not the painter's undo/stroke history. Open/New host resets are omitted during section editing; start another cell or close this editor first.
+
+Close first checks that no brush stroke, native dialog, selection transform or export is pending, then waits for a fresh PSD checkpoint and local durability. It never needs a PNG to close. Pending text/filter/transform previews must be applied or canceled in the painter before saving/closing; failures leave the editor open and interactive. This guard uses reviewed DOM markers in the pinned self-hosted bridge, checked by `test:klecks`; review them when upgrading Klecks. Failed initial restoration cannot overwrite an older draft. Background autosave reduces loss, but an abrupt shutdown can still lose changes since the last successful checkpoint. Cloud availability remains governed by the notebook sync indicator.
+
 ## Data
 
 A section is an ordinary OSA v7 graph node with `lab:role=section`. `lab:cells` stores a versioned ordered list of stable cell IDs and object references. An optional `workspace: p5` belongs to the code cell; it does not duplicate code or introduce another draft writer. Section topics use the existing topic relationships. Object contents and immutable file bytes remain in the established notebook stores, outbox, and private file storage.
@@ -32,4 +42,4 @@ No database migration or new dependency is required. Existing metadata, topic li
 
 ## Checks
 
-`npm run test:section` exercises the isolated section lifecycle and real Ink checkpointing. The notebook cloud/scope checks cover graph round trips, portable backups, ID remapping, guarded atomic actions, and failed durability acknowledgements. `npm run test:code` checks explicit execution, connected workspace creation, and stop-on-leave behavior. No tests write to user notebooks.
+`npm run test:section` exercises the isolated section lifecycle, binary Klecks Saved/Draft round trips, and real Ink checkpointing. `npm run test:klecks` fully decodes the starter layers and checks the host/bridge protocol, pending-operation guards, safe-close preflight, native Submit semantics, trust boundaries and cleanup. The notebook cloud/scope checks cover graph round trips, portable backups, ID remapping, guarded atomic actions, and failed durability acknowledgements. `npm run test:code` checks explicit execution, connected workspace creation, and stop-on-leave behavior. No tests write to user notebooks.
