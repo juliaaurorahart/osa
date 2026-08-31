@@ -101,6 +101,8 @@ try {
   assert.equal(request.origin, 'https://embed.diagrams.net')
   assert.equal(JSON.parse(request.data).action, 'export')
   assert.equal(JSON.parse(request.data).currentPage, true)
+  assert.equal(JSON.parse(request.data).keepTheme, true)
+  assert.equal(JSON.parse(request.data).scale, 2, 'Notebook pictures export at double resolution without changing the editable XML')
   assert.equal(JSON.parse(sent.at(-2).data).action, 'resetEditor')
   let settled = false
   void captureResult.then(() => { settled = true }, () => { settled = true })
@@ -168,6 +170,7 @@ try {
   await React.act(async () => { finalCapture = snapshot(); void finalCapture.catch(() => {}) })
   assert.equal(managedSent.at(-2).action, 'resetEditor')
   assert.equal(managedSent.at(-1).format, 'xml', 'Close captures the editable file without requiring a rendered picture')
+  for (const option of ['scale', 'currentPage', 'keepTheme']) assert.equal(managedSent.at(-1)[option], undefined, 'XML-only Close must not inherit picture export settings')
   await managedSend({ event: 'export', error: 'temporary export failure', message: managedSent.at(-1) })
   await assert.rejects(finalCapture, /temporary export failure/)
   // An export failure does not require reloading (and losing) the editor to retry.

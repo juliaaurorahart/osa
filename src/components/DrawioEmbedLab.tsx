@@ -293,7 +293,9 @@ export function DrawioEmbedLab({
           // either raw editable XML or a page preview with matching full XML.
           editorWindow.postMessage(JSON.stringify({ action: 'resetEditor' }), DRAWIO_ORIGIN)
           editorWindow.postMessage(JSON.stringify({
-            action: 'export', format, ...(format === 'png' ? { currentPage: true, keepTheme: true, scale: 1 } : {}), requestId,
+            // A 2× PNG stays clearer when displayed in a notebook cell or on a
+            // high-density screen. Editable XML and draft checkpoints are unchanged.
+            action: 'export', format, ...(format === 'png' ? { currentPage: true, keepTheme: true, scale: 2 } : {}), requestId,
           }), DRAWIO_ORIGIN)
         } catch (error) {
           cancelCapture(error instanceof Error ? error.message : 'The draw.io capture request could not be sent.')

@@ -20,6 +20,8 @@ While editing, XML autosaves to the existing single draft slot. **Close editor**
 
 **Push to notebook** separately captures a picture plus editable XML and updates the same Saved object. The draft remains available even when it matches Saved (`draftActive=false` means no unpublished changes, not deletion). A newer draft arriving during a Push is preserved. Close never publishes. Existing full-workbench behavior and other editors are unchanged.
 
+draw.io picture previews now export as 2× PNGs for clearer notebook display, in both section and full-workbench saves. Existing previews keep their original resolution until the diagram is opened and pushed/saved again. Editable XML, draft checkpoints and the notebook file-size limit are unchanged.
+
 The notebook's sync indicator remains authoritative for cross-device availability: a local draft acknowledgement does not claim that cloud upload has finished. This uses the [official draw.io embed protocol](https://www.drawio.com/docs/reference/embed-mode/) (`autosave`, `resetEditor`, `export`, correlated messages); no iframe DOM access is needed.
 
 ## Data
