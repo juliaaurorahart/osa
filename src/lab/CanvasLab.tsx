@@ -88,6 +88,7 @@ export function CanvasLab({
   const [projectMessage, setProjectMessage] = useState('')
   const [projectFailure, setProjectFailure] = useState('')
   const [focusedEditor, setFocusedEditor] = useState(false)
+  const [navigationHidden, setNavigationHidden] = useState(false)
   const [saveTarget, setSaveTarget] = useState<HTMLDivElement | null>(null)
   const [fileTarget, setFileTarget] = useState<HTMLDivElement | null>(null)
   const [sessionScope, setSessionScope] = useState(notebook.scope)
@@ -319,7 +320,10 @@ export function CanvasLab({
     <LabCaptureContext.Provider value={saveProject}>
     <LabWorkbenchChromeContext.Provider value={{ saveTarget, fileTarget, readOnly: project?.mode === 'saved' }}>
     <section className={`lab-shell is-${route.page}${focusedEditor ? ' is-focus' : ''}`} aria-label="OSA Lab">
-      <header className="lab-shell__header" hidden={!!activeLab}>
+      <div className="lab-shell__restore-bar" hidden={!navigationHidden}>
+        <button type="button" aria-expanded="false" aria-controls="lab-navigation lab-project-bar" onClick={() => setNavigationHidden(false)}>Show Lab bar ▾</button>
+      </div>
+      <header id="lab-navigation" className="lab-shell__header" hidden={!!activeLab || navigationHidden}>
         <button className="lab-shell__brand" type="button" onClick={() => setRoute({ page: 'home' })}>
           <strong>OSA Lab</strong>
           <span>experimental facility</span>
@@ -378,6 +382,7 @@ export function CanvasLab({
         </label>
 
         <div className="lab-shell__actions">
+          <button type="button" aria-expanded="true" aria-controls="lab-navigation" onClick={() => setNavigationHidden(true)}>Hide top bar ↑</button>
           <button
             type="button"
             aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
@@ -389,7 +394,7 @@ export function CanvasLab({
         </div>
       </header>
 
-      <header className="lab-shell__workbar" hidden={!activeLab} aria-label="Project work bar">
+      <header id="lab-project-bar" className="lab-shell__workbar" hidden={!activeLab || navigationHidden} aria-label="Project work bar">
         <button className="lab-shell__home-link" type="button" title="Lab home" onClick={() => setRoute({ page: 'home' })}>Lab</button>
         <select className="lab-shell__workbench-picker" aria-label="Switch workbench" value={activeLab?.id || ''}
           disabled={!notebook.isReady} onChange={(event) => openWorkbench(event.target.value as LabWorkbenchId)}>
@@ -412,6 +417,7 @@ export function CanvasLab({
         <div className="lab-shell__save-slot" ref={setSaveTarget} inert={project?.mode === 'saved' || undefined} />
         <button className="lab-shell__notebook-link" type="button" title="Back to notebook" onClick={() => setRoute({ page: 'notebook' })}>Notebook</button>
         <button className="lab-shell__focus-toggle" type="button" aria-pressed={focusedEditor} onClick={() => setFocusedEditor((value) => !value)}>{focusedEditor ? 'Show navigation' : 'Focus'}</button>
+        <button type="button" aria-expanded="true" aria-controls="lab-project-bar" onClick={() => setNavigationHidden(true)}>Hide top bar ↑</button>
         <LabMenu label="File">
           <div ref={setFileTarget} />
           <button type="button" disabled={saving || !activeLab} onClick={() => activeLab && requestProject({ id: crypto.randomUUID(), scope: notebook.scope,
@@ -429,7 +435,7 @@ export function CanvasLab({
         {projectFailure ? <span role="alert">{projectFailure}</span> : null}
         {notebook.status === 'error' ? <span role="alert">{notebook.message}</span> : null}
         {!supportsDrafts ? <span>No automatic drafts here—save or export before leaving.</span> : null}
-      </aside> : <aside className="lab-shell__context">{context}</aside>}
+      </aside> : <aside className="lab-shell__context" hidden={navigationHidden}>{context}</aside>}
 
       <main ref={bodyRef} className={`lab-shell__body is-${route.page}`}>
         {route.page === 'home' ? (
@@ -447,7 +453,7 @@ export function CanvasLab({
           <nav className="lab-notebook-views" aria-label="Notebook view">
             {(['library', 'section'] as const).map((view) => <button key={view} type="button" aria-pressed={notebookView === view} disabled={!notebook.isReady}
               onClick={async () => { try { await flushDrafts(); setNotebookView(view); if (view === 'section') setSectionVisited(true); setProjectFailure('') }
-                catch (error) { setProjectFailure(error instanceof Error ? error.message : 'The current editor could not save.') } }}>{view === 'library' ? 'Library' : 'Section · try it'}</button>)}
+                catch (error) { setProjectFailure(error instanceof Error ? error.message : 'The current editor could not save.') } }}>{view === 'library' ? 'Library' : 'Upside-down notebook'}</button>)}
           </nav>
           {projectFailure ? <p role="alert">{projectFailure}</p> : null}
           {sectionVisited ? <div hidden={notebookView !== 'section'}><LabSection key={`section:${notebook.scope}`} notebook={notebook} theme={theme}

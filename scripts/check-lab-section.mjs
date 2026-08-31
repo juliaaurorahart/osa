@@ -12,7 +12,7 @@ globalThis.window = dom.window; globalThis.document = dom.window.document
 globalThis.HTMLElement = dom.window.HTMLElement; globalThis.IS_REACT_ACT_ENVIRONMENT = true
 const React = await import('react')
 const { createRoot } = await import('react-dom/client')
-const modules = new Map(), overrides = new Map()
+const modules = new Map(), overrides = new Map(), packages = new Map()
 function load(path) {
   const filename = resolve(path)
   if (overrides.has(filename)) return overrides.get(filename)
@@ -23,6 +23,7 @@ function load(path) {
   }).outputText
   new Function('require', 'module', 'exports', code)((id) => {
     if (id.endsWith('.css')) return {}
+    if (packages.has(id)) return packages.get(id)
     if (id.startsWith('.')) {
       const base = resolve(dirname(filename), id)
       for (const extension of ['.ts', '.tsx']) if (existsSync(base + extension)) return load(base + extension)
@@ -37,11 +38,16 @@ const { LabCaptureContext } = load('src/lab/LabCaptureContext.ts')
 let mounts = 0, lastEditor, editorActions
 function FakeEditor({ initialSource, workspace }) {
   const [instance] = React.useState(() => ++mounts)
-  const [text, setText] = React.useState(initialSource.text)
+  const [text, setText] = React.useState(initialSource.editorText ?? initialSource.text)
   const report = React.useContext(LabDraftContext), save = React.useContext(LabCaptureContext)
-  const source = React.useMemo(() => ({ name: initialSource.name, blob: new Blob([text], { type: 'application/json' }) }), [text, initialSource.name])
+  const source = React.useMemo(() => {
+    if (initialSource.name.endsWith('.mmd')) return { name: 'diagram.mermaid-draft.json', blob: new Blob([JSON.stringify({ osaMermaidDraft: 1, text })]) }
+    if (initialSource.name.endsWith('.vl.json')) return { name: 'chart.vega-draft.json', blob: new Blob([JSON.stringify({ osaVegaDraft: 1,
+      spec: JSON.parse(initialSource.text), editorText: text, appliedText: initialSource.appliedText ?? initialSource.text })]) }
+    return { name: initialSource.name, blob: new Blob([text], { type: 'application/json' }) }
+  }, [text, initialSource])
   React.useEffect(() => report(source), [source, report])
-  lastEditor = { instance, text, save, source, workspace }
+  lastEditor = { instance, text, save, source, workspace, initialSource, report }
   editorActions = { edit: setText }
   return React.createElement('div', { 'data-editor-instance': instance },
     React.createElement('textarea', { 'aria-label': 'Fixture source', value: text, onChange: (event) => setText(event.target.value) }),
@@ -49,6 +55,27 @@ function FakeEditor({ initialSource, workspace }) {
 }
 overrides.set(resolve('src/components/InkLab.tsx'), { InkLab: FakeEditor })
 overrides.set(resolve('src/components/CodeEditorLab.tsx'), { CodeEditorLab: FakeEditor })
+overrides.set(resolve('src/components/ExcalidrawLab.tsx'), { ExcalidrawLab: FakeEditor })
+overrides.set(resolve('src/components/MermaidLab.tsx'), { MermaidLab: FakeEditor })
+overrides.set(resolve('src/components/VegaLab.tsx'), { VegaLab: FakeEditor })
+// Preflight renderers have separate format tests; keep the cell lifecycle fixture local and lightweight.
+const structured = load('src/lab/labStructuredProjectSource.ts')
+overrides.set(resolve('src/lab/labStructuredProjectSource.ts'), { ...structured, validateStructuredProjectSource: async (tool, source) => {
+  if (tool === 'vega') structured.parseVegaProjectSource(source); else structured.mermaidProjectText(source)
+} })
+const drawing = load('src/lab/labDrawingProjectSource.ts')
+overrides.set(resolve('src/lab/labDrawingProjectSource.ts'), { ...drawing, validateDrawingProjectSource: async (tool, source) => {
+  if (tool === 'excalidraw') assert.equal(JSON.parse(source.text).type, 'excalidraw'); else await drawing.validateDrawingProjectSource(tool, source)
+} })
+const savedProjects = load('src/lab/labSavedProjects.ts')
+const preflights = []
+overrides.set(resolve('src/lab/labSavedProjects.ts'), { ...savedProjects, readSavedLabProject: async (artifact, file) => {
+  preflights.push(artifact.id)
+  // Ink/code fake editors deliberately emit opaque strings; their actual formats are tested separately.
+  if (artifact.draftOf && ['ink', 'code'].includes(artifact.toolId)) return { toolId: artifact.toolId,
+    source: { file, text: await file.text(), name: artifact.sourceName } }
+  return savedProjects.readSavedLabProject(artifact, file)
+} })
 const { LabSection } = load('src/lab/LabSection.tsx')
 const { moveSectionCell, readSectionCells } = load('src/lab/labSections.ts')
 assert.equal(readSectionCells('{"version":2,"cells":[]}'), null)
@@ -98,15 +125,15 @@ const notebook = {
     let cell
     if (action.kind === 'note') {
       const note = { id: uid(), title: 'Untitled note', body: '', createdAt: now, updatedAt: now }; notes.push(note)
-      cell = { id: uid(), objectType: 'note', objectId: note.id }; section.cells.push(cell)
+      cell = { id: uid(), objectType: 'note', objectId: note.id }; section.cells.unshift(cell)
     } else if (action.kind === 'capture') {
       const artifact = { id: uid(), name: action.capture.name, toolId: action.capture.toolId, sourceName: action.capture.source.name, createdAt: now, mimeType: 'application/json' }
       artifacts.push(artifact); files.set(artifact.id, action.capture.source.blob)
-      cell = { id: uid(), objectType: 'artifact', objectId: artifact.id }; section.cells.push(cell)
+      cell = { id: uid(), objectType: 'artifact', objectId: artifact.id, ...(action.workspace ? { workspace: action.workspace } : {}) }; section.cells.unshift(cell)
     } else if (action.kind === 'workspace') section.cells.find((item) => item.id === action.cellId).workspace = 'p5'
     else if (action.kind === 'move') section.cells = moveSectionCell(section.cells, action.cellId, action.direction)
     else if (action.kind === 'remove') section.cells = section.cells.filter((item) => item.id !== action.cellId)
-    else if (action.kind === 'attach') { cell = { id: uid(), objectType: action.objectType, objectId: action.objectId }; section.cells.push(cell) }
+    else if (action.kind === 'attach') { cell = { id: uid(), objectType: action.objectType, objectId: action.objectId }; section.cells.unshift(cell) }
     refresh(); return { section, cell }
   },
 }
@@ -128,7 +155,9 @@ try {
   await setText('Cell note text', 'Think → draw → keep writing')
   await click('+ Code')
   assert.equal(notes[0].body, 'Think → draw → keep writing', 'Switching flushes unsaved text')
-  const codeCell = sections[0].cells[1]
+  const codeCell = sections[0].cells[0]
+  assert.deepEqual(sections[0].cells.map((cell) => cell.id), [codeCell.id, textCell.id], 'New code goes above existing text')
+  assert.match(JSON.parse(lastEditor.text).code, /const speed/)
   await React.act(async () => editorActions.edit('unrun code survives'))
   const editorNode = document.querySelector('[data-editor-instance]'), instance = lastEditor.instance
   for (const mode of ['Split', 'Focus', 'In place']) {
@@ -138,11 +167,17 @@ try {
   assert.equal(document.querySelectorAll('[data-editor-instance]').length, 1)
   await click('Connect p5 fixture'); assert.equal(lastEditor.workspace.connected, true)
   assert.equal(lastEditor.instance, instance, 'Adding connected output does not reopen code')
-  await click('Move active cell up'); assert.equal(sections[0].cells[0].id, codeCell.id); assert.equal(sections[0].cells[0].workspace, 'p5')
-  await click('+ Draw'); const inkA = sections[0].cells.at(-1)
+  await click('Move active cell down'); assert.equal(sections[0].cells[1].id, codeCell.id); assert.equal(sections[0].cells[1].workspace, 'p5')
+  await click('Move active cell up'); assert.equal(sections[0].cells[0].id, codeCell.id)
+  await React.act(async () => lastEditor.workspace.onExample())
+  const exampleCell = sections[0].cells[0]
+  assert.equal(exampleCell.workspace, 'p5'); assert.notEqual(exampleCell.objectId, codeCell.objectId)
+  assert.match(JSON.parse(lastEditor.text).code, /function draw/)
+  assert.equal(await files.get(notebook.getProjectDraft(codeCell.objectId).id).text(), 'unrun code survives', 'Example is a separate object, never a replacement')
+  await click('InkPen & handwriting'); const inkA = sections[0].cells[0]
   await React.act(async () => editorActions.edit('ink A working source'))
   const oldSave = lastEditor.save, oldSource = lastEditor.source
-  await click('+ Draw'); const inkB = sections[0].cells.at(-1)
+  await click('InkPen & handwriting'); const inkB = sections[0].cells[0]
   await assert.rejects(() => oldSave({ toolId: 'ink', name: 'Wrong tool default', source: oldSource, preview: new Blob(['png']) }), /original cell/)
   assert.equal(saved.length, 0, 'A late async image capture cannot overwrite the next same-tool cell')
   const sameInstance = lastEditor.instance
@@ -160,7 +195,7 @@ try {
   assert.equal(saved.at(-1).capture.name, 'Section drawing', 'Live save preserves the notebook object name')
   await click('Remove active cell from section'); assert.ok(notebook.getArtifact(inkA.objectId)); assert.equal(document.querySelector('[data-editor-instance]'), null)
   await click('From notebook'); await click('Untitled note Text')
-  assert.equal(sections[0].cells.at(-1).objectId, textCell.objectId, 'Adding from notebook reuses the object ID')
+  assert.equal(sections[0].cells[0].objectId, textCell.objectId, 'Adding from notebook reuses the object ID at the top')
   let finishLoad
   loadBlock = new Promise((resolve) => { finishLoad = resolve })
   await selectCell(inkB.id)
@@ -186,6 +221,33 @@ try {
   assert.equal(document.querySelector('[data-editor-instance]'), null, 'A selection during outer close cannot reopen an editor afterward')
   const writeCount = writes.length; await React.act(async () => closeSection()); assert.equal(writes.length, writeCount, 'Hidden/closed sections cannot republish stale editor drafts')
 
+  // New inline editors keep native working data, not just their most recent rendered picture.
+  await click('MermaidDiagrams from text'); const diagramCell = sections[0].cells[0]
+  await React.act(async () => editorActions.edit('flowchart LR\n  A[unfinished'))
+  await click('+ Text')
+  await selectCell(diagramCell.id)
+  assert.equal(lastEditor.text, 'flowchart LR\n  A[unfinished', 'Invalid Mermaid text is recovered without rendering or exposing its envelope')
+  await click('Vega-LiteCharts from data'); const chartCell = sections[0].cells[0]
+  const appliedChart = lastEditor.initialSource.text
+  await React.act(async () => editorActions.edit('{ "unfinished":'))
+  await click('+ Text'); await selectCell(chartCell.id)
+  assert.equal(lastEditor.text, '{ "unfinished":', 'Unapplied invalid chart text survives switching')
+  assert.equal(lastEditor.initialSource.appliedText, appliedChart, 'Chart retains its last applied specification separately')
+  await click('ExcalidrawSketches & diagrams'); const sketchCell = sections[0].cells[0]
+  const scene = { ...JSON.parse(lastEditor.text), elements: [{ id: 'text', type: 'text', text: 'Keep me' }],
+    files: { image: { dataURL: 'data:image/png;base64,aW1hZ2U=' } } }
+  await React.act(async () => editorActions.edit(JSON.stringify(scene)))
+  const oldReport = lastEditor.report
+  await click('+ Text'); await selectCell(sketchCell.id)
+  assert.deepEqual(JSON.parse(lastEditor.text), scene, 'Scene text and embedded images survive switching through native draft bytes')
+  assert.ok(preflights.includes(notebook.getProjectDraft(sketchCell.objectId).id), 'Excalidraw drafts finish preflight before an editor is mounted')
+  await selectCell(codeCell.id)
+  await React.act(async () => { oldReport({ name: 'drawing.excalidraw', blob: new Blob([JSON.stringify(scene)]) }); await closeSection() })
+  assert.equal(await files.get(notebook.getProjectDraft(codeCell.objectId).id).text(), 'unrun code survives', 'Late old editor draft callbacks cannot corrupt the current cell')
+  const css = readFileSync(resolve('src/lab/LabSection.css'), 'utf8')
+  assert.match(css, /\.lab-section__creation\s*\{[^}]*position: sticky; top: 0/)
+  assert.match(css, /scroll-margin-top: calc\(var\(--section-add-height\)/)
+
   // Exercise the real Ink checkpoint, including a pen stroke still in progress.
   overrides.delete(resolve('src/components/InkLab.tsx'))
   const { InkLab } = load('src/components/InkLab.tsx')
@@ -207,5 +269,23 @@ try {
   await pointer('pointerup', 40, 40)
   const finished = JSON.parse(await (await inkReader()).blob.text())
   assert.equal(finished.strokes.length, 1, 'Finishing a checkpointed stroke does not duplicate it')
+
+  // Upstream exposes an empty API before asynchronous scene restore; that is not a draft.
+  let excalProps, excalReader
+  packages.set('@excalidraw/excalidraw', {
+    Excalidraw: (props) => {
+      excalProps = props
+      React.useLayoutEffect(() => props.excalidrawAPI({ getSceneElements: () => [], getAppState: () => ({ isLoading: true }), getFiles: () => ({}) }), [props.excalidrawAPI])
+      return React.createElement('div', null, 'Loading scene fixture')
+    },
+    serializeAsJSON: (elements, appState, files) => JSON.stringify({ type: 'excalidraw', elements, appState, files }),
+  })
+  overrides.delete(resolve('src/components/ExcalidrawLab.tsx'))
+  const { ExcalidrawLab } = load('src/components/ExcalidrawLab.tsx')
+  await React.act(async () => root.render(React.createElement(LabDraftContext.Provider, { value: (reader) => { excalReader = reader } }, React.createElement(ExcalidrawLab, { theme: 'dark' }))))
+  assert.equal(excalReader, undefined, 'An empty pre-restore API must never be saved as the working scene')
+  await React.act(async () => excalProps.onChange(scene.elements, { isLoading: false }, scene.files))
+  const restored = JSON.parse(await (await excalReader()).blob.text())
+  assert.deepEqual(restored.elements, scene.elements); assert.deepEqual(restored.files, scene.files)
 } finally { await React.act(async () => root.unmount()); dom.window.close() }
 console.log('Section checks passed: cell creation, shared references, single editor, three stable layouts, text/draft recovery, connected group movement, capture ownership, copy recovery and safe close.')

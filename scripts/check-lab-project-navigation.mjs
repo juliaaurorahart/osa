@@ -205,12 +205,22 @@ let exitAction = () => { exitWarnings.push(warnsBeforeUnload()) }
 
 try {
   await React.act(async () => root.render(React.createElement(CanvasLab, { theme: 'dark', onToggleTheme() {}, onExit: () => exitAction() })))
+  await clickButton('Hide top bar ↑', document.querySelector('.lab-shell__header'))
+  assert.equal(document.querySelector('.lab-shell__header').hidden, true)
+  assert.equal(document.querySelector('.lab-shell__restore-bar').hidden, false)
+  await clickButton('Show Lab bar ▾')
+  assert.equal(document.querySelector('.lab-shell__header').hidden, false)
   shellBody().scrollTop = 640
   await changeValue(document.querySelector('[aria-label="Choose Lab instrument"]'), 'ink', 'change')
   assert.equal(shellBody().scrollTop, 0, 'Entering a workbench resets the shared main scroller.')
   assert.equal(mountedEditors, 1)
   const firstEditor = editor()
   const firstInstance = firstEditor.dataset.editorInstance
+  await clickButton('Hide top bar ↑', workbar())
+  assert.equal(workbar().hidden, true)
+  assert.strictEqual(editor(), firstEditor, 'Hiding the top bar never unmounts the current editor')
+  await clickButton('Show Lab bar ▾')
+  assert.equal(workbar().hidden, false)
   await changeValue(editorText(), 'My unsaved drawing')
   await changeValue(document.querySelector('[aria-label="Project name"]'), '  Named study  ')
   assert.equal(firstEditor.querySelector('.lab-capture'), null, 'Save is in the shared bar, not a second editor header')

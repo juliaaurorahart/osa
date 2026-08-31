@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useRef, useState, type ComponentProps } from 'react'
+import { useCallback, useContext, useRef, useState, type ComponentProps } from 'react'
 import { LabDraftContext } from '../lab/LabDraftContext'
 import { Excalidraw, exportToBlob, serializeAsJSON } from '@excalidraw/excalidraw'
 import { LabCaptureButton } from '../lab/LabCaptureButton'
@@ -32,10 +32,8 @@ export function ExcalidrawLab({ theme, initialSource }: ExcalidrawLabProps) {
     reportDraft?.(() => ({ name: 'drawing.excalidraw', blob: new Blob([serializeAsJSON(elements, appState, files, 'local')], { type: 'application/json' }) }))
   }, [reportDraft])
   const receiveApi = useCallback((api: ExcalidrawApi) => { apiRef.current = api }, [])
-  useEffect(() => {
-    const api = apiRef.current
-    if (api) reportDraft?.(() => ({ name: 'drawing.excalidraw', blob: new Blob([serializeAsJSON(api.getSceneElements(), api.getAppState(), api.getFiles(), 'local')], { type: 'application/json' }) }))
-  }, [reportDraft])
+  // Excalidraw exposes its initially empty API before restoring initialData.
+  // Its onChange is gated on completed restoration; only that path publishes drafts.
 
   const reset = () => {
     apiRef.current = null

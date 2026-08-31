@@ -359,7 +359,7 @@ export function useSyncedLabNotebook() {
 
   /** One transaction adds an object and its place in a section. Removing a cell never deletes its object. */
   const changeSection = useCallback(async (sectionId: string | null,
-    action: LabSectionAction | { kind: 'capture'; capture: LabCapture }, expectedScope: string, afterCellId?: string) => {
+    action: LabSectionAction | { kind: 'capture'; capture: LabCapture; workspace?: 'p5' }, expectedScope: string) => {
     const check = () => {
       const doc = currentRef.current
       if (!doc || doc.scope !== expectedScope || switching.current || localFailure.current) throw new Error('Return to the original notebook before changing this section.')
@@ -376,7 +376,7 @@ export function useSyncedLabNotebook() {
       if (sectionId && !existing) throw new Error('That section is no longer available.')
       if (!existing && action.kind !== 'create') throw new Error('Open a section first.')
       const section: LabSection = existing ? { ...existing, cells: [...existing.cells], updatedAt: now }
-        : { id: id(), title: 'First section', createdAt: now, updatedAt: now, cells: [] }
+        : { id: id(), title: 'Upside-down notebook', createdAt: now, updatedAt: now, cells: [] }
       let cell: LabSectionCell | undefined
       if (action.kind === 'note') {
         const note: LabNote = { id: id(), title: 'Untitled note', body: '', createdAt: now, updatedAt: now }
@@ -384,7 +384,8 @@ export function useSyncedLabNotebook() {
         cell = { id: id(), objectType: 'note', objectId: note.id }
       } else if (file) {
         current.artifacts = [...current.artifacts, labArtifactMetadata(file)]
-        cell = { id: id(), objectType: 'artifact', objectId: file.id }
+        cell = { id: id(), objectType: 'artifact', objectId: file.id,
+          ...(action.kind === 'capture' && action.workspace === 'p5' && file.toolId === 'code' ? { workspace: 'p5' as const } : {}) }
       } else if (action.kind === 'attach') {
         const available = action.objectType === 'note' ? current.notes.some((item) => item.id === action.objectId && !item.isDraft)
           : current.artifacts.some((item) => item.id === action.objectId && !item.draftOf && !item.revisionOf && !item.deletedAt)
@@ -399,10 +400,8 @@ export function useSyncedLabNotebook() {
         if (!target || target.objectType !== 'artifact' || !current.artifacts.some((item) => item.id === target.objectId && item.toolId === 'code')) throw new Error('Connect a p5 workspace to a code cell.')
         section.cells = section.cells.map((item) => item.id === action.cellId ? { ...item, workspace: 'p5' } : item)
       }
-      if (cell) {
-        const after = section.cells.findIndex((item) => item.id === afterCellId)
-        section.cells.splice(after < 0 ? section.cells.length : after + 1, 0, cell)
-      }
+      // New thoughts start at the top; preserve the order of everything already here.
+      if (cell) section.cells.unshift(cell)
       if (!commit({ ...current, sections: existing ? current.sections!.map((item) => item.id === section.id ? section : item)
         : [...(current.sections ?? []), section] })) throw new Error('The section could not save.')
       await flushNotebookWrites(expectedScope)

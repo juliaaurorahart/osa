@@ -156,6 +156,7 @@ export const CURRENT_SOURCE_PATHS = [
   "src/lab/LabSection.css",
   "src/lab/LabSection.tsx",
   "src/lab/labSections.ts",
+  "src/lab/labSectionWorkspaces.ts",
   "src/lab/LabSettings.css",
   "src/lab/LabSettings.tsx",
   "src/lab/labStructuredProjectSource.ts",

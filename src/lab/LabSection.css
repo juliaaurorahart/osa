@@ -1,15 +1,15 @@
 .lab-notebook-views { display: flex; gap: 6px; padding: 8px 0 12px; }
-.lab-notebook-views button, .lab-section :is(button, input, select, textarea, summary) { font: inherit; }
-.lab-notebook-views button, .lab-section :is(button, select, input:not([type=checkbox])) {
+.lab-notebook-views button, .lab-section :is(button, input, select, textarea, summary):not(:where(.excalidraw *)) { font: inherit; }
+.lab-notebook-views button, .lab-section :is(button, select, input:not([type=checkbox])):not(:where(.excalidraw *)) {
   color: var(--osa-text); background: var(--osa-surface); border: 1px solid var(--osa-border); border-radius: 7px;
   padding: 7px 11px; min-height: 36px; min-width: 0; box-sizing: border-box;
 }
 .lab-notebook-views button, .lab-section button, .lab-section summary { cursor: pointer; }
 .lab-notebook-views [aria-pressed=true], .lab-section [aria-pressed=true] { background: var(--osa-surface-raised); border-color: var(--osa-focus); }
-.lab-section { color: var(--osa-text); padding-bottom: 50px; min-width: 0; }
-.lab-section button:disabled { opacity: .45; cursor: not-allowed; }
-.lab-section :is(button, input, textarea, select, summary):focus-visible { outline: 2px solid var(--osa-focus); outline-offset: 2px; }
-.lab-section :is(input, select) { max-width: 100%; }
+.lab-section { --section-add-height: 64px; color: var(--osa-text); padding-bottom: 50px; min-width: 0; }
+.lab-section button:disabled:not(:where(.excalidraw *)) { opacity: .45; cursor: not-allowed; }
+.lab-section :is(button, input, textarea, select, summary):not(:where(.excalidraw *)):focus-visible { outline: 2px solid var(--osa-focus); outline-offset: 2px; }
+.lab-section :is(input, select):not(:where(.excalidraw *)) { max-width: 100%; }
 .lab-section [hidden] { display: none !important; }
 .lab-section__toolbar, .lab-section__add, .lab-section__modes, .lab-section__editor-bar, .lab-section__cell > header {
   display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
@@ -23,14 +23,18 @@
 .lab-section__topics[open] { border: 1px solid var(--osa-border); border-radius: 7px; padding: 6px; }
 .lab-section__topics label { display: flex; align-items: center; gap: 6px; margin: 6px; }
 .lab-section__topics form { display: flex; gap: 6px; }
-.lab-section__add { padding: 10px 0 18px; }
+.lab-section__creation { position: sticky; top: 0; z-index: 15; background: var(--osa-bg); border-bottom: 1px solid var(--osa-border); margin-bottom: 16px; box-shadow: 0 8px 14px var(--osa-shadow); }
+.lab-section__add { padding: 8px 0; }
+.lab-section__workspace-menu > summary { color: var(--osa-text); background: var(--osa-surface); border: 1px solid var(--osa-border); border-radius: 7px; padding: 7px 11px; min-height: 36px; box-sizing: border-box; }
+.lab-section__workspace-menu .lab-menu__panel { left: 0; right: auto; max-height: 50dvh; }
+.lab-section__workspace-menu small { display: block; color: var(--osa-muted); margin-top: 2px; }
 .lab-section__add > select { margin-left: auto; max-width: 250px; }
 .lab-section__picker { border: 1px solid var(--osa-border); border-radius: 9px; background: var(--osa-surface); padding: 12px; margin-bottom: 16px; }
 .lab-section__picker > input { width: 100%; }
-.lab-section__picker > div { display: flex; flex-wrap: wrap; gap: 8px; max-height: 220px; overflow: auto; margin-top: 10px; }
+.lab-section__picker > div { display: flex; flex-wrap: wrap; gap: 8px; max-height: min(220px, 25dvh); overflow: auto; margin-top: 10px; }
 .lab-section__picker small { color: var(--osa-muted); margin-left: 10px; }
 .lab-section__flow { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); align-items: start; }
-.lab-section__cell, .lab-section__editor { grid-column: 1; min-width: 0; border: 1px solid var(--osa-border); border-radius: 10px; background: var(--osa-surface); overflow: hidden; }
+.lab-section__cell, .lab-section__editor { grid-column: 1; min-width: 0; border: 1px solid var(--osa-border); border-radius: 10px; background: var(--osa-surface); overflow: hidden; scroll-margin-top: calc(var(--section-add-height) + 12px); }
 .lab-section__cell > header, .lab-section__editor-bar { padding: 8px 10px; border-bottom: 1px solid var(--osa-border); }
 .lab-section__cell .lab-section__cell-open { flex: 1; text-align: left; border-color: transparent; overflow-wrap: anywhere; }
 .lab-section__cell > header > button:not(:first-child) { font-size: 1.05rem; padding: 5px 10px; }
@@ -51,10 +55,18 @@
 .lab-section__editor .ink-lab__header > div:first-child { display: none; }
 .lab-section__editor .ink-lab__page { min-height: 350px; }
 .lab-section__editor .code-editor-lab { border: 0; }
+.lab-section__editor :is(.excalidraw-lab, .vega-lab, .mermaid-lab) { padding: 8px; min-height: 0; }
+.lab-section__editor :is(.excalidraw-lab__header, .vega-lab__header, .mermaid-lab__header) > div:first-child { display: none; }
+.lab-section__editor .excalidraw-lab__stage { height: clamp(380px, 60dvh, 700px); min-height: 380px; }
+.lab-section__editor .vega-lab__chart { min-width: 0; overflow: auto; }
+.lab-section__editor .mermaid-lab__security { display: none; }
 .lab-section.is-inline .lab-section__cell.is-selected { display: none; }
 .lab-section.is-split .lab-section__flow { grid-template-columns: minmax(0, 1.25fr) minmax(260px, .75fr); }
 .lab-section.is-split .lab-section__cell { grid-column: 2; }
-.lab-section.is-split .lab-section__editor { grid-column: 1; grid-row: 1 / span var(--cell-count); position: sticky; top: 10px; max-height: calc(100dvh - 110px); overflow: auto; }
+.lab-section.is-split .lab-section__editor { grid-column: 1; grid-row: 1 / span var(--cell-count); position: sticky; top: calc(var(--section-add-height) + 10px); max-height: max(280px, calc(100dvh - var(--section-add-height) - 180px)); overflow: auto; }
+.lab-section.is-split .mermaid-lab__layout { flex-direction: column; }
+.lab-section.is-split .mermaid-lab__editor { flex-basis: auto; min-width: 0; }
+.lab-section.is-split .mermaid-lab__editor textarea { flex-basis: 300px; min-height: 240px; }
 .lab-section.is-focus.has-active .lab-section__cell { display: none; }
 .lab-section.is-focus .lab-section__editor { grid-row: 1; }
 .lab-section.is-focus .lab-section__text > textarea { min-height: 55dvh; }
@@ -68,7 +80,9 @@
   .lab-section.is-split .lab-section__editor { position: static; grid-column: 1; grid-row: 1; max-height: none; }
   .lab-section.is-split .lab-section__cell { grid-column: 1; grid-row: auto !important; }
   .lab-section__status { width: 100%; order: 3; }
-  .lab-section :is(button, select, summary) { min-height: 44px; }
-  .lab-section :is(input, textarea, select) { font-size: 16px; }
+  .lab-section :is(button, select, summary):not(:where(.excalidraw *)) { min-height: 44px; }
+  .lab-section :is(input, textarea, select):not(:where(.excalidraw *)) { font-size: 16px; }
   .lab-section__add > select { margin-left: 0; width: 100%; max-width: none; }
+  .lab-section__workspace-menu { position: static; }
+  .lab-section__workspace-menu .lab-menu__panel { left: 0; right: 0; width: auto; }
 }

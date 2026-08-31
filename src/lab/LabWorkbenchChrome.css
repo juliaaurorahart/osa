@@ -2,6 +2,7 @@
 .lab-shell > [hidden] { display: none; }
 .lab-shell__body { grid-row: 3; }
 .lab-shell__workbar {
+  grid-row: 1;
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
   min-width: 0; padding: 6px 10px; border-bottom: 1px solid var(--osa-border);
   background: var(--osa-surface); z-index: 5;

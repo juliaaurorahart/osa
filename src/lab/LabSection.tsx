@@ -9,26 +9,22 @@ import { LabWorkbenchChromeContext } from './LabWorkbenchChromeContext'
 import { LabErrorBoundary } from './LabErrorBoundary'
 import { useLabWorkingDrafts } from './useLabWorkingDrafts'
 import { createLabDraftQueue } from './labDraftQueue'
-import { createInkDocument, inkDocumentSvg } from './inkDocument'
-import { codeProjectBlob } from './labCodeProjectSource'
+import { LabMenu } from './LabMenu'
+import { readLabDraftSource } from './labDrafts'
+import { readSavedLabProject } from './labSavedProjects'
+import { isSectionWorkspace, newSectionCapture, SECTION_WORKSPACES } from './labSectionWorkspaces'
 import './LabSection.css'
 
 const InkLab = lazy(() => import('../components/InkLab').then((module) => ({ default: module.InkLab })))
 const CodeEditorLab = lazy(() => import('../components/CodeEditorLab').then((module) => ({ default: module.CodeEditorLab })))
+const ExcalidrawLab = lazy(() => import('../components/ExcalidrawLab').then((module) => ({ default: module.ExcalidrawLab })))
+const MermaidLab = lazy(() => import('../components/MermaidLab').then((module) => ({ default: module.MermaidLab })))
+const VegaLab = lazy(() => import('../components/VegaLab').then((module) => ({ default: module.VegaLab })))
 type Notebook = ReturnType<typeof useSyncedLabNotebook>
 type Mode = 'inline' | 'split' | 'focus'
 type Active = { cell: LabSectionCell; sessionId: string; note?: LabNote; artifact?: LabArtifact;
   source?: LabProjectSource; baseFileId?: string; draftFileId?: string }
 const failureText = (failure: unknown) => failure instanceof Error ? failure.message : 'Could not save. Keep this editor open.'
-
-function newCapture(tool: 'ink' | 'code'): LabCapture {
-  if (tool === 'code') return { toolId: 'code', name: 'Section code', source: { name: 'source.osa-code.json', blob: codeProjectBlob({
-    osaCode: 1, filename: 'sketch.js', language: 'javascript', code: 'function setup() {\n  createCanvas(640, 400);\n  background(16, 18, 26);\n}\n\nfunction draw() {\n  noStroke();\n  fill(255, 90, 190, 70);\n  circle(mouseX, mouseY, 28);\n}\n',
-  }) } }
-  const drawing = createInkDocument()
-  return { toolId: 'ink', name: 'Section drawing', source: { name: 'drawing.osa-ink.json',
-    blob: new Blob([JSON.stringify(drawing)], { type: 'application/json' }) }, preview: new Blob([inkDocumentSvg(drawing)], { type: 'image/svg+xml' }) }
-}
 
 /** A single active editor keeps the same React identity and DOM parent in every layout. */
 export function LabSection({ notebook, theme, isActive, onRegisterFlush, onOpenProject }: {
@@ -49,6 +45,8 @@ export function LabSection({ notebook, theme, isActive, onRegisterFlush, onOpenP
   const [fileTarget, setFileTarget] = useState<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const editorRef = useRef<HTMLDivElement>(null)
+  const sectionRef = useRef<HTMLElement>(null)
+  const creationRef = useRef<HTMLDivElement>(null)
   const activeRef = useRef(active)
   const notebookRef = useRef(notebook)
   const readerRef = useRef<LabDraftReader | null>(null)
@@ -59,6 +57,14 @@ export function LabSection({ notebook, theme, isActive, onRegisterFlush, onOpenP
   const drafts = useLabWorkingDrafts(notebook.saveProjectDraft)
   useEffect(() => { activeRef.current = active; notebookRef.current = notebook }, [active, notebook])
   useEffect(() => { if (active?.sessionId) editorRef.current?.scrollIntoView?.({ block: 'nearest' }) }, [active?.sessionId])
+  useEffect(() => {
+    const bar = creationRef.current
+    if (!bar || typeof ResizeObserver === 'undefined') return
+    const measure = () => sectionRef.current?.style.setProperty('--section-add-height', `${bar.getBoundingClientRect().height}px`)
+    const observer = new ResizeObserver(measure)
+    observer.observe(bar); measure()
+    return () => observer.disconnect()
+  }, [section?.id])
   const [notes] = useState(() => {
     const versions = new Map<string, string>()
     let alive = true
@@ -72,7 +78,7 @@ export function LabSection({ notebook, theme, isActive, onRegisterFlush, onOpenP
   // Controller methods are stable; keep callbacks independent of notebook/source rerenders.
   const reportDraft = useCallback((source: LabDraftReader) => {
     const session = activeRef.current
-    if (!session?.artifact || (session.artifact.toolId !== 'ink' && session.artifact.toolId !== 'code')) return
+    if (!session?.artifact || !isSectionWorkspace(session.artifact.toolId)) return
     readerRef.current = source
     draftsController.current.report({ scope: notebookRef.current.scope, sessionId: session.sessionId,
       projectId: session.artifact.id, name: session.artifact.name, toolId: session.artifact.toolId,
@@ -132,10 +138,13 @@ export function LabSection({ notebook, theme, isActive, onRegisterFlush, onOpenP
       const draft = current.getProjectDraft(artifact.id)
       const working = draft?.draftActive ? draft : artifact
       let source: LabProjectSource | undefined
-      if (artifact.toolId === 'ink' || artifact.toolId === 'code') {
+      if (isSectionWorkspace(artifact.toolId)) {
         const blob = await current.loadArtifactSource(working.id, current.scope)
         if (!blob) throw new Error('The editable source is unavailable. Your file has not been changed.')
-        source = { file: blob, text: await blob.text(), name: working.sourceName || working.name, isDraft: Boolean(working.draftOf) }
+        source = working.draftOf ? await readLabDraftSource(working, blob) : (await readSavedLabProject(artifact, blob)).source
+        // Finish native restore before mounting an editor that can publish drafts.
+        // Mermaid alone may contain intentionally incomplete diagram text.
+        if (working.draftOf && artifact.toolId !== 'mermaid') await readSavedLabProject({ ...working, sourceName: source.name }, source.file)
       }
       next = { cell, sessionId, artifact, source, baseFileId: working.draftOf ? working.draftBaseFileId : artifact.fileId || artifact.id,
         draftFileId: draft?.fileId }
@@ -143,9 +152,9 @@ export function LabSection({ notebook, theme, isActive, onRegisterFlush, onOpenP
     if (!mounted.current || notebookRef.current.scope !== current.scope || openGeneration.current !== generation) return
     readerRef.current = null; activeRef.current = next; setActive(next); setNoteStatus(''); setPicker(false)
   }
-  const change = async (action: LabSectionAction | { kind: 'capture'; capture: LabCapture }) => {
+  const change = async (action: LabSectionAction | { kind: 'capture'; capture: LabCapture; workspace?: 'p5' }) => {
     const generation = openGeneration.current
-    const result = await notebook.changeSection(section?.id ?? null, action, notebook.scope, activeRef.current?.cell.id)
+    const result = await notebook.changeSection(section?.id ?? null, action, notebook.scope)
     if (!mounted.current) return
     if (result.cell && openGeneration.current === generation) await open(result.cell)
     if (action.kind === 'remove' && activeRef.current?.cell.id === action.cellId) {
@@ -154,6 +163,10 @@ export function LabSection({ notebook, theme, isActive, onRegisterFlush, onOpenP
   }
   const captureSessionId = active?.sessionId
   const captureScope = notebook.scope
+  const publishDraft = useCallback((source: LabDraftReader) => {
+    if (activeRef.current?.sessionId !== captureSessionId || notebookRef.current.scope !== captureScope) return
+    reportDraft(source)
+  }, [captureSessionId, captureScope, reportDraft])
   const saveCapture = useCallback(async (capture: LabCapture, options?: { asCopy?: boolean }) => {
     const session = activeRef.current
     if (!session?.artifact || session.sessionId !== captureSessionId || notebookRef.current.scope !== captureScope
@@ -189,17 +202,17 @@ export function LabSection({ notebook, theme, isActive, onRegisterFlush, onOpenP
   const index = section?.cells.findIndex((cell) => cell.id === active?.cell.id) ?? -1
   const selectedCell = section?.cells.find((cell) => cell.id === active?.cell.id)
   const topicIds = notebook.topicLinks.filter((link) => link.objectType === 'section' && link.objectId === section?.id).map((link) => link.topicId)
-  const editableArtifact = active?.artifact?.toolId === 'ink' || active?.artifact?.toolId === 'code'
+  const editableArtifact = isSectionWorkspace(active?.artifact?.toolId)
   const canEdit = Boolean(active?.note || editableArtifact)
   const candidates = [...notebook.notes.map((note) => ({ id: note.id, name: note.title, objectType: 'note' as const })),
     ...notebook.artifacts.map((artifact) => ({ id: artifact.id, name: artifact.name, objectType: 'artifact' as const }))]
     .filter((item) => item.name.toLowerCase().includes(query.toLowerCase()))
 
-  return <section className={`lab-section is-${mode}${active ? ' has-active' : ''}`} aria-label="Working section">
+  return <section ref={sectionRef} className={`lab-section is-${mode}${active ? ' has-active' : ''}`} aria-label="Working section">
     <header className="lab-section__toolbar">
       {section ? <input key={section.id + section.title} className="lab-section__name" aria-label="Section name" defaultValue={section.title} maxLength={120}
         onBlur={(event) => { if (event.target.value !== section.title) void run(() => change({ kind: 'rename', title: event.target.value })) }} /> : <h2>A space to think</h2>}
-      <span className="lab-section__status" role="status">{error ? 'Save needs attention' : active?.note ? noteStatus || 'Text autosaves' : active?.artifact && editableArtifact ? drafts.state.kind === 'error' ? 'Draft needs attention' : drafts.state.kind === 'saving' ? 'Saving draft…' : 'Working draft · Save updates live' : 'One section · same notebook objects'}</span>
+      <span className="lab-section__status" role="status">{error ? 'Save needs attention' : active?.note ? noteStatus || 'Text autosaves' : active?.artifact && editableArtifact ? drafts.state.kind === 'error' ? 'Draft needs attention' : drafts.state.kind === 'saving' ? 'Saving draft…' : 'Working draft · Save updates live' : 'Upside-down notebook · new cells at the top'}</span>
       <div className="lab-section__modes" role="group" aria-label="Editing layout">
         {(['inline', 'split', 'focus'] as const).map((value) => <button type="button" key={value} aria-pressed={mode === value}
           onClick={() => setMode(value)}>{value === 'inline' ? 'In place' : value === 'split' ? 'Split' : 'Focus'}</button>)}
@@ -215,10 +228,15 @@ export function LabSection({ notebook, theme, isActive, onRegisterFlush, onOpenP
     {error || drafts.state.kind === 'error' ? <div className="lab-section__error" role="alert">{error || drafts.state.message}<button type="button" onClick={() => void run(async () => undefined)}>Retry save</button></div> : null}
     {!section ? <div className="lab-section__empty"><h2>Text, drawing, code. Keep the thought going.</h2><p>Your library stays where it is. A section brings its objects together.</p>
       <button type="button" disabled={!notebook.isReady || busy} onClick={() => void run(() => change({ kind: 'create' }))}>Start a section</button></div> : <>
-      <nav className="lab-section__add" aria-label="Add a cell">
+      <div className="lab-section__creation" ref={creationRef}>
+      <nav className="lab-section__add" aria-label="Add a cell" title="New cells appear at the top">
         <button type="button" disabled={!notebook.isReady || busy} onClick={() => void run(() => change({ kind: 'note' }))}>+ Text</button>
-        <button type="button" disabled={!notebook.isReady || busy} onClick={() => void run(() => change({ kind: 'capture', capture: newCapture('ink') }))}>+ Draw</button>
-        <button type="button" disabled={!notebook.isReady || busy} onClick={() => void run(() => change({ kind: 'capture', capture: newCapture('code') }))}>+ Code</button>
+        <LabMenu label="+ Workspace" className="lab-section__workspace-menu">
+          {SECTION_WORKSPACES.map((workspace) => <button key={workspace.id} type="button" disabled={!notebook.isReady || busy}
+            onClick={() => void run(() => change({ kind: 'capture', capture: newSectionCapture(workspace.id, theme) }))}>
+            <strong>{workspace.name}</strong><small>{workspace.description}</small></button>)}
+        </LabMenu>
+        <button type="button" disabled={!notebook.isReady || busy} onClick={() => void run(() => change({ kind: 'capture', capture: newSectionCapture('code', theme) }))}>+ Code</button>
         <button type="button" disabled={!notebook.isReady || busy} onClick={() => inputRef.current?.click()}>+ Image / file</button>
         <button type="button" disabled={!notebook.isReady || busy} aria-expanded={picker} onClick={() => setPicker(!picker)}>From notebook</button>
         <input type="file" multiple hidden ref={inputRef} onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; void run(() => addFiles(files)) }} />
@@ -229,6 +247,7 @@ export function LabSection({ notebook, theme, isActive, onRegisterFlush, onOpenP
       {picker ? <aside className="lab-section__picker" aria-label="Notebook objects"><input aria-label="Find a notebook object" placeholder="Find a note or file…" value={query} onChange={(event) => setQuery(event.target.value)} />
         <div>{candidates.map((item) => <button key={item.objectType + item.id} type="button" disabled={busy} onClick={() => void run(() => change({ kind: 'attach', objectType: item.objectType, objectId: item.id }))}>{item.name} <small>{item.objectType === 'note' ? 'Text' : 'File'}</small></button>)}</div>
       </aside> : null}
+      </div>
       <div className="lab-section__flow" style={{ '--active-row': Math.max(1, index + 1), '--cell-count': Math.max(1, section.cells.length) } as CSSProperties}>
         {section.cells.map((cell, cellIndex) => <article key={cell.id} className={`lab-section__cell${cell.id === active?.cell.id ? ' is-selected' : ''}`}
           style={{ gridRow: cellIndex + 1 }} aria-label={`Cell ${cellIndex + 1}: ${cellName(cell, notebook)}`}>
@@ -245,7 +264,7 @@ export function LabSection({ notebook, theme, isActive, onRegisterFlush, onOpenP
             <button type="button" title="Keep the object in the notebook" aria-label="Remove active cell from section" disabled={busy} onClick={() => active && void run(() => change({ kind: 'remove', cellId: active.cell.id }))}>×</button>
             <details><summary>File</summary><div ref={setFileTarget} />{active?.artifact ? <button type="button" onClick={() => void notebook.downloadArtifact(active.artifact!.id)}>Download saved file</button> : null}</details>
           </header>
-          <LabDraftContext.Provider value={reportDraft}><LabCaptureContext.Provider value={saveCapture}>
+          <LabDraftContext.Provider value={publishDraft}><LabCaptureContext.Provider value={saveCapture}>
             <LabWorkbenchChromeContext.Provider value={{ saveTarget, fileTarget, readOnly: false }}>
               <LabErrorBoundary key={active?.sessionId ?? 'empty'} labName="Section editor" recoveryHint="Your saved object and recovery draft remain in the notebook.">
                 <Suspense fallback={<p>Opening editor…</p>}>
@@ -254,8 +273,12 @@ export function LabSection({ notebook, theme, isActive, onRegisterFlush, onOpenP
                     onPaste={(event) => { const files = Array.from(event.clipboardData.files); if (files.length) { event.preventDefault(); void run(() => addFiles(files)) } }}
                     onChange={(event) => editNote({ body: event.target.value })} /></div>
                     : active?.artifact?.toolId === 'ink' ? <InkLab initialSource={active.source} />
+                    : active?.artifact?.toolId === 'excalidraw' ? <ExcalidrawLab theme={theme} initialSource={active.source} />
+                    : active?.artifact?.toolId === 'mermaid' ? <MermaidLab theme={theme} initialSource={active.source} />
+                    : active?.artifact?.toolId === 'vega' ? <VegaLab theme={theme} initialSource={active.source} />
                     : active?.artifact?.toolId === 'code' ? <CodeEditorLab theme={theme} initialSource={active.source} beforeRun={flush} active={isActive}
-                      workspace={{ connected: Boolean(selectedCell?.workspace), onConnect: () => void run(() => change({ kind: 'workspace', cellId: active.cell.id })) }} />
+                      workspace={{ connected: Boolean(selectedCell?.workspace), onConnect: () => void run(() => change({ kind: 'workspace', cellId: active.cell.id })),
+                        onExample: () => void run(() => change({ kind: 'capture', capture: newSectionCapture('code', theme), workspace: 'p5' })) }} />
                     : active ? <><CellPreview cell={active.cell} notebook={notebook} />{active.artifact?.toolId ? <button type="button" onClick={() => void run(async () => onOpenProject(active.artifact!))}>Open in {active.artifact.toolId}</button> : null}</> : null}
                 </Suspense>
               </LabErrorBoundary>

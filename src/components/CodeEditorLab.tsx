@@ -7,7 +7,7 @@ import { LabFileActions } from '../lab/LabFileActions'
 import { LabDraftContext } from '../lab/LabDraftContext'
 import { LabWorkbenchChromeContext } from '../lab/LabWorkbenchChromeContext'
 import { LabErrorBoundary } from '../lab/LabErrorBoundary'
-import { CODE_LANGUAGES, codeDownloadName, codeProjectBlob, readCodeProjectSource, safeCodeFilename, type CodeLanguage, type CodeProject } from '../lab/labCodeProjectSource'
+import { CODE_LANGUAGES, P5_EXAMPLE_PROJECT, codeDownloadName, codeProjectBlob, readCodeProjectSource, safeCodeFilename, type CodeLanguage, type CodeProject } from '../lab/labCodeProjectSource'
 import { MAX_P5_CODE_LENGTH } from '../lab/labP5ProjectSource'
 import { downloadBlob } from '../lab/labCaptureUtils'
 import type { LabProjectSource, LabTheme } from '../lab/labTypes'
@@ -18,30 +18,12 @@ const P5CodePreview = lazy(() => import('./P5CodePreview').then((module) => ({ d
 const LANGUAGE_LABELS: Record<CodeLanguage, string> = {
   javascript: 'JavaScript', typescript: 'TypeScript · edit only', python: 'Python · edit only', shell: 'Shell · edit only', text: 'Text · edit only',
 }
-const SAMPLE: CodeProject = { osaCode: 1, filename: 'ribbon.js', language: 'javascript', code: `// Change the hue, size, or speed, then choose Run with p5.
-function setup() {
-  createCanvas(640, 440);
-  colorMode(HSB, 360, 100, 100, 1);
-  background(230, 40, 7);
-}
-
-function draw() {
-  background(230, 40, 7, 0.08);
-  translate(width / 2, height / 2);
-  rotate(frameCount * 0.01);
-  noFill();
-  stroke((frameCount * 0.6) % 360, 70, 100, 0.7);
-  strokeWeight(2);
-  ellipse(0, 0, 270, 90);
-}
-` }
-
 export type CodeEditorLabProps = { theme: LabTheme; initialSource?: LabProjectSource; beforeRun?: () => Promise<void>;
-  active?: boolean; workspace?: { connected: boolean; onConnect: () => void } }
+  active?: boolean; workspace?: { connected: boolean; onConnect: () => void; onExample?: () => void } }
 
 /** Source is saved independently of execution; the p5 runner receives only a Run snapshot. */
 export function CodeEditorLab({ theme, initialSource, beforeRun, active = true, workspace }: CodeEditorLabProps) {
-  const [project, setProject] = useState<CodeProject>(() => initialSource ? readCodeProjectSource(initialSource) : { ...SAMPLE })
+  const [project, setProject] = useState<CodeProject>(() => initialSource ? readCodeProjectSource(initialSource) : { ...P5_EXAMPLE_PROJECT })
   const reportDraft = useContext(LabDraftContext)
   const readOnly = useContext(LabWorkbenchChromeContext)?.readOnly ?? false
   const [run, setRun] = useState<{ id: string; source: string; request: number } | null>(null)
@@ -124,6 +106,7 @@ export function CodeEditorLab({ theme, initialSource, beforeRun, active = true, 
           <strong>Code → p5 canvas</strong>
           <button type="button" disabled={readOnly || pending || project.language !== 'javascript'} onClick={() => void runCode()}>{pending ? 'Saving draft…' : 'Run with p5'}</button>
           <button type="button" disabled={!run && !pending} onClick={stop}>Stop</button>
+          {workspace?.onExample ? <button type="button" disabled={readOnly || pending} title="Add a connected sample above this cell; keep your code unchanged" onClick={workspace.onExample}>+ Example cell</button> : null}
         </div>
         <p className="code-editor-lab__status" role="status">{runStatus === 'running'
           ? run?.source === project.code ? 'Showing the last run' : 'Code changed · Run to update the result'

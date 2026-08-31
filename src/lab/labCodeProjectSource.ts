@@ -5,6 +5,29 @@ export const CODE_LANGUAGES = ['javascript', 'typescript', 'python', 'shell', 't
 export type CodeLanguage = typeof CODE_LANGUAGES[number]
 export type CodeProject = { osaCode: 1; filename: string; language: CodeLanguage; code: string }
 
+/** Shared starter for a new code object, never injected over an existing source. */
+export const P5_EXAMPLE_PROJECT: CodeProject = { osaCode: 1, filename: 'ribbon.js', language: 'javascript', code: `// Choose Run with p5. Try changing speed, hue, or ribbonSize.
+const speed = 0.01;
+const hue = 310;
+const ribbonSize = 270;
+
+function setup() {
+  createCanvas(640, 440);
+  colorMode(HSB, 360, 100, 100, 1);
+  background(230, 40, 7);
+}
+
+function draw() {
+  background(230, 40, 7, 0.08);
+  translate(width / 2, height / 2);
+  rotate(frameCount * speed);
+  noFill();
+  stroke((hue + frameCount * 0.6) % 360, 70, 100, 0.7);
+  strokeWeight(2);
+  ellipse(0, 0, ribbonSize, 90);
+}
+` }
+
 export function safeCodeFilename(name: string) {
   return Array.from(name, (character) => character < ' ' || character === '\u007f' || character === '/' || character === '\\' ? '_' : character).join('').slice(0, 160)
 }

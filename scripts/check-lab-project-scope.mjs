@@ -377,23 +377,31 @@ try {
   await assert.rejects(() => notebook.saveSectionNote({ ...sectionNote, body: 'stale' }, localScope, 'old-version'), /changed elsewhere/)
   await React.act(async () => { codeCell = (await notebook.changeSection(firstSection.id, { kind: 'capture', capture: { name: 'Section code', toolId: 'code', source: blankCode } }, localScope)).cell })
   await React.act(async () => notebook.changeSection(firstSection.id, { kind: 'workspace', cellId: codeCell.id }, localScope))
+  assert.equal(notebook.sections[0].cells[0].id, codeCell.id, 'New code is prepended')
+  await React.act(async () => notebook.changeSection(firstSection.id, { kind: 'move', cellId: codeCell.id, direction: 1 }, localScope))
+  assert.equal(notebook.sections[0].cells[1].workspace, 'p5')
   await React.act(async () => notebook.changeSection(firstSection.id, { kind: 'move', cellId: codeCell.id, direction: -1 }, localScope))
   assert.equal(notebook.sections[0].cells[0].workspace, 'p5', 'Code and output move as one cell group')
   assert.equal(notebook.sections[0].cells[0].objectId, codeCell.objectId)
   let insertedCell
-  await React.act(async () => { insertedCell = (await notebook.changeSection(firstSection.id, { kind: 'note' }, localScope, codeCell.id)).cell })
-  assert.deepEqual(notebook.sections[0].cells.map((cell) => cell.id), [codeCell.id, insertedCell.id, textCell.id], 'Continue a thought directly after the selected cell')
+  await React.act(async () => { insertedCell = (await notebook.changeSection(firstSection.id, { kind: 'note' }, localScope)).cell })
+  assert.deepEqual(notebook.sections[0].cells.map((cell) => cell.id), [insertedCell.id, codeCell.id, textCell.id], 'New objects appear first without rearranging existing cells')
   await React.act(async () => notebook.setObjectTopics('section', firstSection.id, [notebook.createTopic('Experiments')]))
   assert.equal(notebook.topicLinks.find((link) => link.objectType === 'section').objectId, firstSection.id)
   await React.act(async () => notebook.changeSection(firstSection.id, { kind: 'remove', cellId: codeCell.id }, localScope))
   assert.ok(notebook.getArtifact(codeCell.objectId), 'Removing a cell keeps the source artifact')
   assert.equal(notebook.sections[0].cells.length, 2)
+  let exampleCell
+  await React.act(async () => { exampleCell = (await notebook.changeSection(firstSection.id,
+    { kind: 'capture', capture: { name: 'p5 example', toolId: 'code', source: blankCode }, workspace: 'p5' }, localScope)).cell })
+  assert.equal(notebook.sections[0].cells[0].id, exampleCell.id)
+  assert.equal(exampleCell.workspace, 'p5', 'Example source and output connection are committed together')
   const sectionWrites = fileWrites.length
   await assert.rejects(() => notebook.changeSection(firstSection.id, { kind: 'capture', capture }, scope), /original notebook/)
   assert.equal(fileWrites.length, sectionWrites, 'Stale section callbacks cannot write blobs to another notebook')
   failNextWrite = true
   await React.act(async () => assert.rejects(() => notebook.changeSection(firstSection.id, { kind: 'rename', title: 'Unconfirmed' }, localScope), /could not be confirmed/))
-  assert.equal(cached.get(localScope).snapshot.contents.sections[0].title, 'First section', 'Failed section write leaves last durable version intact')
+  assert.equal(cached.get(localScope).snapshot.contents.sections[0].title, 'Upside-down notebook', 'Failed section write leaves last durable version intact')
   assert.equal(notebook.isReady, false)
   console.log('Lab project scope checks passed: atomic pre-write guard, pre/post-read guard, same-scope success, and late callbacks after notebook switching.')
 } finally {

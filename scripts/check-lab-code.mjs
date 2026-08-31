@@ -195,9 +195,9 @@ try {
   assert.doesNotMatch(document.body.textContent, /Starting…/)
   assert.ok(captureAction().source.blob.size)
   failPreview = false
-  let connections = 0
+  let connections = 0, examples = 0
   const sectionSource = await sourceOf(project.codeProjectBlob(valueOf(sourceA)))
-  const disconnected = { connected: false, onConnect: () => { connections++ } }
+  const disconnected = { connected: false, onConnect: () => { connections++ }, onExample: () => { examples++ } }
   const beforeSectionMounts = mounts
   await mount(sectionSource, 'section-code', false, { workspace: disconnected })
   assert.equal(button('Run with p5'), undefined)
@@ -205,6 +205,8 @@ try {
   await edit(sourceA + '\n// kept while connecting')
   await mount(sectionSource, 'section-code', false, { workspace: { ...disconnected, connected: true } })
   assert.equal(editor.value, sourceA + '\n// kept while connecting')
+  await click('+ Example cell'); assert.equal(examples, 1)
+  assert.equal(editor.value, sourceA + '\n// kept while connecting', 'Requesting a new example never replaces existing code')
   assert.equal(mounts, beforeSectionMounts, 'Connecting output never starts code automatically')
   await click('Run with p5'); assert.ok(document.querySelector('[data-code-preview]'))
   await mount(sectionSource, 'section-code', false, { active: false, workspace: { ...disconnected, connected: true } })
