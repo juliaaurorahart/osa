@@ -55,7 +55,9 @@ export function KlecksLab({ onSave, initialSource, draftSession }: {
   const [downloading, setDownloading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [opening, setOpening] = useState(false)
-  const frameUrl = `${import.meta.env.BASE_URL}lab-vendor/klecks/index.html#${frame.token}`
+  // Version both this document and its bridge script: deployed static files can
+  // remain fresh in browser caches for hours after a host UI update.
+  const frameUrl = `${import.meta.env.BASE_URL}lab-vendor/klecks/index.html?v=2#${frame.token}`
 
   useEffect(() => { saveRef.current = save }, [save])
   useEffect(() => {

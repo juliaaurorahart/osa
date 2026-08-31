@@ -59,6 +59,8 @@ exports so their temporary pixels cannot be silently omitted. The bridge guards
 `.kl-popup` and `select[name="move-to-layer"]`, as reviewed in this pinned build;
 review those markers when upgrading. A fast Close preflight avoids waiting behind
 a background checkpoint while an unfinished pointer gesture is still active.
+The host document and bridge script carry matching `v=2` URL revisions so cached
+older static assets cannot omit the new Close preflight after an update.
 
 `new-painting.psd` is the OSA notebook's native blank starter, not upstream artwork.
 Reproduce it with `node scripts/generate-klecks-starter.mjs`; `--check` validates

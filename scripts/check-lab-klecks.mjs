@@ -48,6 +48,8 @@ const send = (data, override = {}) => React.act(async () => window.dispatchEvent
 const png = new Blob(['fixture PNG'], { type: 'image/png' })
 try {
   await render(); connect()
+  assert.equal(new URL(iframe.src).searchParams.get('v'), '2')
+  assert.match(readFileSync(resolve('public/lab-vendor/klecks/index.html'), 'utf8'), /bridge\.js\?v=2/)
   assert.equal(captureLabel, 'Push to notebook')
   await send({ type: 'draft-changed' }); assert.equal(reported, undefined, 'No reader before successful restoration')
   await checkpoint(); assert.equal(sent.length, 0, 'Canceling a failed initial load does not read or replace Draft')
