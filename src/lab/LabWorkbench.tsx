@@ -2,6 +2,7 @@ import { lazy, useCallback, useContext } from 'react'
 import type { LabProjectSource, LabTheme, LabWorkbenchId } from './labTypes'
 import { LabDraftContext } from './LabDraftContext'
 import type { KonvaLabDocument } from '../components/konvaLabModel'
+import type { CodeProject } from './labCodeProjectSource'
 
 const InkLab = lazy(() => import('../components/InkLab').then((module) => ({ default: module.InkLab })))
 const KlecksLab = lazy(() => import('../components/KlecksLab').then((module) => ({ default: module.KlecksLab })))
@@ -44,11 +45,13 @@ const CodeEditorLab = lazy(() => import('../components/CodeEditorLab').then((mod
 })))
 
 /** The one place where a catalog ID is connected to its executable workbench. */
-export function LabWorkbench({ workbenchId, theme, initialSource, beforeRun }: {
+export function LabWorkbench({ workbenchId, theme, initialSource, beforeRun, active = true, onCodeExample }: {
   workbenchId: LabWorkbenchId
   theme: LabTheme
   initialSource?: LabProjectSource
   beforeRun?: () => Promise<void>
+  active?: boolean
+  onCodeExample?: (project: CodeProject) => Promise<void>
 }) {
   const report = useContext(LabDraftContext)
   const drawioChange = useCallback((xml: string) => report?.({ blob: new Blob([xml], { type: 'application/xml' }), name: 'diagram.drawio' }), [report])
@@ -81,6 +84,6 @@ export function LabWorkbench({ workbenchId, theme, initialSource, beforeRun }: {
     case 'vega':
       return <VegaLab theme={theme} initialSource={initialSource} />
     case 'code':
-      return <CodeEditorLab theme={theme} initialSource={initialSource} beforeRun={beforeRun} />
+      return <CodeEditorLab theme={theme} initialSource={initialSource} beforeRun={beforeRun} active={active} onExample={onCodeExample} />
   }
 }

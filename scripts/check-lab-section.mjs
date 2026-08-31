@@ -229,7 +229,7 @@ try {
   await click('Move active cell up'); assert.equal(sections[0].cells[0].id, codeCell.id)
   await React.act(async () => lastEditor.workspace.onExample())
   const exampleCell = sections[0].cells[0]
-  assert.equal(exampleCell.workspace, 'p5'); assert.notEqual(exampleCell.objectId, codeCell.objectId)
+  assert.equal(exampleCell.workspace, 'output'); assert.notEqual(exampleCell.objectId, codeCell.objectId)
   assert.match(JSON.parse(lastEditor.text).code, /function draw/)
   assert.equal(await files.get(notebook.getProjectDraft(codeCell.objectId).id).text(), 'unrun code survives', 'Example is a separate object, never a replacement')
   await click('InkPen & handwriting'); const inkA = sections[0].cells[0]

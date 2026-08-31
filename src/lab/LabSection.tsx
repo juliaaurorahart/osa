@@ -204,7 +204,7 @@ export function LabSection({ notebook, theme, isActive, onRegisterFlush, onOpenP
       baseFileId: chosen.draftOf ? chosen.draftBaseFileId : chosen.fileId || chosen.id }
     readerRef.current = null; activeRef.current = next; setActive(next)
   }
-  const change = async (action: LabSectionAction | { kind: 'capture'; capture: LabCapture; workspace?: 'p5' }) => {
+  const change = async (action: LabSectionAction | { kind: 'capture'; capture: LabCapture; workspace?: 'p5' | 'output' }) => {
     const generation = openGeneration.current
     const result = await notebook.changeSection(section?.id ?? null, action, notebook.scope)
     if (!mounted.current) return
@@ -319,7 +319,7 @@ export function LabSection({ notebook, theme, isActive, onRegisterFlush, onOpenP
       <div className="lab-section__flow" style={{ '--active-row': Math.max(1, index + 1), '--cell-count': Math.max(1, section.cells.length) } as CSSProperties}>
         {section.cells.map((cell, cellIndex) => <article key={cell.id} className={`lab-section__cell${cell.id === active?.cell.id ? ' is-selected' : ''}`}
           style={{ gridRow: cellIndex + 1 }} aria-label={`Cell ${cellIndex + 1}: ${cellName(cell, notebook)}`}>
-          <header><button className="lab-section__cell-open" type="button" disabled={busy} onClick={() => void run(() => open(cell))}>{cellIndex + 1} · {cellName(cell, notebook)}{cell.workspace ? ' → p5' : ''}</button>
+          <header><button className="lab-section__cell-open" type="button" disabled={busy} onClick={() => void run(() => open(cell))}>{cellIndex + 1} · {cellName(cell, notebook)}{cell.workspace ? ' → workspace' : ''}</button>
             <button type="button" aria-label={`Move cell ${cellIndex + 1} up`} disabled={busy || cellIndex === 0} onClick={() => void run(() => change({ kind: 'move', cellId: cell.id, direction: -1 }))}>↑</button>
             <button type="button" aria-label={`Move cell ${cellIndex + 1} down`} disabled={busy || cellIndex === section.cells.length - 1} onClick={() => void run(() => change({ kind: 'move', cellId: cell.id, direction: 1 }))}>↓</button>
             <button type="button" title="Remove from section; keep the object in the notebook" aria-label={`Remove cell ${cellIndex + 1} from section`} disabled={busy} onClick={() => void run(() => change({ kind: 'remove', cellId: cell.id }))}>×</button></header>
@@ -360,7 +360,7 @@ export function LabSection({ notebook, theme, isActive, onRegisterFlush, onOpenP
                       </div>
                     : active?.artifact?.toolId === 'code' ? <CodeEditorLab theme={theme} initialSource={active.source} beforeRun={flush} active={isActive}
                       workspace={{ connected: Boolean(selectedCell?.workspace), onConnect: () => void run(() => change({ kind: 'workspace', cellId: active.cell.id })),
-                        onExample: () => void run(async () => change({ kind: 'capture', capture: await newSectionCapture('code', theme), workspace: 'p5' })) }} />
+                        onExample: (example) => run(async () => change({ kind: 'capture', capture: await newSectionCapture('code', theme, example), workspace: 'output' })) }} />
                     : active ? <><CellPreview cell={active.cell} notebook={notebook} />{active.artifact?.toolId ? <button type="button" onClick={() => void run(async () => onOpenProject(active.artifact!))}>Open in {active.artifact.toolId}</button> : null}
                       {originalArtifact && !originalArtifact.deletedAt ? <button type="button" onClick={() => void run(async () => onOpenProject(originalArtifact, 'saved'))}>Open original · {originalArtifact.name}</button> : null}</> : null}
                 </Suspense>
@@ -394,6 +394,6 @@ function CellPreview({ cell, notebook, note }: { cell: LabSectionCell; notebook:
   if (cell.objectType === 'note') return <p className="lab-section__note-preview">{(note ?? notebook.notes.find((item) => item.id === cell.objectId))?.body || 'Empty note'}</p>
   const { url, error } = preview.fileId === fileId ? preview : {}
   return <div className="lab-section__visual-preview">{url ? <img src={url} alt={artifact?.name || 'Notebook visual'} />
-    : <p>{error || (artifact?.toolId === 'code' ? 'Code' + (cell.workspace ? ' → p5 workspace · Run to view' : ' · select to edit') : artifact?.name || 'File unavailable · cell kept')}</p>}
+    : <p>{error || (artifact?.toolId === 'code' ? 'Code' + (cell.workspace ? ' → workspace · Run to view' : ' · select to edit') : artifact?.name || 'File unavailable · cell kept')}</p>}
     {artifact && notebook.projectDrafts.some((draft) => draft.draftOf === artifact.id) ? <small>Saved preview · working draft available</small> : null}</div>
 }

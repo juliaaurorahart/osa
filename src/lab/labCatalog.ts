@@ -38,7 +38,7 @@ export const LAB_GROUPS: readonly LabGroup[] = [
     labs: [
       { id: 'mermaid', name: 'Mermaid', note: 'text-to-diagram', output: 'Mermaid source and SVG', glyph: '⇢' },
       { id: 'vega', name: 'Vega-Lite', note: 'data-driven charts', output: 'chart specification and images', glyph: '▥' },
-      { id: 'code', name: 'CodeMirror', note: 'code files and p5 runner', output: 'editable code projects, source, and PNG', glyph: '{ }' },
+      { id: 'code', name: 'CodeMirror', note: 'code · p5 visuals & Tone.js sound', output: 'editable code projects, controls, and p5 PNG', glyph: '{ }' },
     ],
   },
   {

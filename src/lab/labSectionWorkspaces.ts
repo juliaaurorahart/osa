@@ -1,4 +1,4 @@
-import { codeProjectBlob, P5_EXAMPLE_PROJECT } from './labCodeProjectSource'
+import { codeProjectBlob, P5_EXAMPLE_PROJECT, type CodeProject } from './labCodeProjectSource'
 import { createInkDocument, inkDocumentSvg } from './inkDocument'
 import type { LabCapture, LabTheme } from './labTypes'
 
@@ -16,9 +16,9 @@ export function isSectionWorkspace(tool: string | undefined): tool is SectionWor
 }
 
 /** Native starter files are saved before editing; previews are explicitly placeholders until Save. */
-export async function newSectionCapture(tool: SectionWorkspaceId, theme: LabTheme): Promise<LabCapture> {
-  if (tool === 'code') return { toolId: 'code', name: 'Section code', source: {
-    name: 'source.osa-code.json', blob: codeProjectBlob({ ...P5_EXAMPLE_PROJECT }),
+export async function newSectionCapture(tool: SectionWorkspaceId, theme: LabTheme, example?: CodeProject): Promise<LabCapture> {
+  if (tool === 'code') return { toolId: 'code', name: example?.filename || 'Section code', source: {
+    name: 'source.osa-code.json', blob: codeProjectBlob({ ...(example ?? P5_EXAMPLE_PROJECT) }),
   } }
   if (tool === 'ink') {
     const drawing = createInkDocument()

@@ -86,6 +86,7 @@ const { createRoot } = await import('react-dom/client')
 const { LabDraftContext } = loadModule('src/lab/LabDraftContext.ts')
 const { LabWorkbenchChromeContext } = loadModule('src/lab/LabWorkbenchChromeContext.ts')
 let editor, captureAction, lastDraft, previewProps, mounts = 0, savedCount = 0, draftCount = 0
+let toneProps, toneMounts = 0
 let flushBlock, failFlush = false, flushes = 0, captureBlock, failCapture = false, failPreview = false
 const png = new Blob(['fixture png'], { type: 'image/png' }), downloads = []
 const FakePreview = ({ source, onStatus, ref }) => {
@@ -99,10 +100,16 @@ const FakePreview = ({ source, onStatus, ref }) => {
   React.useEffect(() => { mounts++; onStatus('running') }, [])
   return React.createElement('div', { 'data-code-preview': true })
 }
+const FakeTone = (props) => {
+  toneProps = props
+  React.useEffect(() => { toneMounts++; props.onStatus('ready') }, [])
+  return React.createElement('div', { 'data-tone-preview': true })
+}
 const { CodeEditorLab } = loadModule('src/components/CodeEditorLab.tsx', {
   '@uiw/react-codemirror': { __esModule: true, default: (props) => { editor = props; return React.createElement('textarea', { readOnly: true, value: props.value }) } },
   '@codemirror/lang-javascript': { javascript: () => [] }, '@codemirror/theme-one-dark': { oneDark: [] },
   './P5CodePreview': { P5CodePreview: FakePreview },
+  './ToneCodePreview': { ToneCodePreview: FakeTone },
   '../lab/LabCaptureButton': { LabCaptureButton: ({ capture }) => { captureAction = capture; return React.createElement('button', { onClick: () => { savedCount++ } }, 'Save fixture') } },
   '../lab/LabFileActions': { LabFileActions: ({ children }) => children },
   '../lab/labCaptureUtils': { downloadBlob: (blob, name) => downloads.push({ blob, name }) },
@@ -201,11 +208,11 @@ try {
   const beforeSectionMounts = mounts
   await mount(sectionSource, 'section-code', false, { workspace: disconnected })
   assert.equal(button('Run with p5'), undefined)
-  await click('+ Connected p5 workspace'); assert.equal(connections, 1)
+  await click('+ Connected workspace'); assert.equal(connections, 1)
   await edit(sourceA + '\n// kept while connecting')
   await mount(sectionSource, 'section-code', false, { workspace: { ...disconnected, connected: true } })
   assert.equal(editor.value, sourceA + '\n// kept while connecting')
-  await click('+ Example cell'); assert.equal(examples, 1)
+  await click('New example'); assert.equal(examples, 1)
   assert.equal(editor.value, sourceA + '\n// kept while connecting', 'Requesting a new example never replaces existing code')
   assert.equal(mounts, beforeSectionMounts, 'Connecting output never starts code automatically')
   await click('Run with p5'); assert.ok(document.querySelector('[data-code-preview]'))
@@ -213,6 +220,55 @@ try {
   assert.equal(document.querySelector('[data-code-preview]'), null, 'Leaving a section stops its runner')
   await mount(sectionSource, 'section-code', false, { active: true, workspace: { ...disconnected, connected: true } })
   assert.equal(document.querySelector('[data-code-preview]'), null, 'Returning cannot restart saved code')
+
+  const toneProject = { ...valueOf('const synth = new Tone.Synth()'), runtime: 'tone', controls: { tempo: 90 } }
+  const toneSource = await sourceOf(project.codeProjectBlob(toneProject))
+  await mount(toneSource, 'tone')
+  assert.equal(toneMounts, 0); assert.equal(button('Download PNG'), undefined)
+  assert.equal(JSON.parse(await captureAction().source.blob.text()).runtime, 'tone')
+  await click('Run with Tone.js')
+  assert.match(document.body.textContent, /Ready · choose Play sound/)
+  assert.deepEqual(toneProps.controls, { tempo: 90 })
+  await React.act(async () => { toneProps.onStatus('running'); toneProps.onControls({ tempo: 120 }) })
+  const runningToneMounts = toneMounts
+  assert.deepEqual(JSON.parse(await lastDraft.blob.text()).controls, { tempo: 120 })
+  assert.equal(toneMounts, runningToneMounts, 'Slider changes persist without restarting audio')
+  assert.equal(captureAction().source.blob, lastDraft.blob)
+  await mount(toneSource, 'tone', false, { theme: 'light' })
+  assert.equal(document.querySelector('[data-tone-preview]'), null, 'Theme change stops instead of silently restoring old controls')
+  assert.deepEqual(JSON.parse(await lastDraft.blob.text()).controls, { tempo: 120 })
+  await click('Run with Tone.js')
+  assert.deepEqual(toneProps.controls, { tempo: 120 }, 'The next run uses latest persisted controls')
+  const oldTone = toneProps
+  await edit('changed but not run')
+  await React.act(async () => oldTone.onControls({ tempo: 170 }))
+  assert.deepEqual(JSON.parse(await lastDraft.blob.text()).controls, { tempo: 120 }, 'Old running code cannot rewrite edited source controls')
+  await click('Stop')
+  await React.act(async () => oldTone.onControls({ tempo: 180 }))
+  assert.deepEqual(JSON.parse(await lastDraft.blob.text()).controls, { tempo: 120 }, 'Stopped ports cannot update drafts')
+  await click('Run with Tone.js')
+  await React.act(async () => toneProps.onControls({ renamed: 0.6 }))
+  assert.deepEqual(JSON.parse(await lastDraft.blob.text()).controls, { renamed: 0.6 }, 'Obsolete slider keys are pruned')
+  assert.ok(project.readCodeProjectSource(await sourceOf(lastDraft.blob)))
+  const beforeToneInactive = toneMounts
+  await mount(toneSource, 'tone', false, { active: false, theme: 'light' })
+  assert.equal(document.querySelector('[data-tone-preview]'), null)
+  await mount(toneSource, 'tone', false, { active: true, theme: 'light' })
+  assert.equal(toneMounts, beforeToneInactive, 'Returning does not autoplay')
+  const beforeToneReadOnly = draftCount
+  await mount(toneSource, 'tone-readonly', true)
+  assert.equal(button('Run with Tone.js').disabled, true)
+  assert.equal(draftCount, beforeToneReadOnly)
+  let exampleProject, finishExample
+  const exampleGate = new Promise(resolve => { finishExample = resolve })
+  await mount(toneSource, 'tone-example', false, { onExample: async project => { exampleProject = project; await exampleGate } })
+  await click('New example')
+  assert.equal(exampleProject.runtime, 'tone')
+  assert.equal(editor.readOnly, true, 'Text is protected while its checkpoint is opening another project')
+  await edit('must not replace checkpoint')
+  assert.equal(editor.value, toneProject.code)
+  await React.act(async () => { finishExample(); await exampleGate })
+  assert.equal(editor.value, toneProject.code)
 } finally {
   await React.act(async () => root.unmount())
   dom.window.close()

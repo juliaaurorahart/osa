@@ -79,6 +79,7 @@ let currentNotebook
 let changeScope
 let nextVersion = 0
 let addArtifactFixture, handoffGate, handoffReadFails = false
+let notebookFlushGate, workbenchFixture
 const handoffCalls = []
 
 function useNotebookFixture() {
@@ -98,7 +99,7 @@ function useNotebookFixture() {
     getArtifact: (id) => storedVersions.get(id) || artifacts.find((item) => item.id === id),
     projectDrafts: [...drafts.values()].filter((item) => item.draftActive),
     getProjectDraft: (id) => drafts.get(id),
-    flushNotebookWrites: async () => {},
+    flushNotebookWrites: async () => { if (notebookFlushGate) await notebookFlushGate },
     continueInKonva: async (artifactId, fileId, expectedScope, sectionId) => {
       handoffCalls.push({ artifactId, fileId, expectedScope, sectionId })
       if (handoffGate) await handoffGate
@@ -158,7 +159,9 @@ function SectionFixture(props) {
   React.useEffect(() => props.onRegisterFlush(async () => { if (sectionGuardLocked) throw new Error('Close the draw.io editor first') }), [props.onRegisterFlush])
   return React.createElement('div', { 'data-section-fixture': true }, 'Section fixture')
 }
-function WorkbenchFixture({ workbenchId, initialSource }) {
+function WorkbenchFixture(props) {
+  workbenchFixture = props
+  const { workbenchId, initialSource } = props
   const reportDraft = React.useContext(draftTestDependency('LabDraftContext').LabDraftContext)
   const [instance] = React.useState(() => `editor-${++mountedEditors}`)
   const [text, setText] = React.useState(() => draftTesting && initialSource?.text ? JSON.parse(initialSource.text).text : initialSource?.text ?? 'Unsaved starter')
@@ -516,6 +519,30 @@ try {
   assert.equal(validations.at(-1).source.file, paintedFile)
   await clickButton('Cancel', projectDialog())
   assert.equal(editorText().value, 'Saved painting in Konva')
+
+  // New code examples preserve the old editor checkpoint and honor newer navigation.
+  draftTesting = false
+  await React.act(async () => root.render(React.createElement(CanvasLab, { key: 'tone-example-flow', theme: 'dark', onToggleTheme() {}, onExit() {} })))
+  await changeValue(document.querySelector('[aria-label="Choose Lab instrument"]'), 'code', 'change')
+  assert.equal(workbenchFixture.active, true)
+  const initialCodeInstance = editor().dataset.editorInstance
+  await changeValue(editorText(), 'My existing source')
+  const toneExample = { osaCode: 1, filename: 'tone-example.js', language: 'javascript', runtime: 'tone', code: 'new Tone.Synth()', controls: { mix: 0.3 } }
+  let releaseExample, opening
+  notebookFlushGate = new Promise(resolve => { releaseExample = resolve })
+  await React.act(async () => { opening = workbenchFixture.onCodeExample(toneExample).catch(error => error) })
+  await clickButton('Notebook')
+  assert.equal(workbenchFixture.active, false, 'Hidden full workbench gets an inactive signal')
+  await React.act(async () => { releaseExample(); await notebookFlushGate }); notebookFlushGate = null
+  assert.match((await opening).message, /changed/)
+  assert.equal(editor().dataset.editorInstance, initialCodeInstance)
+  assert.equal(editorText().value, 'My existing source', 'A stale example cannot replace current text')
+  assert.equal(workbenchFixture.active, false, 'Late example completion cannot pull us out of Notebook')
+  await changeValue(document.querySelector('[aria-label="Choose Lab instrument"]'), 'code', 'change')
+  await React.act(async () => { await workbenchFixture.onCodeExample(toneExample) })
+  assert.notEqual(editor().dataset.editorInstance, initialCodeInstance)
+  assert.equal(workbenchFixture.active, true)
+  assert.deepEqual(JSON.parse(workbenchFixture.initialSource.text), toneExample)
 
   // Browser Back/Forward asks the Lab before unmounting an active editor.
   let requested = true, locationApi

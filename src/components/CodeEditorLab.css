@@ -33,7 +33,7 @@
 .code-editor-lab__status { min-height: 2.5em; margin: 8px 0; }
 .code-editor-lab__preview { min-height: 300px; height: 48dvh; border: 1px solid var(--osa-border); border-radius: 6px; overflow: hidden; background: var(--osa-surface); }
 .code-editor-lab__preview > p { padding: 20px; color: var(--osa-muted); font-size: .9rem; line-height: 1.6; }
-.code-editor-lab__preview .p5-lab__sandbox, .code-editor-lab__preview iframe { display: block; width: 100%; height: 100%; border: 0; }
+.code-editor-lab__preview :is(.p5-lab__sandbox, .tone-lab__sandbox), .code-editor-lab__preview iframe { display: block; width: 100%; height: 100%; border: 0; }
 .code-editor-lab__error { color: var(--osa-danger-text); overflow-wrap: anywhere; font-size: .85rem; }
 .code-editor-lab__help { margin-top: 12px; }
 .code-editor-lab__help summary { cursor: pointer; }

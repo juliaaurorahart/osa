@@ -118,7 +118,7 @@ export type LabCapture = {
 export type LabNotebookObjectType = 'note' | 'artifact' | 'section'
 
 /** Cells refer to notebook objects. A code result belongs to its code cell, so they move together. */
-export type LabSectionCell = { id: string; objectType: 'note' | 'artifact'; objectId: string; workspace?: 'p5' }
+export type LabSectionCell = { id: string; objectType: 'note' | 'artifact'; objectId: string; workspace?: 'p5' | 'output' }
 export type LabSection = { id: string; title: string; createdAt: string; updatedAt: string; cells: LabSectionCell[] }
 
 export type LabTopic = {

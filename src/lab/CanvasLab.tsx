@@ -17,6 +17,7 @@ import { LabDraftContext, type LabDraftReader } from './LabDraftContext'
 import { DRAFT_TOOLS, readLabDraftSource } from './labDrafts'
 import { useLabWorkingDrafts } from './useLabWorkingDrafts'
 import { canContinueInKonva } from './labWorkspaceHandoff'
+import { codeProjectBlob, type CodeProject } from './labCodeProjectSource'
 import './CanvasLab.css'
 import './LabWorkbenchChrome.css'
 
@@ -96,7 +97,8 @@ export function CanvasLab({
     setProjectFailure('Close the active editor first. Your working draft will be kept; Push updates Saved.')
     return false
   }
-  const setRoute = (next: LabRoute) => { if (mayNavigate()) setRouteState(next) }
+  const navigationGeneration = useRef(0)
+  const setRoute = (next: LabRoute) => { if (mayNavigate()) { navigationGeneration.current += 1; setRouteState(next) } }
   useEffect(() => {
     const guard = (event: Event) => {
       if (!sectionLockedRef.current) return
@@ -212,6 +214,21 @@ export function CanvasLab({
     if (!notebook.isReady || !mayNavigate()) return
     if (project?.toolId === workbenchId) setRoute({ page: 'workbench', workbenchId })
     else requestProject({ id: crypto.randomUUID(), scope: notebook.scope, toolId: workbenchId, name: `${findLab(workbenchId).name} project` })
+  }
+  const newCodeExample = async (example: CodeProject) => {
+    if (!notebook.isReady || savingRef.current || !mayNavigate()) throw new Error('Finish the current action before opening an example.')
+    const scope = notebook.scope, projectId = project?.id, navigation = navigationGeneration.current
+    savingRef.current = true; setSaving(true)
+    try {
+      await flushDrafts()
+      await notebook.flushNotebookWrites(scope)
+      const file = codeProjectBlob(example)
+      const source = { file, name: 'source.osa-code.json', text: await file.text() }
+      if (!mountedRef.current || currentRef.current.scope !== scope || currentRef.current.projectId !== projectId || navigationGeneration.current !== navigation) {
+        throw new Error('The notebook changed. Please open the example again.')
+      }
+      startProject({ id: crypto.randomUUID(), scope, toolId: 'code', name: example.filename, source })
+    } finally { savingRef.current = false; if (mountedRef.current) setSaving(false) }
   }
   const loadDraft = async (draft: LabArtifact, scope: string) => {
     const source = await readLabDraftSource(draft, await notebook.loadArtifactSource(draft.id, scope))
@@ -581,7 +598,8 @@ export function CanvasLab({
           <LabDraftContext.Provider value={supportsDrafts && project.mode !== 'saved' ? reportDraft : null}>
           <LabErrorBoundary key={project.id} labName={findLab(project.toolId).name}>
             <Suspense fallback={<div className="lab-shell__loading">Loading {findLab(project.toolId).name}…</div>}>
-              <LabWorkbench workbenchId={project.toolId} theme={theme} initialSource={project.source} beforeRun={flushDrafts} />
+              <LabWorkbench workbenchId={project.toolId} theme={theme} initialSource={project.source} beforeRun={flushDrafts}
+                active={route.page === 'workbench'} onCodeExample={newCodeExample} />
             </Suspense>
           </LabErrorBoundary>
           </LabDraftContext.Provider>

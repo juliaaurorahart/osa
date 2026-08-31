@@ -10,7 +10,7 @@ export function readSectionCells(text: string): LabSectionCell[] | null {
       if (!cell || typeof cell.id !== 'string' || !cell.id || ids.has(cell.id)
         || typeof cell.objectId !== 'string' || !cell.objectId
         || !['note', 'artifact'].includes(cell.objectType)
-        || (cell.workspace !== undefined && cell.workspace !== 'p5')) return null
+        || (cell.workspace !== undefined && cell.workspace !== 'p5' && cell.workspace !== 'output')) return null
       ids.add(cell.id)
     }
     return value.cells

@@ -151,6 +151,7 @@ const SOFTWARE_GROUPS = [
       '@uiw/react-codemirror',
     ],
   },
+  { name: 'Sound exploration', packages: ['tone'] },
   {
     name: 'Development toolchain',
     packages: [
@@ -319,6 +320,8 @@ export function LabAbout({ onBack }: LabAboutProps) {
           <p className="lab-about__fine-print">
             For the exact installed versions and transitive packages, inspect <a href={repositoryFileUrl('package-lock.json')} target="_blank" rel="noreferrer">package-lock.json</a>. That file is a dependency record, not a compiled notices document.
           </p>
+          <h4>Tone.js sound workspace</h4>
+          <p><a href="https://github.com/Tonejs/Tone.js" target="_blank" rel="noreferrer">Tone.js by Yotam Mann and contributors</a> powers the sound experiments. Version 15.1.22 is bundled locally; examples synthesize sound without sending notebook content to a music service. <a href="/lab-vendor/tone/NOTICES.txt" target="_blank" rel="noreferrer">Tone.js and bundled dependency license notices</a>.</p>
           <h4>Klecks painting editor</h4>
           <p>
             <a href="https://github.com/bitbof/klecks" target="_blank" rel="noreferrer">Klecks by bitbof and contributors</a> is a separately bundled, MIT-licensed painting editor. OSA serves a pinned build locally within the Lab; opening it does not send your artwork to the Klecks website. Its source revision, build instructions, and bundled license notices are kept with the editor in <code>public/lab-vendor/klecks</code>.

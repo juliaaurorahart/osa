@@ -260,7 +260,7 @@ try {
 
   // Code uses the same durable lifecycle without requiring a rendered preview.
   const codeProjectId = crypto.randomUUID()
-  const codeSource = (code) => ({ name: 'source.osa-code.json', blob: new Blob([JSON.stringify({ osaCode: 1, filename: 'idea.js', language: 'javascript', code })], { type: 'application/json' }) })
+  const codeSource = (code) => ({ name: 'source.osa-code.json', blob: new Blob([JSON.stringify({ osaCode: 1, filename: 'idea.js', language: 'javascript', code, runtime: 'tone', controls: { mix: 0.35 } })], { type: 'application/json' }) })
   const blankCode = codeSource(''), changedCode = codeSource('function setup( {')
   const codeInput = { projectId: codeProjectId, name: 'Idea code', toolId: 'code', source: blankCode }
   let codeDraft
@@ -281,6 +281,8 @@ try {
   assert.equal(notebook.artifacts.filter((item) => item.id === codeProjectId).length, 1)
   assert.equal(notebook.getProjectDraft(codeProjectId).draftActive, false)
   assert.equal(JSON.parse(await (await notebook.loadArtifactSource(codeProjectId, scope)).text()).code, 'function setup( {')
+  assert.equal(JSON.parse(await (await notebook.loadArtifactSource(codeProjectId, scope)).text()).runtime, 'tone')
+  assert.deepEqual(JSON.parse(await (await notebook.loadArtifactSource(codeProjectId, scope)).text()).controls, { mix: 0.35 })
   const codeRevision = notebook.artifactRevisions.find((item) => item.revisionOf === codeProjectId)
   assert.equal(JSON.parse(await (await notebook.loadArtifactSource(codeRevision.id, scope)).text()).code, '')
   await React.act(async () => notebook.trashArtifact(codeProjectId))
@@ -390,9 +392,9 @@ try {
   await React.act(async () => notebook.changeSection(firstSection.id, { kind: 'workspace', cellId: codeCell.id }, localScope))
   assert.equal(notebook.sections[0].cells[0].id, codeCell.id, 'New code is prepended')
   await React.act(async () => notebook.changeSection(firstSection.id, { kind: 'move', cellId: codeCell.id, direction: 1 }, localScope))
-  assert.equal(notebook.sections[0].cells[1].workspace, 'p5')
+  assert.equal(notebook.sections[0].cells[1].workspace, 'output')
   await React.act(async () => notebook.changeSection(firstSection.id, { kind: 'move', cellId: codeCell.id, direction: -1 }, localScope))
-  assert.equal(notebook.sections[0].cells[0].workspace, 'p5', 'Code and output move as one cell group')
+  assert.equal(notebook.sections[0].cells[0].workspace, 'output', 'Code and output move as one cell group')
   assert.equal(notebook.sections[0].cells[0].objectId, codeCell.objectId)
   let insertedCell
   await React.act(async () => { insertedCell = (await notebook.changeSection(firstSection.id, { kind: 'note' }, localScope)).cell })

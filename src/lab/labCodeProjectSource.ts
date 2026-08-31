@@ -3,7 +3,16 @@ import { MAX_LAB_ARTIFACT_BYTES } from './labNotebookStorage'
 
 export const CODE_LANGUAGES = ['javascript', 'typescript', 'python', 'shell', 'text'] as const
 export type CodeLanguage = typeof CODE_LANGUAGES[number]
-export type CodeProject = { osaCode: 1; filename: string; language: CodeLanguage; code: string }
+export type CodeRuntime = 'p5' | 'tone'
+export type CodeProject = { osaCode: 1; filename: string; language: CodeLanguage; code: string;
+  runtime?: CodeRuntime; controls?: Record<string, number> }
+
+export function validCodeControls(value: unknown): value is Record<string, number> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value)
+    && Object.keys(value).length <= 32 && Object.entries(value).every(([key, number]) =>
+      /^[a-zA-Z][a-zA-Z0-9_-]{0,39}$/.test(key) && !['constructor', 'prototype', '__proto__'].includes(key)
+      && typeof number === 'number' && Number.isFinite(number) && Math.abs(number) <= 1e9))
+}
 
 /** Shared starter for a new code object, never injected over an existing source. */
 export const P5_EXAMPLE_PROJECT: CodeProject = { osaCode: 1, filename: 'ribbon.js', language: 'javascript', code: `// Choose Run with p5. Try changing speed, hue, or ribbonSize.
@@ -66,6 +75,10 @@ export function readCodeProjectSource(source: LabProjectSource): CodeProject {
   catch { throw new Error('This code project could not be read. Its original file has not changed.') }
   if (!value || value.osaCode !== 1 || typeof value.filename !== 'string' || value.filename.length > 160
     || safeCodeFilename(value.filename) !== value.filename || !CODE_LANGUAGES.includes(value.language as CodeLanguage)
-    || typeof value.code !== 'string') throw new Error('This is not a supported OSA code project.')
-  return { osaCode: 1, filename: value.filename, language: value.language!, code: value.code }
+    || typeof value.code !== 'string' || (value.runtime !== undefined && value.runtime !== 'p5' && value.runtime !== 'tone')
+    || (value.controls !== undefined && !validCodeControls(value.controls))) throw new Error('This is not a supported OSA code project.')
+  // Do not manufacture runtime/settings fields when opening a legacy p5 document.
+  return { osaCode: 1, filename: value.filename, language: value.language!, code: value.code,
+    ...(value.runtime !== undefined ? { runtime: value.runtime } : {}),
+    ...(value.controls !== undefined ? { controls: { ...value.controls } } : {}) }
 }

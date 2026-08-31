@@ -360,7 +360,7 @@ export function useSyncedLabNotebook() {
 
   /** One transaction adds an object and its place in a section. Removing a cell never deletes its object. */
   const changeSection = useCallback(async (sectionId: string | null,
-    action: LabSectionAction | { kind: 'capture'; capture: LabCapture; workspace?: 'p5' }, expectedScope: string) => {
+    action: LabSectionAction | { kind: 'capture'; capture: LabCapture; workspace?: 'p5' | 'output' }, expectedScope: string) => {
     const check = () => {
       const doc = currentRef.current
       if (!doc || doc.scope !== expectedScope || switching.current || localFailure.current) throw new Error('Return to the original notebook before changing this section.')
@@ -386,7 +386,7 @@ export function useSyncedLabNotebook() {
       } else if (file) {
         current.artifacts = [...current.artifacts, labArtifactMetadata(file)]
         cell = { id: id(), objectType: 'artifact', objectId: file.id,
-          ...(action.kind === 'capture' && action.workspace === 'p5' && file.toolId === 'code' ? { workspace: 'p5' as const } : {}) }
+          ...(action.kind === 'capture' && action.workspace && file.toolId === 'code' ? { workspace: action.workspace } : {}) }
       } else if (action.kind === 'attach') {
         const available = action.objectType === 'note' ? current.notes.some((item) => item.id === action.objectId && !item.isDraft)
           : current.artifacts.some((item) => item.id === action.objectId && !item.draftOf && !item.revisionOf && !item.deletedAt)
@@ -398,8 +398,8 @@ export function useSyncedLabNotebook() {
       else if (action.kind === 'move') section.cells = moveSectionCell(section.cells, action.cellId, action.direction)
       else if (action.kind === 'workspace') {
         const target = section.cells.find((item) => item.id === action.cellId)
-        if (!target || target.objectType !== 'artifact' || !current.artifacts.some((item) => item.id === target.objectId && item.toolId === 'code')) throw new Error('Connect a p5 workspace to a code cell.')
-        section.cells = section.cells.map((item) => item.id === action.cellId ? { ...item, workspace: 'p5' } : item)
+        if (!target || target.objectType !== 'artifact' || !current.artifacts.some((item) => item.id === target.objectId && item.toolId === 'code')) throw new Error('Connect an output workspace to a code cell.')
+        section.cells = section.cells.map((item) => item.id === action.cellId ? { ...item, workspace: 'output' } : item)
       }
       // New thoughts start at the top; preserve the order of everything already here.
       if (cell) section.cells.unshift(cell)
