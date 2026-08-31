@@ -247,6 +247,38 @@ try {
   assert.equal(notebook.notes.find((note) => note.id === noteDraft.id).body, 'Latest text')
   await assert.rejects(() => notebook.saveNoteDraft(noteDraft, [], scope), /already|saved|draft/i)
 
+  // Code uses the same durable lifecycle without requiring a rendered preview.
+  const codeProjectId = crypto.randomUUID()
+  const codeSource = (code) => ({ name: 'source.osa-code.json', blob: new Blob([JSON.stringify({ osaCode: 1, filename: 'idea.js', language: 'javascript', code })], { type: 'application/json' }) })
+  const blankCode = codeSource(''), changedCode = codeSource('function setup( {')
+  const codeInput = { projectId: codeProjectId, name: 'Idea code', toolId: 'code', source: blankCode }
+  let codeDraft
+  await React.act(async () => { codeDraft = await notebook.saveProjectDraft(codeInput, scope) })
+  await React.act(async () => notebook.setObjectTopics('artifact', codeDraft.id, [topicId]))
+  await React.act(async () => {
+    assert.equal(await notebook.captureVisual({ name: 'Idea code', toolId: 'code', source: blankCode }, [], scope, { newArtifactId: codeProjectId }), codeProjectId)
+  })
+  assert.equal(notebook.getProjectDraft(codeProjectId).draftActive, false)
+  assert.equal(notebook.getArtifact(codeProjectId).previewMimeType, undefined)
+  assert.ok(notebook.topicLinks.some((link) => link.objectId === codeProjectId && link.topicId === topicId))
+  const codeBase = notebook.getArtifact(codeProjectId).fileId
+  await React.act(async () => { codeDraft = await notebook.saveProjectDraft({ ...codeInput, source: changedCode, baseFileId: codeBase, expectedDraftFileId: codeDraft.fileId }, scope) })
+  assert.equal(notebook.projectDrafts.filter((item) => item.draftOf === codeProjectId).length, 1)
+  await React.act(async () => {
+    await notebook.captureVisual({ name: 'Idea code', toolId: 'code', source: changedCode }, [], scope, { artifactId: codeProjectId, expectedFileId: codeBase })
+  })
+  assert.equal(notebook.artifacts.filter((item) => item.id === codeProjectId).length, 1)
+  assert.equal(notebook.getProjectDraft(codeProjectId).draftActive, false)
+  assert.equal(JSON.parse(await (await notebook.loadArtifactSource(codeProjectId, scope)).text()).code, 'function setup( {')
+  const codeRevision = notebook.artifactRevisions.find((item) => item.revisionOf === codeProjectId)
+  assert.equal(JSON.parse(await (await notebook.loadArtifactSource(codeRevision.id, scope)).text()).code, '')
+  await React.act(async () => notebook.trashArtifact(codeProjectId))
+  assert.ok(notebook.trashedArtifacts.some((item) => item.id === codeProjectId))
+  await React.act(async () => notebook.restoreArtifact(codeProjectId))
+  assert.equal(JSON.parse(await (await notebook.loadArtifactSource(codeProjectId, scope)).text()).code, 'function setup( {')
+  const writesBeforeEmptyImport = fileWrites.length
+  await React.act(async () => assert.deepEqual(await notebook.importFiles([new File([], 'empty.js')]), []))
+  assert.equal(fileWrites.length, writesBeforeEmptyImport, 'A zero-byte import cannot enter the sync outbox')
   const pendingDefault = structuredClone(cached.get(scope).snapshot)
   await React.act(async () => notebook.renameNotebook('Commonplace book', scope))
   assert.equal(notebook.name, 'Commonplace book')

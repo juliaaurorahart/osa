@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'vite'
 
-const server = await createServer({ appType: 'custom', server: { middlewareMode: true } })
+const server = await createServer({ appType: 'custom', cacheDir: 'node_modules/.vite-test-lab-cloud', server: { middlewareMode: true } })
 const originalFetch = globalThis.fetch
 try {
   const graph = await server.ssrLoadModule('/src/lab/labNotebookGraph.ts')
@@ -74,6 +74,25 @@ try {
   assert.equal(JSON.stringify(uploaded).includes('base64'), false, 'Cloud metadata never inlines source or image bytes')
   assert.equal(JSON.stringify(uploaded).includes('original source'), false)
   assert.equal(snapshot.nodes[1].data.properties['source:url'], 'lab-file:file:source', 'Upload preserves local pending snapshot')
+
+  const { codeProjectBlob } = await server.ssrLoadModule('/src/lab/labCodeProjectSource.ts')
+  const { createStoredLabCapture, labArtifactMetadata } = await server.ssrLoadModule('/src/lab/labNotebookStorage.ts')
+  const codeFile = codeProjectBlob({ osaCode: 1, filename: 'empty.js', language: 'javascript', code: '' })
+  const codeStored = createStoredLabCapture({ name: 'Empty code', description: '', toolId: 'code', source: { name: 'source.osa-code.json', blob: codeFile } }, 'code-file', date)
+  const codeContents = { notes: [], artifacts: [labArtifactMetadata(codeStored)], topics: [], topicLinks: [] }
+  const codeSnapshot = graph.labSnapshotFromContents(codeContents)
+  assert.deepEqual(graph.labContentsFromSnapshot(codeSnapshot), codeContents)
+  assert.ok(snapshots.parseBoardSnapshot(codeSnapshot))
+  const beforeCodeUpload = requests.length
+  const uploadedCode = await cloud.uploadLabNotebookFiles({ ...doc, snapshot: codeSnapshot }, 'julia@example.test', async () => codeStored)
+  assert.equal(requests.length, beforeCodeUpload + 1, 'Unrendered code needs only a source upload')
+  assert.equal(requests.at(-1).init.body, codeFile)
+  assert.ok(uploadedCode.nodes[0].data.properties['source:url'].startsWith('/api/assets'))
+  assert.equal(uploadedCode.nodes[0].data.properties['asset:image'], '')
+  const portableCode = await cloud.portableLabSnapshot({ ...doc, snapshot: uploadedCode }, async () => codeStored)
+  assert.equal(portableCode.nodes[0].data.properties['source:url'], `data:application/json;base64,${Buffer.from(await codeFile.arrayBuffer()).toString('base64')}`)
+  assert.equal(portableCode.nodes[0].data.properties['asset:image'], '')
+  assert.ok(snapshots.parseBoardSnapshot(portableCode), 'Source-only code remains an OSA-compatible portable backup')
 
   const nextDate = '2026-08-30T01:00:00.000Z'
   const currentFile = { ...contents.artifacts[0], fileId: 'version-two', updatedAt: nextDate }

@@ -100,11 +100,17 @@ export type LabCaptureToolId = LabWorkbenchId | 'osa-draw'
 /** Tool output crosses into the notebook as files, not executable graph types. */
 export type LabCapture = {
   name: string
-  toolId: LabCaptureToolId
+  description?: string
+} & ({
+  toolId: 'code'
+  /** Source-only saves must not depend on successful execution or a preview. */
+  source: { blob: Blob; name: string }
+  preview?: Blob
+} | {
+  toolId: Exclude<LabCaptureToolId, 'code'>
   preview: Blob
   source?: { blob: Blob; name: string }
-  description?: string
-}
+})
 
 /** Topics organize notebook objects without moving them or changing OSA data. */
 export type LabNotebookObjectType = 'note' | 'artifact'

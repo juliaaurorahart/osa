@@ -127,6 +127,7 @@ export const CURRENT_SOURCE_PATHS = [
   "src/lab/LabCaptureContext.ts",
   "src/lab/labCaptureUtils.ts",
   "src/lab/labCatalog.ts",
+  "src/lab/labCodeProjectSource.ts",
   "src/lab/LabDraftContext.ts",
   "src/lab/labDraftQueue.ts",
   "src/lab/labDrafts.ts",

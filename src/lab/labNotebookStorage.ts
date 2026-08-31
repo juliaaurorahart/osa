@@ -206,6 +206,7 @@ export function labArtifactMetadata(record: StoredLabArtifact): LabArtifact {
 }
 
 export async function storeLabArtifacts(files: readonly File[], createId: () => string) {
+  if (files.some((file) => !file.size)) throw new Error('Empty files cannot be uploaded. Start a blank code project in CodeMirror instead.')
   if (files.some((file) => file.size > MAX_LAB_ARTIFACT_BYTES)) {
     throw new Error('A file is larger than the current 25 MB Lab file limit.')
   }
@@ -259,9 +260,16 @@ function previewExtension(mimeType: string) {
   return extensions[mimeType] ?? 'png'
 }
 
-/** Builds one record so the editable source and rendered image cannot split. */
+/** Code may save without a render; existing visual captures still require images. */
 export function createStoredLabCapture(capture: LabCapture, id: string, createdAt: string): StoredLabArtifact {
-  if (!capture.preview.type.startsWith('image/') || capture.preview.size === 0) {
+  if (!capture.preview && capture.toolId === 'code') {
+    if (!capture.source?.blob.size) throw new Error('A code project needs its editable source.')
+    if (capture.source.blob.size > MAX_LAB_ARTIFACT_BYTES) throw new Error('This code project exceeds the 25 MB notebook file limit.')
+    return { id, name: capture.name.trim() || 'Untitled code', toolId: 'code', sourceName: capture.source.name,
+      description: capture.description, mimeType: capture.source.blob.type || 'application/json',
+      size: capture.source.blob.size, createdAt, file: capture.source.blob }
+  }
+  if (!capture.preview?.type.startsWith('image/') || capture.preview.size === 0) {
     throw new Error('A visual capture needs a non-empty image preview.')
   }
   const file = capture.source?.blob ?? capture.preview

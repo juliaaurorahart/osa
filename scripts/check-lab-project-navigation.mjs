@@ -45,6 +45,7 @@ const validations = []
 // keep this test focused on navigation, editor lifetime, and version saving.
 const savedProjects = loadModule('src/lab/labSavedProjects.ts', {
   './labNotebookStorage': storage,
+  './labCodeProjectSource': loadModule('src/lab/labCodeProjectSource.ts', { './labNotebookStorage': storage }),
   './labDrawingProjectSource': { async validateDrawingProjectSource(toolId, source) { validations.push({ toolId, source }) } },
   './labStructuredProjectSource': { async validateStructuredProjectSource(toolId, source) { validations.push({ toolId, source }) } },
 })

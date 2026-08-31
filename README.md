@@ -87,7 +87,7 @@ does not mean the address has been activated. The old
 for browser-only files that have not been synced or backed up.
 
 The **Lab** menu opens isolated visual workbenches. Each engine loads only
-when selected. New note ideas and the eight reopenable editors below keep
+when selected. New note ideas and the reopenable editors below keep
 automatic recovery drafts. Use **Notebook → Drafts** to resume work.
 Each project has one current draft slot, separate from its explicit saved version.
 Saved notebook notes, files, and topics persist independently of project
@@ -130,7 +130,7 @@ source-only PSD checkpoints after interaction and an idle safety check; no PNG
 preview is generated for autosave. The local draft status is separate from
 account-sync status. A sudden shutdown can still lose edits since the last
 completed checkpoint, and browser storage is not a backup. Export important work.
-Fabric, Pixi, Three, CodeMirror, and remote Strudel do not yet expose a
+Fabric, Pixi, Three, and remote Strudel do not yet expose a
 complete reopenable draft path here; their workbenches explicitly say to use
 Save/export/Share before leaving. Draft checkpoints use the existing notebook graph format.
 
@@ -153,7 +153,7 @@ work instead. Clicking a draft always opens that draft. When another working
 draft exists, the saved view remains read-only so opening it cannot overwrite
 that draft. Both this preference and Cards/Table presentation are device-local.
 Supported native files currently include Ink,
-Klecks PSD, draw.io, Excalidraw, Konva Lab, Paper, Mermaid, Vega-Lite, and p5.
+Klecks PSD, draw.io, Excalidraw, Konva Lab, Paper, Mermaid, Vega-Lite, p5, and CodeMirror.
 Preview images cannot restore layers or editable shapes. Other exports remain
 downloadable; Pixi/Three/OSA Draw restoration is
 not implemented here. Opening draw.io requires confirmation because its
@@ -177,6 +177,23 @@ still PNG, not a recorded animation. Raw JavaScript export is available separate
 New Ink pages are transparent; their display-only checkerboard follows the Lab
 theme and is not baked into exported images. Existing artwork keeps its chosen
 background. Klecks and remote Strudel retain their editors' independent themes.
+
+**CodeMirror** saves independent code projects with a p5 result card beside the
+editor. **Run with p5** explicitly checkpoints a draft before sending a plain
+JavaScript snapshot to the same stopped-by-default p5 runner described above.
+Edits do not rerun it. TypeScript, Python, shell scripts, and text are edit/save
+only; there is no Python or shell execution, module import, notebook-data access,
+or general card wiring. **Save** preserves source without needing a successful
+run or an image. Empty and unfinished code is valid in the `.osa-code.json`
+envelope, which retains filename, language, and exact text. Recovery drafts,
+topics, saved history, trash, and account sync use the existing notebook paths.
+Use Notebook **Add files** to import code projects or `.js`, `.mjs`, `.cjs`,
+`.jsx`, `.ts`, `.tsx`, `.py`, `.sh`, `.bash`, `.zsh`, `.txt`, `.bashrc`, and `.zshrc`
+files. JSX/TypeScript are not transpiled by this runner. Empty raw uploads are
+rejected before entering sync; create blank code in CodeMirror instead.
+**File** offers raw code, the portable code project, and a PNG of the last
+successful run. Downloading a PNG never replaces the source or changes its save
+target; add the image to the notebook separately if desired.
 
 The private-notebook implementation keeps a local IndexedDB copy and a
 separate account notebook in D1, with its files in private R2 storage. Moving

@@ -1,6 +1,6 @@
 import type { LabArtifact, LabDraftSource, LabProjectSource, LabWorkbenchId } from './labTypes'
 
-export const DRAFT_TOOLS = new Set<LabWorkbenchId>(['drawio', 'excalidraw', 'konva', 'ink', 'paper', 'mermaid', 'vega', 'klecks', 'p5'])
+export const DRAFT_TOOLS = new Set<LabWorkbenchId>(['drawio', 'excalidraw', 'konva', 'ink', 'paper', 'mermaid', 'vega', 'klecks', 'p5', 'code'])
 export const draftSlotId = (projectId: string) => `lab-draft:${projectId}`
 
 export type LabProjectDraftInput = {

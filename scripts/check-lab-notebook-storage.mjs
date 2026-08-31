@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { createServer } from 'vite'
 
 /** Pure storage-boundary checks; no user's browser database is opened or changed. */
-const server = await createServer({ appType: 'custom', server: { middlewareMode: true } })
+const server = await createServer({ appType: 'custom', cacheDir: 'node_modules/.vite-test-lab-storage', server: { middlewareMode: true } })
 const originalIndexedDB = globalThis.indexedDB
 
 try {

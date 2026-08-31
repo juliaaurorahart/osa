@@ -3,6 +3,8 @@ import { Component, type ReactNode } from 'react'
 type LabErrorBoundaryProps = {
   children: ReactNode
   labName: string
+  onError?: () => void
+  recoveryHint?: string
 }
 
 type LabErrorBoundaryState = {
@@ -17,12 +19,14 @@ export class LabErrorBoundary extends Component<LabErrorBoundaryProps, LabErrorB
     return { failed: true }
   }
 
+  componentDidCatch() { this.props.onError?.() }
+
   render() {
     if (this.state.failed) {
       return (
         <div className="lab-shell__error" role="alert">
           <strong>{this.props.labName} could not open.</strong>
-          <span>Choose another instrument above, or reload OSA to retry this one.</span>
+          <span>{this.props.recoveryHint ?? 'Choose another instrument above, or reload OSA to retry this one.'}</span>
         </div>
       )
     }

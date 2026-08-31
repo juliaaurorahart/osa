@@ -81,6 +81,6 @@ export function LabWorkbench({ workbenchId, theme, initialSource, beforeRun }: {
     case 'vega':
       return <VegaLab theme={theme} initialSource={initialSource} />
     case 'code':
-      return <CodeEditorLab theme={theme} />
+      return <CodeEditorLab theme={theme} initialSource={initialSource} beforeRun={beforeRun} />
   }
 }

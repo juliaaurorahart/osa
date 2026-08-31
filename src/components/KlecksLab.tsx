@@ -8,7 +8,8 @@ import './KlecksLab.css'
 
 const CHANNEL = 'osa-klecks-v1'
 const MAX_BYTES = 25 * 1024 * 1024
-type PendingCapture = { resolve: (capture: LabCapture) => void; reject: (error: Error) => void; timeout: number }
+type KlecksCapture = LabCapture & { toolId: 'klecks'; preview: Blob; source: { blob: Blob; name: string } }
+type PendingCapture = { resolve: (capture: KlecksCapture) => void; reject: (error: Error) => void; timeout: number }
 type PendingValidation = { resolve: () => void; reject: (error: Error) => void; timeout: number }
 
 function download(blob: Blob, name: string) {
@@ -20,7 +21,7 @@ function download(blob: Blob, name: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-function captureFromMessage(data: Record<string, unknown>): LabCapture {
+function captureFromMessage(data: Record<string, unknown>): KlecksCapture {
   if (!(data.png instanceof Blob) || !(data.psd instanceof Blob) || !data.png.size || !data.psd.size) throw new Error('The painter returned an incomplete image. Please try again.')
   if (data.png.size + data.psd.size > MAX_BYTES) throw new Error('The painting is larger than the notebook’s 25 MB capture limit. Download it from the painter instead.')
   return { name: 'Klecks painting', toolId: 'klecks', preview: data.png, source: { blob: data.psd, name: 'painting.psd' }, description: 'Layered PSD source with a PNG preview, painted locally with Klecks.' }
@@ -150,7 +151,7 @@ export function KlecksLab({ onSave, initialSource }: { onSave?: (capture: LabCap
     }
   }, [frame])
 
-  const capture = () => new Promise<LabCapture>((resolve, reject) => {
+  const capture = () => new Promise<KlecksCapture>((resolve, reject) => {
     const child = iframeRef.current?.contentWindow
     if (!ready || !child) { reject(new Error('The painter is not ready yet.')); return }
     const id = crypto.randomUUID()

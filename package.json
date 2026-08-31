@@ -11,8 +11,9 @@
     "build": "tsc -b && vite build",
     "test": "node scripts/check-board-snapshot.mjs && node scripts/check-osa-import.mjs && node scripts/check-assembly-view.mjs && node scripts/check-legacy-source-visuals.mjs && node scripts/check-legacy-canvas-images.mjs && node scripts/check-lab-notebook-storage.mjs && node scripts/check-lab-notebook-cache.mjs && node scripts/check-lab-notebook-cloud.mjs && node scripts/check-lab-notebook-api.mjs && node scripts/check-lab-tool-capture.mjs && node scripts/check-lab-capture-utils.mjs && node scripts/check-osa-draw-capture.mjs && node scripts/check-private-assets.mjs && node scripts/check-private-file-client.mjs && node scripts/check-stylus-dark-canvas.mjs && node scripts/check-lab-drawing-projects.mjs && node scripts/check-lab-structured-projects.mjs && node scripts/check-lab-project-navigation.mjs && node scripts/check-lab-project-scope.mjs && node scripts/check-lab-capture-actions.mjs && node scripts/check-lab-notebook-files.mjs && node scripts/check-deployment-assets.mjs && node scripts/check-lab-domain.mjs && node scripts/check-lab-drafts.mjs && npm run test:p5",
     "test:p5": "node scripts/check-lab-p5.mjs",
+    "test:code": "node scripts/check-lab-code.mjs",
     "test:notebooks": "node scripts/check-lab-notebook-catalog.mjs && node scripts/check-lab-notebook-picker.mjs && node scripts/check-lab-notebook-browser.mjs",
-    "posttest": "npm run test:notebooks",
+    "posttest": "npm run test:notebooks && npm run test:code",
     "test:backup": "node scripts/check-osa-backup-verifier.mjs",
     "lint": "eslint .",
     "preview": "vite preview"

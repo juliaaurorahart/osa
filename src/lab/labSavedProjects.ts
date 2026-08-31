@@ -1,5 +1,6 @@
 import type { LabArtifact, LabProjectSource, LabWorkbenchId } from './labTypes'
 import { MAX_LAB_ARTIFACT_BYTES } from './labNotebookStorage'
+import { isRawCodeFilename, readCodeProjectSource } from './labCodeProjectSource'
 
 const DRAWING_TOOLS = new Set<LabWorkbenchId>(['ink', 'klecks', 'drawio', 'excalidraw', 'konva'])
 const STRUCTURED_TOOLS = new Set<LabWorkbenchId>(['paper', 'mermaid', 'vega'])
@@ -7,6 +8,7 @@ const STRUCTURED_TOOLS = new Set<LabWorkbenchId>(['paper', 'mermaid', 'vega'])
 /** Only native formats with an implemented loader get an Edit action. */
 export function savedProjectTool(artifact: LabArtifact): LabWorkbenchId | null {
   const name = (artifact.sourceName || artifact.name).toLowerCase()
+  if (name.endsWith('.osa-code.json') || (artifact.toolId === 'code' && isRawCodeFilename(name))) return 'code'
   if (name.endsWith('.osa-ink.json')) return 'ink'
   if (name.endsWith('.psd')) return 'klecks'
   if (name.endsWith('.drawio')) return 'drawio'
@@ -18,6 +20,7 @@ export function savedProjectTool(artifact: LabArtifact): LabWorkbenchId | null {
     if (artifact.toolId === 'konva' || name.endsWith('osa-konva-lab.json')) return 'konva'
     if (artifact.toolId === 'paper' || name.endsWith('paper-lab.json')) return 'paper'
   }
+  if (isRawCodeFilename(name)) return 'code'
   return null
 }
 
@@ -28,7 +31,7 @@ export async function readSavedLabProject(artifact: LabArtifact, file: Blob | nu
 }> {
   const toolId = savedProjectTool(artifact)
   if (!toolId) throw new Error('This file can be viewed or downloaded, but does not yet have a Lab project loader.')
-  if (!file?.size) throw new Error('The saved source file is unavailable. Your current project has not changed.')
+  if (!file || (!file.size && toolId !== 'code')) throw new Error('The saved source file is unavailable. Your current project has not changed.')
   if (file.size > MAX_LAB_ARTIFACT_BYTES) throw new Error('This project exceeds the 25 MB Lab file limit.')
   const source: LabProjectSource = {
     file,
@@ -44,6 +47,8 @@ export async function readSavedLabProject(artifact: LabArtifact, file: Blob | nu
   } else if (toolId === 'p5') {
     const { readP5ProjectSource } = await import('./labP5ProjectSource')
     readP5ProjectSource(source, 'dark')
+  } else if (toolId === 'code') {
+    readCodeProjectSource(source)
   }
   return { toolId, source }
 }

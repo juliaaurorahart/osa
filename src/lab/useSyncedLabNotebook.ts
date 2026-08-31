@@ -369,6 +369,7 @@ export function useSyncedLabNotebook() {
   }, [commit])
   const importFiles = useCallback(async (files: readonly File[], topicIds: readonly string[] = []): Promise<string[]> => {
     try {
+      if (files.some((file) => !file.size)) throw new Error('Empty files cannot be uploaded. Start a blank code project in CodeMirror instead.')
       if (files.some((file) => file.size > MAX_LAB_ARTIFACT_BYTES)) throw new Error('A file exceeds the 25 MB Lab limit.')
       if (!files.length) return []
       const createdAt = new Date().toISOString()

@@ -54,7 +54,7 @@ const legacyCode = 'globalThis.shouldNotRun = true; function setup() {}'
 const legacy = await saved.readSavedLabProject({ ...artifact, sourceName: 'osa-p5-sketch.js' }, new Blob([legacyCode]))
 assert.equal(project.readP5ProjectSource(legacy.source, 'dark').editorText, legacyCode)
 assert.equal(globalThis.shouldNotRun, undefined)
-assert.equal(saved.savedProjectTool({ name: 'random.js', toolId: 'files' }), null)
+assert.equal(saved.savedProjectTool({ name: 'random.js', toolId: 'files' }), 'code')
 assert.equal(saved.savedProjectTool({ name: 'osa-p5-sketch.js', toolId: 'files' }), 'p5')
 for (const value of [null, {}, { ...initial, osaP5: 2 }, { ...initial, settings: { ...initial.settings, seed: Infinity } },
   { ...initial, settings: { ...initial.settings, density: -5 } }, { ...initial, editorText: {} }]) {
