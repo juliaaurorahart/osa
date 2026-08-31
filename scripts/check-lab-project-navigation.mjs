@@ -78,6 +78,8 @@ const openAttempts = []
 let currentNotebook
 let changeScope
 let nextVersion = 0
+let addArtifactFixture, handoffGate, handoffReadFails = false
+const handoffCalls = []
 
 function useNotebookFixture() {
   const [scope, setScope] = React.useState('account:owner@example.test')
@@ -85,6 +87,7 @@ function useNotebookFixture() {
   const [topicLinks, setTopicLinks] = React.useState([{ objectType: 'artifact', objectId: originalArtifact.id, topicId: 'drawings' }])
   const [, setDraftVersion] = React.useState(0)
   changeScope = (nextScope) => { setScope(nextScope); setArtifacts([]); setTopicLinks([]) }
+  addArtifactFixture = (artifact, file) => { files.set(artifact.id, file); setArtifacts((current) => [...current, artifact]) }
   const notebook = {
     scope, artifacts, topicLinks, notes: [], topics: [{ id: 'drawings', name: 'Drawings', createdAt: date }],
     isReady: true, status: 'ready', message: 'Fixture notebook',
@@ -95,6 +98,23 @@ function useNotebookFixture() {
     getArtifact: (id) => storedVersions.get(id) || artifacts.find((item) => item.id === id),
     projectDrafts: [...drafts.values()].filter((item) => item.draftActive),
     getProjectDraft: (id) => drafts.get(id),
+    flushNotebookWrites: async () => {},
+    continueInKonva: async (artifactId, fileId, expectedScope, sectionId) => {
+      handoffCalls.push({ artifactId, fileId, expectedScope, sectionId })
+      if (handoffGate) await handoffGate
+      assert.equal(expectedScope, scope)
+      const source = notebook.getArtifact(artifactId)
+      const id = `continued-${++nextVersion}`, blob = new Blob([JSON.stringify({ text: 'Saved painting in Konva', items: [] })], { type: 'application/json' })
+      const destination = { id, fileId: `bytes-${id}`, name: `${source.name} · Konva`, toolId: 'konva', sourceName: 'painting.konva.json',
+        mimeType: blob.type, previewMimeType: 'image/png', size: blob.size, createdAt: date, derivedFrom: { artifactId, fileId } }
+      storedVersions.set(id, destination); files.set(id, blob)
+      setArtifacts((current) => [...current, destination])
+      // Force a competing draft to prove the handoff ignores the global draft preference.
+      drafts.set(id, { ...destination, id: `draft:${id}`, draftOf: id, fileId: `draft-bytes-${id}`, draftActive: true, draftBaseFileId: destination.fileId })
+      files.set(`draft:${id}`, new Blob([JSON.stringify({ text: 'Different working draft' })], { type: 'application/json' }))
+      if (handoffReadFails) loadOverrides.set(id, Promise.resolve(null))
+      return destination
+    },
     saveProjectDraft: async (input, expectedScope) => {
       assert.equal(expectedScope, scope)
       const previous = drafts.get(input.projectId)
@@ -141,7 +161,7 @@ function SectionFixture(props) {
 function WorkbenchFixture({ workbenchId, initialSource }) {
   const reportDraft = React.useContext(draftTestDependency('LabDraftContext').LabDraftContext)
   const [instance] = React.useState(() => `editor-${++mountedEditors}`)
-  const [text, setText] = React.useState(() => draftTesting && initialSource ? JSON.parse(initialSource.text).text : initialSource?.text ?? 'Unsaved starter')
+  const [text, setText] = React.useState(() => draftTesting && initialSource?.text ? JSON.parse(initialSource.text).text : initialSource?.text ?? 'Unsaved starter')
   React.useEffect(() => {
     if (draftTesting) reportDraft?.({ name: 'editor.osa-ink.json', blob: new Blob([JSON.stringify({ text })], { type: 'application/json' }) })
   }, [text, reportDraft])
@@ -453,6 +473,49 @@ try {
   await React.act(async () => { window.dispatchEvent(departure) }); assert.equal(departure.defaultPrevented, true)
   await React.act(async () => { sectionGuardLocked = false; sectionFixture.onEditorLockChange(false) })
   await clickButton('Home'); assert.ok(document.querySelector('.lab-shell').classList.contains('is-home'))
+
+  // Continue a Saved painting without a download/upload detour. Failed opens
+  // retain the source preview; a pending handoff cannot be double-activated.
+  window.localStorage.setItem('osa-lab:live-open-version', 'draft')
+  await React.act(async () => root.render(React.createElement(CanvasLab, { key: 'handoff-flow', theme: 'dark', onToggleTheme() {}, onExit() {} })))
+  const paintedFile = new Blob(['original layered PSD'], { type: 'image/vnd.adobe.photoshop' })
+  const painting = { id: 'painting-handoff', fileId: 'painting-saved-v1', name: 'Painted thought', toolId: 'klecks', sourceName: 'painting.psd',
+    mimeType: paintedFile.type, previewMimeType: 'image/png', size: paintedFile.size, createdAt: date }
+  await React.act(async () => addArtifactFixture(painting, paintedFile))
+  await clickButton('Notebook')
+  await clickButton('Preview', artifactRow(painting.name))
+  const previewDialog = () => document.querySelector('dialog[aria-label="Saved visual preview"]')
+  assert.equal(previewDialog().open, true)
+  handoffReadFails = true
+  await clickButton('Continue in Konva', previewDialog())
+  assert.equal(previewDialog().open, true, 'A destination-open failure keeps the original painting preview')
+  assert.equal(previewDialog().querySelector('h3').textContent, painting.name)
+  assert.ok(previewDialog().querySelector('[role="alert"]'))
+  assert.equal(editor(), null)
+  handoffReadFails = false
+  let finishHandoff
+  handoffGate = new Promise((resolve) => { finishHandoff = resolve })
+  await clickButton('Continue in Konva', previewDialog())
+  const count = handoffCalls.length
+  assert.equal(findButton('Continue in Konva', previewDialog()).disabled, true)
+  await clickButton('Continue in Konva', previewDialog())
+  assert.equal(handoffCalls.length, count)
+  assert.equal(editor(), null, 'The workspace is not opened before the handoff acknowledges saving')
+  await React.act(async () => { finishHandoff(); await handoffGate }); handoffGate = null
+  assert.equal(editor().dataset.tool, 'konva')
+  assert.equal(editorText().value, 'Saved painting in Konva', 'Handoff initializes from Saved even when Settings prefer drafts')
+  assert.equal(previewDialog().open, false)
+  assert.equal(projectDialog().open, false, 'No extra open confirmation is needed when no unprotected editor is being replaced')
+  assert.deepEqual(handoffCalls.at(-1), { artifactId: painting.id, fileId: painting.fileId, expectedScope: currentNotebook.scope, sectionId: undefined })
+  const openedDestination = currentNotebook.artifacts.find((item) => item.name === `${painting.name} · Konva` && !loadOverrides.has(item.id))
+  assert.equal(drafts.get(openedDestination.id).draftActive, true, 'Opening Saved cannot consume a different working draft')
+  assert.equal(await files.get(painting.id).text(), 'original layered PSD')
+  await clickButton(`Open original · ${painting.name}`, workbar())
+  assert.equal(projectDialog().open, true)
+  assert.equal(validations.at(-1).toolId, 'klecks')
+  assert.equal(validations.at(-1).source.file, paintedFile)
+  await clickButton('Cancel', projectDialog())
+  assert.equal(editorText().value, 'Saved painting in Konva')
 
   // Browser Back/Forward asks the Lab before unmounting an active editor.
   let requested = true, locationApi

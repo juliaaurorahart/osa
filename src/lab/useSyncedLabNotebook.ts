@@ -12,6 +12,7 @@ import type { LabArtifact, LabCapture, LabNote, LabNotebookObjectType, LabSectio
 import { moveSectionCell, type LabSectionAction } from './labSections'
 import type { LabNotebookStatus } from './useLabNotebook'
 import { DRAFT_TOOLS, draftSlotId, draftMatchesSave, labDraftHash, type LabProjectDraftInput } from './labDrafts'
+import { buildKonvaHandoff, canContinueInKonva } from './labWorkspaceHandoff'
 
 export type LabNotebookSyncStatus = 'local' | 'syncing' | 'synced' | 'pending' | 'conflict' | 'offline'
 const LAST_ACCOUNT_KEY = 'osa.lab.lastAccount'
@@ -421,6 +422,45 @@ export function useSyncedLabNotebook() {
     return edited
   }, [commit, flushNotebookWrites])
 
+  const continueInKonva = useCallback(async (artifactId: string, expectedFileId: string, expectedScope: string, sectionId?: string) => {
+    const check = () => {
+      const doc = currentRef.current
+      if (!doc || doc.scope !== expectedScope || switching.current || localFailure.current) throw new Error('Return to the original notebook before continuing this painting.')
+      const contents = labContentsFromSnapshot(doc.snapshot)
+      const source = contents.artifacts.find((item) => item.id === artifactId)
+      if (!source || !canContinueInKonva(source)) throw new Error('Push the Klecks painting first. Continue in Konva uses its Saved picture, not its draft.')
+      if ((source.fileId || source.id) !== expectedFileId) throw new Error('The saved painting changed. Open its latest version and try again.')
+      if (sectionId && !contents.sections?.some((section) => section.id === sectionId)) throw new Error('This section is no longer available.')
+      return { doc, contents, source }
+    }
+    const original = check()
+    fileOperations.current += 1
+    try {
+      const stored = await loadLabFile(original.doc, artifactId)
+      check()
+      if (!stored?.preview) throw new Error('The saved painting is unavailable. Its original and draft have not changed.')
+      const capture = await buildKonvaHandoff(original.source, stored.preview)
+      check()
+      const now = new Date().toISOString()
+      const file = createStoredLabCapture(capture, id(), now)
+      await storeLabDocumentFiles(expectedScope, [file])
+      const latest = check()
+      const artifact: LabArtifact = { ...labArtifactMetadata(file), fileId: file.id,
+        derivedFrom: { artifactId, fileId: expectedFileId } }
+      const topicIds = latest.contents.topicLinks.filter((link) => link.objectType === 'artifact' && link.objectId === artifactId).map((link) => link.topicId)
+      // Publish the file, topics, source link and optional cell together. A failed
+      // preflight leaves no half-created object; a failed write never changes the source.
+      const next = { ...latest.contents, ...setLabObjectTopics(latest.contents, 'artifact', artifact.id, topicIds),
+        artifacts: [...latest.contents.artifacts, artifact],
+        ...(sectionId ? { sections: latest.contents.sections!.map((section) => section.id === sectionId ? {
+          ...section, updatedAt: now, cells: [{ id: id(), objectType: 'artifact' as const, objectId: artifact.id }, ...section.cells],
+        } : section) } : {}) }
+      if (!commit(next)) throw new Error('The new workspace could not save. Your original painting is unchanged.')
+      await flushNotebookWrites(expectedScope)
+      return artifact
+    } finally { fileOperations.current -= 1 }
+  }, [commit, flushNotebookWrites])
+
   const addFiles = useCallback(async (files: StoredLabArtifact[], topicIds: readonly string[], expectedScope?: string) => {
     const current = currentRef.current
     if (!current || switching.current || localFailure.current) throw new Error('Open the notebook before saving files.')
@@ -526,7 +566,8 @@ export function useSyncedLabNotebook() {
       }
       const revisions: LabArtifact[] = previous ? [{ ...previous, id: id(), revisionOf: previous.id, fileId: previous.fileId || previous.id }] : []
       const updated: LabArtifact = { ...labArtifactMetadata(file), id: projectId, fileId: file.id,
-        createdAt: previous?.createdAt ?? now, updatedAt: now }
+        createdAt: previous?.createdAt ?? now, updatedAt: now,
+        ...(previous?.derivedFrom ? { derivedFrom: previous.derivedFrom } : {}) }
       const artifacts = existing.artifacts.map((item) => item.id === projectId ? updated : item.draftOf === projectId
         && consumesDraft && item.fileId === draft?.fileId && item.name === capture.name
         ? { ...item, draftBaseFileId: file.id, draftActive: false } : item)
@@ -806,7 +847,7 @@ export function useSyncedLabNotebook() {
     getArtifact, getNote, getProjectDraft, trashArtifact, restoreArtifact, restoreRevision,
     status, message, isReady: Boolean(document) && !busy && !storageFailed,
     createNote, updateNote, createTopic, setObjectTopics, importFiles, captureVisual,
-    changeSection, saveSectionNote, flushNotebookWrites,
+    changeSection, saveSectionNote, flushNotebookWrites, continueInKonva,
     saveNoteDraft, promoteNoteDraft, saveProjectDraft,
     loadArtifactPreview, loadArtifactSource, downloadArtifact,
     scope: document?.scope ?? 'loading', email, offlineAccount, syncStatus, syncMessage, busy, conflict,

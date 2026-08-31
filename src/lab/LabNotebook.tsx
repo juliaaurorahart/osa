@@ -7,6 +7,7 @@ import { matchesNotebookSearch } from './labNotebookSearch'
 import { savedProjectTool } from './labSavedProjects'
 import { findLab } from './labCatalog'
 import { createLabDraftQueue } from './labDraftQueue'
+import { canContinueInKonva } from './labWorkspaceHandoff'
 import './LabNotebook.css'
 
 type LabNotebookProps = {
@@ -35,6 +36,7 @@ type LabNotebookProps = {
   onLoadPreview: (artifactId: string) => Promise<Blob | null>
   onDownloadArtifact: (artifactId: string) => Promise<void>
   onOpenProject: (artifact: LabArtifact, version?: 'saved' | 'draft') => Promise<void>
+  onContinueInKonva?: (artifact: LabArtifact) => Promise<void>
   onTrashArtifact?: (artifactId: string) => Promise<void>
   onRestoreArtifact?: (artifactId: string) => Promise<void>
   onRestoreRevision?: (artifactId: string, revisionId: string) => Promise<void>
@@ -199,6 +201,7 @@ export function LabNotebook({
   onLoadPreview,
   onDownloadArtifact,
   onOpenProject,
+  onContinueInKonva,
   onTrashArtifact,
   onRestoreArtifact,
   onRestoreRevision,
@@ -585,7 +588,19 @@ export function LabNotebook({
     </details>
   }
 
+  const workspaceActions = (artifact: LabArtifact) => <>
+    {artifact.toolId === 'klecks' && !artifact.draftOf && !artifact.revisionOf && !artifact.deletedAt && onContinueInKonva ? <button type="button"
+      disabled={isUnavailable || isFileBusy || !canContinueInKonva(artifact)}
+      title="Continue from Saved as a separate Konva project. Push first to include draft edits; the Klecks layers stay in the original."
+      onClick={() => void runFileAction(artifact, 'Opening Konva…', async () => { await onContinueInKonva(artifact); setOpenedArtifactId(null) },
+        'Konva copy saved. The original painting and its draft are unchanged.')}>Continue in Konva</button> : null}
+    {artifact.derivedFrom && artifacts.some((item) => item.id === artifact.derivedFrom!.artifactId) ? <button type="button" disabled={isUnavailable || isFileBusy}
+      onClick={() => void runFileAction(artifact, 'Opening original…', async () => {
+        await onOpenProject(artifacts.find((item) => item.id === artifact.derivedFrom!.artifactId)!, 'saved'); setOpenedArtifactId(null)
+      }, 'Original opened. The continued project stays separate.')}>Open original</button> : null}
+  </>
   const fileActions = (artifact: LabArtifact) => <div className="lab-notebook__file-actions">
+    {workspaceActions(artifact)}
     <button type="button" disabled={isUnavailable || isFileBusy} onClick={() => void downloadArtifact(artifact)}>
       {artifact.draftOf ? 'Download draft' : artifact.sourceName ? 'Download source' : 'Download'}</button>
     {!artifact.draftOf && !artifact.deletedAt ? <button type="button"
@@ -747,6 +762,7 @@ export function LabNotebook({
           <LabArtifactPreview artifact={openedArtifact} loadPreview={onLoadPreview} />
           <footer>
             {editProjectButton(openedArtifact)}
+            {workspaceActions(openedArtifact)}
             <button type="button" disabled={isUnavailable || isFileBusy} onClick={() => void downloadArtifact(openedArtifact)}>Download {openedArtifact.sourceName ? 'source' : 'file'}</button>
             {(openedArtifact.previewMimeType ?? openedArtifact.mimeType).startsWith('image/') ? <button type="button" disabled={isUnavailable || isFileBusy} onClick={() => void downloadPreview(openedArtifact)}>Download image</button> : null}
             <span>The original stays available for its creating tool.</span>

@@ -48,6 +48,26 @@ try {
   assert.equal(copied.contents.topicLinks[1].objectId, copied.contents.artifacts[0].id)
   assert.equal(contents.notes[0].id, 'note', 'Copy does not mutate local originals')
 
+  const handoffContents = { ...contents, artifacts: [
+    { ...contents.artifacts[0], id: 'painting', fileId: 'painting-v2', toolId: 'klecks' },
+    { ...contents.artifacts[0], id: 'old-painting', fileId: 'painting-v1', revisionOf: 'painting', toolId: 'klecks' },
+    { ...contents.artifacts[0], id: 'continued', fileId: 'konva-v1', toolId: 'konva', derivedFrom: { artifactId: 'painting', fileId: 'painting-v1' } },
+  ] }
+  const handoffGraph = graph.labSnapshotFromContents(handoffContents)
+  assert.ok(snapshots.parseBoardSnapshot(handoffGraph), 'A handoff remains ordinary OSA nodes, edges and properties')
+  assert.deepEqual(graph.labContentsFromSnapshot(handoffGraph).artifacts.find((item) => item.id === 'continued').derivedFrom,
+    { artifactId: 'painting', fileId: 'painting-v1' }, 'Source project and exact saved version round-trip')
+  assert.equal(handoffGraph.edges.find((edge) => edge.source === 'continued').target, 'painting')
+  const handoffCopy = graph.copyLabContents(handoffContents, () => `handoff-${++nextId}`)
+  const copiedPainting = handoffCopy.contents.artifacts.find((item) => item.toolId === 'klecks' && !item.revisionOf)
+  const copiedRevision = handoffCopy.contents.artifacts.find((item) => item.revisionOf)
+  const continued = handoffCopy.contents.artifacts.find((item) => item.toolId === 'konva')
+  assert.deepEqual(continued.derivedFrom, { artifactId: copiedPainting.id, fileId: copiedRevision.fileId }, 'Independent notebook copy remaps both the source object and historical file identity')
+  assert.equal(graph.labSnapshotFromContents(handoffCopy.contents).edges.find((edge) => edge.source === continued.id).target, copiedPainting.id)
+  const portableHandoff = await cloud.portableLabSnapshot({ scope: 'fixture', snapshot: handoffGraph }, async () => ({ ...contents.artifacts[0], file: source, preview }))
+  assert.deepEqual(graph.labContentsFromSnapshot(snapshots.parseBoardSnapshot(JSON.parse(JSON.stringify(portableHandoff)))).artifacts.find((item) => item.id === 'continued').derivedFrom,
+    { artifactId: 'painting', fileId: 'painting-v1' }, 'Backup with embedded files retains provenance')
+
   const section = { id: 'section', title: 'One thought', createdAt: date, updatedAt: date,
     cells: [{ id: 'cell-note', objectType: 'note', objectId: 'note' }, { id: 'cell-file', objectType: 'artifact', objectId: 'file', workspace: 'p5' }] }
   const sectionContents = { ...contents, sections: [section], topicLinks: [...contents.topicLinks, { objectType: 'section', objectId: 'section', topicId: 'topic' }] }

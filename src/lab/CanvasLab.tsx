@@ -16,6 +16,7 @@ import { readSavedLabProject } from './labSavedProjects'
 import { LabDraftContext, type LabDraftReader } from './LabDraftContext'
 import { DRAFT_TOOLS, readLabDraftSource } from './labDrafts'
 import { useLabWorkingDrafts } from './useLabWorkingDrafts'
+import { canContinueInKonva } from './labWorkspaceHandoff'
 import './CanvasLab.css'
 import './LabWorkbenchChrome.css'
 
@@ -179,6 +180,9 @@ export function CanvasLab({
     return () => window.removeEventListener('beforeunload', warn)
   }, [project, isExitApproved])
   const activeLab = route.page === 'workbench' ? findLab(route.workbenchId) : null
+  const savedArtifact = project?.artifactId ? notebook.getArtifact(project.artifactId) : undefined
+  const projectOrigin = savedArtifact?.derivedFrom
+  const originalArtifact = projectOrigin ? notebook.getArtifact(projectOrigin.artifactId) : undefined
   const supportsDrafts = Boolean(project && DRAFT_TOOLS.has(project.toolId))
   const flushDrafts = async () => { await noteFlushRef.current(); await sectionFlushRef.current(); await workingDrafts.flush() }
   const checkpoint = workingDrafts.report
@@ -256,6 +260,38 @@ export function CanvasLab({
         name: mode === 'draft' && draft?.draftActive ? draft.name : saved.name,
         draftFileId: draft?.fileId, fileId: mode === 'draft' && draft?.draftActive ? draft.draftBaseFileId : saved.fileId })
     } catch (error) { setProjectFailure(error instanceof Error ? error.message : 'Could not switch versions.') }
+  }
+  const continueInKonva = async (artifact: LabArtifact, sectionId?: string) => {
+    if (!mayNavigate() || savingRef.current) throw new Error('Close the active editor and wait for saving to finish first.')
+    const scope = notebook.scope, projectId = project?.id
+    savingRef.current = true; setSaving(true)
+    try {
+      // Section actions already flush their cell. Do not close its Saved preview
+      // until the handoff has succeeded, so a failed transfer is easy to retry.
+      await noteFlushRef.current(); await workingDrafts.flush(); await notebook.flushNotebookWrites(scope)
+      if (currentRef.current.scope !== scope || currentRef.current.projectId !== projectId) throw new Error('The notebook or editor changed. Please try again from the saved painting.')
+      const next = await notebook.continueInKonva(artifact.id, artifact.fileId || artifact.id, scope, sectionId)
+      if (!mountedRef.current || currentRef.current.scope !== scope || currentRef.current.projectId !== projectId) {
+        throw new Error('The Konva copy was saved in the original notebook. Open it there when you are ready.')
+      }
+      // Read/validate before closing the original preview. Always initialize
+      // from the just-saved copy, regardless of the preferred open version.
+      const { toolId, source } = await readSavedLabProject(next, await notebook.loadArtifactSource(next.id, scope))
+      if (currentRef.current.scope !== scope || currentRef.current.projectId !== projectId
+        || (notebook.getArtifact(next.id)?.fileId || next.id) !== (next.fileId || next.id)) {
+        throw new Error('The editor changed. Your Konva copy is in the original notebook; open it there.')
+      }
+      await flushDrafts()
+      if (!mountedRef.current || currentRef.current.scope !== scope || currentRef.current.projectId !== projectId) return
+      const draft = notebook.getProjectDraft(next.id)
+      const destination: ProjectSession = { id: crypto.randomUUID(), scope, toolId, source, name: next.name,
+        artifactId: next.id, fileId: next.fileId || next.id, draftFileId: draft?.fileId,
+        mode: draft?.draftActive ? 'saved' : undefined }
+      // Protected editors can hand off immediately after their draft checkpoint.
+      // An unrelated workbench without drafts still gets its normal leave warning.
+      if (project && !supportsDrafts) requestProject(destination)
+      else startProject(destination)
+    } finally { savingRef.current = false; if (mountedRef.current) setSaving(false) }
   }
   const saveProject = async (capture: LabCapture, options?: { asCopy?: boolean }): Promise<string> => {
     if (project?.mode === 'saved') throw new Error('Switch to Working draft before saving edits.')
@@ -441,6 +477,14 @@ export function CanvasLab({
         <button type="button" aria-expanded="true" aria-controls="lab-project-bar" onClick={() => setNavigationHidden(true)}>Hide top bar ↑</button>
         <LabMenu label="File">
           <div ref={setFileTarget} />
+          {project?.toolId === 'klecks' ? <button type="button" disabled={saving || !savedArtifact || !canContinueInKonva(savedArtifact)}
+            title="Continue from the Saved picture. Save to notebook first to include your latest edits; the layered Klecks original stays separate."
+            onClick={() => savedArtifact && void continueInKonva(savedArtifact).catch((error) => setProjectFailure(error instanceof Error ? error.message : 'Could not continue in Konva.'))}>
+            Continue in Konva</button> : null}
+          {originalArtifact && !originalArtifact.deletedAt ? <button type="button" disabled={saving}
+            title="Open the original layered painting. This Konva project stays separate."
+            onClick={() => void openSavedProject(originalArtifact, 'saved').catch((error) => setProjectFailure(error instanceof Error ? error.message : 'Could not open the original.'))}>
+            Open original · {originalArtifact.name}</button> : null}
           <button type="button" disabled={saving || !activeLab} onClick={() => activeLab && requestProject({ id: crypto.randomUUID(), scope: notebook.scope,
             toolId: activeLab.id, name: `${activeLab.name} project` })}>New project</button>
           <hr />
@@ -478,7 +522,8 @@ export function CanvasLab({
           </nav>
           {projectFailure ? <p role="alert">{projectFailure}</p> : null}
           {sectionVisited ? <div hidden={notebookView !== 'section'}><LabSection key={`section:${notebook.scope}`} notebook={notebook} theme={theme}
-            isActive={route.page === 'notebook' && notebookView === 'section'} onRegisterFlush={registerSectionFlush} onOpenProject={openSavedProject} onEditorLockChange={setSectionEditorLock} /></div> : null}
+            isActive={route.page === 'notebook' && notebookView === 'section'} onRegisterFlush={registerSectionFlush} onOpenProject={openSavedProject}
+            onContinueInKonva={continueInKonva} onEditorLockChange={setSectionEditorLock} /></div> : null}
           <div hidden={notebookView !== 'library'}>
           <LabNotebook
             key={notebook.scope}
@@ -507,6 +552,7 @@ export function CanvasLab({
             onLoadPreview={notebook.loadArtifactPreview}
             onDownloadArtifact={notebook.downloadArtifact}
             onOpenProject={openSavedProject}
+            onContinueInKonva={continueInKonva}
             onCreateTopic={notebook.createTopic}
             onSetObjectTopics={notebook.setObjectTopics}
             onTrashArtifact={notebook.trashArtifact}

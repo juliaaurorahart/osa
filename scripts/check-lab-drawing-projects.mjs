@@ -89,6 +89,7 @@ try {
   const layer = ({ children }) => React.createElement('div', null, children)
   const { KonvaLab } = loadModule('src/components/KonvaLab.tsx', {
     ...sharedMocks, './konvaLabModel': konva, '../lab/labCaptureUtils': {},
+    './konvaLabExport': loadModule('src/components/konvaLabExport.ts'),
     'react-konva': { Layer: layer, Stage: layer, Line: () => null, Rect: () => null, Transformer: () => null },
     './KonvaItemRenderer': { KonvaItemRenderer: ({ item }) => React.createElement('i', { 'data-loaded-id': item.id }) },
   })

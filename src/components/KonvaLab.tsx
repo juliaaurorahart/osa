@@ -11,10 +11,11 @@ import {
 import type Konva from 'konva'
 import { Layer, Line, Rect, Stage, Transformer } from 'react-konva'
 import { LabCaptureButton } from '../lab/LabCaptureButton'
-import { canvasToBlob } from '../lab/labCaptureUtils'
+import { canvasToBlob, downloadBlob } from '../lab/labCaptureUtils'
 import type { LabCapture, LabProjectSource } from '../lab/labTypes'
 import { parseKonvaProjectSource } from '../lab/labDrawingProjectSource'
 import { KonvaItemRenderer } from './KonvaItemRenderer'
+import { renderKonvaArtwork } from './konvaLabExport'
 import {
   cloneItem,
   cloneItems,
@@ -22,10 +23,10 @@ import {
   createItemForTool,
   createStarterItems,
   createTextItem,
+  fitItemsViewport,
   isBoxItem,
   isPathItem,
   itemIntersectsBounds,
-  itemsBounds,
   patchItem,
   transformedItem,
   updateDrawnItem,
@@ -43,9 +44,8 @@ import './KonvaLab.css'
 type KonvaLabProps = {
   theme: CanvasTheme
   /**
-   * CanvasLab owns this optional snapshot so a local draft survives switching
-   * to another comparison editor. It remains deliberately separate from OSA
-   * boards, project state, and browser storage.
+   * Restore this editor's native items, independently of OSA's active board.
+   * The Lab host owns notebook persistence and working-draft checkpoints.
    */
   initialDocument?: KonvaLabDocument
   initialSource?: LabProjectSource
@@ -65,7 +65,7 @@ type DrawingState = {
   item: CanvasItem
 } | null
 
-const MIN_ZOOM = 0.18
+const MIN_ZOOM = 0.025
 const MAX_ZOOM = 5
 const GRID_EXTENT = 3200
 const GRID_STEP = 80
@@ -201,13 +201,11 @@ function GridLayer({ theme }: { theme: CanvasTheme }) {
 }
 
 /**
- * A genuinely interactive local comparison for an eventual OSA-native canvas.
- * Its state is deliberately throwaway: it imports no OSA board data, writes no
- * project data, and can be reset/exported safely while trying Konva.
+ * An image-and-shape workbench. Its native document stays separate from OSA's
+ * board schema; the Lab host saves it as a notebook artifact with a PNG preview.
  */
 export function KonvaLab({ theme, initialDocument, initialSource, onDocumentChange }: KonvaLabProps) {
-  // Take a private copy once on mount. The parent only needs the serializable
-  // items so that it can restore this temporary draft after a tab switch.
+  // Take a private copy once per project session; publish only serializable items.
   const [items, setItems] = useState<CanvasItem[]>(() => cloneItems(initialSource
     ? parseKonvaProjectSource(initialSource.text ?? '').items : initialDocument?.items ?? STARTER_ITEMS))
   const itemsRef = useRef<CanvasItem[]>(cloneItems(items))
@@ -231,6 +229,8 @@ export function KonvaLab({ theme, initialDocument, initialSource, onDocumentChan
 
   const stageHostRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<Konva.Stage>(null)
+  const contentLayerRef = useRef<Konva.Layer>(null)
+  const fitOnOpenRef = useRef(Boolean(initialSource || initialDocument))
   const transformerRef = useRef<Konva.Transformer>(null)
   const nodeRefs = useRef<Record<string, Konva.Group | null>>({})
   const drawingRef = useRef<DrawingState>(null)
@@ -305,10 +305,15 @@ export function KonvaLab({ theme, initialDocument, initialSource, onDocumentChan
     if (!host) return undefined
 
     const updateStageSize = () => {
-      setStageSize({
+      const size = {
         width: Math.max(360, Math.floor(host.clientWidth)),
         height: Math.max(440, Math.floor(host.clientHeight)),
-      })
+      }
+      setStageSize(size)
+      if (fitOnOpenRef.current && host.clientWidth > 0 && host.clientHeight > 0) {
+        fitOnOpenRef.current = false
+        setViewport(fitItemsViewport(itemsRef.current, size))
+      }
     }
 
     updateStageSize()
@@ -438,26 +443,7 @@ export function KonvaLab({ theme, initialDocument, initialSource, onDocumentChan
   }, [stageSize, updateViewportForZoom, viewport.scale])
 
   const fitToItems = useCallback(() => {
-    const bounds = itemsBounds(itemsRef.current)
-    if (!bounds) {
-      setViewport({ x: 0, y: 0, scale: 1 })
-      return
-    }
-
-    const padding = 88
-    const scale = clamp(
-      Math.min(
-        (stageSize.width - padding * 2) / Math.max(1, bounds.width),
-        (stageSize.height - padding * 2) / Math.max(1, bounds.height),
-      ),
-      MIN_ZOOM,
-      2.5,
-    )
-    setViewport({
-      scale,
-      x: stageSize.width / 2 - (bounds.x + bounds.width / 2) * scale,
-      y: stageSize.height / 2 - (bounds.y + bounds.height / 2) * scale,
-    })
+    setViewport(fitItemsViewport(itemsRef.current, stageSize))
   }, [stageSize])
 
   const editText = useCallback((id: string) => {
@@ -622,37 +608,34 @@ export function KonvaLab({ theme, initialDocument, initialSource, onDocumentChan
     setNotice('downloaded local JSON')
   }, [])
 
-  const exportPng = useCallback(() => {
-    const stage = stageRef.current
-    if (!stage) return
-    const dataUrl = stage.toDataURL({ pixelRatio: 2 })
-    const anchor = document.createElement('a')
-    anchor.href = dataUrl
-    anchor.download = 'osa-konva-lab.png'
-    anchor.click()
-    setNotice('downloaded local PNG')
+  const artworkCanvas = useCallback(() => {
+    const layer = contentLayerRef.current
+    if (!layer) throw new Error('The Konva canvas is not ready yet.')
+    if (drawingRef.current || transformerRef.current?.isTransforming()
+      || Object.values(nodeRefs.current).some((node) => node?.isDragging())) {
+      throw new Error('Finish the current stroke or move before saving.')
+    }
+    for (const item of itemsRef.current) if (item.visible && item.kind === 'image') {
+      const image = nodeRefs.current[item.id]?.findOne<Konva.Image>('Image')
+      if (!image?.image()) throw new Error('An image is still loading or could not open. Wait for it before saving; your existing saved file is unchanged.')
+    }
+    return renderKonvaArtwork(layer)
   }, [])
 
+  const exportPng = useCallback(async () => {
+    try {
+      downloadBlob(await canvasToBlob(artworkCanvas()), 'osa-konva-lab.png')
+      setNotice('Downloaded artwork PNG (no grid or selection handles)')
+    } catch (error) { setNotice(error instanceof Error ? error.message : 'Could not export the picture.') }
+  }, [artworkCanvas])
+
   const capture = useCallback(async (): Promise<LabCapture> => {
-    const stage = stageRef.current
-    if (!stage) throw new Error('The Konva canvas is not ready yet.')
+    const canvas = artworkCanvas()
     const sourceDocument: KonvaLabDocument = { items: itemsRef.current }
     const source = new Blob([JSON.stringify(sourceDocument, null, 2)], { type: 'application/json' })
-    const selectionLayer = transformerRef.current?.getLayer()
-    const selectionWasVisible = selectionLayer?.visible()
-    // Export the current viewport without selection handles; restore the UI
-    // synchronously, before encoding the detached snapshot canvas.
-    const canvas = (() => {
-      selectionLayer?.hide()
-      try {
-        return stage.toCanvas({ pixelRatio: 1 })
-      } finally {
-        if (selectionLayer && selectionWasVisible !== undefined) selectionLayer.visible(selectionWasVisible)
-      }
-    })()
     const preview = await canvasToBlob(canvas)
     return { name: 'Konva drawing', toolId: 'konva', preview, source: { blob: source, name: 'osa-konva-lab.json' } }
-  }, [])
+  }, [artworkCanvas])
 
   const importJson = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0]
@@ -680,7 +663,7 @@ export function KonvaLab({ theme, initialDocument, initialSource, onDocumentChan
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (isTypingTarget(event.target)) return
+      if (isTypingTarget(event.target) || stageHostRef.current?.closest('[hidden], [inert]')) return
 
       if (event.key === ' ') {
         event.preventDefault()
@@ -765,7 +748,7 @@ export function KonvaLab({ theme, initialDocument, initialSource, onDocumentChan
       <header className="konva-lab__header">
         <div className="konva-lab__title">
           <h2>Konva</h2>
-          <p>local-only native canvas test</p>
+          <p>Images, shapes, and text.</p>
         </div>
         <div className="konva-lab__document-actions" aria-label="Local lab document actions">
           <button type="button" disabled={!canUndo} onClick={undo}>undo</button>
@@ -909,7 +892,7 @@ export function KonvaLab({ theme, initialDocument, initialSource, onDocumentChan
             onPointerCancel={cancelDrawing}
           >
             <GridLayer theme={theme} />
-            <Layer>
+            <Layer ref={contentLayerRef}>
               {items.map((item) => (
                 <KonvaItemRenderer
                   key={item.id}

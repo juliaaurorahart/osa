@@ -13,6 +13,7 @@ import { LabMenu } from './LabMenu'
 import { readLabDraftSource } from './labDrafts'
 import { readSavedLabProject } from './labSavedProjects'
 import { isSectionWorkspace, newSectionCapture, SECTION_WORKSPACES } from './labSectionWorkspaces'
+import { canContinueInKonva } from './labWorkspaceHandoff'
 import './LabSection.css'
 
 const InkLab = lazy(() => import('../components/InkLab').then((module) => ({ default: module.InkLab })))
@@ -31,9 +32,10 @@ const editorName = (session: Active | null) => session?.artifact?.toolId === 'kl
 const failureText = (failure: unknown) => failure instanceof Error ? failure.message : 'Could not save. Keep this editor open.'
 
 /** A single active editor keeps the same React identity and DOM parent in every layout. */
-export function LabSection({ notebook, theme, isActive, onRegisterFlush, onOpenProject, onEditorLockChange }: {
+export function LabSection({ notebook, theme, isActive, onRegisterFlush, onOpenProject, onContinueInKonva, onEditorLockChange }: {
   notebook: Notebook; theme: LabTheme; isActive: boolean;
-  onRegisterFlush: (flush: () => Promise<void>) => () => void; onOpenProject: (artifact: LabArtifact) => void;
+  onRegisterFlush: (flush: () => Promise<void>) => () => void; onOpenProject: (artifact: LabArtifact, version?: 'saved' | 'draft') => void;
+  onContinueInKonva?: (artifact: LabArtifact, sectionId?: string) => Promise<void>;
   onEditorLockChange?: (locked: boolean) => void;
 }) {
   const section = notebook.sections?.[0]
@@ -268,6 +270,7 @@ export function LabSection({ notebook, theme, isActive, onRegisterFlush, onOpenP
   const editableArtifact = isSectionWorkspace(active?.artifact?.toolId)
   const canEdit = Boolean(active?.note || editableArtifact)
   const selectedDraft = active?.artifact ? notebook.getProjectDraft(active.artifact.id) : undefined
+  const originalArtifact = active?.artifact?.derivedFrom ? notebook.getArtifact(active.artifact.derivedFrom.artifactId) : undefined
   const draftMatchesSaved = selectedDraft && !selectedDraft.draftActive && selectedDraft.draftBaseFileId === (active?.artifact?.fileId || active?.artifact?.id)
   const candidates = [...notebook.notes.map((note) => ({ id: note.id, name: note.title, objectType: 'note' as const })),
     ...notebook.artifacts.map((artifact) => ({ id: artifact.id, name: artifact.name, objectType: 'artifact' as const }))]
@@ -349,13 +352,17 @@ export function LabSection({ notebook, theme, isActive, onRegisterFlush, onOpenP
                           draftSession={{ registerCheckpoint: registerEditorCheckpoint, onStarted: editorStarted, saveDraft: flush, close: closeManagedEditor }} />
                       : <div className="lab-section__versions"><CellPreview cell={active.cell} notebook={notebook} />
                         <div role="group" aria-label={`${editorName(active)} versions`}><button type="button" disabled={busy} onClick={() => void run(() => startVersionedEditor('saved'))}>Edit Saved</button>
-                          {selectedDraft ? <button type="button" disabled={busy} onClick={() => void run(() => startVersionedEditor('draft'))}>Continue Draft</button> : null}</div>
+                          {selectedDraft ? <button type="button" disabled={busy} onClick={() => void run(() => startVersionedEditor('draft'))}>Continue Draft</button> : null}
+                          {active.artifact.toolId === 'klecks' && onContinueInKonva ? <button type="button" disabled={busy || !canContinueInKonva(active.artifact)}
+                            title="Use the Saved picture in a separate Konva project. Push first to include your latest edits; Klecks layers stay in the original."
+                            onClick={() => void run(() => onContinueInKonva(active.artifact!, section.id))}>Continue in Konva</button> : null}</div>
                         <small>{selectedDraft ? draftMatchesSaved ? 'Draft matches Saved. Both versions are available.' : 'Saved stays unchanged until you Push. A working draft is available.' : 'No draft yet. Opening the editor starts one.'}</small>
                       </div>
                     : active?.artifact?.toolId === 'code' ? <CodeEditorLab theme={theme} initialSource={active.source} beforeRun={flush} active={isActive}
                       workspace={{ connected: Boolean(selectedCell?.workspace), onConnect: () => void run(() => change({ kind: 'workspace', cellId: active.cell.id })),
                         onExample: () => void run(async () => change({ kind: 'capture', capture: await newSectionCapture('code', theme), workspace: 'p5' })) }} />
-                    : active ? <><CellPreview cell={active.cell} notebook={notebook} />{active.artifact?.toolId ? <button type="button" onClick={() => void run(async () => onOpenProject(active.artifact!))}>Open in {active.artifact.toolId}</button> : null}</> : null}
+                    : active ? <><CellPreview cell={active.cell} notebook={notebook} />{active.artifact?.toolId ? <button type="button" onClick={() => void run(async () => onOpenProject(active.artifact!))}>Open in {active.artifact.toolId}</button> : null}
+                      {originalArtifact && !originalArtifact.deletedAt ? <button type="button" onClick={() => void run(async () => onOpenProject(originalArtifact, 'saved'))}>Open original · {originalArtifact.name}</button> : null}</> : null}
                 </Suspense>
               </LabErrorBoundary>
             </LabWorkbenchChromeContext.Provider>

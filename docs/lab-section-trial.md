@@ -34,6 +34,16 @@ Draft autosaves and Close preserve the layered PSD; **Push to notebook** updates
 
 Close first checks that no brush stroke, native dialog, selection transform or export is pending, then waits for a fresh PSD checkpoint and local durability. It never needs a PNG to close. Pending text/filter/transform previews must be applied or canceled in the painter before saving/closing; failures leave the editor open and interactive. This guard uses reviewed DOM markers in the pinned self-hosted bridge, checked by `test:klecks`; review them when upgrading Klecks. Failed initial restoration cannot overwrite an older draft. Background autosave reduces loss, but an abrupt shutdown can still lose changes since the last successful checkpoint. Cloud availability remains governed by the notebook sync indicator.
 
+## Continue a painting in Konva
+
+On a Klecks cell, **Push to notebook → Close editor → Continue in Konva** starts a separate Konva project from the Saved PNG. The same action is in the library's file actions/preview and the standalone Klecks **File** menu. New placeholders cannot be handed off until a painting has been pushed. Draft-only changes are not included.
+
+The layered PSD, original Saved version, and Klecks draft stay untouched. Konva receives one movable image at its native dimensions, with the original topics and a link back to the painting. A handoff from a section adds the new object at the top. The destination is saved before opening, then uses normal Konva drafts and Save; subsequent saves update this new project. **Open original** returns to the original project, not a live-linked copy. Editing one does not automatically change the other.
+
+The PNG is embedded in Konva's native file, kept in the existing file store rather than the notebook database JSON. The notebook records the source object and exact immutable Saved file as provenance, including a `derived-from` edge; backups and independent notebook copies preserve/remap these links. No new schema or dependency is needed. Combined native file + preview remains limited to 25 MB. Handoffs accept PNGs up to 4096 pixels per edge.
+
+Konva fits a restored painting without resizing its stored pixels. Its PNG preview/download includes the full visible artwork, not the current viewport, and omits the grid and selection handles. Transparency, rotated objects and eraser compositing are retained; exports are bounded to 4096 pixels per edge. Finish an active stroke/move and let images load before saving. This first handoff opens the existing full Konva workbench, not another inline editor or a mixed canvas.
+
 ## Data
 
 A section is an ordinary OSA v7 graph node with `lab:role=section`. `lab:cells` stores a versioned ordered list of stable cell IDs and object references. An optional `workspace: p5` belongs to the code cell; it does not duplicate code or introduce another draft writer. Section topics use the existing topic relationships. Object contents and immutable file bytes remain in the established notebook stores, outbox, and private file storage.
@@ -43,3 +53,5 @@ No database migration or new dependency is required. Existing metadata, topic li
 ## Checks
 
 `npm run test:section` exercises the isolated section lifecycle, binary Klecks Saved/Draft round trips, and real Ink checkpointing. `npm run test:klecks` fully decodes the starter layers and checks the host/bridge protocol, pending-operation guards, safe-close preflight, native Submit semantics, trust boundaries and cleanup. The notebook cloud/scope checks cover graph round trips, portable backups, ID remapping, guarded atomic actions, and failed durability acknowledgements. `npm run test:code` checks explicit execution, connected workspace creation, and stop-on-leave behavior. No tests write to user notebooks.
+
+`npm run test:handoff` checks real PNG conversion and Konva rendering in memory: native dimensions, transparent pixels, distant coordinates, rotated bounds, erasers and bounded exports. The scope/navigation/section checks also exercise source-version races, delayed or failed persistence, duplicate activation, source-preview recovery and explicit Saved initialization.

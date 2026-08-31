@@ -41,6 +41,9 @@ const documentWrites = []
 const fileReads = []
 const files = new Map()
 let deferredRead = null
+let heldKonvaStore = null
+let heldDocumentWrite = null
+const deferred = () => { let resolve; const promise = new Promise((done) => { resolve = done }); return { promise, resolve } }
 let failNextWrite = false
 let failCreationResponse = false
 let failCloudRead = false
@@ -55,9 +58,15 @@ const { useSyncedLabNotebook } = loadModule('src/lab/useSyncedLabNotebook.ts', {
   '../graph/boardStorage': { BoardConflictError: class extends Error {} },
   './labNotebookStorage': storage,
   './labNotebookTopics': topics,
+  './labWorkspaceHandoff': {
+    ...draftTestDependency('./labWorkspaceHandoff'),
+    // Decode/export has its own real PNG test; this fixture isolates transaction timing.
+    buildKonvaHandoff: async (source, preview) => ({ toolId: 'konva', name: `${source.name} · Konva`, preview,
+      source: { name: 'painting.konva.json', blob: new Blob(['{"items":[]}'], { type: 'application/json' }) } }),
+  },
   './labNotebookGraph': {
     LAB_PROPERTY: { role: 'lab:role', source: 'source:url', preview: 'asset:image' },
-    labContentsFromSnapshot: (snapshot) => snapshot.contents,
+    labContentsFromSnapshot: (snapshot) => structuredClone(snapshot.contents),
     labSnapshotFromContents: (contents, snapshot) => ({ ...snapshot, contents }),
   },
   './labNotebookDocumentStorage': {
@@ -70,11 +79,13 @@ const { useSyncedLabNotebook } = loadModule('src/lab/useSyncedLabNotebook.ts', {
     readLatestLabRecovery: async () => null,
     keepLabRecovery: async () => {},
     writeLabDocument: async (next, expected) => {
+      if (heldDocumentWrite) { heldDocumentWrite.started.resolve(); await heldDocumentWrite.release.promise }
       if (failNextWrite) { failNextWrite = false; throw new Error('Fixture disk write failed') }
       assert.equal(cached.get(next.scope)?.localVersion ?? null, expected)
       documentWrites.push(next); cached.set(next.scope, next)
     },
     storeLabDocumentFiles: async (key, storedFiles) => {
+      if (heldKonvaStore && storedFiles.some((file) => file.toolId === 'konva')) { heldKonvaStore.started.resolve(); await heldKonvaStore.release.promise }
       fileWrites.push({ scope: key, files: storedFiles })
       for (const file of storedFiles) files.set(`${key}:${file.id}`, file)
     },
@@ -399,9 +410,101 @@ try {
   const sectionWrites = fileWrites.length
   await assert.rejects(() => notebook.changeSection(firstSection.id, { kind: 'capture', capture }, scope), /original notebook/)
   assert.equal(fileWrites.length, sectionWrites, 'Stale section callbacks cannot write blobs to another notebook')
+
+  deferredRead = null
+  const paintingCapture = { name: 'Layered painting', toolId: 'klecks', preview: new Blob(['saved PNG'], { type: 'image/png' }),
+    source: { name: 'painting.psd', blob: new Blob(['layered PSD'], { type: 'image/vnd.adobe.photoshop' }) } }
+  let paintingCell
+  await React.act(async () => { paintingCell = (await notebook.changeSection(firstSection.id, { kind: 'capture', capture: paintingCapture }, localScope)).cell })
+  const paintingId = paintingCell.objectId, originalPainting = notebook.getArtifact(paintingId)
+  const paintingFileId = originalPainting.fileId || originalPainting.id
+  let paintingDraft
+  await React.act(async () => { paintingDraft = await notebook.saveProjectDraft({ projectId: paintingId, toolId: 'klecks', name: 'Layered painting', baseFileId: paintingFileId,
+    source: { name: 'painting.psd', blob: new Blob(['newer draft PSD'], { type: 'image/vnd.adobe.photoshop' }) } }, localScope) })
+  const paintTopic = notebook.topics[0].id
+  await React.act(async () => notebook.setObjectTopics('artifact', paintingId, [paintTopic]))
+  const beforeHandoff = structuredClone(cached.get(localScope).snapshot.contents)
+  const readsBeforeHandoff = fileReads.length, filesBeforeHandoff = fileWrites.length
+  await assert.rejects(() => notebook.continueInKonva(paintingId, paintingFileId, scope, firstSection.id), /original notebook/)
+  await assert.rejects(() => notebook.continueInKonva(paintingId, 'stale-file', localScope, firstSection.id), /changed/)
+  await assert.rejects(() => notebook.continueInKonva(codeCell.objectId, codeCell.objectId, localScope, firstSection.id), /Push/)
+  await assert.rejects(() => notebook.continueInKonva(paintingId, paintingFileId, localScope, 'missing-section'), /section/)
+  assert.equal(fileReads.length, readsBeforeHandoff); assert.equal(fileWrites.length, filesBeforeHandoff)
+  const metadataBefore = documentWrites.length
+  heldDocumentWrite = { started: deferred(), release: deferred() }
+  let destination, settled = false
+  await React.act(async () => {
+    const pending = notebook.continueInKonva(paintingId, paintingFileId, localScope, firstSection.id).then((value) => { destination = value; settled = true })
+    await heldDocumentWrite.started.promise
+    assert.equal(settled, false, 'Do not open the destination before durable metadata acknowledgement')
+    assert.deepEqual(cached.get(localScope).snapshot.contents, beforeHandoff, 'The last durable notebook stays intact while the handoff is saving')
+    await assert.rejects(() => notebook.openNotebook(scope), /save|finish|wait/i)
+    heldDocumentWrite.release.resolve(); heldDocumentWrite = null
+    await pending
+  })
+  const afterHandoff = cached.get(localScope).snapshot.contents
+  assert.equal(documentWrites.length, metadataBefore + 1, 'One commit publishes all handoff metadata')
+  assert.deepEqual(notebook.getArtifact(paintingId), originalPainting)
+  assert.deepEqual(notebook.getProjectDraft(paintingId), paintingDraft, 'Passing Saved to Konva leaves the newer Klecks draft untouched')
+  assert.deepEqual(destination.derivedFrom, { artifactId: paintingId, fileId: paintingFileId })
+  assert.equal(destination.toolId, 'konva'); assert.notEqual(destination.id, paintingId)
+  assert.equal(afterHandoff.sections[0].cells[0].objectId, destination.id, 'The continued project appears at the top of its source section')
+  assert.deepEqual(afterHandoff.sections[0].cells.slice(1), beforeHandoff.sections[0].cells)
+  assert.ok(afterHandoff.topicLinks.some((link) => link.objectId === destination.id && link.topicId === paintTopic))
+  assert.equal(await files.get(`${localScope}:${destination.fileId}`).preview.text(), 'saved PNG', 'Transfer uses Saved, never newer draft pixels')
+  assert.equal(await files.get(`${localScope}:${paintingFileId}`).file.text(), 'layered PSD')
+  assert.equal(await files.get(`${localScope}:${paintingDraft.fileId}`).file.text(), 'newer draft PSD')
+  await React.act(async () => notebook.captureVisual({ ...capture, toolId: 'konva' }, [], localScope, { artifactId: destination.id, expectedFileId: destination.fileId }))
+  assert.deepEqual(notebook.getArtifact(destination.id).derivedFrom, destination.derivedFrom, 'Later saves keep the original source link and exact version')
+  assert.deepEqual(notebook.artifactRevisions.find((item) => item.revisionOf === destination.id).derivedFrom, destination.derivedFrom)
+
+  // A saved source can change at either async boundary. Reject stale handoffs,
+  // while preserving the legitimate source edit and its independent recovery draft.
+  const oldBytes = files.get(`${localScope}:${paintingFileId}`), readGate = deferred()
+  deferredRead = readGate.promise
+  let rejectedRead
+  await React.act(async () => {
+    rejectedRead = assert.rejects(notebook.continueInKonva(paintingId, paintingFileId, localScope, firstSection.id), /changed/)
+    await notebook.captureVisual({ ...paintingCapture, preview: new Blob(['saved PNG 2'], { type: 'image/png' }) }, [], localScope,
+      { artifactId: paintingId, expectedFileId: paintingFileId })
+    const accepted = structuredClone(cached.get(localScope).snapshot.contents)
+    readGate.resolve(oldBytes); await rejectedRead
+    assert.deepEqual(cached.get(localScope).snapshot.contents, accepted)
+  })
+  deferredRead = null
+  const secondFileId = notebook.getArtifact(paintingId).fileId
+  heldKonvaStore = { started: deferred(), release: deferred() }
+  await React.act(async () => {
+    const rejectedStore = assert.rejects(notebook.continueInKonva(paintingId, secondFileId, localScope, firstSection.id), /changed/)
+    await heldKonvaStore.started.promise
+    await notebook.captureVisual({ ...paintingCapture, preview: new Blob(['saved PNG 3'], { type: 'image/png' }) }, [], localScope,
+      { artifactId: paintingId, expectedFileId: secondFileId })
+    const accepted = structuredClone(cached.get(localScope).snapshot.contents)
+    heldKonvaStore.release.resolve(); heldKonvaStore = null
+    await rejectedStore
+    assert.deepEqual(cached.get(localScope).snapshot.contents, accepted, 'Unreferenced bytes cannot publish a stale destination or cell')
+  })
+  const latestPaintingFileId = notebook.getArtifact(paintingId).fileId
+  const savedHandoffCallback = notebook.continueInKonva
+  failCloudRead = false
+  await React.act(async () => notebook.openNotebook(studioScope))
+  const staleCounts = [fileReads.length, fileWrites.length]
+  await assert.rejects(() => savedHandoffCallback(paintingId, latestPaintingFileId, localScope), /original notebook/)
+  assert.deepEqual([fileReads.length, fileWrites.length], staleCounts, 'Old handoff callbacks never read or write into a different notebook')
+  await React.act(async () => notebook.openNotebook(localScope))
+
   failNextWrite = true
   await React.act(async () => assert.rejects(() => notebook.changeSection(firstSection.id, { kind: 'rename', title: 'Unconfirmed' }, localScope), /could not be confirmed/))
   assert.equal(cached.get(localScope).snapshot.contents.sections[0].title, 'Upside-down notebook', 'Failed section write leaves last durable version intact')
+  assert.equal(notebook.isReady, false)
+  await React.act(async () => root.unmount())
+  localStorage.setItem(`osa.lab.notebook:${email}`, localScope)
+  root = createRoot(document.getElementById('root'))
+  await React.act(async () => root.render(React.createElement(Harness)))
+  const beforeFailedHandoff = structuredClone(cached.get(localScope).snapshot)
+  failNextWrite = true
+  await React.act(async () => assert.rejects(() => notebook.continueInKonva(paintingId, latestPaintingFileId, localScope, firstSection.id), /could not be confirmed/))
+  assert.deepEqual(cached.get(localScope).snapshot, beforeFailedHandoff, 'Failed handoff acknowledgement leaves all durable files, drafts, topics and section cells intact')
   assert.equal(notebook.isReady, false)
   console.log('Lab project scope checks passed: atomic pre-write guard, pre/post-read guard, same-scope success, and late callbacks after notebook switching.')
 } finally {

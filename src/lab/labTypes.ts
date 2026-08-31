@@ -78,6 +78,8 @@ export type LabArtifact = {
   deletedAt?: string
   toolId?: LabCaptureToolId
   description?: string
+  /** The original notebook object and exact saved file used by a workspace handoff. */
+  derivedFrom?: { artifactId: string; fileId: string }
   previewMimeType?: string
   sourceName?: string
   /** One hidden working slot per project; native bytes remain immutable. */

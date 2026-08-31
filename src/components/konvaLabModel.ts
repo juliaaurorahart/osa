@@ -111,6 +111,17 @@ export type Point = { x: number; y: number }
 
 export type Bounds = { x: number; y: number; width: number; height: number }
 
+/** Fit once on open (and on request), without resizing the artwork itself. */
+export function fitItemsViewport(items: CanvasItem[], size: { width: number; height: number }): CanvasViewport {
+  const bounds = itemsBounds(items.filter((item) => item.visible))
+  if (!bounds) return { x: 0, y: 0, scale: 1 }
+  const padding = Math.min(88, size.width * 0.1, size.height * 0.1)
+  const scale = Math.max(0.025, Math.min(2.5, (size.width - 2 * padding) / Math.max(1, bounds.width),
+    (size.height - 2 * padding) / Math.max(1, bounds.height)))
+  return { scale, x: size.width / 2 - (bounds.x + bounds.width / 2) * scale,
+    y: size.height / 2 - (bounds.y + bounds.height / 2) * scale }
+}
+
 const MIN_ITEM_SIZE = 12
 
 function makeId(prefix: string) {

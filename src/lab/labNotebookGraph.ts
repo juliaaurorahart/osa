@@ -15,6 +15,7 @@ export const LAB_PROPERTY = {
   isDraft: 'lab:isDraft', draftOf: 'lab:draftOf', draftBaseFileId: 'lab:draftBaseFileId',
   draftActive: 'lab:draftActive', draftHash: 'lab:draftHash',
   cells: 'lab:cells',
+  derivedFrom: 'lab:derivedFrom', derivedFromFileId: 'lab:derivedFromFileId',
 } as const
 
 export type LabNotebookContents = LabNotebookOrganization & { notes: LabNote[]; artifacts: LabArtifact[]; sections?: LabSection[] }
@@ -50,6 +51,9 @@ export function labContentsFromSnapshot(snapshot: BoardSnapshot): LabNotebookCon
         ...(p[LAB_PROPERTY.updatedAt] ? { updatedAt: dateOrDefault(p[LAB_PROPERTY.updatedAt]) } : {}),
         ...(p[LAB_PROPERTY.revisionOf] ? { revisionOf: p[LAB_PROPERTY.revisionOf] } : {}),
         ...(p[LAB_PROPERTY.deletedAt] ? { deletedAt: dateOrDefault(p[LAB_PROPERTY.deletedAt]) } : {}),
+        ...(p[LAB_PROPERTY.derivedFrom] && p[LAB_PROPERTY.derivedFromFileId] ? { derivedFrom: {
+          artifactId: p[LAB_PROPERTY.derivedFrom], fileId: p[LAB_PROPERTY.derivedFromFileId],
+        } } : {}),
         ...(p[LAB_PROPERTY.draftOf] ? { draftOf: p[LAB_PROPERTY.draftOf],
           draftBaseFileId: p[LAB_PROPERTY.draftBaseFileId] || undefined,
           draftActive: p[LAB_PROPERTY.draftActive] === 'true', draftHash: p[LAB_PROPERTY.draftHash] || undefined } : {}),
@@ -110,6 +114,8 @@ export function labSnapshotFromContents(contents: LabNotebookContents, previous 
       [LAB_PROPERTY.updatedAt]: artifact.updatedAt ?? '',
       [LAB_PROPERTY.revisionOf]: artifact.revisionOf ?? '',
       [LAB_PROPERTY.deletedAt]: artifact.deletedAt ?? '',
+      [LAB_PROPERTY.derivedFrom]: artifact.derivedFrom?.artifactId ?? '',
+      [LAB_PROPERTY.derivedFromFileId]: artifact.derivedFrom?.fileId ?? '',
       [LAB_PROPERTY.draftOf]: artifact.draftOf ?? '', [LAB_PROPERTY.draftBaseFileId]: artifact.draftBaseFileId ?? '',
       [LAB_PROPERTY.draftActive]: artifact.draftActive ? 'true' : '', [LAB_PROPERTY.draftHash]: artifact.draftHash ?? '',
       [LAB_PROPERTY.mimeType]: artifact.mimeType, [LAB_PROPERTY.size]: String(artifact.size),
@@ -134,17 +140,21 @@ export function labSnapshotFromContents(contents: LabNotebookContents, previous 
   const artifactIds = new Set(contents.artifacts.map((item) => item.id))
   const edges = previous.edges.filter((edge) => !(edge.data.properties[LAB_PROPERTY.relation] === 'topic'
     && objectIds.has(edge.source) && topicIds.has(edge.target)) && !(edge.data.properties[LAB_PROPERTY.relation] === 'attachment'
-    && noteIds.has(edge.source) && artifactIds.has(edge.target)))
-  const addEdge = (source: string, target: string, relation: 'topic' | 'attachment') => {
+    && noteIds.has(edge.source) && artifactIds.has(edge.target)) && !(edge.data.properties[LAB_PROPERTY.relation] === 'derived-from'
+    && artifactIds.has(edge.source)))
+  const addEdge = (source: string, target: string, relation: 'topic' | 'attachment' | 'derived-from') => {
     const old = previous.edges.find((edge) => edge.source === source && edge.target === target
       && edge.data.properties[LAB_PROPERTY.relation] === relation)
     edges.push(old ?? createGraphEdge({ id: `lab-${relation}:${encodeURIComponent(source)}:${encodeURIComponent(target)}`,
-      source, target, relationship: relation === 'topic' ? 'has topic' : 'includes file',
+      source, target, relationship: relation === 'topic' ? 'has topic' : relation === 'attachment' ? 'includes file' : 'continued from',
       properties: { [LAB_PROPERTY.relation]: relation } }))
   }
   for (const link of contents.topicLinks) if (knownIds.has(link.objectId) && knownIds.has(link.topicId)) addEdge(link.objectId, link.topicId, 'topic')
   for (const note of contents.notes) for (const artifactId of new Set(note.artifactIds ?? [])) {
     if (knownIds.has(artifactId)) addEdge(note.id, artifactId, 'attachment')
+  }
+  for (const artifact of contents.artifacts) if (artifact.derivedFrom && knownIds.has(artifact.derivedFrom.artifactId)) {
+    addEdge(artifact.id, artifact.derivedFrom.artifactId, 'derived-from')
   }
   return { version: 7, nodes, edges }
 }
@@ -155,7 +165,9 @@ export function copyLabContents(contents: LabNotebookContents, createId: () => s
   for (const section of contents.sections ?? []) for (const cell of section.cells) if (!ids.has(cell.objectId)) ids.set(cell.objectId, createId())
   // Unsaved projects reserve an identity before a saved artifact exists.
   for (const artifact of contents.artifacts) if (artifact.draftOf && !ids.has(artifact.draftOf)) ids.set(artifact.draftOf, createId())
-  const fileIds = new Map([...new Set(contents.artifacts.map((artifact) => artifact.fileId || artifact.id))]
+  for (const artifact of contents.artifacts) if (artifact.derivedFrom && !ids.has(artifact.derivedFrom.artifactId)) ids.set(artifact.derivedFrom.artifactId, createId())
+  const fileIds = new Map([...new Set(contents.artifacts.flatMap((artifact) => [artifact.fileId || artifact.id,
+    ...(artifact.derivedFrom ? [artifact.derivedFrom.fileId] : [])]))]
     .map((fileId) => [fileId, createId()]))
   return { ids, fileIds, contents: {
     ...(contents.sections ? { sections: contents.sections.map((section) => ({ ...section, id: ids.get(section.id)!,
@@ -164,6 +176,7 @@ export function copyLabContents(contents: LabNotebookContents, createId: () => s
       ...(note.artifactIds ? { artifactIds: note.artifactIds.map((id) => ids.get(id)).filter((id): id is string => Boolean(id)) } : {}) })),
     artifacts: contents.artifacts.map((artifact) => ({ ...artifact, id: ids.get(artifact.id)!,
       fileId: fileIds.get(artifact.fileId || artifact.id)!,
+      ...(artifact.derivedFrom ? { derivedFrom: { artifactId: ids.get(artifact.derivedFrom.artifactId)!, fileId: fileIds.get(artifact.derivedFrom.fileId)! } } : {}),
       ...(artifact.revisionOf ? { revisionOf: ids.get(artifact.revisionOf) ?? artifact.revisionOf } : {}),
       ...(artifact.draftOf ? { draftOf: ids.get(artifact.draftOf)!,
         draftBaseFileId: artifact.draftBaseFileId ? fileIds.get(artifact.draftBaseFileId) ?? artifact.draftBaseFileId : undefined } : {}) })),
