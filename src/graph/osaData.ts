@@ -174,8 +174,11 @@ export const OSA_OPERATION_VISUAL_ROLE = {
   after: 'after',
 } as const
 
-/** Compact Assembly projections preview at most three pictures total. */
+/** Version-one files may contain up to three historical compact selections. */
 export const MAX_ASSEMBLY_VISUAL_PREVIEWS = 3
+
+/** The current compact Assembly card features one deliberately selected picture. */
+export const MAX_ASSEMBLY_FEATURED_VISUALS = 1
 
 export type OsaOperationVisualRole = (
   typeof OSA_OPERATION_VISUAL_ROLE

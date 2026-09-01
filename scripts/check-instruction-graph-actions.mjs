@@ -167,12 +167,12 @@ try {
     ]),
     [
       ['placement-before', OSA_OPERATION_VISUAL_ROLE.before, true, true],
-      ['placement-after', OSA_OPERATION_VISUAL_ROLE.after, true, true],
+      ['placement-after', OSA_OPERATION_VISUAL_ROLE.after, true, false],
     ],
-    'Repeated legacy placements keep exact identities and receive the safe compact fallback.',
+    'Repeated legacy placements keep exact identities and receive one safe featured fallback.',
   )
   assert.equal(publishedInstructionVisuals(projectedPlacements).length, 2)
-  assert.equal(compactInstructionVisuals(projectedPlacements).length, 2)
+  assert.equal(compactInstructionVisuals(projectedPlacements).length, 1)
 
   const moved = setInstructionVisualRoleEdges(
     preservationEdges,
@@ -249,8 +249,8 @@ try {
   )
   assert.deepEqual(
     compactInstructionVisuals(legacyCompactProjection).map(({ edgeId }) => edgeId),
-    ['compact-placement-1', 'compact-placement-2', 'compact-placement-3'],
-    'A legacy instruction receives one deterministic three-picture fallback across both old roles.',
+    ['compact-placement-1'],
+    'A legacy instruction receives one deterministic featured-picture fallback across both old roles.',
   )
   assert.equal(
     publishedInstructionVisuals(legacyCompactProjection).length,
@@ -265,7 +265,7 @@ try {
   )
   assert.deepEqual(
     materializedCompactEdges.map((edge) => edge.data.properties[OSA_PROPERTY.operationVisualCompact]),
-    ['true', 'true', 'true', 'false'],
+    ['true', 'false', 'false', 'false'],
     'The first compact edit materializes the legacy fallback before changing it.',
   )
   assert.deepEqual(
@@ -283,7 +283,7 @@ try {
     })),
     'Materializing compact choices preserves every placement identity and legacy property.',
   )
-  const deniedFourthCompact = setInstructionVisualCompactEdges(
+  const deniedSecondCompact = setInstructionVisualCompactEdges(
     materializedCompactEdges,
     [operation, ...compactVisuals],
     operation.id,
@@ -291,12 +291,12 @@ try {
     true,
   )
   assert.deepEqual(
-    deniedFourthCompact.map((edge) => edge.data.properties[OSA_PROPERTY.operationVisualCompact]),
-    ['true', 'true', 'true', 'false'],
-    'A fourth compact picture is rejected until one of the selected three is cleared.',
+    deniedSecondCompact.map((edge) => edge.data.properties[OSA_PROPERTY.operationVisualCompact]),
+    ['true', 'false', 'false', 'false'],
+    'Another featured picture is rejected until the selected picture is cleared.',
   )
   const oneDeselected = setInstructionVisualCompactEdges(
-    deniedFourthCompact,
+    deniedSecondCompact,
     [operation, ...compactVisuals],
     operation.id,
     'compact-placement-1',
@@ -311,8 +311,8 @@ try {
   )
   assert.deepEqual(
     fourthSelected.map((edge) => edge.data.properties[OSA_PROPERTY.operationVisualCompact]),
-    ['false', 'true', 'true', 'true'],
-    'Deselecting one compact picture immediately frees its slot for another.',
+    ['false', 'false', 'false', 'true'],
+    'Deselecting the featured picture immediately frees its slot for another.',
   )
 
   const singleInstructionPlacementEdges = preservationEdges.filter((edge) => (
@@ -579,10 +579,10 @@ try {
   )), 'New Visuals are published roleless links rather than another Before/After data model.')
   assert.equal(createdPlacements.filter((edge) => (
     edge.data.properties[OSA_PROPERTY.operationVisualCompact] === 'true'
-  )).length, 3, 'Only the first three newly created Visuals enter the compact Assembly overview.')
+  )).length, 1, 'Only the first newly created Visual enters the compact Assembly overview.')
   assert.equal(createdPlacements.filter((edge) => (
     edge.data.properties[OSA_PROPERTY.operationVisualCompact] === 'false'
-  )).length, 2, 'Additional Visuals remain published in detail without exceeding the compact cap.')
+  )).length, 4, 'Additional Visuals remain published in detail without replacing the featured picture.')
 
   const nodeCountBeforeLink = liveNodes.length
   const firstReusableLinkId = actions.onLinkInstructionVisual(

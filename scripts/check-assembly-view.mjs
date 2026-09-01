@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-import { createElement } from 'react'
+import { createRequire } from 'node:module'
+import { act, createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createServer } from 'vite'
 
 /**
  * Proves the final Assembly instruction contract: one title and Description,
- * one reusable Visuals section, no nested Step editor, a deliberate three-
- * picture compact selection, and all published pictures in read-only detail.
+ * one reusable Visuals section, no nested Step editor, a deliberate compact
+ * selection, one large overview picture, and all published pictures in detail.
  */
 const server = await createServer({
   appType: 'custom',
@@ -15,6 +16,9 @@ const server = await createServer({
 })
 
 try {
+  const { AssemblyDescription } = await server.ssrLoadModule(
+    '/src/components/AssemblyDescription.tsx',
+  )
   const { AssemblyView } = await server.ssrLoadModule('/src/components/AssemblyView.tsx')
   const { AssemblyIndexCard } = await server.ssrLoadModule(
     '/src/components/AssemblyIndexCard.tsx',
@@ -34,10 +38,14 @@ try {
     '/src/components/AssemblyInstructionsView.tsx',
   )
   const {
+    compactInstructionVisuals,
+    instructionVisualsForOperation,
     operationAttentionNote,
     operationCompletedCount,
     operationStatus,
     operationStatusLabel,
+    publishedInstructionVisuals,
+    stepsForOperation,
   } = await server.ssrLoadModule('/src/components/assemblyProjection.ts')
   const { createAssemblyViewUiState } = await server.ssrLoadModule(
     '/src/components/assemblyViewState.ts',
@@ -329,6 +337,29 @@ try {
     return markup.slice(start, end + '</li>'.length)
   }
 
+  const connectorInstructionVisuals = instructionVisualsForOperation(
+    connectorBoxDrill.id,
+    stepsForOperation(connectorBoxDrill.id, nodes, edges),
+    nodes,
+    edges,
+  )
+  const connectorOverviewVisuals = compactInstructionVisuals(connectorInstructionVisuals)
+  assert.equal(
+    connectorOverviewVisuals.length,
+    1,
+    'Even older data with several selected flags derives one featured overview picture.',
+  )
+  assert.equal(
+    connectorOverviewVisuals[0].visual.id,
+    beforeVisuals[1].id,
+    'The overview keeps the first explicitly selected picture in instruction order.',
+  )
+  assert.equal(
+    publishedInstructionVisuals(connectorInstructionVisuals).length,
+    7,
+    'Selecting one overview picture does not remove any published detail Visuals.',
+  )
+
   const compactMarkup = renderAssembly(edges, createAssemblyViewUiState())
   assert.equal(
     (compactMarkup.match(/class="assembly-card assembly-operation-card/g) ?? []).length,
@@ -353,7 +384,7 @@ try {
     'Status remains readable text as well as color.',
   )
   assert.equal(
-    (compactMarkup.match(/aria-label="[^"]+ number complete"><b>0<\/b><\/dd>/g) ?? []).length,
+    (compactMarkup.match(/aria-label="[^"]+ number built"><b>0<\/b> built<\/span>/g) ?? []).length,
     6,
     'Every summary row retains its physical completion count.',
   )
@@ -362,25 +393,27 @@ try {
   assert.equal(
     (connectorSummary.match(/class="assembly-index-card__summary-heading"/g) ?? []).length,
     1,
-    'Each compact row has one heading that keeps the instruction title and progress together.',
+    'Each compact row has one instruction-title heading.',
   )
   assert.match(connectorSummary, /class="assembly-index-card__summary-progress"/)
   assert.ok(
     connectorSummary.indexOf('assembly-index-card__summary-step')
+      < connectorSummary.indexOf('assembly-index-card__summary-info has-picture')
+      && connectorSummary.indexOf('assembly-index-card__summary-info has-picture')
       < connectorSummary.indexOf('assembly-index-card__summary-progress'),
-    'The compact title leads into its status, completion count, and People controls.',
+    'The compact card reads title, one large picture, then progress and ownership.',
   )
-  assert.match(connectorSummary, /aria-label="Connector Box Drill visuals"/)
-  assert.match(connectorSummary, /class="assembly-index-card__summary-pictures" data-count="3"/)
+  assert.match(connectorSummary, /aria-label="Connector Box Drill visual"/)
   assert.equal(
     (connectorSummary.match(/aria-label="Visual \d+"/g) ?? []).length,
-    3,
-    'The summary has one global three-picture compact selection.',
+    1,
+    'The summary shows only the first selected compact Visual.',
   )
   assert.match(connectorSummary, /href="\/test\/before-2\.png"/)
-  assert.match(connectorSummary, /href="\/test\/before-4\.png"/)
-  assert.match(connectorSummary, /href="\/test\/after-2\.png"/)
-  assert.doesNotMatch(connectorSummary, /Before pictures|After pictures|before-1\.png|after-1\.png/)
+  assert.doesNotMatch(
+    connectorSummary,
+    /Before pictures|After pictures|before-1\.png|before-4\.png|after-1\.png|after-2\.png/,
+  )
   assert.doesNotMatch(
     connectorSummary,
     /<figcaption|>Electronics Box<|>Connector Box Drilled<|>—</,
@@ -388,14 +421,14 @@ try {
   )
 
   const afterOnlySummary = summaryRowFor(compactMarkup, 'Shako Wrap Punch Holes')
-  assert.match(afterOnlySummary, /aria-label="Shako Wrap Punch Holes visuals"/)
+  assert.match(afterOnlySummary, /aria-label="Shako Wrap Punch Holes visual"/)
   assert.equal((afterOnlySummary.match(/aria-label="Visual \d+"/g) ?? []).length, 1)
   const emptySummary = summaryRowFor(compactMarkup, 'Front Center – 1 Hole')
-  assert.doesNotMatch(emptySummary, /aria-label="Front Center – 1 Hole visuals"|has-pictures/)
+  assert.doesNotMatch(emptySummary, /aria-label="Front Center – 1 Hole visual"|has-picture/)
   assert.doesNotMatch(
     compactMarkup,
     /aria-label="[^"]+ tools"|<dt>tools<\/dt>/,
-    'The summary row is reserved for pictures, People, and # Complete rather than tool counts.',
+    'The summary card is reserved for one picture, status, built count, and names.',
   )
 
   const authorMarkup = renderAssembly()
@@ -422,7 +455,7 @@ try {
   assert.equal(
     (connectorCard.match(/class="assembly-instruction-visuals__item"/g) ?? []).length,
     8,
-    'The open instruction shows every linked Visual, not only the three compact choices.',
+    'The open instruction shows every linked Visual, not only the featured overview choice.',
   )
   assert.equal(
     (connectorCard.match(/class="assembly-instruction-visuals__item-name"/g) ?? []).length,
@@ -442,7 +475,15 @@ try {
     connectorCard,
     /aria-label="Add photos to Connector Box Drill\. Drop or paste photos here, or open the photo picker\."/,
   )
-  assert.match(connectorCard, />3 of 3 shown in the Assembly overview\. Deselect one before choosing another\.<\/p>/)
+  assert.match(
+    connectorCard,
+    />This picture is shown in the Assembly overview\. Deselect one before choosing another\.<\/p>/,
+  )
+  assert.equal(
+    (connectorCard.match(/<input(?=[^>]*type="checkbox")(?=[^>]*checked="")[^>]*>/g) ?? []).length,
+    1,
+    'Exactly one linked Visual is selected for the Assembly overview.',
+  )
   assert.equal((connectorCard.match(/>Show in Assembly<\/span>/g) ?? []).length, 8)
   assert.equal(
     (connectorCard.match(/accept="image\/\*" multiple=""/g) ?? []).length,
@@ -491,7 +532,7 @@ try {
     'add the tools needed here.',
     'add a shortage, blocker, or urgent note',
     'describe this instruction.',
-    '0 of 3 shown in the Assembly overview.',
+    '0 of 1 shown in the Assembly overview.',
   ]) {
     assert.equal(
       emptyEditorCard.toLocaleLowerCase().includes(verboseEmptyCopy.toLocaleLowerCase()),
@@ -811,6 +852,48 @@ try {
   )
   assert.match(singleDescriptionCard, /One deliberate instruction description\./)
   assert.doesNotMatch(singleDescriptionCard, /Drill the 5\/16 in side hole|Inspect the hole/)
+  assert.match(
+    singleDescriptionCard,
+    /<textarea[^>]*class="is-collapsed"[^>]*aria-label="Connector Box Drill description"/,
+    'A populated author Description starts compact in its existing editable textarea.',
+  )
+
+  const assemblyDescriptionSource = await readFile(
+    new URL('../src/components/AssemblyDescription.tsx', import.meta.url),
+    'utf8',
+  )
+  const lineLimitedElementSource = await readFile(
+    new URL('../src/components/useLineLimitedElement.ts', import.meta.url),
+    'utf8',
+  )
+  const operationCardSource = await readFile(
+    new URL('../src/components/AssemblyOperationCard.tsx', import.meta.url),
+    'utf8',
+  )
+  const instructionsViewSource = await readFile(
+    new URL('../src/components/AssemblyInstructionsView.tsx', import.meta.url),
+    'utf8',
+  )
+  assert.match(
+    lineLimitedElementSource,
+    /const DESCRIPTION_LINE_LIMIT = 5/,
+    'Description disclosure is based on five rendered lines rather than character count.',
+  )
+  assert.match(
+    assemblyDescriptionSource,
+    /\{hasOverflow \? \([\s\S]*?aria-controls=\{descriptionId\}[\s\S]*?aria-expanded=\{expanded\}[\s\S]*?Show less of[\s\S]*?Show more of[\s\S]*?less…[\s\S]*?more…/,
+    'Read-only disclosure is conditional on measured overflow and exposes accessible more/less state.',
+  )
+  assert.match(
+    operationCardSource,
+    /useLineLimitedElement<HTMLTextAreaElement>\([\s\S]*?descriptionHasOverflow \? \([\s\S]*?aria-controls=\{descriptionId\}[\s\S]*?aria-expanded=\{isDescriptionExpanded\}[\s\S]*?Show less of[\s\S]*?Show more of[\s\S]*?less…[\s\S]*?more…/,
+    'The editable textarea uses the same measured five-line, accessible disclosure behavior.',
+  )
+  assert.match(
+    instructionsViewSource,
+    /<AssemblyDescription[\s\S]*?className="assembly-instructions-view__description"[\s\S]*?text=\{description\}[\s\S]*?title=\{nodeTitle\(operation\)\}/,
+    'Read-only instructions use the shared measured Description rather than a separate always-expanded paragraph.',
+  )
 
   const openedIndexMarkup = renderAssembly(edges, {
     ...createAssemblyViewUiState(),
@@ -867,7 +950,7 @@ try {
       }
     : node)
   const completedMarkup = renderAssembly(edges, createAssemblyViewUiState(), completedNodes)
-  assert.match(completedMarkup, /aria-label="Connector Box Drill number complete"><b>12<\/b>/)
+  assert.match(completedMarkup, /aria-label="Connector Box Drill number built"><b>12<\/b> built/)
   assert.equal(operationCompletedCount(
     completedNodes.find((node) => node.id === connectorBoxDrill.id),
   ), 12)
@@ -957,19 +1040,34 @@ try {
   assert.match(peopleSummary, /aria-label="Connector Box Drill people"/)
   assert.match(peopleSummary, />Bria<\/span>/)
   assert.match(peopleSummary, />Sam<\/span>/)
-  assert.match(peopleSummary, /class="assembly-index-card__summary-metrics"/)
-  assert.match(peopleSummary, /class="assembly-index-card__summary-info has-pictures"/)
+  assert.match(peopleSummary, /class="assembly-index-card__summary-built"[^>]*><b>0<\/b> built<\/span>/)
+  assert.match(peopleSummary, /class="assembly-index-card__summary-info has-picture"/)
   assert.doesNotMatch(peopleSummary, /add person|remove Bria/)
   assert.ok(
     peopleSummary.indexOf('assembly-index-card__summary-step')
-      < peopleSummary.indexOf('assembly-index-card__summary-progress')
+      < peopleSummary.indexOf('assembly-index-card__summary-info has-picture')
+      && peopleSummary.indexOf('assembly-index-card__summary-info has-picture')
+        < peopleSummary.indexOf('assembly-index-card__summary-progress')
       && peopleSummary.indexOf('assembly-index-card__summary-progress')
-        < peopleSummary.indexOf('assembly-index-card__summary-metrics')
-      && peopleSummary.indexOf('assembly-index-card__summary-metrics')
-        < peopleSummary.indexOf('aria-label="Connector Box Drill people"')
-      && peopleSummary.indexOf('aria-label="Connector Box Drill people"')
-        < peopleSummary.indexOf('assembly-index-card__summary-info has-pictures'),
-    'Status, # complete, and People share one compact progress group before the separate photo row.',
+        < peopleSummary.indexOf('assembly-index-card__summary-built')
+      && peopleSummary.indexOf('assembly-index-card__summary-built')
+        < peopleSummary.indexOf('aria-label="Connector Box Drill people"'),
+    'The photo sits above one compact status, built-count, and assigned-names row.',
+  )
+
+  const assemblyIndexCardCss = await readFile(
+    new URL('../src/components/AssemblyIndexCard.css', import.meta.url),
+    'utf8',
+  )
+  assert.match(
+    assemblyIndexCardCss,
+    /\.assembly-index-card__summary-progress\s*>\s*\.assembly-people\.is-compact\s+\.assembly-people__label\s*\{[^}]*display:\s*none;/s,
+    'Overview ownership shows the assigned names without a redundant People label.',
+  )
+  assert.match(
+    assemblyIndexCardCss,
+    /\.assembly-index-card__summary-progress\s*>\s*\.assembly-people\.is-compact\s+\.assembly-people__person\s*\{[^}]*min-height:\s*38px;[^}]*font-size:\s*clamp\(/s,
+    'Overview names use larger, touch-legible chips.',
   )
 
   const peopleAuthorCard = articleFor(
@@ -1027,7 +1125,7 @@ try {
   assert.equal(
     (sharedAttentionCard.match(/class="assembly-instruction-visuals__item"/g) ?? []).length,
     7,
-    'Read-only detail includes every published Visual, not only the three compact previews.',
+    'Read-only detail includes every published Visual, not only the one overview picture.',
   )
   assert.doesNotMatch(sharedAttentionCard, /Roleless legacy picture|<figcaption/)
   assert.doesNotMatch(
@@ -1218,8 +1316,132 @@ try {
   }))
   assert.match(previewInstructionsMarkup, />back to Assembly<\/button>/)
 
+  const require = createRequire(import.meta.url)
+  const { JSDOM } = createRequire(require.resolve('fabric'))('jsdom')
+  const descriptionDom = new JSDOM('<div id="description-root"></div>', {
+    url: 'http://localhost',
+  })
+  const domGlobalNames = [
+    'window',
+    'document',
+    'HTMLElement',
+    'Node',
+    'Event',
+    'MouseEvent',
+    'ResizeObserver',
+    'IS_REACT_ACT_ENVIRONMENT',
+  ]
+  const previousDomGlobals = new Map(domGlobalNames.map((name) => [
+    name,
+    Object.getOwnPropertyDescriptor(globalThis, name),
+  ]))
+  let descriptionRoot
+  try {
+    const { window } = descriptionDom
+    const lineHeight = 20
+    const longDescription = 'Long measured description '.repeat(20)
+    const shortDescription = 'Short description.'
+    class TestResizeObserver {
+      observe() {}
+      disconnect() {}
+    }
+    window.getComputedStyle = () => ({
+      lineHeight: `${lineHeight}px`,
+      fontSize: '16px',
+      paddingTop: '0px',
+      paddingBottom: '0px',
+      borderTopWidth: '0px',
+      borderBottomWidth: '0px',
+      minHeight: '0px',
+    })
+    window.requestAnimationFrame = (callback) => {
+      callback(0)
+      return 1
+    }
+    window.cancelAnimationFrame = () => undefined
+    Object.defineProperty(window.HTMLElement.prototype, 'scrollHeight', {
+      configurable: true,
+      get() {
+        return this.textContent === longDescription ? lineHeight * 8 : lineHeight * 2
+      },
+    })
+    window.HTMLElement.prototype.getBoundingClientRect = () => ({
+      width: 320,
+      height: 0,
+      top: 0,
+      right: 320,
+      bottom: 0,
+      left: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    })
+    Object.assign(globalThis, {
+      window,
+      document: window.document,
+      HTMLElement: window.HTMLElement,
+      Node: window.Node,
+      Event: window.Event,
+      MouseEvent: window.MouseEvent,
+      ResizeObserver: TestResizeObserver,
+      IS_REACT_ACT_ENVIRONMENT: true,
+    })
+    window.ResizeObserver = TestResizeObserver
+    const { createRoot } = await import('react-dom/client')
+    descriptionRoot = createRoot(window.document.getElementById('description-root'))
+    await act(async () => {
+      descriptionRoot.render(createElement(AssemblyDescription, {
+        text: longDescription,
+        title: 'Measured instruction',
+      }))
+    })
+    const descriptionText = () => window.document.querySelector('.assembly-description > p')
+    const descriptionToggle = () => window.document.querySelector('.assembly-description__toggle')
+    assert.match(descriptionText().className, /is-collapsed/)
+    assert.equal(descriptionToggle().textContent, 'more…')
+    assert.equal(descriptionToggle().getAttribute('aria-expanded'), 'false')
+    assert.equal(
+      descriptionToggle().getAttribute('aria-controls'),
+      descriptionText().id,
+      'The disclosure identifies the exact Description it expands.',
+    )
+    assert.equal(
+      descriptionToggle().getAttribute('aria-label'),
+      'Show more of Measured instruction description',
+    )
+    await act(async () => {
+      descriptionToggle().dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+    })
+    assert.match(descriptionText().className, /is-expanded/)
+    assert.equal(descriptionToggle().textContent, 'less…')
+    assert.equal(descriptionToggle().getAttribute('aria-expanded'), 'true')
+    assert.equal(
+      descriptionToggle().getAttribute('aria-label'),
+      'Show less of Measured instruction description',
+    )
+    await act(async () => {
+      descriptionRoot.render(createElement(AssemblyDescription, {
+        text: shortDescription,
+        title: 'Measured instruction',
+      }))
+    })
+    assert.equal(descriptionToggle(), null, 'A Description that fits within five lines has no toggle.')
+    assert.match(
+      descriptionText().className,
+      /is-collapsed/,
+      'Changing expanded content to a short Description resets the compact state.',
+    )
+  } finally {
+    if (descriptionRoot) await act(async () => descriptionRoot.unmount())
+    descriptionDom.window.close()
+    for (const [name, descriptor] of previousDomGlobals) {
+      if (descriptor) Object.defineProperty(globalThis, name, descriptor)
+      else delete globalThis[name]
+    }
+  }
+
   console.log(
-    'Assembly checks passed: one Description, unlimited detail photos, three-photo compact previews, status, shared omission, and phone navigation.',
+    'Assembly checks passed: one Description, unlimited detail photos, one-photo overviews, status, built counts, shared omission, and phone navigation.',
   )
 } finally {
   await server.close()

@@ -237,6 +237,17 @@
   min-width: 0;
 }
 
+.assembly-operation-card__description-shell {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.assembly-operation-card__description-shell .assembly-operation-card__description {
+  width: 100%;
+}
+
 .assembly-operation-card__description > span {
   font-size: clamp(1.1rem, 1.7vw, 1.4rem);
   font-weight: 700;
@@ -250,7 +261,23 @@
   border-bottom: 1px solid var(--osa-border-subtle) !important;
   font-size: clamp(1rem, 1.2vw, 1.12rem) !important;
   line-height: 1.55 !important;
-  resize: vertical;
+  resize: none;
+}
+
+.assembly-operation-card__description textarea.is-collapsed {
+  overflow-y: hidden;
+}
+
+.assembly-operation-card__description textarea.is-expanded {
+  overflow-y: hidden;
+}
+
+.assembly-view .assembly-operation-card__description-toggle {
+  min-height: 36px;
+  padding: 3px 5px;
+  color: var(--osa-muted);
+  font-size: 0.92rem;
+  font-weight: 600;
 }
 
 .assembly-operation-card__description-add {
@@ -334,7 +361,8 @@
   }
 
   .assembly-operation-card__description-add,
-  .assembly-operation-card__attention-add {
+  .assembly-operation-card__attention-add,
+  .assembly-view .assembly-operation-card__description-toggle {
     min-height: 44px;
   }
 

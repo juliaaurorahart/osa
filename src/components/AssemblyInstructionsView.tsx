@@ -9,6 +9,7 @@ import {
 import type { TextFlowNode } from '../graph/textNode'
 import { annotationTargetsForNodes } from '../graph/sketchAnnotation'
 import { visualEmbedsForCanvas } from '../graph/visualEmbed'
+import { AssemblyDescription } from './AssemblyDescription'
 import { VisualCanvasPreview } from './VisualCanvas'
 import { AssemblyOperationStatus } from './AssemblyOperationStatus'
 import { AssemblyPeople } from './AssemblyPeople'
@@ -224,7 +225,11 @@ export function AssemblyInstructionsView({
               <AssemblyPeople operation={operation} compact />
 
               {description.trim() ? (
-                <p className="assembly-instructions-view__description">{description}</p>
+                <AssemblyDescription
+                  className="assembly-instructions-view__description"
+                  text={description}
+                  title={nodeTitle(operation)}
+                />
               ) : null}
 
               {visuals.length ? (

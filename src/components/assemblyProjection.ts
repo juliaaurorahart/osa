@@ -1,7 +1,7 @@
 import type { GraphEdge } from '../graph/graphEdge'
 import {
   isOsaOperationStatus,
-  MAX_ASSEMBLY_VISUAL_PREVIEWS,
+  MAX_ASSEMBLY_FEATURED_VISUALS,
   OSA_OPERATION_INSTRUCTION_MODE,
   OSA_OPERATION_STATUS,
   OSA_OPERATION_VISUAL_ROLE,
@@ -107,7 +107,7 @@ export type InstructionVisual = {
   role: OsaOperationVisualRole | null
   /** Whether this placement belongs in the instruction's published Visuals. */
   published: boolean
-  /** Whether this placement is one of the three compact Assembly previews. */
+  /** Whether this placement is the compact Assembly card's featured picture. */
   compact: boolean
   /** Distinguishes an explicit placement choice from a legacy fallback. */
   publishedExplicit: boolean
@@ -129,7 +129,7 @@ export function publishedInstructionVisuals(visuals: readonly InstructionVisual[
 export function compactInstructionVisuals(visuals: readonly InstructionVisual[]) {
   return visuals
     .filter((visual) => visual.published && visual.compact)
-    .slice(0, MAX_ASSEMBLY_VISUAL_PREVIEWS)
+    .slice(0, MAX_ASSEMBLY_FEATURED_VISUALS)
 }
 
 /**
@@ -229,7 +229,7 @@ export function instructionVisualsForOperation(
     ? published.filter((placement) => placement.compactSetting === true)
     : published
   const compactEdgeIds = new Set(compactCandidates
-    .slice(0, MAX_ASSEMBLY_VISUAL_PREVIEWS)
+    .slice(0, MAX_ASSEMBLY_FEATURED_VISUALS)
     .map((placement) => placement.edgeId))
 
   return projected.map((placement): InstructionVisual => ({

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import type { GraphEdge } from '../graph/graphEdge'
 import { OSA_PROPERTY } from '../graph/osaData'
 import type { SketchAnnotationTarget, TextFlowNode } from '../graph/textNode'
@@ -21,6 +21,7 @@ import {
 } from './assemblyViewPresentation'
 import type { AssemblyViewActions } from './assemblyViewTypes'
 import type { AssemblyToolDraft } from './assemblyViewState'
+import { useLineLimitedElement } from './useLineLimitedElement'
 import './AssemblyOperationCard.css'
 
 type AssemblyOperationCardProps = {
@@ -85,6 +86,16 @@ export function AssemblyOperationCard({
 }: AssemblyOperationCardProps) {
   const [isDescriptionEditing, setIsDescriptionEditing] = useState(false)
   const [isAttentionEditing, setIsAttentionEditing] = useState(false)
+  const descriptionId = useId()
+  const {
+    ref: descriptionRef,
+    hasOverflow: descriptionHasOverflow,
+    expanded: isDescriptionExpanded,
+    setExpanded: setIsDescriptionExpanded,
+  } = useLineLimitedElement<HTMLTextAreaElement>({
+    value: description,
+    autoSize: true,
+  })
   const completedCount = operationCompletedCount(operation)
   const attentionValue = operation.data.properties[OSA_PROPERTY.operationAttention] ?? ''
   const attentionNote = operationAttentionNote(operation)
@@ -190,39 +201,65 @@ export function AssemblyOperationCard({
 
           <div className="assembly-card__details">
             {description.trim() || isDescriptionEditing ? (
-              <label className="assembly-operation-card__description">
-                <span>Description</span>
-                <textarea
-                  aria-label={`${title} description`}
-                  placeholder="Description"
-                  value={description}
-                  readOnly={readOnly}
-                  autoFocus={isDescriptionEditing && !description.trim()}
-                  onFocus={() => {
-                    if (!readOnly) setIsDescriptionEditing(true)
-                    onFocusCard()
-                  }}
-                  onBlur={() => {
-                    if (!description.trim()) setIsDescriptionEditing(false)
-                  }}
-                  onChange={(event) => {
-                    if (readOnly) return
-                    actions.onTextChange(operation.id, event.currentTarget.value)
-                    actions.onPropertyChange?.(
-                      operation.id,
-                      OSA_PROPERTY.operationInstructionMode,
-                      'single',
-                    )
-                  }}
-                  style={transparentInput}
-                />
-              </label>
+              <div className="assembly-operation-card__description-shell">
+                <label className="assembly-operation-card__description">
+                  <span>Description</span>
+                  <textarea
+                    id={descriptionId}
+                    ref={descriptionRef}
+                    className={isDescriptionExpanded ? 'is-expanded' : 'is-collapsed'}
+                    aria-label={`${title} description`}
+                    placeholder="Description"
+                    value={description}
+                    readOnly={readOnly}
+                    autoFocus={isDescriptionEditing && !description.trim()}
+                    onFocus={() => {
+                      if (!readOnly) setIsDescriptionEditing(true)
+                      onFocusCard()
+                    }}
+                    onBlur={() => {
+                      if (!description.trim()) {
+                        setIsDescriptionEditing(false)
+                        setIsDescriptionExpanded(false)
+                      }
+                    }}
+                    onChange={(event) => {
+                      if (readOnly) return
+                      actions.onTextChange(operation.id, event.currentTarget.value)
+                      actions.onPropertyChange?.(
+                        operation.id,
+                        OSA_PROPERTY.operationInstructionMode,
+                        'single',
+                      )
+                    }}
+                    style={transparentInput}
+                  />
+                </label>
+                {descriptionHasOverflow ? (
+                  <button
+                    className="assembly-operation-card__description-toggle text-action"
+                    type="button"
+                    aria-controls={descriptionId}
+                    aria-expanded={isDescriptionExpanded}
+                    aria-label={`${isDescriptionExpanded ? 'Show less of' : 'Show more of'} ${title} description`}
+                    onClick={() => setIsDescriptionExpanded((current) => !current)}
+                  >
+                    {isDescriptionExpanded ? 'less…' : 'more…'}
+                  </button>
+                ) : null}
+              </div>
             ) : !readOnly ? (
               <button
                 className="assembly-operation-card__description-add text-action"
                 type="button"
-                onPointerDown={() => setIsDescriptionEditing(true)}
-                onClick={() => setIsDescriptionEditing(true)}
+                onPointerDown={() => {
+                  setIsDescriptionExpanded(false)
+                  setIsDescriptionEditing(true)
+                }}
+                onClick={() => {
+                  setIsDescriptionExpanded(false)
+                  setIsDescriptionEditing(true)
+                }}
               >
                 + description
               </button>

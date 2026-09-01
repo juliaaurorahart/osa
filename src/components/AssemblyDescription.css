@@ -1,0 +1,40 @@
+.assembly-description {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.assembly-description > .is-collapsed {
+  overflow: hidden;
+}
+
+.assembly-description > .is-expanded {
+  overflow: visible;
+}
+
+.assembly-view .assembly-description__toggle {
+  min-height: 36px;
+  padding: 3px 5px;
+  color: var(--osa-muted);
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+@media (max-width: 700px) {
+  .assembly-view .assembly-description__toggle {
+    min-height: 44px;
+  }
+}
+
+@media print {
+  .assembly-description > .is-collapsed,
+  .assembly-description > .is-expanded {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .assembly-description__toggle {
+    display: none !important;
+  }
+}

@@ -216,30 +216,22 @@ export function AssemblyIndexCard({
                 const operationTitle = nodeTitle(operation)
                 const attentionNote = operationAttentionNote(operation)
                 const statusLabel = operationStatusLabel(operationStatus(operation))
-                const visibleVisuals = visuals.slice(0, 3)
-                const renderPictures = visibleVisuals.length ? (
+                const overviewVisual = visuals[0]
+                const renderPicture = overviewVisual ? (
                   <div
                     className="assembly-index-card__summary-picture-group"
-                    aria-label={`${operationTitle} visuals`}
+                    aria-label={`${operationTitle} visual`}
                   >
                     <span
-                      className="assembly-index-card__summary-pictures"
-                      data-count={visibleVisuals.length}
+                      className="assembly-index-card__summary-picture"
+                      aria-label="Visual 1"
                     >
-                      {visibleVisuals.map((visual, visualIndex) => (
-                        <span
-                          className="assembly-index-card__summary-picture"
-                          aria-label={`Visual ${visualIndex + 1}`}
-                          key={`${visual.id}-${visualIndex}`}
-                        >
-                          <VisualCanvasPreview
-                            visual={visual}
-                            embeddedVisuals={visualEmbedsForCanvas(visual.id, nodes, edges)}
-                            annotationTargets={annotationTargets}
-                            className="assembly-index-card__summary-thumbnail"
-                          />
-                        </span>
-                      ))}
+                      <VisualCanvasPreview
+                        visual={overviewVisual}
+                        embeddedVisuals={visualEmbedsForCanvas(overviewVisual.id, nodes, edges)}
+                        annotationTargets={annotationTargets}
+                        className="assembly-index-card__summary-thumbnail"
+                      />
                     </span>
                   </div>
                 ) : null
@@ -260,33 +252,33 @@ export function AssemblyIndexCard({
                           {operationTitle}
                         </span>
                       </button>
+                    </div>
+                    {renderPicture ? (
                       <div
-                        className="assembly-index-card__summary-progress"
-                        role="group"
-                        aria-label={`${operationTitle} progress`}
+                        className="assembly-index-card__summary-info has-picture"
+                        aria-label={`${operationTitle} overview`}
                       >
-                        <AssemblyOperationStatus operation={operation} />
-                        <dl className="assembly-index-card__summary-metrics">
-                          <div>
-                            <dt># complete</dt>
-                            <dd aria-label={`${operationTitle} number complete`}><b>{completedCount}</b></dd>
-                          </div>
-                        </dl>
-                        <AssemblyPeople operation={operation} compact />
+                        {renderPicture}
                       </div>
+                    ) : null}
+                    <div
+                      className="assembly-index-card__summary-progress"
+                      role="group"
+                      aria-label={`${operationTitle} progress: ${completedCount} built`}
+                    >
+                      <AssemblyOperationStatus operation={operation} />
+                      <span
+                        className="assembly-index-card__summary-built"
+                        aria-label={`${operationTitle} number built`}
+                      >
+                        <b>{completedCount}</b> built
+                      </span>
+                      <AssemblyPeople operation={operation} compact />
                     </div>
                     {attentionNote ? (
                       <div className="assembly-index-card__attention-note">
                         <span className="assembly-index-card__attention-dot" aria-hidden="true" />
                         <span>{attentionNote}</span>
-                      </div>
-                    ) : null}
-                    {renderPictures ? (
-                      <div
-                        className="assembly-index-card__summary-info has-pictures"
-                        aria-label={`${operationTitle} overview`}
-                      >
-                        {renderPictures}
                       </div>
                     ) : null}
                   </li>

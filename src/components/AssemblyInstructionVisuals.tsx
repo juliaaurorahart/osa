@@ -8,7 +8,7 @@ import {
   type DragEvent,
 } from 'react'
 import type { GraphEdge } from '../graph/graphEdge'
-import { MAX_ASSEMBLY_VISUAL_PREVIEWS } from '../graph/osaData'
+import { MAX_ASSEMBLY_FEATURED_VISUALS } from '../graph/osaData'
 import { storeImageFile } from '../graph/imageAsset'
 import { ImageStorageContext } from '../graph/ImageStorageContext'
 import type { SketchAnnotationTarget, TextFlowNode } from '../graph/textNode'
@@ -52,7 +52,7 @@ function photoTitle(file: File) {
 
 /**
  * One instruction links reusable Visuals. The editor shows every link, while
- * the compact Assembly card deliberately features at most three of them.
+ * the compact Assembly card deliberately features one selected picture.
  */
 export function AssemblyInstructionVisuals({
   operationId,
@@ -79,7 +79,7 @@ export function AssemblyInstructionVisuals({
     .filter((node) => isVisualNode(node) && !linkedVisualIds.has(node.id))
     .sort((left, right) => nodeTitle(left).localeCompare(nodeTitle(right)))
   const compactCount = visuals.filter(({ compact }) => compact).length
-  const compactLimitReached = compactCount >= MAX_ASSEMBLY_VISUAL_PREVIEWS
+  const compactLimitReached = compactCount >= MAX_ASSEMBLY_FEATURED_VISUALS
 
   if (readOnly && visuals.length === 0) return null
 
@@ -230,7 +230,7 @@ export function AssemblyInstructionVisuals({
             {edgeId ? (
               <label
                 className={`assembly-instruction-visuals__compact-choice${cannotSelect ? ' is-disabled' : ''}`}
-                title={cannotSelect ? 'Three visuals are already shown. Deselect one first.' : undefined}
+                title={cannotSelect ? 'A picture is already shown. Deselect it first.' : undefined}
               >
                 <input
                   type="checkbox"
@@ -276,8 +276,8 @@ export function AssemblyInstructionVisuals({
               {visuals.length ? (
                 <p id={compactHelpId}>
                   {compactCount
-                    ? `${compactCount} of ${MAX_ASSEMBLY_VISUAL_PREVIEWS} shown in the Assembly overview.`
-                    : `Choose up to ${MAX_ASSEMBLY_VISUAL_PREVIEWS} for the Assembly overview.`}
+                    ? 'This picture is shown in the Assembly overview.'
+                    : 'Choose one picture for the Assembly overview.'}
                   {compactLimitReached ? ' Deselect one before choosing another.' : ''}
                 </p>
               ) : null}

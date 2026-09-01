@@ -17,7 +17,7 @@ import {
   isContainableOsaObject,
   isPartLike,
   isOsaOperationVisualRole,
-  MAX_ASSEMBLY_VISUAL_PREVIEWS,
+  MAX_ASSEMBLY_FEATURED_VISUALS,
   OSA_OPERATION_STATUS,
   OSA_OPERATION_VISUAL_ROLE,
   operationVisualDisplayOrder,
@@ -237,7 +237,7 @@ function compactInstructionVisualEdgeIds(states: InstructionVisualLinkState[]) {
     ? published.filter((state) => state.compactSetting === true)
     : published
   return new Set(candidates
-    .slice(0, MAX_ASSEMBLY_VISUAL_PREVIEWS)
+    .slice(0, MAX_ASSEMBLY_FEATURED_VISUALS)
     .map(({ edge }) => edge.id))
 }
 
@@ -302,7 +302,7 @@ export function materializeInstructionVisualCompactEdges(
   return changed ? nextEdges : edges
 }
 
-/** Changes one compact selection while enforcing the shared three-picture cap. */
+/** Changes the featured compact selection while enforcing the one-picture card. */
 export function setInstructionVisualCompactEdges(
   edges: GraphEdge[],
   nodes: TextFlowNode[],
@@ -342,7 +342,7 @@ export function setInstructionVisualCompactEdges(
   const selectedCount = selectedInstructionVisualCount(materialized, nodes, operationId)
   const isSelected = placement.compactSetting === true
   if (isSelected === compact) return materialized
-  if (compact && selectedCount >= MAX_ASSEMBLY_VISUAL_PREVIEWS) return materialized
+  if (compact && selectedCount >= MAX_ASSEMBLY_FEATURED_VISUALS) return materialized
 
   return materialized.map((edge) => edge.id === placementEdgeId
     ? {
@@ -679,7 +679,7 @@ export function useAssemblyGraphActions({
           [OSA_PROPERTY.relationRole]: OSA_RELATION.operationVisual,
           [OSA_PROPERTY.operationVisualPublished]: 'true',
           [OSA_PROPERTY.operationVisualCompact]: (
-            selectedCount < MAX_ASSEMBLY_VISUAL_PREVIEWS ? 'true' : 'false'
+            selectedCount < MAX_ASSEMBLY_FEATURED_VISUALS ? 'true' : 'false'
           ),
           [OSA_PROPERTY.operationVisualOrder]: String(
             nextOperationVisualOrder(operationId, preparedEdges),
@@ -734,7 +734,7 @@ export function useAssemblyGraphActions({
           [OSA_PROPERTY.relationRole]: OSA_RELATION.operationVisual,
           [OSA_PROPERTY.operationVisualPublished]: 'true',
           [OSA_PROPERTY.operationVisualCompact]: (
-            selectedCount < MAX_ASSEMBLY_VISUAL_PREVIEWS ? 'true' : 'false'
+            selectedCount < MAX_ASSEMBLY_FEATURED_VISUALS ? 'true' : 'false'
           ),
           [OSA_PROPERTY.operationVisualOrder]: String(
             nextOperationVisualOrder(operationId, preparedEdges),
