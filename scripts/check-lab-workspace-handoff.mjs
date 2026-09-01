@@ -32,9 +32,12 @@ const bytes = picture.toBuffer('image/png'), preview = new Blob([bytes], { type:
 const original = { id: 'painting', fileId: 'painting-v1', name: 'Painted thought', toolId: 'klecks',
   mimeType: 'image/vnd.adobe.photoshop', previewMimeType: 'image/png', size: 42, createdAt: '2026-08-31T00:00:00Z' }
 assert.equal(canContinueInKonva(original), true)
-for (const changed of [{ draftOf: 'painting' }, { revisionOf: 'painting' }, { deletedAt: 'now' }, { previewMimeType: 'image/svg+xml' }, { toolId: 'ink' }]) {
+for (const changed of [{ draftOf: 'painting' }, { revisionOf: 'painting' }, { deletedAt: 'now' }, { previewMimeType: 'image/svg+xml' }, { toolId: 'konva' }]) {
   assert.equal(canContinueInKonva({ ...original, ...changed }), false)
 }
+assert.equal(canContinueInKonva({ ...original, toolId: 'ink' }), true)
+assert.equal(canContinueInKonva({ ...original, toolId: undefined, mimeType: 'image/jpeg', previewMimeType: 'image/jpeg' }), true)
+assert.equal(canContinueInKonva({ ...original, toolId: undefined, mimeType: 'image/webp', previewMimeType: 'image/webp' }), true)
 const capture = await buildKonvaHandoff(original, preview)
 const project = projects.parseKonvaProjectSource(await capture.source.blob.text())
 assert.equal(await capture.source.blob.text(), JSON.stringify(project, null, 2), 'Opening the seeded project uses the same encoding as Konva drafts, not an artificial unsaved edit')
@@ -45,8 +48,17 @@ assert.equal(project.items.length, 1)
 assert.deepEqual([item.width, item.height, item.x, item.y, item.strokeWidth], [1200, 900, 0, 0, 0])
 assert.equal(item.locked, false)
 assert.deepEqual(Buffer.from(item.src.split(',')[1], 'base64'), bytes, 'Native Konva JSON embeds the original pixels; no remote URL dependency')
-assert.equal(storage.createStoredLabCapture(capture, 'destination', original.createdAt).sourceName, 'painting.konva.json')
+assert.equal(storage.createStoredLabCapture(capture, 'destination', original.createdAt).sourceName, 'markup.konva.json')
 assert.equal(original.fileId, 'painting-v1')
+const jpegBytes = picture.toBuffer('image/jpeg'), jpegPreview = new Blob([jpegBytes], { type: 'image/jpeg' })
+const importedPhoto = { ...original, id: 'photo', fileId: 'photo-v1', name: 'Meeting screenshot', toolId: undefined,
+  mimeType: 'image/jpeg', previewMimeType: 'image/jpeg' }
+const jpegCapture = await buildKonvaHandoff(importedPhoto, jpegPreview)
+const jpegProject = projects.parseKonvaProjectSource(await jpegCapture.source.blob.text())
+assert.match(jpegProject.items[0].src, /^data:image\/jpeg;base64,/)
+assert.deepEqual([jpegProject.items[0].width, jpegProject.items[0].height], [1200, 900])
+assert.equal(jpegCapture.preview, jpegPreview, 'A photo keeps its exact Saved bytes as the first Konva preview')
+assert.match(jpegCapture.description, /original notebook file stays unchanged/)
 await assert.rejects(() => buildKonvaHandoff(original, new Blob(['wrong'], { type: 'image/png' })), /readable PNG/)
 await assert.rejects(() => buildKonvaHandoff(original, new Blob(['<svg/>'], { type: 'image/svg+xml' })), /Saved picture/)
 const huge = new Blob([new Uint8Array(12 * 1024 * 1024)], { type: 'image/png' })

@@ -20,11 +20,14 @@ try {
     '/src/components/AssemblyInstructionsView.tsx',
   )
   const { PropertiesPanel } = await server.ssrLoadModule('/src/components/PropertiesPanel.tsx')
-  const { inclusionRelationshipsFor } = await server.ssrLoadModule(
+  const { inclusionRelationshipsFor, operationCompletedCount } = await server.ssrLoadModule(
     '/src/components/assemblyProjection.ts',
   )
   const { createAssemblyViewUiState } = await server.ssrLoadModule(
     '/src/components/assemblyViewState.ts',
+  )
+  const { migrateOperationTextForNewStep } = await server.ssrLoadModule(
+    '/src/app/useAssemblyGraphActions.ts',
   )
   const { OSA_PROPERTY, OSA_RELATION, osaRole } = await server.ssrLoadModule('/src/graph/osaData.ts')
   const { createGraphEdge } = await server.ssrLoadModule('/src/graph/graphEdge.ts')
@@ -36,6 +39,17 @@ try {
   const assemblies = plan.nodes.filter((node) => osaRole(node) === 'assembly')
   const operations = plan.nodes.filter((node) => node.data.kind === 'action')
   const noop = () => undefined
+
+  assert.deepEqual(
+    migrateOperationTextForNewStep('Keep the two wires together.', 0),
+    { stepText: 'Keep the two wires together.', operationText: '' },
+    'Adding the first structured Step moves the existing freeform instruction instead of hiding it.',
+  )
+  assert.deepEqual(
+    migrateOperationTextForNewStep('Older card note', 1),
+    { stepText: '', operationText: 'Older card note' },
+    'Adding later Steps never consumes unrelated card text.',
+  )
   const assembly = assemblies[0]
   const connectorBoxDrill = operations.find((operation) => operation.data.name === 'Connector Box Drill')
   const drill = plan.nodes.find((node) => node.data.name === 'Drill')
@@ -168,6 +182,7 @@ try {
       onCreateAssembly: () => '',
       onCreateOperation: () => '',
       onReorderOperation: noop,
+      onMoveOperation: noop,
       onRemoveOperation: noop,
       onCreateStep: () => '',
       onReorderStep: noop,
@@ -182,16 +197,48 @@ try {
       onUnlinkTool: noop,
       onNameChange: noop,
       onTextChange: noop,
+      onTaskCompletionChange: noop,
       onPropertyChange: noop,
     },
     onOpenNode: noop,
   }))
 
   const authorMarkup = renderAssembly()
-  assert.equal((authorMarkup.match(/assembly-operation-card/g) ?? []).length, 6)
-  assert.match(authorMarkup, /assembly-index-card/)
+  const compactMarkup = renderAssembly(edges, createAssemblyViewUiState())
+  assert.equal(
+    (compactMarkup.match(/class="assembly-card assembly-operation-card/g) ?? []).length,
+    0,
+    'The default Assembly view is one summary card, not a stack of detail cards.',
+  )
+  assert.match(compactMarkup, /assembly-index-card/)
+  assert.equal(
+    (compactMarkup.match(/class="assembly-index-card__summary-step(?: is-complete)?"/g) ?? []).length,
+    6,
+  )
+  assert.match(compactMarkup, /is-summary-surface/)
+  assert.match(compactMarkup, />6 instructions</)
+  assert.equal(
+    (compactMarkup.match(/<b>0<\/b> complete/g) ?? []).length,
+    6,
+    'Every instruction row reports its own physical completion count.',
+  )
+  assert.equal(
+    (compactMarkup.match(/class="assembly-index-card__summary-info"/g) ?? []).length,
+    6,
+    'Every instruction title has one always-visible overview band.',
+  )
+  assert.equal(
+    (authorMarkup.match(/class="assembly-card assembly-operation-card/g) ?? []).length,
+    1,
+    'Opening an instruction isolates that card for editing.',
+  )
+  assert.doesNotMatch(authorMarkup, /assembly-index-card/)
+  assert.doesNotMatch(authorMarkup, /aria-label="Shako Wrap Punch Holes card"/)
   assert.match(authorMarkup, /Shako Hat Assembly Instructions/)
-  assert.match(authorMarkup, /<section class="work-view assembly-view" aria-label="Assembly">/)
+  assert.match(authorMarkup, /<section class="work-view assembly-view is-detail-surface" aria-label="Assembly">/)
+  assert.match(authorMarkup, />Done<\/button>/)
+  assert.match(authorMarkup, /aria-label="Connector Box Drill number complete"/)
+  assert.doesNotMatch(authorMarkup, /pin card|mark complete/)
   assert.doesNotMatch(
     authorMarkup,
     /<h1[^>]*>Assembly<\/h1>/,
@@ -203,12 +250,12 @@ try {
     'The Assembly document header stays focused on the instruction cards; workspace settings own global controls.',
   )
   assert.match(authorMarkup, /aria-label="Connector Box Drill card"/)
-  const authorTitleCardStart = authorMarkup.indexOf('aria-label="assembly index card"')
-  const authorTitleCardEnd = authorMarkup.indexOf('</article>', authorTitleCardStart)
+  const authorTitleCardStart = compactMarkup.indexOf('aria-label="assembly index card"')
+  const authorTitleCardEnd = compactMarkup.indexOf('</article>', authorTitleCardStart)
   assert.ok(authorTitleCardStart >= 0 && authorTitleCardEnd >= 0, 'The Assembly title card renders.')
-  const authorTitleCard = authorMarkup.slice(authorTitleCardStart, authorTitleCardEnd)
+  const authorTitleCard = compactMarkup.slice(authorTitleCardStart, authorTitleCardEnd)
   assert.deepEqual(
-    [...authorTitleCard.matchAll(/<li>([^<]+)<\/li>/g)].map(([, title]) => title),
+    [...authorTitleCard.matchAll(/aria-label="Edit ([^"]+) instruction"/g)].map(([, title]) => title),
     [
       'Connector Box Drill',
       'Shako Wrap Punch Holes',
@@ -217,31 +264,88 @@ try {
       'Boost Attach V-out Wires',
       'Power Section Assembly',
     ],
-    'The title card contains only the Assembly name and its ordered card titles.',
+    'The title card contains the Assembly name and ordered status rows that open each instruction.',
+  )
+  assert.match(
+    authorTitleCard,
+    /aria-label="Connector Box Drill before">Electronics Box<\/span>/,
+    'The overview reads the instruction input from its canonical Parts In relationship.',
+  )
+  assert.match(
+    authorTitleCard,
+    /aria-label="Connector Box Drill after">Connector Box Drilled<\/span>/,
+    'The overview reads the instruction result from its canonical primary output relationship.',
+  )
+  assert.match(
+    authorTitleCard,
+    /src="\/import-assets\/shako-light-wrap\/operation-01.png"[^>]*alt="Drilling diagram for the Connector Box Drilled work-state/,
+    'An existing canonical output image is shown as a small overview thumbnail.',
+  )
+  assert.match(
+    authorTitleCard,
+    /aria-label="Connector Box Drill steps">2<\/dd>/,
+    'The overview counts structured Steps without exposing their full text.',
+  )
+  assert.match(
+    authorTitleCard,
+    /aria-label="Connector Box Drill tools">4<\/dd>/,
+    'The overview counts unique linked Tools.',
+  )
+  assert.match(
+    authorTitleCard,
+    /aria-label="Connector Box Drill complete"><b>0<\/b> complete<\/dd>/,
+    'The overview keeps the existing physical completion count.',
+  )
+  assert.match(
+    authorTitleCard,
+    /aria-label="Shako Wrap Punch Holes after">—<\/span>/,
+    'Missing canonical summary data uses an em dash instead of an invented value.',
   )
   assert.doesNotMatch(
     authorTitleCard,
-    /parts &amp; tools|>steps<|>visuals<|assembly overview|semantic information|expenses/,
-    'The Assembly title card does not repeat instruction-card details.',
+    /visuals|assembly overview|semantic information|expenses/,
+    'The Assembly title card stays focused on the compact instruction overview.',
   )
   const openedIndexMarkup = renderAssembly(edges, {
     ...createAssemblyViewUiState(),
     openCardId: 'assembly-index',
   })
-  assert.match(openedIndexMarkup, /aria-label="move Connector Box Drill card down"/)
+  assert.equal((openedIndexMarkup.match(/class="assembly-card assembly-operation-card/g) ?? []).length, 0)
+  assert.match(openedIndexMarkup, />Done<\/button>/)
+  assert.match(openedIndexMarkup, /aria-label="Move Connector Box Drill to position"/)
   assert.match(
     openedIndexMarkup,
-    />\+ card<\/button>/,
+    />\+ instruction<\/button>/,
     'Card creation remains available where the Assembly card list is edited.',
   )
+
+  const lockedMarkup = renderAssembly(edges, {
+    ...createAssemblyViewUiState(),
+    lockedCardId: connectorBoxDrill.id,
+  })
+  assert.equal((lockedMarkup.match(/class="assembly-card assembly-operation-card/g) ?? []).length, 1)
+  assert.doesNotMatch(lockedMarkup, /assembly-index-card/)
+  assert.match(lockedMarkup, /aria-label="Open Connector Box Drill details"/)
 
   const connectorStart = authorMarkup.indexOf('aria-label="Connector Box Drill card"')
   const connectorEnd = authorMarkup.indexOf('</article>', connectorStart)
   assert.ok(connectorStart >= 0 && connectorEnd >= 0, 'The Connector Box Drill card renders.')
   const connectorCard = authorMarkup.slice(connectorStart, connectorEnd)
-  for (const label of ['parts &amp; tools', 'parts in', 'tools', 'steps']) {
-    assert.match(connectorCard, new RegExp(`>${label}<`), `Connector Box Drill shows ${label}.`)
+  for (const label of ['parts', 'tools']) {
+    assert.match(connectorCard, new RegExp(`>${label}<`, 'i'), `Connector Box Drill shows ${label}.`)
   }
+  assert.match(connectorCard, />Description</)
+  assert.match(connectorCard, />Visual</)
+  assert.doesNotMatch(
+    connectorCard,
+    /assembly-operation-steps__label|assembly-operation-step__field-label">Step</,
+    'The editor does not stack generic Step headings above the actual Step title.',
+  )
+  assert.doesNotMatch(
+    connectorCard,
+    />parts &amp; tools</,
+    'The focused editor does not repeat a parts-and-tools heading above its labeled fields.',
+  )
   assert.doesNotMatch(connectorCard, /instruction card 1|instruction 1 title/i)
   assert.match(connectorCard, /Electronics Box/)
   assert.match(connectorCard, /Drill/)
@@ -279,36 +383,42 @@ try {
   )
   assert.doesNotMatch(authorMarkup, /This card represents|<span>Out<\/span>|<span>Entrance<\/span>|<span>Exit<\/span>/)
 
-  // The compact authoring card and the team-facing document use the same
-  // published Step -> Visual relationship.
-  const compactMarkup = renderAssembly(edges, createAssemblyViewUiState())
-  assert.equal((compactMarkup.match(/assembly-card__summary-canvas-preview/g) ?? []).length, 1)
-  assert.match(compactMarkup, /Drill the 5\/16 in side hole/)
   assert.doesNotMatch(
     compactMarkup,
-    />Step \d+(?:\s*·[^<]*)?<\//,
-    'Compact Assembly cards use Step names without repeating visible Step numbers.',
+    /Drill the 5\/16 in side hole|Use the 5\/16 in bit on the marked side\.|assembly-card__summary-canvas-preview/,
+    'The summary stays scannable and does not repeat instruction details or visuals.',
   )
-  assert.match(
-    compactMarkup,
-    /Use the 5\/16 in bit on the marked side\./,
-    'The compact Assembly card repeats the actual Step description, not only its canvas label.',
+
+  const completedNodes = nodes.map((node) => node.data.kind === 'action'
+    ? {
+        ...node,
+        data: {
+          ...node.data,
+          properties: {
+            ...node.data.properties,
+            ...(node.id === connectorBoxDrill.id
+              ? { [OSA_PROPERTY.operationCompletedCount]: '12' }
+              : {}),
+          },
+        },
+      }
+    : node)
+  const completedMarkup = renderAssembly(
+    edges,
+    createAssemblyViewUiState(),
+    completedNodes,
   )
-  const compactConnectorStart = compactMarkup.indexOf('aria-label="Open Connector Box Drill details"')
-  const compactConnectorEnd = compactMarkup.indexOf('</article>', compactConnectorStart)
-  const compactConnectorCard = compactMarkup.slice(compactConnectorStart, compactConnectorEnd)
-  const firstCompactStep = compactConnectorCard.indexOf('Drill the 5/16 in side hole')
-  const firstCompactDescription = compactConnectorCard.indexOf('Use the 5/16 in bit on the marked side.')
-  const firstCompactCanvas = compactConnectorCard.indexOf('assembly-card__summary-canvas-preview')
-  const secondCompactStep = compactConnectorCard.indexOf('Inspect the hole')
-  assert.ok(
-    firstCompactStep >= 0
-      && firstCompactStep < firstCompactDescription
-      && firstCompactDescription < firstCompactCanvas
-      && firstCompactCanvas < secondCompactStep,
-    'Each compact-card canvas follows its matching Step description before the next Step begins.',
-  )
-  assert.doesNotMatch(compactMarkup, /visual filter|aria-label="[^"]+ owner"/)
+  assert.match(completedMarkup, /<b>12<\/b> complete/)
+  assert.equal(operationCompletedCount(completedNodes.find((node) => node.id === connectorBoxDrill.id)), 12)
+  assert.equal(operationCompletedCount({
+    ...connectorBoxDrill,
+    data: {
+      ...connectorBoxDrill.data,
+      task: connectorBoxDrill.data.task
+        ? { ...connectorBoxDrill.data.task, completedAt: '2026-09-01T12:00:00.000Z' }
+        : null,
+    },
+  }), 1, 'A legacy completed checkbox remains readable as one completed item.')
 
   const staleCardNoteNodes = nodes.map((node) => node.id === connectorBoxDrill.id
     ? {
@@ -359,7 +469,7 @@ try {
   )
   assert.doesNotMatch(
     instructionsTitleCard,
-    /parts &amp; tools|>parts in<|>tools<|>steps<|>visuals<|assembly overview|semantic information|expenses/,
+    /parts &amp; tools|>parts<|>tools<|>steps<|>visuals<|assembly overview|semantic information|expenses/,
     'The reader-facing title card is only an Assembly title and ordered card list.',
   )
 
@@ -369,8 +479,8 @@ try {
   const readerConnectorEnd = instructionsMarkup.indexOf('</article>', readerConnectorStart)
   assert.ok(readerConnectorStart >= 0 && readerConnectorEnd >= 0, 'The reader-facing card renders.')
   const readerConnectorCard = instructionsMarkup.slice(readerConnectorStart, readerConnectorEnd)
-  for (const label of ['parts &amp; tools', 'parts in', 'tools', 'steps']) {
-    assert.match(readerConnectorCard, new RegExp(`>${label}<`), `The reader sees Connector Box Drill ${label}.`)
+  for (const label of ['parts &amp; tools', 'parts', 'tools', 'steps']) {
+    assert.match(readerConnectorCard, new RegExp(`>${label}<`, 'i'), `The reader sees Connector Box Drill ${label}.`)
   }
   assert.match(readerConnectorCard, /Drill the 5\/16 in side hole/)
   assert.match(readerConnectorCard, /Use the 5\/16 in bit on the marked side\./)

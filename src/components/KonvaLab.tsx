@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type ClipboardEvent as ReactClipboardEvent,
   type DragEvent as ReactDragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react'
@@ -15,6 +16,7 @@ import { canvasToBlob, downloadBlob } from '../lab/labCaptureUtils'
 import type { LabCapture, LabProjectSource } from '../lab/labTypes'
 import { parseKonvaProjectSource } from '../lab/labDrawingProjectSource'
 import { KonvaItemRenderer } from './KonvaItemRenderer'
+import { konvaClipboardImageFiles } from './konvaClipboard'
 import { renderKonvaArtwork } from './konvaLabExport'
 import {
   cloneItem,
@@ -602,6 +604,14 @@ export function KonvaLab({ theme, initialDocument, initialSource, onDocumentChan
     addImageFiles(Array.from(event.dataTransfer.files), screenPointToWorld(stage) ?? undefined)
   }, [addImageFiles])
 
+  const onStagePaste = useCallback((event: ReactClipboardEvent<HTMLDivElement>) => {
+    const files = konvaClipboardImageFiles(event.clipboardData)
+    if (files.length === 0) return
+    event.preventDefault()
+    addImageFiles(files)
+    setTool('pen')
+  }, [addImageFiles])
+
   const exportJson = useCallback(() => {
     const document: KonvaLabDocument = { items: itemsRef.current }
     downloadFile(JSON.stringify(document, null, 2), 'osa-konva-lab.json', 'application/json')
@@ -871,9 +881,10 @@ export function KonvaLab({ theme, initialDocument, initialSource, onDocumentChan
           ref={stageHostRef}
           tabIndex={0}
           onKeyDown={onCanvasKeyDown}
+          onPaste={onStagePaste}
           onDrop={onStageDrop}
           onDragOver={(event) => event.preventDefault()}
-          aria-label="Konva canvas. Select a tool, then interact with the local canvas."
+          aria-label="Konva canvas. Drop or paste a screenshot. Paste starts Pen so you can mark it up."
         >
           <Stage
             ref={stageRef}
@@ -1151,7 +1162,7 @@ export function KonvaLab({ theme, initialDocument, initialSource, onDocumentChan
 
       <footer className="konva-lab__footer">
         <span>{notice ?? `tool: ${TOOL_LABELS[tool]}`}</span>
-        <span>local draft only</span>
+        <span>drop or paste a screenshot · paste starts Pen</span>
       </footer>
     </section>
   )

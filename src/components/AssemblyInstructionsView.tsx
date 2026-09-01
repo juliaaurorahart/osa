@@ -242,7 +242,7 @@ export function AssemblyInstructionsView({
                     <strong>parts &amp; tools</strong>
                     {inputParts.length ? (
                       <div style={fieldLabel}>
-                        <span>parts in</span>
+                        <span>parts</span>
                         <ObjectNames objects={inputParts} />
                       </div>
                     ) : null}

@@ -75,7 +75,7 @@ export function CanvasLab({
     catch { setPreferenceMessage('Applied for this session. This browser could not remember the preference.') }
   }
   const [hasUnaddedIdea, setHasUnaddedIdea] = useState(false)
-  const [notebookView, setNotebookView] = useState<'library' | 'section'>('library')
+  const [notebookView, setNotebookView] = useState<'library' | 'cells' | 'page'>('library')
   const [sectionVisited, setSectionVisited] = useState(false)
   const notebook = useSyncedLabNotebook()
   const workingDrafts = useLabWorkingDrafts(notebook.saveProjectDraft)
@@ -286,7 +286,7 @@ export function CanvasLab({
       // Section actions already flush their cell. Do not close its Saved preview
       // until the handoff has succeeded, so a failed transfer is easy to retry.
       await noteFlushRef.current(); await workingDrafts.flush(); await notebook.flushNotebookWrites(scope)
-      if (currentRef.current.scope !== scope || currentRef.current.projectId !== projectId) throw new Error('The notebook or editor changed. Please try again from the saved painting.')
+      if (currentRef.current.scope !== scope || currentRef.current.projectId !== projectId) throw new Error('The notebook or editor changed. Please try again from the saved image.')
       const next = await notebook.continueInKonva(artifact.id, artifact.fileId || artifact.id, scope, sectionId)
       if (!mountedRef.current || currentRef.current.scope !== scope || currentRef.current.projectId !== projectId) {
         throw new Error('The Konva copy was saved in the original notebook. Open it there when you are ready.')
@@ -494,10 +494,10 @@ export function CanvasLab({
         <button type="button" aria-expanded="true" aria-controls="lab-project-bar" onClick={() => setNavigationHidden(true)}>Hide top bar ↑</button>
         <LabMenu label="File">
           <div ref={setFileTarget} />
-          {project?.toolId === 'klecks' ? <button type="button" disabled={saving || !savedArtifact || !canContinueInKonva(savedArtifact)}
-            title="Continue from the Saved picture. Save to notebook first to include your latest edits; the layered Klecks original stays separate."
+          {savedArtifact && canContinueInKonva(savedArtifact) ? <button type="button" disabled={saving}
+            title="Create a separate Konva project from the Saved picture. The original file and any working draft stay unchanged."
             onClick={() => savedArtifact && void continueInKonva(savedArtifact).catch((error) => setProjectFailure(error instanceof Error ? error.message : 'Could not continue in Konva.'))}>
-            Continue in Konva</button> : null}
+            Mark up in Konva</button> : null}
           {originalArtifact && !originalArtifact.deletedAt ? <button type="button" disabled={saving}
             title="Open the original layered painting. This Konva project stays separate."
             onClick={() => void openSavedProject(originalArtifact, 'saved').catch((error) => setProjectFailure(error instanceof Error ? error.message : 'Could not open the original.'))}>
@@ -527,19 +527,25 @@ export function CanvasLab({
             onOpenNotebook={() => setRoute({ page: 'notebook' })}
             onOpenSettings={() => setRoute({ page: 'settings' })}
             onOpenWorkbench={openWorkbench}
+            onOpenOsa={requestExit}
           />
         ) : null}
 
         <div hidden={route.page !== 'notebook'}>
           <LabNotebookSync key={`sync:${notebook.scope}`} notebook={notebook} hasDraft={hasUnaddedIdea} hasProject={Boolean(project)} beforeSwitch={flushDrafts} locked={sectionLocked} />
           <nav className="lab-notebook-views" aria-label="Notebook view">
-            {(['library', 'section'] as const).map((view) => <button key={view} type="button" aria-pressed={notebookView === view} disabled={!notebook.isReady}
-              onClick={async () => { try { await flushDrafts(); setNotebookView(view); if (view === 'section') setSectionVisited(true); setProjectFailure('') }
-                catch (error) { setProjectFailure(error instanceof Error ? error.message : 'The current editor could not save.') } }}>{view === 'library' ? 'Library' : 'Upside-down notebook'}</button>)}
+            {(['library', 'cells', 'page'] as const).map((view) => <button key={view} type="button" aria-pressed={notebookView === view} disabled={!notebook.isReady}
+              onClick={async () => { try {
+                // Cells and Page are two projections of one mounted section.
+                // Only crossing the Library boundary closes or flushes an editor.
+                if (view === 'library' || notebookView === 'library') await flushDrafts()
+                setNotebookView(view); if (view !== 'library') setSectionVisited(true); setProjectFailure('')
+              } catch (error) { setProjectFailure(error instanceof Error ? error.message : 'The current editor could not save.') } }}>
+              {view === 'library' ? 'Library' : view === 'cells' ? 'Cells' : 'Page'}</button>)}
           </nav>
           {projectFailure ? <p role="alert">{projectFailure}</p> : null}
-          {sectionVisited ? <div hidden={notebookView !== 'section'}><LabSection key={`section:${notebook.scope}`} notebook={notebook} theme={theme}
-            isActive={route.page === 'notebook' && notebookView === 'section'} onRegisterFlush={registerSectionFlush} onOpenProject={openSavedProject}
+          {sectionVisited ? <div hidden={notebookView === 'library'}><LabSection key={`section:${notebook.scope}`} notebook={notebook} theme={theme}
+            sectionView={notebookView === 'page' ? 'page' : 'cells'} isActive={route.page === 'notebook' && notebookView !== 'library'} onRegisterFlush={registerSectionFlush} onOpenProject={openSavedProject}
             onContinueInKonva={continueInKonva} onEditorLockChange={setSectionEditorLock} /></div> : null}
           <div hidden={notebookView !== 'library'}>
           <LabNotebook

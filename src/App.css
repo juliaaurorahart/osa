@@ -102,7 +102,8 @@
 .workspace-switcher-reveal:hover,
 .workspace-switcher-reveal:focus-visible {
   color: var(--osa-text);
-  outline: 0;
+  outline: 2px solid var(--osa-focus);
+  outline-offset: 2px;
 }
 
 .pointer-tool-palette__backdrop {
@@ -211,6 +212,11 @@
 
 .workspace-menu-hidden .work-view-shell {
   padding-top: 38px;
+}
+
+.work-view-shell.work-view-shell--assembly,
+.workspace-menu-hidden .work-view-shell.work-view-shell--assembly {
+  padding: 0;
 }
 
 .work-view {

@@ -12,7 +12,10 @@ import {
 import type { TextFlowNode } from '../graph/textNode'
 import { annotationTargetsForNodes } from '../graph/sketchAnnotation'
 import { visualEmbedsForCanvas } from '../graph/visualEmbed'
-import { AssemblyIndexCard } from './AssemblyIndexCard'
+import {
+  AssemblyIndexCard,
+  type AssemblyInstructionSummary,
+} from './AssemblyIndexCard'
 import { AssemblyOperationCard } from './AssemblyOperationCard'
 import { AssemblyViewControls } from './AssemblyViewControls'
 import type { AssemblyToolDraft, AssemblyViewUiState } from './assemblyViewState'
@@ -20,6 +23,7 @@ import {
   canvasOwnedByStep,
   connectedTargets,
   nodeTitle,
+  operationCompletedCount,
   operationsForAssembly,
   stepsForOperation,
   visualHasInstructionContent,
@@ -94,6 +98,44 @@ export function AssemblyView({
   const assemblyOperations = useMemo(() => selectedAssembly
     ? operationsForAssembly(selectedAssembly.id, operations, edges)
     : [], [edges, operations, selectedAssembly])
+  const instructionSummaries = useMemo(() => assemblyOperations.map((operation): AssemblyInstructionSummary => {
+    // Older boards used one undirected operation-item relationship. Structured
+    // inputs take precedence whenever the operation has them.
+    const legacyInputParts = connectedTargets(
+      operation.id,
+      nodes,
+      edges,
+      OSA_RELATION.operationItem,
+      /\b(part|parts|material|materials|component|components)\b/i,
+    ).filter((node) => node.data.kind !== 'tool' && osaRole(node) !== 'tool')
+    const structuredInputParts = connectedTargets(
+      operation.id,
+      nodes,
+      edges,
+      OSA_RELATION.operationInput,
+      /\b(parts? in|input|inputs|requires?|needs?)\b/i,
+    )
+    const primaryOutputId = edges.find((edge) => (
+      edge.source === operation.id
+      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationPrimaryOutput
+    ))?.target
+    const operationTools = connectedTargets(
+      operation.id,
+      nodes,
+      edges,
+      OSA_RELATION.operationTool,
+      /\b(tool|tools)\b/i,
+    )
+
+    return {
+      operation,
+      before: structuredInputParts.length ? structuredInputParts : legacyInputParts,
+      after: nodes.find((node) => node.id === primaryOutputId) ?? null,
+      stepCount: stepsForOperation(operation.id, nodes, edges).length,
+      toolCount: new Set(operationTools.map((tool) => tool.id)).size,
+      completedCount: operationCompletedCount(operation),
+    }
+  }), [assemblyOperations, edges, nodes])
   const assemblyParts = useMemo(() => selectedAssembly
     ? connectedTargets(
       selectedAssembly.id,
@@ -166,10 +208,8 @@ export function AssemblyView({
     || assemblyOperations.some((operation) => operation.id === lockedCardId)
     ? lockedCardId
     : null
-
-  const toggleCardLock = (cardId: string) => {
-    setLockedCardId((currentCardId) => currentCardId === cardId ? null : cardId)
-  }
+  const visibleCardId = activeOpenCardId ?? activeLockedCardId
+  const isSummarySurface = visibleCardId === null
   const openCard = (cardId: string) => {
     setFocusedCardId(cardId)
     setOpenCardId(cardId)
@@ -219,7 +259,10 @@ export function AssemblyView({
   }
 
   return (
-    <section className="work-view assembly-view" aria-label="Assembly">
+    <section
+      className={`work-view assembly-view${isSummarySurface ? ' is-summary-surface' : ' is-detail-surface'}`}
+      aria-label="Assembly"
+    >
       <AssemblyViewControls
         readOnly={readOnly}
         activeLockedCardId={activeLockedCardId}
@@ -227,28 +270,27 @@ export function AssemblyView({
       />
 
       <div
-        className={`assembly-card-board${activeLockedCardId ? ' is-locked' : ''}`}
+        className={`assembly-card-board${isSummarySurface ? ' is-summary-surface' : ' is-detail-surface'}${activeLockedCardId ? ' is-locked' : ''}${activeOpenCardId ? ' is-editing' : ''}`}
         style={{
           display: 'grid',
           gridTemplateColumns: 'minmax(0, 1fr)',
           alignItems: 'start',
-          gap: 'clamp(22px, 4vw, 42px)',
+          gap: 'clamp(12px, 2vw, 22px)',
         }}
       >
-        {!activeLockedCardId || activeLockedCardId === ASSEMBLY_INDEX_CARD_ID ? (
+        {!visibleCardId || visibleCardId === ASSEMBLY_INDEX_CARD_ID ? (
           <AssemblyIndexCard
             assembly={selectedAssembly}
-            operations={assemblyOperations}
+            instructionSummaries={instructionSummaries}
             readOnly={readOnly}
             isOpen={activeOpenCardId === ASSEMBLY_INDEX_CARD_ID}
-            isLocked={activeLockedCardId === ASSEMBLY_INDEX_CARD_ID}
             onOpen={() => openCard(ASSEMBLY_INDEX_CARD_ID)}
             onClose={closeCard}
-            onToggleLock={() => toggleCardLock(ASSEMBLY_INDEX_CARD_ID)}
             onFocusCard={setFocusedCardId}
+            onOpenOperation={openCard}
             onNameChange={actions.onNameChange}
-            onReorderOperation={(operationId, direction) => (
-              actions.onReorderOperation(selectedAssembly.id, operationId, direction)
+            onMoveOperation={(operationId, position) => (
+              actions.onMoveOperation(selectedAssembly.id, operationId, position)
             )}
             onRemoveOperation={actions.onRemoveOperation}
             onAddCard={addCard}
@@ -256,7 +298,9 @@ export function AssemblyView({
         ) : null}
 
         {assemblyOperations.map((operation) => {
-          if (activeLockedCardId && activeLockedCardId !== operation.id) return null
+          // The Assembly summary is the only default card. Selecting one
+          // instruction replaces it with that instruction's editor.
+          if (visibleCardId !== operation.id) return null
 
           const operationTools = connectedTargets(
             operation.id,
@@ -324,7 +368,6 @@ export function AssemblyView({
               annotationTargets={annotationTargets}
               focused={activeFocusedCardId === operation.id}
               isOpen={activeOpenCardId === operation.id}
-              isLocked={activeLockedCardId === operation.id}
               readOnly={readOnly}
               toolDraft={toolDraft}
               toolDraftFor={toolDraftForOperation}
@@ -332,7 +375,6 @@ export function AssemblyView({
               onInspectNode={onInspectNode}
               onOpen={() => openCard(operation.id)}
               onClose={closeCard}
-              onToggleLock={() => toggleCardLock(operation.id)}
               onFocusCard={() => setFocusedCardId(operation.id)}
               onEditVisual={(visualId) => setEditingVisual(visualId, operation.id)}
               onToolDraftChange={setToolDraft}

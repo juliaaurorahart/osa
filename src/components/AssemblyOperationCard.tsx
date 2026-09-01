@@ -2,7 +2,8 @@ import type { SketchAnnotationTarget, TextFlowNode } from '../graph/textNode'
 import type { AssemblyToolDraft } from './assemblyViewState'
 import { AssemblyOperationSteps } from './AssemblyOperationSteps'
 import { AssemblyPartsAndTools } from './AssemblyPartsAndTools'
-import { nodeTitle } from './assemblyProjection'
+import { OSA_PROPERTY } from '../graph/osaData'
+import { nodeTitle, operationCompletedCount } from './assemblyProjection'
 import {
   cardFocusStyle,
   cardKeyDown,
@@ -25,7 +26,6 @@ type AssemblyOperationCardProps = {
   annotationTargets: SketchAnnotationTarget[]
   focused: boolean
   isOpen: boolean
-  isLocked: boolean
   readOnly: boolean
   toolDraft: string
   toolDraftFor: AssemblyToolDraft | null
@@ -33,7 +33,6 @@ type AssemblyOperationCardProps = {
   onInspectNode: (nodeId: string) => void
   onOpen: () => void
   onClose: () => void
-  onToggleLock: () => void
   onFocusCard: () => void
   onEditVisual: (visualId: string) => void
   onToolDraftChange: (value: string) => void
@@ -53,7 +52,6 @@ export function AssemblyOperationCard({
   annotationTargets,
   focused,
   isOpen,
-  isLocked,
   readOnly,
   toolDraft,
   toolDraftFor,
@@ -61,7 +59,6 @@ export function AssemblyOperationCard({
   onInspectNode,
   onOpen,
   onClose,
-  onToggleLock,
   onFocusCard,
   onEditVisual,
   onToolDraftChange,
@@ -70,11 +67,14 @@ export function AssemblyOperationCard({
   const publishedCanvasByStepId = new Map(
     stepCanvases.map((stepCanvas) => [stepCanvas.step.id, stepCanvas]),
   )
+  const completedCount = operationCompletedCount(operation)
 
   return (
     <article
       className={`assembly-card assembly-operation-card${isOpen ? ' is-focused is-open' : ' is-summary'}`}
-      style={{ ...cardShell, ...(isOpen ? {} : { padding: 0 }), ...cardFocusStyle(isOpen) }}
+      style={isOpen
+        ? undefined
+        : { ...cardShell, padding: 0, ...cardFocusStyle(false) }}
       tabIndex={0}
       aria-label={`${nodeTitle(operation)} card`}
       onClick={() => {
@@ -84,74 +84,66 @@ export function AssemblyOperationCard({
     >
       {isOpen ? (
         <>
-          <div className="assembly-card__focus-controls">
-            <button
-              className="assembly-card__close-button"
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation()
-                onClose()
+          <header className="assembly-operation-card__header">
+            <input
+              className="assembly-card__title"
+              aria-label={`${nodeTitle(operation)} title`}
+              placeholder="card title"
+              value={operation.data.name}
+              readOnly={readOnly}
+              onFocus={onFocusCard}
+              onChange={(event) => {
+                if (!readOnly) actions.onNameChange(operation.id, event.target.value)
               }}
-            >
-              close details
-            </button>
-            <button
-              className="assembly-card__lock-button"
-              type="button"
-              aria-pressed={isLocked}
-              aria-label={isLocked
-                ? `unlock ${nodeTitle(operation)} and show all cards`
-                : `lock ${nodeTitle(operation)} in a single-card view`}
-              onClick={(event) => {
-                event.stopPropagation()
-                onToggleLock()
-              }}
-            >
-              {isLocked ? 'unlock card view' : 'lock this card'}
-            </button>
-          </div>
+              style={transparentInput}
+            />
+            <div className="assembly-card__focus-controls">
+              {!readOnly ? (
+                <label
+                  className="assembly-operation-card__complete-count"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <span># complete</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min="0"
+                    step="1"
+                    aria-label={`${nodeTitle(operation)} number complete`}
+                    value={completedCount}
+                    onChange={(event) => {
+                      const requestedCount = event.currentTarget.valueAsNumber
+                      const nextCount = Number.isFinite(requestedCount)
+                        ? Math.max(0, Math.floor(requestedCount))
+                        : 0
+                      actions.onPropertyChange?.(
+                        operation.id,
+                        OSA_PROPERTY.operationCompletedCount,
+                        String(nextCount),
+                      )
+                    }}
+                  />
+                </label>
+              ) : (
+                <span className="assembly-operation-card__status">
+                  <b>{completedCount}</b> complete
+                </span>
+              )}
+              <button
+                className="assembly-card__close-button"
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onClose()
+                }}
+              >
+                Done
+              </button>
+            </div>
+          </header>
 
           <div className="assembly-card__columns">
             <div className="assembly-card__details">
-              <input
-                className="assembly-card__title"
-                aria-label={`${nodeTitle(operation)} title`}
-                placeholder="card title"
-                value={operation.data.name}
-                readOnly={readOnly}
-                onFocus={onFocusCard}
-                onChange={(event) => {
-                  if (!readOnly) actions.onNameChange(operation.id, event.target.value)
-                }}
-                style={{
-                  ...transparentInput,
-                  fontSize: 'clamp(1.4rem, 2.4vw, 2.3rem)',
-                  lineHeight: 1.05,
-                }}
-              />
-
-              <AssemblyPartsAndTools
-                operation={operation}
-                inputParts={inputParts}
-                tools={tools}
-                availableParts={availableParts}
-                toolInventory={toolInventory}
-                focused={focused}
-                readOnly={readOnly}
-                toolDraft={toolDraft}
-                toolDraftFor={toolDraftFor}
-                onInspectNode={onInspectNode}
-                onLinkPart={actions.onLinkPart}
-                onLinkPartInput={actions.onLinkPartInput}
-                onUnlinkPartInput={actions.onUnlinkPartInput}
-                onCreatePartForOperation={actions.onCreatePartForOperation}
-                onCreateTool={actions.onCreateTool}
-                onLinkTool={actions.onLinkTool}
-                onUnlinkTool={actions.onUnlinkTool}
-                onToolDraftChange={onToolDraftChange}
-                onToolDraftForChange={onToolDraftForChange}
-              />
-
               <AssemblyOperationSteps
                 operation={operation}
                 steps={steps}
@@ -170,6 +162,30 @@ export function AssemblyOperationCard({
                 onEditVisual={onEditVisual}
                 onPropertyChange={actions.onPropertyChange}
               />
+
+              <div className="assembly-operation-card__resources">
+                <AssemblyPartsAndTools
+                  operation={operation}
+                  inputParts={inputParts}
+                  tools={tools}
+                  availableParts={availableParts}
+                  toolInventory={toolInventory}
+                  focused={focused}
+                  readOnly={readOnly}
+                  toolDraft={toolDraft}
+                  toolDraftFor={toolDraftFor}
+                  onInspectNode={onInspectNode}
+                  onLinkPart={actions.onLinkPart}
+                  onLinkPartInput={actions.onLinkPartInput}
+                  onUnlinkPartInput={actions.onUnlinkPartInput}
+                  onCreatePartForOperation={actions.onCreatePartForOperation}
+                  onCreateTool={actions.onCreateTool}
+                  onLinkTool={actions.onLinkTool}
+                  onUnlinkTool={actions.onUnlinkTool}
+                  onToolDraftChange={onToolDraftChange}
+                  onToolDraftForChange={onToolDraftForChange}
+                />
+              </div>
             </div>
           </div>
         </>
@@ -182,13 +198,18 @@ export function AssemblyOperationCard({
           onClick={onOpen}
         >
           <span className="assembly-card__summary-content">
-            <strong className="assembly-card__summary-title">{nodeTitle(operation)}</strong>
+            <span className="assembly-card__summary-heading">
+              <strong className="assembly-card__summary-title">{nodeTitle(operation)}</strong>
+              <span className="assembly-operation-card__status">
+                <b>{completedCount}</b> complete
+              </span>
+            </span>
             <span className="assembly-card__summary-parts-tools">
               <b>parts &amp; tools</b>
               <span className="assembly-card__summary-fields">
                 {inputParts.length ? (
                   <span>
-                    <b>parts in</b>
+                    <b>parts</b>
                     {inputParts.map(nodeTitle).join(' · ')}
                   </span>
                 ) : null}

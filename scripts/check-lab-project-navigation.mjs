@@ -187,7 +187,9 @@ const { CanvasLab } = loadModule('src/lab/CanvasLab.tsx', {
   './useSyncedLabNotebook': { useSyncedLabNotebook: useNotebookFixture },
   './LabWorkbench': { LabWorkbench: WorkbenchFixture },
   './LabErrorBoundary': loadModule('src/lab/LabErrorBoundary.tsx'),
-  './LabHome': { LabHome: () => React.createElement('p', null, 'Fixture Lab home') },
+  './LabHome': { LabHome: ({ onOpenOsa }) => React.createElement('button', {
+    type: 'button', onClick: onOpenOsa,
+  }, 'Back to OSA') },
   './LabSettings': { LabSettings: ({ liveOpenVersion, onChangeLiveOpenVersion }) => React.createElement('select', {
     'aria-label': 'Open live items as', value: liveOpenVersion, onChange: (event) => onChangeLiveOpenVersion(event.target.value),
   }, React.createElement('option', { value: 'saved' }, 'Live'), React.createElement('option', { value: 'draft' }, 'Working draft')) },
@@ -234,6 +236,9 @@ let exitAction = () => { exitWarnings.push(warnsBeforeUnload()) }
 
 try {
   await React.act(async () => root.render(React.createElement(CanvasLab, { theme: 'dark', onToggleTheme() {}, onExit: () => exitAction() })))
+  assert.ok(findButton('Back to OSA'), 'The Lab landing page links back to OSA.')
+  await clickButton('Back to OSA')
+  assert.equal(exitWarnings.pop(), false, 'The OSA link uses the normal guarded Lab exit.')
   await clickButton('Hide top bar ↑', document.querySelector('.lab-shell__header'))
   assert.equal(document.querySelector('.lab-shell__header').hidden, true)
   assert.equal(document.querySelector('.lab-shell__restore-bar').hidden, false)
@@ -241,6 +246,7 @@ try {
   assert.equal(document.querySelector('.lab-shell__header').hidden, false)
   shellBody().scrollTop = 640
   await changeValue(document.querySelector('[aria-label="Choose Lab instrument"]'), 'ink', 'change')
+  assert.equal(findButton('Back to OSA'), undefined, 'The landing-page link stays out of workbenches.')
   assert.equal(shellBody().scrollTop, 0, 'Entering a workbench resets the shared main scroller.')
   assert.equal(mountedEditors, 1)
   const firstEditor = editor()
@@ -458,11 +464,16 @@ try {
   assert.equal(currentNotebook.artifacts.filter((item) => item.id === draftSaved).length, 1)
 
   // A managed draw.io edit cannot be abandoned through another Lab route.
-  await clickButton('Notebook'); await clickButton('Upside-down notebook')
+  await clickButton('Notebook'); await clickButton('Cells')
   const activeSection = document.querySelector('[data-section-fixture]')
   await React.act(async () => { sectionGuardLocked = true; sectionFixture.onEditorLockChange(true) })
   assert.equal(syncFixture.locked, true, 'Storage/notebook switching is locked during draw.io editing')
   assert.equal(document.querySelector('[aria-label="Switch to light mode"]').disabled, true)
+  await clickButton('Page')
+  assert.equal(sectionFixture.sectionView, 'page', 'Page reprojects the same mounted editing section without closing it')
+  assert.equal(activeSection.closest('[hidden]'), null)
+  await clickButton('Cells')
+  assert.equal(sectionFixture.sectionView, 'cells')
   for (const label of ['Home', 'Settings', 'Library', 'Return to Ink', 'exit lab']) {
     await clickButton(label)
     assert.ok(document.querySelector('.lab-shell').classList.contains('is-notebook'), label)
@@ -490,7 +501,7 @@ try {
   const previewDialog = () => document.querySelector('dialog[aria-label="Saved visual preview"]')
   assert.equal(previewDialog().open, true)
   handoffReadFails = true
-  await clickButton('Continue in Konva', previewDialog())
+  await clickButton('Mark up in Konva', previewDialog())
   assert.equal(previewDialog().open, true, 'A destination-open failure keeps the original painting preview')
   assert.equal(previewDialog().querySelector('h3').textContent, painting.name)
   assert.ok(previewDialog().querySelector('[role="alert"]'))
@@ -498,10 +509,10 @@ try {
   handoffReadFails = false
   let finishHandoff
   handoffGate = new Promise((resolve) => { finishHandoff = resolve })
-  await clickButton('Continue in Konva', previewDialog())
+  await clickButton('Mark up in Konva', previewDialog())
   const count = handoffCalls.length
-  assert.equal(findButton('Continue in Konva', previewDialog()).disabled, true)
-  await clickButton('Continue in Konva', previewDialog())
+  assert.equal(findButton('Mark up in Konva', previewDialog()).disabled, true)
+  await clickButton('Mark up in Konva', previewDialog())
   assert.equal(handoffCalls.length, count)
   assert.equal(editor(), null, 'The workspace is not opened before the handoff acknowledges saving')
   await React.act(async () => { finishHandoff(); await handoffGate }); handoffGate = null

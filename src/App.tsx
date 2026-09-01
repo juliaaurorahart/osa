@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type FocusEvent as ReactFocusEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
 import { createPortal } from 'react-dom'
@@ -204,6 +205,7 @@ const initialNodes: TextFlowNode[] = [
 
 const initialEdges: GraphEdge[] = []
 const ALL_NODES_SPACE_FILTER_KEY = '\u0000all\u0000all'
+const WORKSPACE_CHROME_HIDE_DELAY_MS = 2800
 
 type SelectedItem =
   | { type: 'node'; id: string }
@@ -306,6 +308,57 @@ function Flow({ identity, startupDraft }: { identity: string | null; startupDraf
   // entirely inside this authoring session until someone explicitly shares it.
   const [assemblyInstructionsPreview, setAssemblyInstructionsPreview] = useState(false)
   const [workspaceMenuVisible, setWorkspaceMenuVisible] = useState(true)
+  const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = useState(false)
+  const workspaceChromeHideTimer = useRef<number | null>(null)
+  const workspaceTopChrome = useRef<HTMLDivElement>(null)
+  const workspaceSettingsOpenRef = useRef(workspaceSettingsOpen)
+  workspaceSettingsOpenRef.current = workspaceSettingsOpen
+
+  const cancelWorkspaceChromeHide = useCallback(() => {
+    if (workspaceChromeHideTimer.current === null) return
+    window.clearTimeout(workspaceChromeHideTimer.current)
+    workspaceChromeHideTimer.current = null
+  }, [])
+
+  const hideWorkspaceChrome = useCallback(() => {
+    cancelWorkspaceChromeHide()
+    if (workspaceSettingsOpenRef.current) return
+    if (workspaceTopChrome.current?.contains(document.activeElement)) return
+    setWorkspaceMenuVisible(false)
+  }, [cancelWorkspaceChromeHide])
+
+  const scheduleWorkspaceChromeHide = useCallback(() => {
+    cancelWorkspaceChromeHide()
+    if (workspaceSettingsOpenRef.current) return
+    workspaceChromeHideTimer.current = window.setTimeout(
+      hideWorkspaceChrome,
+      WORKSPACE_CHROME_HIDE_DELAY_MS,
+    )
+  }, [cancelWorkspaceChromeHide, hideWorkspaceChrome])
+
+  const showWorkspaceChrome = useCallback(() => {
+    cancelWorkspaceChromeHide()
+    setWorkspaceMenuVisible(true)
+  }, [cancelWorkspaceChromeHide])
+
+  const handleWorkspaceChromeBlur = useCallback((event: ReactFocusEvent<HTMLElement>) => {
+    if (event.relatedTarget && event.currentTarget.contains(event.relatedTarget as Node)) return
+    scheduleWorkspaceChromeHide()
+  }, [scheduleWorkspaceChromeHide])
+
+  useEffect(() => {
+    if (!workspaceMenuVisible || workspaceSettingsOpen) {
+      cancelWorkspaceChromeHide()
+      return
+    }
+    scheduleWorkspaceChromeHide()
+    return cancelWorkspaceChromeHide
+  }, [
+    cancelWorkspaceChromeHide,
+    scheduleWorkspaceChromeHide,
+    workspaceMenuVisible,
+    workspaceSettingsOpen,
+  ])
   // Assembly's focus, lock, drawing, and draft controls are presentation
   // state. Keep them mounted here so switching to Actions or Space and back
   // returns the builder to the exact card state they deliberately left.
@@ -1284,8 +1337,15 @@ function Flow({ identity, startupDraft }: { identity: string | null; startupDraf
     ...assemblyGraphActions,
     onNameChange,
     onTextChange,
+    onTaskCompletionChange,
     onPropertyChange,
-  }), [assemblyGraphActions, onNameChange, onPropertyChange, onTextChange])
+  }), [
+    assemblyGraphActions,
+    onNameChange,
+    onPropertyChange,
+    onTaskCompletionChange,
+    onTextChange,
+  ])
 
   /**
    * Creates one blank, reusable Visual canvas owned by a real Part, Assembly,
@@ -3256,6 +3316,7 @@ function Flow({ identity, startupDraft }: { identity: string | null; startupDraf
       triggerLabel={triggerLabel}
       theme={theme}
       onToggleTheme={toggleTheme}
+      onOpenChange={setWorkspaceSettingsOpen}
       boardId={boardId}
       boardName={boardName}
       boardAccess={boardAccess}
@@ -3517,14 +3578,21 @@ function Flow({ identity, startupDraft }: { identity: string | null; startupDraf
       ) : null}
       {!canvasLabVisible ? (
         !isSharedAssembly ? (
-          <div className="workspace-top-chrome">
+          <div className="workspace-top-chrome" ref={workspaceTopChrome}>
             {workspaceMenuVisible ? (
-              <nav className="workspace-switcher" aria-label="OSA tools">
+              <nav
+                className="workspace-switcher"
+                aria-label="OSA tools"
+                onPointerEnter={cancelWorkspaceChromeHide}
+                onPointerLeave={scheduleWorkspaceChromeHide}
+                onFocusCapture={cancelWorkspaceChromeHide}
+                onBlurCapture={handleWorkspaceChromeBlur}
+              >
                 <button
                   className="workspace-switcher__hide"
                   type="button"
                   aria-label="Hide top menu"
-                  onClick={() => setWorkspaceMenuVisible(false)}
+                  onClick={hideWorkspaceChrome}
                 >
                   Hide
                 </button>
@@ -3562,13 +3630,21 @@ function Flow({ identity, startupDraft }: { identity: string | null; startupDraf
                 className="workspace-switcher-reveal"
                 type="button"
                 aria-label="Show top menu"
-                onClick={() => setWorkspaceMenuVisible(true)}
+                onClick={showWorkspaceChrome}
               >
                 <span aria-hidden="true">⌄</span>
               </button>
             )}
-            {workspaceView === 'nodes' ? (
-              <div className="space-command-bar" role="toolbar" aria-label="Space controls">
+            {workspaceMenuVisible && workspaceView === 'nodes' ? (
+              <div
+                className="space-command-bar"
+                role="toolbar"
+                aria-label="Space controls"
+                onPointerEnter={cancelWorkspaceChromeHide}
+                onPointerLeave={scheduleWorkspaceChromeHide}
+                onFocusCapture={cancelWorkspaceChromeHide}
+                onBlurCapture={handleWorkspaceChromeBlur}
+              >
                 <div className="space-command-bar__group">
                   <span className="space-command-bar__label">tools</span>
                   <div className="space-canvas-toolbar" role="group" aria-label="Space tools">
@@ -3608,7 +3684,15 @@ function Flow({ identity, startupDraft }: { identity: string | null; startupDraf
         )
       ) : null}
       {!canvasLabVisible && workspaceView !== 'nodes' ? (
-        <div className="work-view-shell">
+        <div
+          className={`work-view-shell${
+            workspaceView === 'assembly'
+              && !isSharedAssembly
+              && !assemblyInstructionsPreview
+              ? ' work-view-shell--assembly'
+              : ''
+          }`}
+        >
           {workspaceView === 'notebook' ? (
             <NotebookView
               pages={notebookPages}

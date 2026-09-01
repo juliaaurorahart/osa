@@ -14,6 +14,8 @@ export const OSA_PROPERTY = {
    * instead.
    */
   operationEntrance: 'operation:entrance',
+  /** Number of physical items that have completed this operation. */
+  operationCompletedCount: 'operation:completedCount',
   /**
    * Source or author notes describing what leaves an operation.
    *

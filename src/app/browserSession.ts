@@ -18,7 +18,7 @@ export type LocalDraft = SavedBoard & {
 
 export function readOsaTheme(): OsaTheme {
   const savedTheme = window.localStorage.getItem(OSA_THEME_KEY)
-  return savedTheme === 'dark' || savedTheme === 'light' ? savedTheme : 'light'
+  return savedTheme === 'dark' || savedTheme === 'light' ? savedTheme : 'dark'
 }
 
 export function writeOsaTheme(theme: OsaTheme) {

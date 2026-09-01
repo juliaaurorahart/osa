@@ -87,14 +87,28 @@ try {
   await assert.rejects(() => projects.validateDrawingProjectSource('konva', nativeSource({ items: [base, base] })), /invalid object/)
   await assert.rejects(() => projects.validateDrawingProjectSource('konva', nativeSource({ items: Array(10001).fill(base) })), /supported Konva/)
   const layer = ({ children }) => React.createElement('div', null, children)
+  const clipboard = loadModule('src/components/konvaClipboard.ts')
   const { KonvaLab } = loadModule('src/components/KonvaLab.tsx', {
     ...sharedMocks, './konvaLabModel': konva, '../lab/labCaptureUtils': {},
+    './konvaClipboard': clipboard,
     './konvaLabExport': loadModule('src/components/konvaLabExport.ts'),
     'react-konva': { Layer: layer, Stage: layer, Line: () => null, Rect: () => null, Transformer: () => null },
     './KonvaItemRenderer': { KonvaItemRenderer: ({ item }) => React.createElement('i', { 'data-loaded-id': item.id }) },
   })
   const konvaMarkup = renderToStaticMarkup(React.createElement(KonvaLab, { theme: 'dark', initialSource: konvaSource }))
   for (const item of konvaDocument.items) assert.ok(konvaMarkup.includes(`data-loaded-id="${item.id}"`))
+  assert.match(konvaMarkup, /drop or paste a screenshot/)
+  assert.match(konvaMarkup, /Paste starts Pen so you can mark it up/)
+  const { konvaClipboardImageFiles } = clipboard
+  const clipboardPng = new window.File(['png'], 'screenshot.png', { type: 'image/png', lastModified: 1 })
+  const clipboardWebp = new window.File(['webp'], 'camera.webp', { type: 'image/webp', lastModified: 2 })
+  const ignoredSvg = new window.File(['svg'], 'vector.svg', { type: 'image/svg+xml', lastModified: 3 })
+  assert.deepEqual(konvaClipboardImageFiles({ files: [clipboardPng, ignoredSvg], items: [
+    { kind: 'file', type: 'image/png', getAsFile: () => clipboardPng },
+    { kind: 'file', type: 'image/webp', getAsFile: () => clipboardWebp },
+    { kind: 'string', type: 'text/plain', getAsFile: () => null },
+  ] }).map((file) => file.name), ['screenshot.png', 'camera.webp'],
+  'Konva accepts supported screenshots from clipboard files and item-only browser implementations without duplicates')
 
   const excalidrawSource = nativeSource({ type: 'excalidraw', version: 2, ...restoredScene }, 'drawing.excalidraw')
   await projects.validateDrawingProjectSource('excalidraw', excalidrawSource)

@@ -1,12 +1,38 @@
 .assembly-operation-steps {
   display: grid;
-  gap: 8px;
+  gap: 12px;
   min-width: 0;
 }
 
 .assembly-operation-steps__label {
   font-size: clamp(1.1rem, 1.7vw, 1.4rem);
   font-weight: 700;
+}
+
+.assembly-operation-steps__legacy-text {
+  min-height: 4.2em;
+  resize: vertical;
+  line-height: 1.4 !important;
+}
+
+.assembly-operation-steps__legacy-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(220px, 0.55fr);
+  align-items: stretch;
+  gap: clamp(18px, 4vw, 42px);
+  min-width: 0;
+}
+
+.assembly-operation-steps__legacy-visual {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 10px;
+  min-height: 112px;
+  padding: 14px;
+  border: 1px dashed var(--osa-border);
+  border-radius: 7px;
+  background: var(--osa-surface-raised);
 }
 
 .assembly-operation-steps__list {
@@ -23,6 +49,25 @@
   min-width: 0;
   padding-top: 12px;
   border-top: 1px solid var(--osa-border-subtle);
+}
+
+.assembly-operation-step__field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.assembly-operation-step__field-label {
+  color: var(--osa-muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.assembly-operation-step__empty-value {
+  color: var(--osa-muted);
 }
 
 .assembly-operation-step__heading {
@@ -139,4 +184,18 @@
   color: var(--osa-muted);
   font-size: 0.96rem;
   font-style: italic;
+}
+
+@media (max-width: 700px) {
+  .assembly-operation-steps__legacy-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .assembly-operation-step__reorder .text-action,
+  .assembly-operation-step__canvas-actions label,
+  .assembly-operation-step__canvas-actions .assembly-operation-step__canvas-action,
+  .assembly-operation-steps > .text-action {
+    min-height: 44px;
+  }
+
 }

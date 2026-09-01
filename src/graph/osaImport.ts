@@ -88,6 +88,7 @@ const ROLE_KINDS: Record<OsaRole, readonly NodeKind[]> = {
 }
 
 const NONNEGATIVE_DECIMAL_PROPERTIES = [
+  OSA_PROPERTY.operationCompletedCount,
   OSA_PROPERTY.itemQuantity,
   OSA_PROPERTY.itemPackageQuantity,
   OSA_PROPERTY.itemPackagePrice,

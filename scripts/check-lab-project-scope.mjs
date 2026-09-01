@@ -429,7 +429,7 @@ try {
   const readsBeforeHandoff = fileReads.length, filesBeforeHandoff = fileWrites.length
   await assert.rejects(() => notebook.continueInKonva(paintingId, paintingFileId, scope, firstSection.id), /original notebook/)
   await assert.rejects(() => notebook.continueInKonva(paintingId, 'stale-file', localScope, firstSection.id), /changed/)
-  await assert.rejects(() => notebook.continueInKonva(codeCell.objectId, codeCell.objectId, localScope, firstSection.id), /Push/)
+  await assert.rejects(() => notebook.continueInKonva(codeCell.objectId, codeCell.objectId, localScope, firstSection.id), /Save/)
   await assert.rejects(() => notebook.continueInKonva(paintingId, paintingFileId, localScope, 'missing-section'), /section/)
   assert.equal(fileReads.length, readsBeforeHandoff); assert.equal(fileWrites.length, filesBeforeHandoff)
   const metadataBefore = documentWrites.length
@@ -459,6 +459,17 @@ try {
   await React.act(async () => notebook.captureVisual({ ...capture, toolId: 'konva' }, [], localScope, { artifactId: destination.id, expectedFileId: destination.fileId }))
   assert.deepEqual(notebook.getArtifact(destination.id).derivedFrom, destination.derivedFrom, 'Later saves keep the original source link and exact version')
   assert.deepEqual(notebook.artifactRevisions.find((item) => item.revisionOf === destination.id).derivedFrom, destination.derivedFrom)
+
+  let photoIds, photoMarkup
+  const photoFile = new File(['saved photo bytes'], 'meeting.jpg', { type: 'image/jpeg' })
+  await React.act(async () => { photoIds = await notebook.importFiles([photoFile], [paintTopic]) })
+  const photo = notebook.getArtifact(photoIds[0]), photoFileId = photo.fileId || photo.id
+  assert.equal(files.get(`${localScope}:${photoFileId}`).preview, undefined, 'A directly uploaded image remains one original file without a duplicate preview')
+  await React.act(async () => { photoMarkup = await notebook.continueInKonva(photo.id, photoFileId, localScope, firstSection.id) })
+  assert.deepEqual(photoMarkup.derivedFrom, { artifactId: photo.id, fileId: photoFileId })
+  assert.equal(await files.get(`${localScope}:${photoMarkup.fileId}`).preview.text(), 'saved photo bytes',
+    'Mark up in Konva reads a directly uploaded image when there is no separate preview Blob')
+  assert.equal(await files.get(`${localScope}:${photoFileId}`).file.text(), 'saved photo bytes', 'The uploaded original is unchanged')
 
   // A saved source can change at either async boundary. Reject stale handoffs,
   // while preserving the legitimate source edit and its independent recovery draft.

@@ -33,7 +33,7 @@ type CreateObjectNode = (
 
 type GraphOnlyAssemblyActions = Omit<
   AssemblyViewActions,
-  'onNameChange' | 'onTextChange' | 'onPropertyChange'
+  'onNameChange' | 'onTextChange' | 'onTaskCompletionChange' | 'onPropertyChange'
 > & {
   onIncludeInContainer: (containerId: string, itemId: string) => void
 }
@@ -51,6 +51,13 @@ type UseAssemblyGraphActionsOptions = {
   onAssemblyCreated: (assemblyId: string) => void
   onOperationRemoved: (operationId: string) => void
   onStepCanvasRemoved: (visualId: string | null) => void
+}
+
+/** Converts the card's original freeform instruction into its first Step. */
+export function migrateOperationTextForNewStep(operationText: string, existingStepCount: number) {
+  return existingStepCount === 0 && operationText
+    ? { stepText: operationText, operationText: '' }
+    : { stepText: '', operationText }
 }
 
 /** Finds the Assembly that contains a particular instruction operation. */
@@ -196,10 +203,10 @@ export function useAssemblyGraphActions({
     return operationId
   }, [createObjectNode, edges, nextEdgeIdRef, nodes, operations, setEdges])
 
-  const reorderAssemblyOperation = useCallback((
+  const updateAssemblyOperationOrder = useCallback((
     assemblyId: string,
     operationId: string,
-    direction: 'up' | 'down',
+    destination: 'up' | 'down' | number,
   ) => {
     const operationIds = latestEdges.current
       .filter((edge) => (
@@ -211,39 +218,58 @@ export function useAssemblyGraphActions({
       ))
       .map((edge) => edge.target)
     const edgePosition = new Map(operationIds.map((id, index) => [id, index]))
-    const orderedOperations = latestNodes.current
-      .filter((node) => operationIds.includes(node.id) && osaRole(node) === 'operation')
-      .sort((left, right) => {
-        const leftOrder = Number(left.data.properties[OSA_PROPERTY.order])
-        const rightOrder = Number(right.data.properties[OSA_PROPERTY.order])
-        const leftPosition = edgePosition.get(left.id) ?? Number.MAX_SAFE_INTEGER
-        const rightPosition = edgePosition.get(right.id) ?? Number.MAX_SAFE_INTEGER
-        return (Number.isFinite(leftOrder) ? leftOrder : leftPosition)
-          - (Number.isFinite(rightOrder) ? rightOrder : rightPosition)
-          || leftPosition - rightPosition
-      })
-    const currentIndex = orderedOperations.findIndex((operation) => operation.id === operationId)
-    const nextIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
-    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= orderedOperations.length) return
+    setNodes((currentNodes) => {
+      const orderedOperations = currentNodes
+        .filter((node) => operationIds.includes(node.id) && osaRole(node) === 'operation')
+        .sort((left, right) => {
+          const leftOrder = Number(left.data.properties[OSA_PROPERTY.order])
+          const rightOrder = Number(right.data.properties[OSA_PROPERTY.order])
+          const leftPosition = edgePosition.get(left.id) ?? Number.MAX_SAFE_INTEGER
+          const rightPosition = edgePosition.get(right.id) ?? Number.MAX_SAFE_INTEGER
+          return (Number.isFinite(leftOrder) ? leftOrder : leftPosition)
+            - (Number.isFinite(rightOrder) ? rightOrder : rightPosition)
+            || leftPosition - rightPosition
+        })
+      const currentIndex = orderedOperations.findIndex((operation) => operation.id === operationId)
+      if (currentIndex < 0) return currentNodes
+      const requestedIndex = typeof destination === 'number'
+        ? destination
+        : destination === 'up' ? currentIndex - 1 : currentIndex + 1
+      const nextIndex = Math.max(0, Math.min(orderedOperations.length - 1, requestedIndex))
+      if (nextIndex === currentIndex) return currentNodes
 
-    const reordered = [...orderedOperations]
-    ;[reordered[currentIndex], reordered[nextIndex]] = [reordered[nextIndex], reordered[currentIndex]]
-    const orderByOperationId = new Map(reordered.map((operation, index) => [
-      operation.id,
-      String(index + 1),
-    ]))
-    setNodes((currentNodes) => currentNodes.map((node) => {
-      const order = orderByOperationId.get(node.id)
-      if (order === undefined || node.data.properties[OSA_PROPERTY.order] === order) return node
-      return {
-        ...node,
-        data: {
-          ...node.data,
-          properties: { ...node.data.properties, [OSA_PROPERTY.order]: order },
-        },
-      }
-    }))
-  }, [latestEdges, latestNodes, setNodes])
+      const reordered = [...orderedOperations]
+      const [movedOperation] = reordered.splice(currentIndex, 1)
+      reordered.splice(nextIndex, 0, movedOperation)
+      const orderByOperationId = new Map(reordered.map((operation, index) => [
+        operation.id,
+        String(index + 1),
+      ]))
+      return currentNodes.map((node) => {
+        const order = orderByOperationId.get(node.id)
+        if (order === undefined || node.data.properties[OSA_PROPERTY.order] === order) return node
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            properties: { ...node.data.properties, [OSA_PROPERTY.order]: order },
+          },
+        }
+      })
+    })
+  }, [latestEdges, setNodes])
+
+  const reorderAssemblyOperation = useCallback((
+    assemblyId: string,
+    operationId: string,
+    direction: 'up' | 'down',
+  ) => updateAssemblyOperationOrder(assemblyId, operationId, direction), [updateAssemblyOperationOrder])
+
+  const moveAssemblyOperation = useCallback((
+    assemblyId: string,
+    operationId: string,
+    position: number,
+  ) => updateAssemblyOperationOrder(assemblyId, operationId, position - 1), [updateAssemblyOperationOrder])
 
   const removeAssemblyOperation = useCallback((operationId: string) => {
     const operation = latestNodes.current.find((node) => node.id === operationId)
@@ -257,27 +283,33 @@ export function useAssemblyGraphActions({
   }, [latestNodes, onOperationRemoved, setEdges, setNodes])
 
   const createOperationStep = useCallback((operationId: string) => {
-    const operation = nodes.find((node) => node.id === operationId)
+    const currentNodes = latestNodes.current
+    const currentEdges = latestEdges.current
+    const operation = currentNodes.find((node) => node.id === operationId)
     if (!operation) return ''
 
-    const linkedStepIds = new Set(edges
+    const linkedStepIds = new Set(currentEdges
       .filter((edge) => (
         edge.source === operationId
         && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationStep
       ))
       .map((edge) => edge.target))
-    const greatestOrder = nodes
+    const greatestOrder = currentNodes
       .filter((node) => linkedStepIds.has(node.id) && osaRole(node) === 'step')
       .reduce((greatest, step) => {
         const order = Number(step.data.properties[OSA_PROPERTY.order])
         return Number.isFinite(order) ? Math.max(greatest, order) : greatest
       }, 0)
     const order = Math.floor(greatestOrder) + 1
+    // Before structured Steps exist, the card-level text area is the first
+    // instruction. Move that text into the first real Step so changing editor
+    // modes never makes the person's work appear to vanish.
+    const textMigration = migrateOperationTextForNewStep(operation.data.text, linkedStepIds.size)
     const stepId = createObjectNode(
       `Step ${order}`,
       'note',
       null,
-      '',
+      textMigration.stepText,
       undefined,
       {
         [OSA_PROPERTY.role]: 'step',
@@ -285,6 +317,11 @@ export function useAssemblyGraphActions({
       },
       operation.data.spaceIds,
     )
+    if (textMigration.operationText !== operation.data.text) {
+      setNodes((currentNodes) => currentNodes.map((node) => node.id === operationId
+        ? { ...node, data: { ...node.data, text: textMigration.operationText } }
+        : node))
+    }
     const edgeId = `edge-${nextEdgeIdRef.current++}`
     setEdges((currentEdges) => [...currentEdges, createGraphEdge({
       id: edgeId,
@@ -294,7 +331,7 @@ export function useAssemblyGraphActions({
       properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.operationStep },
     })])
     return stepId
-  }, [createObjectNode, edges, nextEdgeIdRef, nodes, setEdges])
+  }, [createObjectNode, latestEdges, latestNodes, nextEdgeIdRef, setEdges, setNodes])
 
   const reorderOperationStep = useCallback((
     operationId: string,
@@ -757,6 +794,7 @@ export function useAssemblyGraphActions({
     onCreateAssembly: createAssembly,
     onCreateOperation: createAssemblyOperation,
     onReorderOperation: reorderAssemblyOperation,
+    onMoveOperation: moveAssemblyOperation,
     onRemoveOperation: removeAssemblyOperation,
     onCreateStep: createOperationStep,
     onReorderStep: reorderOperationStep,
@@ -781,6 +819,7 @@ export function useAssemblyGraphActions({
     linkOperationMaterial,
     linkPartToOperation,
     linkToolToOperation,
+    moveAssemblyOperation,
     removeAssemblyOperation,
     removeOperationStep,
     reorderAssemblyOperation,

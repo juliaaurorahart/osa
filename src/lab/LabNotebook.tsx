@@ -589,11 +589,11 @@ export function LabNotebook({
   }
 
   const workspaceActions = (artifact: LabArtifact) => <>
-    {artifact.toolId === 'klecks' && !artifact.draftOf && !artifact.revisionOf && !artifact.deletedAt && onContinueInKonva ? <button type="button"
+    {onContinueInKonva && canContinueInKonva(artifact) ? <button type="button"
       disabled={isUnavailable || isFileBusy || !canContinueInKonva(artifact)}
-      title="Continue from Saved as a separate Konva project. Push first to include draft edits; the Klecks layers stay in the original."
+      title="Create a separate Konva project from this Saved picture. The original file and any working draft stay unchanged."
       onClick={() => void runFileAction(artifact, 'Opening Konva…', async () => { await onContinueInKonva(artifact); setOpenedArtifactId(null) },
-        'Konva copy saved. The original painting and its draft are unchanged.')}>Continue in Konva</button> : null}
+        'Konva markup saved. The original image and its draft are unchanged.')}>Mark up in Konva</button> : null}
     {artifact.derivedFrom && artifacts.some((item) => item.id === artifact.derivedFrom!.artifactId) ? <button type="button" disabled={isUnavailable || isFileBusy}
       onClick={() => void runFileAction(artifact, 'Opening original…', async () => {
         await onOpenProject(artifacts.find((item) => item.id === artifact.derivedFrom!.artifactId)!, 'saved'); setOpenedArtifactId(null)

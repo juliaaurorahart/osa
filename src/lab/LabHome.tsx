@@ -10,6 +10,7 @@ type LabHomeProps = {
   onOpenNotebook: () => void
   onOpenSettings: () => void
   onOpenWorkbench: (workbenchId: LabWorkbenchId) => void
+  onOpenOsa: () => void
 }
 
 type StationStyle = CSSProperties & {
@@ -157,6 +158,7 @@ export function LabHome({
   onOpenNotebook,
   onOpenSettings,
   onOpenWorkbench,
+  onOpenOsa,
 }: LabHomeProps) {
   const [activeStationId, setActiveStationId] = useState<string | null>(null)
 
@@ -297,6 +299,9 @@ export function LabHome({
         </div>
 
         <p className="lab-home__hint" aria-hidden="true">move over an instrument</p>
+        <button className="lab-home__osa-link" type="button" onClick={onOpenOsa}>
+          Back to OSA
+        </button>
       </div>
     </section>
   )

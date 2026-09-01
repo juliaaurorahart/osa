@@ -6,18 +6,286 @@
   min-width: 0;
 }
 
-/* The collapsed cover mirrors a simple first slide: project title plus the
-   ordered instruction names, without inventory or editor terminology. */
+.assembly-index-card__organize-list {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.assembly-index-card__organize-row {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) 64px auto auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid var(--osa-border-subtle);
+  border-radius: 7px;
+  background: var(--osa-surface-raised);
+}
+
+.assembly-index-card__organize-number {
+  color: var(--osa-muted);
+  font-size: 0.88rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.assembly-index-card__organize-name {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 5px 7px !important;
+  border: 1px solid var(--osa-border) !important;
+  border-radius: 5px;
+  background: var(--osa-surface) !important;
+  font: inherit !important;
+}
+
+.assembly-index-card__organize-position {
+  min-height: 34px;
+  border: 1px solid var(--osa-border);
+  border-radius: 5px;
+  background: var(--osa-surface);
+  color: var(--osa-text);
+  font: inherit;
+}
+
+.assembly-index-card__organize-open {
+  padding: 8px 9px;
+  border: 1px solid var(--osa-border-subtle);
+  border-radius: 7px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+/* The collapsed cover is the Assembly dashboard: one title, one progress
+   signal, and one obvious row for opening each instruction. */
+.assembly-index-card__summary {
+  gap: 12px;
+}
+
+.assembly-index-card__summary-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.assembly-index-card__summary-title-button {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.assembly-index-card__summary-title-button:hover,
+.assembly-index-card__summary-title-button:focus-visible {
+  color: var(--osa-focus);
+  outline: 0;
+}
+
+.assembly-index-card__summary-total {
+  flex: 0 0 auto;
+  color: var(--osa-muted);
+  font-size: 0.92rem;
+}
+
 .assembly-index-card__summary-index {
   display: grid;
-  gap: 4px;
-  margin: 4px 0 0;
-  padding-left: 1.35em;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.assembly-index-card__summary-index > li {
+  overflow: hidden;
+  border: 1px solid var(--osa-border-subtle);
+  border-radius: 7px;
+  background: var(--osa-surface-raised);
+}
+
+.assembly-index-card__summary-step {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--osa-text);
-  font-size: clamp(1.1rem, 1.5vw, 1.25rem);
-  line-height: 1.5;
+  cursor: pointer;
+  font: inherit;
+  font-size: clamp(1rem, 1.35vw, 1.17rem);
+  text-align: left;
+}
+
+.assembly-index-card__summary-step:hover,
+.assembly-index-card__summary-step:focus-visible {
+  background: var(--osa-hover-surface);
+  outline: 2px solid var(--osa-focus);
+  outline-offset: -2px;
+}
+
+.assembly-index-card__summary-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--osa-border);
+  border-radius: 50%;
+  color: var(--osa-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.assembly-index-card__summary-step-title {
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.assembly-index-card__summary-info {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 7px 10px 8px 49px;
+  border-top: 1px solid var(--osa-border-subtle);
+  background: color-mix(in srgb, var(--osa-surface) 68%, transparent);
+}
+
+.assembly-index-card__summary-object {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.assembly-index-card__summary-thumbnail {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--osa-border);
+  border-radius: 5px;
+  background: var(--osa-surface);
+  object-fit: cover;
+}
+
+.assembly-index-card__summary-object-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.assembly-index-card__summary-label,
+.assembly-index-card__summary-metrics dt {
+  color: var(--osa-muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.assembly-index-card__summary-value {
+  min-width: 0;
+  font-size: 0.83rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.assembly-index-card__summary-flow-arrow {
+  color: var(--osa-muted);
+  font-size: 0.9rem;
+}
+
+.assembly-index-card__summary-metrics {
+  display: grid;
+  grid-auto-flow: column;
+  gap: 11px;
+  margin: 0;
+}
+
+.assembly-index-card__summary-metrics > div {
+  display: grid;
+  gap: 2px;
+}
+
+.assembly-index-card__summary-metrics dd {
+  margin: 0;
+  color: var(--osa-text);
+  font-size: 0.78rem;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.assembly-index-card__summary-add {
+  justify-self: start;
+}
+
+.assembly-index-card__empty {
+  margin: 0;
+  color: var(--osa-muted);
 }
 
 .assembly-index-card .assembly-card__summary-title {
   font-size: clamp(1.55rem, 2.5vw, 2rem);
+}
+
+@media (max-width: 700px) {
+  .assembly-index-card__organize-row {
+    grid-template-columns: 30px minmax(0, 1fr) 58px;
+  }
+
+  .assembly-index-card__organize-row > .text-action {
+    min-height: 44px;
+  }
+
+  .assembly-index-card__organize-row > .text-action:first-of-type {
+    grid-column: 2;
+  }
+
+  .assembly-index-card__summary-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .assembly-index-card__summary-step {
+    grid-template-columns: 30px minmax(0, 1fr);
+  }
+
+  .assembly-index-card__summary-info {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    padding-left: 10px;
+  }
+
+  .assembly-index-card__summary-metrics {
+    grid-column: 1 / -1;
+    grid-auto-flow: row;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    padding-top: 6px;
+    border-top: 1px solid var(--osa-border-subtle);
+  }
+
+  .assembly-index-card__summary-metrics > div {
+    text-align: center;
+  }
 }

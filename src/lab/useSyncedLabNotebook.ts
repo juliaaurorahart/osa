@@ -425,11 +425,11 @@ export function useSyncedLabNotebook() {
   const continueInKonva = useCallback(async (artifactId: string, expectedFileId: string, expectedScope: string, sectionId?: string) => {
     const check = () => {
       const doc = currentRef.current
-      if (!doc || doc.scope !== expectedScope || switching.current || localFailure.current) throw new Error('Return to the original notebook before continuing this painting.')
+      if (!doc || doc.scope !== expectedScope || switching.current || localFailure.current) throw new Error('Return to the original notebook before marking up this image.')
       const contents = labContentsFromSnapshot(doc.snapshot)
       const source = contents.artifacts.find((item) => item.id === artifactId)
-      if (!source || !canContinueInKonva(source)) throw new Error('Push the Klecks painting first. Continue in Konva uses its Saved picture, not its draft.')
-      if ((source.fileId || source.id) !== expectedFileId) throw new Error('The saved painting changed. Open its latest version and try again.')
+      if (!source || !canContinueInKonva(source)) throw new Error('Save a PNG, JPEG, or WebP image first. Mark up in Konva uses its Saved picture, not a draft.')
+      if ((source.fileId || source.id) !== expectedFileId) throw new Error('The saved image changed. Open its latest version and try again.')
       if (sectionId && !contents.sections?.some((section) => section.id === sectionId)) throw new Error('This section is no longer available.')
       return { doc, contents, source }
     }
@@ -438,8 +438,9 @@ export function useSyncedLabNotebook() {
     try {
       const stored = await loadLabFile(original.doc, artifactId)
       check()
-      if (!stored?.preview) throw new Error('The saved painting is unavailable. Its original and draft have not changed.')
-      const capture = await buildKonvaHandoff(original.source, stored.preview)
+      const picture = stored?.preview ?? (stored && (stored.previewMimeType?.startsWith('image/') || stored.mimeType.startsWith('image/')) ? stored.file : null)
+      if (!picture) throw new Error('The saved image is unavailable. Its original and draft have not changed.')
+      const capture = await buildKonvaHandoff(original.source, picture)
       check()
       const now = new Date().toISOString()
       const file = createStoredLabCapture(capture, id(), now)
@@ -455,7 +456,7 @@ export function useSyncedLabNotebook() {
         ...(sectionId ? { sections: latest.contents.sections!.map((section) => section.id === sectionId ? {
           ...section, updatedAt: now, cells: [{ id: id(), objectType: 'artifact' as const, objectId: artifact.id }, ...section.cells],
         } : section) } : {}) }
-      if (!commit(next)) throw new Error('The new workspace could not save. Your original painting is unchanged.')
+      if (!commit(next)) throw new Error('The new workspace could not save. Your original image is unchanged.')
       await flushNotebookWrites(expectedScope)
       return artifact
     } finally { fileOperations.current -= 1 }

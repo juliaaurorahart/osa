@@ -35,6 +35,7 @@
 
 .workspace-settings-menu__dialog {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   width: min(430px, calc(100vw - 48px));
   max-height: calc(100dvh - 48px);
   border: 1px solid var(--osa-border);
@@ -132,7 +133,8 @@
 }
 
 .workspace-settings-menu__body {
-  overflow: auto;
+  min-height: 0;
+  overflow-y: auto;
   overscroll-behavior: contain;
 }
 

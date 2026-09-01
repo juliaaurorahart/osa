@@ -4,6 +4,13 @@
   font-size: clamp(1.02rem, 1.1vw, 1.1rem);
 }
 
+.assembly-view.is-summary-surface,
+.assembly-view.is-detail-surface {
+  max-width: none;
+  min-height: 100%;
+  margin: 0;
+}
+
 .assembly-view .work-view__header {
   padding-inline: clamp(4px, 1vw, 14px);
 }
@@ -43,13 +50,127 @@
   gap: 12px 18px;
 }
 
+.assembly-view__progress {
+  position: sticky;
+  z-index: 5;
+  top: 8px;
+  display: grid;
+  gap: 8px;
+  margin: 0 8px 12px;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--osa-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--osa-surface-raised) 92%, transparent);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 24%);
+  backdrop-filter: blur(12px);
+}
+
+.assembly-view__progress-summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--osa-muted);
+  font-size: 0.88rem;
+}
+
+.assembly-view__progress-summary strong {
+  color: var(--osa-text);
+  font-size: 0.96rem;
+  text-transform: lowercase;
+}
+
+.assembly-view__progress progress {
+  width: 100%;
+  height: 5px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  accent-color: var(--osa-positive-text);
+}
+
+.assembly-view__progress-steps {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  padding: 0 0 2px;
+  overflow-x: auto;
+  list-style: none;
+  scrollbar-width: thin;
+}
+
+.assembly-view__progress-steps li {
+  flex: 0 0 auto;
+}
+
+.assembly-view__progress-step {
+  display: inline-flex;
+  box-sizing: border-box;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  max-width: 220px;
+  padding: 5px 9px;
+  border: 1px solid var(--osa-border);
+  border-radius: 999px;
+  background: var(--osa-surface);
+  color: var(--osa-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.84rem;
+  text-align: left;
+}
+
+.assembly-view__progress-step > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assembly-view__progress-step:hover,
+.assembly-view__progress-step:focus-visible,
+.assembly-view__progress-step.is-current {
+  border-color: var(--osa-focus);
+  color: var(--osa-text);
+  outline: 0;
+}
+
+.assembly-view__progress-step.is-current {
+  background: var(--osa-hover-surface);
+}
+
+.assembly-view__progress-step.is-complete {
+  border-color: var(--osa-positive-border);
+  color: var(--osa-positive-text);
+}
+
+.assembly-view__progress-step.is-add {
+  border-style: dashed;
+  color: var(--osa-text);
+}
+
+.assembly-view__progress-marker {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--osa-surface-raised);
+  color: inherit;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
 /* Shared open-card controls used by the index and instruction cards. */
 .assembly-card__focus-controls {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  min-height: 27px;
-  margin: -3px 0 8px;
+  min-width: 0;
 }
 
 .assembly-card__close-button,
@@ -90,8 +211,8 @@
 }
 
 .assembly-card-board {
-  min-height: 55vh;
-  padding: clamp(20px, 4vw, 52px);
+  min-height: 0;
+  padding: clamp(12px, 2.2vw, 24px);
   border-radius: 14px;
   background:
     linear-gradient(var(--osa-board-overlay), var(--osa-board-overlay)),
@@ -99,7 +220,61 @@
 }
 
 .assembly-card-board.is-locked {
-  min-height: 75vh;
+  min-height: 0;
+}
+
+.assembly-card-board.is-editing {
+  padding: clamp(8px, 1.5vw, 16px);
+}
+
+.assembly-card-board.is-summary-surface,
+.assembly-card-board.is-detail-surface {
+  min-height: 100%;
+  padding: 0;
+  border-radius: 0;
+  background: var(--osa-bg);
+}
+
+.assembly-view.is-detail-surface .assembly-operation-card.is-open,
+.assembly-view.is-detail-surface .assembly-index-card.is-open {
+  box-sizing: border-box;
+  width: min(100%, 1180px);
+  max-width: none;
+  min-height: 100%;
+  margin: 0 auto;
+  padding: clamp(64px, 8vh, 96px) clamp(20px, 6vw, 96px) 48px;
+  border: 0;
+  border-radius: 0;
+  outline: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--osa-text);
+}
+
+.assembly-view.is-summary-surface .assembly-index-card.is-summary {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--osa-text);
+}
+
+.assembly-view.is-summary-surface .assembly-index-card__summary {
+  width: min(100%, 1180px);
+  min-height: 100%;
+  margin: 0 auto;
+  padding: clamp(64px, 8vh, 96px) clamp(20px, 6vw, 96px) 48px;
+}
+
+.assembly-view.is-summary-surface .assembly-index-card.is-summary:hover,
+.assembly-view.is-summary-surface .assembly-index-card.is-summary:focus-visible {
+  box-shadow: none !important;
+  outline: 0;
+  transform: none;
 }
 
 .assembly-card {
@@ -135,13 +310,17 @@
   border: 0;
   background: transparent;
   color: inherit;
-  cursor: pointer;
+  cursor: default;
   font: inherit;
   text-align: left;
 }
 
-.assembly-card__summary:hover,
-.assembly-card__summary:focus-visible {
+button.assembly-card__summary {
+  cursor: pointer;
+}
+
+button.assembly-card__summary:hover,
+button.assembly-card__summary:focus-visible {
   background: var(--osa-hover-surface);
   outline: 2px solid var(--osa-focus);
   outline-offset: -2px;
@@ -247,7 +426,7 @@
   height: clamp(180px, 24vw, 260px);
   min-height: 0;
   border: 1px solid var(--osa-border);
-  background: #fff;
+  background: var(--osa-surface-raised);
 }
 
 @media (max-width: 700px) {
@@ -260,12 +439,27 @@
   }
 
   .assembly-card-board {
-    padding: 14px;
+    padding: 8px;
     border-radius: 8px;
   }
 
+  .assembly-card-board.is-summary-surface,
+  .assembly-card-board.is-detail-surface {
+    padding: 0;
+    border-radius: 0;
+  }
+
+  .assembly-view.is-summary-surface .assembly-index-card__summary {
+    padding: max(62px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) 36px max(18px, env(safe-area-inset-left));
+  }
+
+  .assembly-view.is-detail-surface .assembly-operation-card.is-open,
+  .assembly-view.is-detail-surface .assembly-index-card.is-open {
+    padding: max(62px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(36px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+  }
+
   .assembly-card {
-    min-height: 62vw;
+    min-height: 0;
     aspect-ratio: auto !important;
   }
 
@@ -280,6 +474,18 @@
 
   .assembly-card__view-header p {
     text-align: left;
+  }
+
+  .assembly-view__progress {
+    top: 4px;
+    margin-inline: 2px;
+    padding: 9px;
+  }
+
+  .assembly-view__progress-step,
+  .assembly-card__close-button,
+  .assembly-card__lock-button {
+    min-height: 44px;
   }
 }
 

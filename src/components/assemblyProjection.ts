@@ -22,6 +22,23 @@ export function nodeTitle(node: TextFlowNode) {
 }
 
 /**
+ * The Assembly tracks physical throughput as a count, not as a task checkbox.
+ * Older boards that marked an instruction complete still read as one until a
+ * deliberate count is entered.
+ */
+export function operationCompletedCount(operation: TextFlowNode) {
+  const storedCount = operation.data.properties[OSA_PROPERTY.operationCompletedCount]
+  if (storedCount === undefined || storedCount.trim() === '') {
+    return operation.data.task?.completedAt ? 1 : 0
+  }
+
+  const parsedCount = Number(storedCount)
+  return Number.isFinite(parsedCount) && parsedCount >= 0
+    ? Math.floor(parsedCount)
+    : 0
+}
+
+/**
  * Finds ordinary nodes connected from a root node for one Assembly projection.
  *
  * Imported data may carry an optional relation hint. Objects made directly in

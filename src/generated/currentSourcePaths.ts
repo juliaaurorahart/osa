@@ -52,6 +52,7 @@ export const CURRENT_SOURCE_PATHS = [
   "src/components/InkLab.tsx",
   "src/components/KlecksLab.css",
   "src/components/KlecksLab.tsx",
+  "src/components/konvaClipboard.ts",
   "src/components/KonvaItemRenderer.tsx",
   "src/components/KonvaLab.css",
   "src/components/KonvaLab.tsx",

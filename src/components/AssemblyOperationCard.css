@@ -1,5 +1,61 @@
 .assembly-card__title {
-  margin-bottom: clamp(12px, 2vw, 24px);
+  min-width: 0;
+  margin: 0;
+  font-size: clamp(1.4rem, 2.4vw, 2.3rem) !important;
+  line-height: 1.05 !important;
+}
+
+.assembly-operation-card__header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px 18px;
+  margin-bottom: clamp(12px, 2vw, 20px);
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--osa-border-subtle);
+}
+
+.assembly-operation-card__complete-count,
+.assembly-operation-card__status {
+  display: inline-flex;
+  box-sizing: border-box;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 9px;
+  border: 1px solid var(--osa-border);
+  border-radius: 999px;
+  color: var(--osa-muted);
+  font-size: 0.9rem;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.assembly-operation-card__complete-count {
+  cursor: text;
+}
+
+.assembly-operation-card__complete-count input {
+  width: 5.25rem;
+  min-height: 28px;
+  margin: 0;
+  padding: 2px 6px;
+  border: 1px solid var(--osa-border);
+  border-radius: 6px;
+  background: var(--osa-input);
+  color: var(--osa-text);
+}
+
+.assembly-card__summary-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.assembly-card__summary-heading .assembly-operation-card__status {
+  flex: 0 0 auto;
 }
 
 .assembly-card__summary-content {
@@ -82,4 +138,30 @@
   margin-top: 8px;
   padding-top: 12px;
   border-top: 1px solid var(--osa-border-subtle);
+}
+
+.assembly-operation-card__resources {
+  margin-top: clamp(22px, 4vw, 42px);
+  padding-top: clamp(18px, 3vw, 28px);
+  border-top: 1px solid var(--osa-border-subtle);
+}
+
+@media (max-width: 700px) {
+  .assembly-operation-card__header {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .assembly-card__focus-controls {
+    justify-content: flex-start;
+  }
+
+  .assembly-operation-card__complete-count,
+  .assembly-operation-card__status {
+    min-height: 44px;
+  }
+
+  .assembly-card__summary-heading {
+    align-items: flex-start;
+  }
 }

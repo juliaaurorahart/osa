@@ -195,9 +195,12 @@ const notebook = {
 const register = (flush) => { closeSection = flush; return () => {} }
 const handoffs = []
 let handoffFailure = '', handoffWait
-function Harness() { const [, setVersion] = React.useState(0); refresh = () => setVersion((version) => version + 1)
-  return React.createElement(LabSection, { notebook: { ...notebook }, theme: 'dark', isActive: true, onRegisterFlush: register, onOpenProject: () => {}, onEditorLockChange: lockSection,
-    onContinueInKonva: async (artifact, sectionId) => { handoffs.push({ artifact, sectionId }); if (handoffWait) await handoffWait; if (handoffFailure) throw new Error(handoffFailure) } }) }
+function Harness() { const [, setVersion] = React.useState(0), [sectionView, setSectionView] = React.useState('cells'); refresh = () => setVersion((version) => version + 1)
+  return React.createElement(React.Fragment, null,
+    React.createElement('button', { type: 'button', 'aria-pressed': sectionView === 'cells', onClick: () => setSectionView('cells') }, 'Cells'),
+    React.createElement('button', { type: 'button', 'aria-pressed': sectionView === 'page', onClick: () => setSectionView('page') }, 'Page'),
+    React.createElement(LabSection, { notebook: { ...notebook }, theme: 'dark', isActive: true, sectionView, onRegisterFlush: register, onOpenProject: () => {}, onEditorLockChange: lockSection,
+      onContinueInKonva: async (artifact, sectionId) => { handoffs.push({ artifact, sectionId }); if (handoffWait) await handoffWait; if (handoffFailure) throw new Error(handoffFailure) } })) }
 const root = createRoot(document.getElementById('root'))
 const button = (label) => [...document.querySelectorAll('button')].find((node) => node.textContent === label || node.getAttribute('aria-label') === label)
 const click = async (label) => React.act(async () => { assert.ok(button(label), label); button(label).click() })
@@ -217,6 +220,24 @@ try {
   assert.deepEqual(sections[0].cells.map((cell) => cell.id), [codeCell.id, textCell.id], 'New code goes above existing text')
   assert.match(JSON.parse(lastEditor.text).code, /const speed/)
   await React.act(async () => editorActions.edit('unrun code survives'))
+  const pageEditorNode = document.querySelector('[data-editor-instance]'), pageEditorInstance = lastEditor.instance
+  await click('Page')
+  assert.ok(document.querySelector('.lab-section.is-page'), 'Page is a presentation of the working section')
+  assert.deepEqual([...document.querySelectorAll('[data-cell-id]')].map((node) => node.dataset.cellId), [textCell.id, codeCell.id],
+    'Page reads oldest to newest without rewriting stored cell order')
+  assert.deepEqual(sections[0].cells.map((cell) => cell.id), [codeCell.id, textCell.id])
+  assert.equal(document.querySelector('[data-editor-instance]'), pageEditorNode, 'Page keeps the active editor DOM node')
+  assert.equal(lastEditor.instance, pageEditorInstance, 'Page keeps unsaved editor state')
+  assert.equal(button('Split'), undefined, 'Cell layout controls stay out of the continuous page')
+  await click('Move active cell up')
+  assert.deepEqual(sections[0].cells.map((cell) => cell.id), [textCell.id, codeCell.id], 'Page movement follows visual direction')
+  await click('Move active cell down')
+  assert.deepEqual(sections[0].cells.map((cell) => cell.id), [codeCell.id, textCell.id])
+  await click('Cells')
+  assert.deepEqual([...document.querySelectorAll('[data-cell-id]')].map((node) => node.dataset.cellId), [codeCell.id, textCell.id],
+    'Cells returns to newest-first order')
+  assert.equal(document.querySelector('[data-editor-instance]'), pageEditorNode, 'The editor survives the Page and Cells round trip')
+  assert.equal(lastEditor.text, 'unrun code survives')
   const editorNode = document.querySelector('[data-editor-instance]'), instance = lastEditor.instance
   for (const mode of ['Split', 'Focus', 'In place']) {
     await click(mode); assert.equal(lastEditor.instance, instance); assert.equal(document.querySelector('[data-editor-instance]'), editorNode)
@@ -305,6 +326,8 @@ try {
   const css = readFileSync(resolve('src/lab/LabSection.css'), 'utf8')
   assert.match(css, /\.lab-section__creation\s*\{[^}]*position: sticky; top: 0/)
   assert.match(css, /scroll-margin-top: calc\(var\(--section-add-height\)/)
+  assert.match(css, /\.lab-section\.is-page \.lab-section__flow/)
+  assert.match(css, /\.lab-section\.is-page \.lab-section__cell:hover > header/)
 
   // draw.io stays a Saved preview until an explicit, consented editing session.
   const xml = (label) => `<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/><mxCell id="2" parent="1" value="${label}"/></root></mxGraphModel>`
@@ -373,11 +396,11 @@ try {
   await click('KlecksPaint & layers')
   const paintingCell = sections[0].cells[0], paintingArtifact = notebook.getArtifact(paintingCell.objectId)
   assert.equal(document.querySelector('iframe'), null)
-  assert.equal(button('Continue in Konva').disabled, true, 'A new PSD placeholder is not a saved painting to pass onward')
+  assert.equal(button('Mark up in Konva'), undefined, 'A new PSD placeholder is not a Saved picture to mark up')
   assert.equal(notebook.getProjectDraft(paintingArtifact.id), undefined)
   const confirmationCount = confirmations.length
   await click('Edit Saved')
-  assert.equal(button('Continue in Konva'), undefined, 'Close the painting editor before passing its Saved picture onward')
+  assert.equal(button('Mark up in Konva'), undefined, 'Close the painting editor before passing its Saved picture onward')
   assert.equal(confirmations.length, confirmationCount, 'The self-hosted painter needs no external sharing consent')
   assert.deepEqual(await bytes(klecks.initial), new Uint8Array(starter))
   const paintingFrame = document.querySelector('iframe')
@@ -422,7 +445,7 @@ try {
   assert.deepEqual(await bytes(files.get(paintingDraft.id)), await bytes(painted))
 
   handoffFailure = 'Fixture handoff failed; original is unchanged'
-  await click('Continue in Konva')
+  await click('Mark up in Konva')
   assert.match(document.body.textContent, /Fixture handoff failed/)
   assert.ok(button('Edit Saved'), 'Failed handoff keeps the original Saved preview available')
   assert.equal(handoffs[0].artifact.id, paintingArtifact.id)
@@ -431,9 +454,9 @@ try {
   handoffFailure = ''
   let releaseHandoff
   handoffWait = new Promise((resolve) => { releaseHandoff = resolve })
-  await click('Continue in Konva')
-  assert.equal(button('Continue in Konva').disabled, true)
-  await click('Continue in Konva')
+  await click('Mark up in Konva')
+  assert.equal(button('Mark up in Konva').disabled, true)
+  await click('Mark up in Konva')
   assert.equal(handoffs.length, 2, 'Repeat activation while a transfer is pending cannot duplicate the destination')
   await React.act(async () => { releaseHandoff(); await handoffWait }); handoffWait = null
   assert.deepEqual(await bytes(files.get(paintingArtifact.id)), savedBeforeHandoff)

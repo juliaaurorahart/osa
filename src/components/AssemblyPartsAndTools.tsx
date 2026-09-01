@@ -3,7 +3,6 @@ import type { TextFlowNode } from '../graph/textNode'
 import type { AssemblyToolDraft } from './assemblyViewState'
 import { nodeTitle } from './assemblyProjection'
 import {
-  fieldLabel,
   NEW_PART_OPTION,
   NEW_TOOL_OPTION,
   PLACEHOLDER_TOOL_OPTION,
@@ -62,15 +61,11 @@ export function AssemblyPartsAndTools({
 }: AssemblyPartsAndToolsProps) {
   return (
     <section
+      className="assembly-parts-tools"
       aria-label={`${nodeTitle(operation)} parts and tools`}
-      style={{ display: 'grid', gap: 8, minWidth: 0 }}
     >
-      <strong className="assembly-parts-tools__heading">
-        parts &amp; tools
-      </strong>
-
-      <div className="assembly-parts-tools__field" style={fieldLabel}>
-        <span className="assembly-parts-tools__field-label">parts in</span>
+      <div className="assembly-parts-tools__field">
+        <span className="assembly-parts-tools__field-label">parts</span>
         <div style={{ minWidth: 0 }}>
           <div className="assembly-linked-object-list" style={{ minHeight: '1.3em' }}>
             {inputParts.length
@@ -109,6 +104,7 @@ export function AssemblyPartsAndTools({
           </div>
           {focused && !readOnly ? (
             <select
+              className="assembly-parts-tools__add-select"
               aria-label="link or add a part coming into this instruction"
               defaultValue=""
               onChange={(event) => {
@@ -120,9 +116,14 @@ export function AssemblyPartsAndTools({
                 }
                 if (partId) (onLinkPartInput ?? onLinkPart)(operation.id, partId)
               }}
-              style={{ ...transparentInput, marginTop: 5, borderBottom: '1px solid var(--osa-border)' }}
+              style={{
+                ...transparentInput,
+                marginTop: 5,
+                borderBottom: '1px solid var(--osa-border)',
+                color: 'var(--osa-muted)',
+              }}
             >
-              <option value="">link or add a part or assembly…</option>
+              <option value="">add part</option>
               {availableParts.map((part) => {
                 const isLinked = inputParts.some((linkedPart) => linkedPart.id === part.id)
                 return (
@@ -143,7 +144,7 @@ export function AssemblyPartsAndTools({
         </div>
       </div>
 
-      <div className="assembly-parts-tools__field" style={fieldLabel}>
+      <div className="assembly-parts-tools__field">
         <span className="assembly-parts-tools__field-label">tools</span>
         <div style={{ minWidth: 0 }}>
           <div className="assembly-linked-object-list" style={{ minHeight: '1.3em' }}>
@@ -183,6 +184,7 @@ export function AssemblyPartsAndTools({
           </div>
           {focused && !readOnly ? (
             <select
+              className="assembly-parts-tools__add-select"
               aria-label="link or add a tool for this instruction"
               defaultValue=""
               onChange={(event) => {
@@ -198,9 +200,14 @@ export function AssemblyPartsAndTools({
                 }
                 if (selectedValue) onLinkTool?.(operation.id, selectedValue)
               }}
-              style={{ ...transparentInput, marginTop: 5, borderBottom: '1px solid var(--osa-border)' }}
+              style={{
+                ...transparentInput,
+                marginTop: 5,
+                borderBottom: '1px solid var(--osa-border)',
+                color: 'var(--osa-muted)',
+              }}
             >
-              <option value="">link or add a tool…</option>
+              <option value="">add tool</option>
               {toolInventory.length ? (
                 <optgroup label="tool inventory">
                   {toolInventory.map((tool) => {

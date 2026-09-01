@@ -1,26 +1,32 @@
+import { OSA_PROPERTY } from '../graph/osaData'
 import type { TextFlowNode } from '../graph/textNode'
 import { nodeTitle } from './assemblyProjection'
 import {
   ASSEMBLY_INDEX_CARD_ID,
-  cardFocusStyle,
-  cardKeyDown,
-  cardShell,
   transparentInput,
 } from './assemblyViewPresentation'
 import './AssemblyIndexCard.css'
 
+export type AssemblyInstructionSummary = {
+  operation: TextFlowNode
+  before: TextFlowNode[]
+  after: TextFlowNode | null
+  stepCount: number
+  toolCount: number
+  completedCount: number
+}
+
 type AssemblyIndexCardProps = {
   assembly: TextFlowNode
-  operations: TextFlowNode[]
+  instructionSummaries: AssemblyInstructionSummary[]
   readOnly: boolean
   isOpen: boolean
-  isLocked: boolean
   onOpen: () => void
   onClose: () => void
-  onToggleLock: () => void
   onFocusCard: (cardId: string) => void
+  onOpenOperation: (operationId: string) => void
   onNameChange: (nodeId: string, name: string) => void
-  onReorderOperation: (operationId: string, direction: 'up' | 'down') => void
+  onMoveOperation: (operationId: string, position: number) => void
   onRemoveOperation: (operationId: string) => void
   onAddCard: () => void
 }
@@ -28,47 +34,28 @@ type AssemblyIndexCardProps = {
 /** The Assembly title and ordered table-of-contents card. */
 export function AssemblyIndexCard({
   assembly,
-  operations,
+  instructionSummaries,
   readOnly,
   isOpen,
-  isLocked,
   onOpen,
   onClose,
-  onToggleLock,
   onFocusCard,
+  onOpenOperation,
   onNameChange,
-  onReorderOperation,
+  onMoveOperation,
   onRemoveOperation,
   onAddCard,
 }: AssemblyIndexCardProps) {
+  const operations = instructionSummaries.map(({ operation }) => operation)
+
   return (
     <article
       className={`assembly-card assembly-index-card${isOpen ? ' is-focused is-open' : ' is-summary'}`}
-      style={{ ...cardShell, ...(isOpen ? {} : { padding: 0 }), ...cardFocusStyle(isOpen) }}
-      tabIndex={0}
       aria-label="assembly index card"
-      onClick={() => {
-        if (!isOpen) onOpen()
-      }}
-      onKeyDown={(event) => cardKeyDown(event, onOpen)}
     >
       {isOpen ? (
         <>
           <div className="assembly-card__focus-controls">
-            <button
-              className="assembly-card__lock-button"
-              type="button"
-              aria-pressed={isLocked}
-              aria-label={isLocked
-                ? 'unlock Assembly index and show all cards'
-                : 'lock Assembly index in a single-card view'}
-              onClick={(event) => {
-                event.stopPropagation()
-                onToggleLock()
-              }}
-            >
-              {isLocked ? 'unlock card view' : 'lock this card'}
-            </button>
             <button
               className="assembly-card__close-button"
               type="button"
@@ -77,7 +64,7 @@ export function AssemblyIndexCard({
                 onClose()
               }}
             >
-              close details
+              Done
             </button>
           </div>
 
@@ -99,59 +86,49 @@ export function AssemblyIndexCard({
           />
           <div className="assembly-index-card__title-list">
             <div style={{ display: 'grid', alignContent: 'start', gap: 8 }}>
-              <ol style={{ margin: 0, paddingLeft: '1.45em', fontSize: 'clamp(1.1rem, 1.8vw, 1.45rem)', lineHeight: 1.55 }}>
+              <ol className="assembly-index-card__organize-list">
                 {operations.length ? operations.map((operation, operationIndex) => (
                   <li key={operation.id}>
                     {readOnly ? (
                       <button
+                        className="assembly-index-card__organize-open"
                         type="button"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          onFocusCard(operation.id)
-                        }}
-                        style={{ padding: 0, border: 0, background: 'transparent', color: 'inherit', font: 'inherit', textAlign: 'left', cursor: 'pointer' }}
+                        onClick={() => onOpenOperation(operation.id)}
                       >
                         {nodeTitle(operation)}
                       </button>
                     ) : (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, width: '100%', minWidth: 0 }}>
+                      <div className="assembly-index-card__organize-row">
+                        <span className="assembly-index-card__organize-number">{operationIndex + 1}</span>
                         <input
+                          className="assembly-index-card__organize-name"
                           aria-label={`Card ${nodeTitle(operation)} name`}
                           value={operation.data.name}
                           placeholder="card name"
                           onClick={(event) => event.stopPropagation()}
                           onFocus={() => onFocusCard(operation.id)}
                           onChange={(event) => onNameChange(operation.id, event.target.value)}
-                          style={{ ...transparentInput, flex: '1 1 auto', minWidth: 0, font: 'inherit' }}
+                          style={transparentInput}
                         />
-                        <span style={{ display: 'inline-flex', gap: 2 }}>
-                          <button
-                            className="text-action"
-                            type="button"
-                            aria-label={`move ${nodeTitle(operation)} card up`}
-                            title="Move card up"
-                            disabled={operationIndex === 0}
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              onReorderOperation(operation.id, 'up')
-                            }}
-                          >
-                            ↑
-                          </button>
-                          <button
-                            className="text-action"
-                            type="button"
-                            aria-label={`move ${nodeTitle(operation)} card down`}
-                            title="Move card down"
-                            disabled={operationIndex === operations.length - 1}
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              onReorderOperation(operation.id, 'down')
-                            }}
-                          >
-                            ↓
-                          </button>
-                        </span>
+                        <select
+                          className="assembly-index-card__organize-position"
+                          aria-label={`Move ${nodeTitle(operation)} to position`}
+                          value={operationIndex + 1}
+                          onChange={(event) => onMoveOperation(operation.id, Number(event.currentTarget.value))}
+                        >
+                          {operations.map((_, positionIndex) => (
+                            <option value={positionIndex + 1} key={positionIndex + 1}>
+                              {positionIndex + 1}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          className="text-action"
+                          type="button"
+                          onClick={() => onOpenOperation(operation.id)}
+                        >
+                          edit
+                        </button>
                         <button
                           className="text-action"
                           type="button"
@@ -165,7 +142,7 @@ export function AssemblyIndexCard({
                         >
                           ×
                         </button>
-                      </span>
+                      </div>
                     )}
                   </li>
                 )) : <li style={{ color: 'var(--osa-muted)' }}>add the first instruction card.</li>}
@@ -180,29 +157,139 @@ export function AssemblyIndexCard({
                   }}
                   style={{ justifySelf: 'start' }}
                 >
-                  + card
+                  + instruction
                 </button>
               ) : null}
             </div>
           </div>
         </>
       ) : (
-        <button
-          className="assembly-card__summary"
-          type="button"
-          aria-label={`Open ${nodeTitle(assembly)} details`}
-          aria-expanded={false}
-          onClick={onOpen}
-        >
-          <strong className="assembly-card__summary-title">{nodeTitle(assembly)}</strong>
+        <div className="assembly-card__summary assembly-index-card__summary">
+          <div className="assembly-index-card__summary-header">
+            <button
+              className="assembly-index-card__summary-title-button"
+              type="button"
+              aria-label={`Edit ${nodeTitle(assembly)} summary`}
+              onClick={onOpen}
+            >
+              <strong className="assembly-card__summary-title">{nodeTitle(assembly)}</strong>
+            </button>
+            {operations.length ? (
+              <span className="assembly-index-card__summary-total">
+                {operations.length} {operations.length === 1 ? 'instruction' : 'instructions'}
+              </span>
+            ) : null}
+          </div>
           {operations.length ? (
             <ol className="assembly-index-card__summary-index" aria-label="instruction cards">
-              {operations.map((operation) => (
-                <li key={operation.id}>{nodeTitle(operation)}</li>
-              ))}
+              {instructionSummaries.map((summary, operationIndex) => {
+                const {
+                  operation,
+                  before,
+                  after,
+                  stepCount,
+                  toolCount,
+                  completedCount,
+                } = summary
+                const operationTitle = nodeTitle(operation)
+                const beforeImage = before.find((part) => (
+                  part.data.properties[OSA_PROPERTY.assetImage]?.trim()
+                ))
+                const beforeImageSource = beforeImage
+                  ?.data.properties[OSA_PROPERTY.assetImage]?.trim()
+                const afterImageSource = after
+                  ?.data.properties[OSA_PROPERTY.assetImage]?.trim()
+
+                return (
+                  <li key={operation.id}>
+                    <button
+                      className="assembly-index-card__summary-step"
+                      type="button"
+                      aria-label={`Edit ${operationTitle} instruction`}
+                      onClick={() => onOpenOperation(operation.id)}
+                    >
+                      <span className="assembly-index-card__summary-marker" aria-hidden="true">
+                        {operationIndex + 1}
+                      </span>
+                      <span className="assembly-index-card__summary-step-title">
+                        {operationTitle}
+                      </span>
+                    </button>
+                    <div
+                      className="assembly-index-card__summary-info"
+                      aria-label={`${operationTitle} overview`}
+                    >
+                      <div className="assembly-index-card__summary-object">
+                        {beforeImageSource ? (
+                          <img
+                            className="assembly-index-card__summary-thumbnail"
+                            src={beforeImageSource}
+                            alt={beforeImage?.data.properties[OSA_PROPERTY.assetImageAlt]?.trim()
+                              || nodeTitle(beforeImage!)}
+                            loading="lazy"
+                            decoding="async"
+                          />
+                        ) : null}
+                        <span className="assembly-index-card__summary-object-copy">
+                          <span className="assembly-index-card__summary-label">Before</span>
+                          <span
+                            className="assembly-index-card__summary-value"
+                            aria-label={`${operationTitle} before`}
+                          >
+                            {before.length ? before.map(nodeTitle).join(', ') : '—'}
+                          </span>
+                        </span>
+                      </div>
+                      <span className="assembly-index-card__summary-flow-arrow" aria-hidden="true">→</span>
+                      <div className="assembly-index-card__summary-object">
+                        {afterImageSource ? (
+                          <img
+                            className="assembly-index-card__summary-thumbnail"
+                            src={afterImageSource}
+                            alt={after?.data.properties[OSA_PROPERTY.assetImageAlt]?.trim()
+                              || nodeTitle(after!)}
+                            loading="lazy"
+                            decoding="async"
+                          />
+                        ) : null}
+                        <span className="assembly-index-card__summary-object-copy">
+                          <span className="assembly-index-card__summary-label">After</span>
+                          <span
+                            className="assembly-index-card__summary-value"
+                            aria-label={`${operationTitle} after`}
+                          >
+                            {after ? nodeTitle(after) : '—'}
+                          </span>
+                        </span>
+                      </div>
+                      <dl className="assembly-index-card__summary-metrics">
+                        <div>
+                          <dt>steps</dt>
+                          <dd aria-label={`${operationTitle} steps`}>{stepCount}</dd>
+                        </div>
+                        <div>
+                          <dt>tools</dt>
+                          <dd aria-label={`${operationTitle} tools`}>{toolCount}</dd>
+                        </div>
+                        <div>
+                          <dt>complete</dt>
+                          <dd aria-label={`${operationTitle} complete`}><b>{completedCount}</b> complete</dd>
+                        </div>
+                      </dl>
+                    </div>
+                  </li>
+                )
+              })}
             </ol>
+          ) : (
+            <p className="assembly-index-card__empty">No instructions yet.</p>
+          )}
+          {!readOnly ? (
+            <button className="text-action assembly-index-card__summary-add" type="button" onClick={onAddCard}>
+              + instruction
+            </button>
           ) : null}
-        </button>
+        </div>
       )}
     </article>
   )

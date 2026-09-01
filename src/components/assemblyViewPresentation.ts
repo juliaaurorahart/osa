@@ -51,16 +51,6 @@ export const transparentInput: CSSProperties = {
   font: 'inherit',
 }
 
-export const fieldLabel: CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'minmax(72px, 0.26fr) minmax(0, 1fr)',
-  alignItems: 'start',
-  gap: 8,
-  minWidth: 0,
-  fontSize: 'clamp(0.92rem, 1.2vw, 1.08rem)',
-  lineHeight: 1.4,
-}
-
 export function cardFocusStyle(focused: boolean): CSSProperties {
   return focused
     ? {

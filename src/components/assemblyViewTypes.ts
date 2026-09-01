@@ -8,6 +8,7 @@ export type AssemblyViewActions = {
   onCreateAssembly: (title: string) => string
   onCreateOperation: (assemblyId: string, title: string) => string
   onReorderOperation: (assemblyId: string, operationId: string, direction: 'up' | 'down') => void
+  onMoveOperation: (assemblyId: string, operationId: string, position: number) => void
   onRemoveOperation: (operationId: string) => void
   onCreateStep: (operationId: string) => string
   onReorderStep: (operationId: string, stepId: string, direction: 'up' | 'down') => void
@@ -30,6 +31,7 @@ export type AssemblyViewActions = {
   onUnlinkTool?: (operationId: string, toolId: string) => void
   onNameChange: (nodeId: string, name: string) => void
   onTextChange: (nodeId: string, text: string) => void
+  onTaskCompletionChange: (nodeId: string, complete: boolean) => void
   onPropertyChange?: (nodeId: string, propertyName: string, value: string) => void
 }
 

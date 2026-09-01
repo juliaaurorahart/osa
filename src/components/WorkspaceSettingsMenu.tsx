@@ -34,6 +34,7 @@ export type WorkspaceSettingsMenuProps = {
   triggerLabel?: string
   theme: OsaTheme
   onToggleTheme: () => void
+  onOpenChange?: (open: boolean) => void
 
   boardId: string
   boardName: string
@@ -104,6 +105,7 @@ export function WorkspaceSettingsMenu({
   triggerLabel = 'Settings',
   theme,
   onToggleTheme,
+  onOpenChange,
   boardId,
   boardName,
   boardAccess,
@@ -155,6 +157,12 @@ export function WorkspaceSettingsMenu({
   const closeButtonRef = useRef<HTMLButtonElement>(null)
 
   const close = useCallback(() => setOpen(false), [])
+
+  useEffect(() => {
+    onOpenChange?.(open)
+  }, [onOpenChange, open])
+
+  useEffect(() => () => onOpenChange?.(false), [onOpenChange])
 
   useEffect(() => {
     if (!open) return
