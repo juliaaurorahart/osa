@@ -14,6 +14,7 @@ export const CURRENT_SOURCE_PATHS = [
   "src/app/useLocalDraftPersistence.ts",
   "src/components/AssemblyIndexCard.css",
   "src/components/AssemblyIndexCard.tsx",
+  "src/components/assemblyInstructionPhotoFiles.ts",
   "src/components/AssemblyInstructionsView.css",
   "src/components/AssemblyInstructionsView.tsx",
   "src/components/AssemblyInstructionVisuals.css",
