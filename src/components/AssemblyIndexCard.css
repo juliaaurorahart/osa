@@ -200,6 +200,16 @@
   gap: 5px;
 }
 
+.assembly-index-card__summary-status > .assembly-people.is-compact {
+  grid-column: auto;
+  grid-template-columns: auto minmax(0, 1fr);
+  justify-self: end;
+}
+
+.assembly-index-card__summary-status > .assembly-people.is-compact .assembly-people__list {
+  justify-content: flex-end;
+}
+
 .assembly-index-card__attention-note {
   display: inline-flex;
   align-items: flex-start;

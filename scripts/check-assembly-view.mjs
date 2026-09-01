@@ -678,6 +678,13 @@ try {
   assert.match(peopleSummary, />Bria<\/span>/)
   assert.match(peopleSummary, />Sam<\/span>/)
   assert.doesNotMatch(peopleSummary, /add person|remove Bria/)
+  assert.ok(
+    peopleSummary.indexOf('assembly-index-card__summary-status')
+      < peopleSummary.indexOf('aria-label="Connector Box Drill people"')
+      && peopleSummary.indexOf('aria-label="Connector Box Drill people"')
+        < peopleSummary.indexOf('assembly-index-card__summary-info'),
+    'People sit with the colored status instead of in the lower detail strip.',
+  )
 
   const peopleAuthorCard = articleFor(
     renderAssembly(edges, focusedUiState, peopleNodes),

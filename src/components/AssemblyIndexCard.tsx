@@ -264,6 +264,7 @@ export function AssemblyIndexCard({
                       </span>
                       <span className="assembly-index-card__summary-status">
                         <AssemblyOperationStatus operation={operation} />
+                        <AssemblyPeople operation={operation} compact />
                         {attentionNote ? (
                           <span className="assembly-index-card__attention-note">
                             <span className="assembly-index-card__attention-dot" aria-hidden="true" />
@@ -276,7 +277,6 @@ export function AssemblyIndexCard({
                       className={`assembly-index-card__summary-info${beforeVisuals.length || afterVisuals.length ? ' has-pictures' : ''}`}
                       aria-label={`${operationTitle} overview`}
                     >
-                      <AssemblyPeople operation={operation} compact />
                       {renderPictureGroup('Before', beforeVisuals)}
                       {renderPictureGroup('After', afterVisuals)}
                       <dl className="assembly-index-card__summary-metrics">
