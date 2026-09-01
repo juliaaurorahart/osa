@@ -2,6 +2,11 @@ import type { OsaOperationVisualRole } from '../graph/osaData'
 
 export type OperationPartDirection = 'input' | 'output'
 
+export type InstructionPhotoImport = {
+  imageData: string
+  alt: string
+}
+
 /** Durable graph mutations available to the Assembly authoring projection. */
 export type AssemblyViewActions = {
   onCreateAssembly: (title: string) => string
@@ -9,7 +14,11 @@ export type AssemblyViewActions = {
   onReorderOperation: (assemblyId: string, operationId: string, direction: 'up' | 'down') => void
   onMoveOperation: (assemblyId: string, operationId: string, position: number) => void
   onRemoveOperation: (operationId: string) => void
-  onCreateInstructionVisual: (operationId: string, role: OsaOperationVisualRole) => string
+  onCreateInstructionVisual: (
+    operationId: string,
+    role: OsaOperationVisualRole,
+    photo?: InstructionPhotoImport,
+  ) => string
   onSetInstructionVisualRole: (
     operationId: string,
     placementEdgeId: string,

@@ -19,7 +19,6 @@ try {
     '/src/components/AssemblyInstructionVisuals.tsx',
   )
   const {
-    MAX_INSTRUCTION_VISUALS_PER_ROLE,
     OSA_OPERATION_INSTRUCTION_MODE,
     OSA_OPERATION_VISUAL_ROLE,
     OSA_PROPERTY,
@@ -185,10 +184,10 @@ try {
     'Moving one picture does not change ownership, embeds, or other placements.',
   )
 
-  const fullAfterGroup = [
+  const populatedAfterGroup = [
     placement,
-    ...Array.from({ length: MAX_INSTRUCTION_VISUALS_PER_ROLE }, (_, index) => createGraphEdge({
-      id: `full-after-${index + 1}`,
+    ...Array.from({ length: 5 }, (_, index) => createGraphEdge({
+      id: `populated-after-${index + 1}`,
       source: operation.id,
       target: `after-visual-${index + 1}`,
       properties: {
@@ -197,15 +196,17 @@ try {
       },
     })),
   ]
+  const movedIntoPopulatedGroup = setInstructionVisualRoleEdges(
+    populatedAfterGroup,
+    operation.id,
+    placement.id,
+    OSA_OPERATION_VISUAL_ROLE.after,
+  )
   assert.equal(
-    setInstructionVisualRoleEdges(
-      fullAfterGroup,
-      operation.id,
-      placement.id,
-      OSA_OPERATION_VISUAL_ROLE.after,
-    ),
-    fullAfterGroup,
-    'Moving into a full three-picture group is an atomic no-op.',
+    movedIntoPopulatedGroup.find((edge) => edge.id === placement.id)
+      ?.data.properties[OSA_PROPERTY.operationVisualRole],
+    OSA_OPERATION_VISUAL_ROLE.after,
+    'Before and After groups accept more than three pictures.',
   )
 
   const singleInstructionPlacementEdges = preservationEdges.filter((edge) => (
@@ -380,18 +381,35 @@ try {
     return null
   }
   renderToStaticMarkup(createElement(GraphActionHarness))
-  for (let index = 0; index < MAX_INSTRUCTION_VISUALS_PER_ROLE; index += 1) {
+  const photoVisualId = actions.onCreateInstructionVisual(
+    operation.id,
+    OSA_OPERATION_VISUAL_ROLE.before,
+    {
+      imageData: 'data:image/webp;base64,cGhvdG8=',
+      alt: 'Drilled battery box',
+    },
+  )
+  assert.ok(photoVisualId)
+  const photoVisual = liveNodes.find((node) => node.id === photoVisualId)
+  assert.equal(photoVisual?.data.name, 'Drilled battery box')
+  assert.equal(photoVisual?.data.properties[OSA_PROPERTY.visualIdentity], 'photo')
+  assert.equal(photoVisual?.data.properties[OSA_PROPERTY.visualContent], 'image')
+  assert.equal(photoVisual?.data.properties[OSA_PROPERTY.visualImmutable], 'true')
+  assert.equal(
+    photoVisual?.data.properties[OSA_PROPERTY.assetImage],
+    'data:image/webp;base64,cGhvdG8=',
+  )
+  assert.equal(
+    photoVisual?.data.properties[OSA_PROPERTY.assetImageAlt],
+    'Drilled battery box',
+  )
+  for (let index = 0; index < 4; index += 1) {
     assert.ok(actions.onCreateInstructionVisual(
       operation.id,
       OSA_OPERATION_VISUAL_ROLE.before,
     ))
   }
-  assert.equal(
-    actions.onCreateInstructionVisual(operation.id, OSA_OPERATION_VISUAL_ROLE.before),
-    '',
-    'The action refuses a fourth Before picture.',
-  )
-  assert.equal(createdNodeIds.length, MAX_INSTRUCTION_VISUALS_PER_ROLE)
+  assert.equal(createdNodeIds.length, 5)
   assert.equal(liveNodes.filter((node) => node.data.properties[OSA_PROPERTY.role] === 'step').length, 0)
   assert.equal(liveEdges.filter((edge) => (
     edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
@@ -400,9 +418,9 @@ try {
     edge.source === operation.id
     && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationVisual
     && edge.data.properties[OSA_PROPERTY.operationVisualRole] === OSA_OPERATION_VISUAL_ROLE.before
-  )).length, MAX_INSTRUCTION_VISUALS_PER_ROLE)
+  )).length, 5)
 
-  console.log('Instruction graph actions preserve legacy data, exact placements, role limits, and blank-description cutover.')
+  console.log('Instruction graph actions preserve legacy data, unlimited exact placements, direct photos, and blank-description cutover.')
 } finally {
   await server.close()
 }

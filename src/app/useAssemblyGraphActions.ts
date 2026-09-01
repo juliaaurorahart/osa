@@ -5,7 +5,11 @@ import {
   type MutableRefObject,
   type SetStateAction,
 } from 'react'
-import type { AssemblyViewActions, OperationPartDirection } from '../components/assemblyViewTypes'
+import type {
+  AssemblyViewActions,
+  InstructionPhotoImport,
+  OperationPartDirection,
+} from '../components/assemblyViewTypes'
 import { createGraphEdge, type GraphEdge } from '../graph/graphEdge'
 import type { NodeKind } from '../graph/nodeKinds'
 import {
@@ -13,7 +17,6 @@ import {
   isContainableOsaObject,
   isPartLike,
   isOsaOperationVisualRole,
-  MAX_INSTRUCTION_VISUALS_PER_ROLE,
   OSA_OPERATION_STATUS,
   OSA_OPERATION_VISUAL_ROLE,
   operationVisualDisplayOrder,
@@ -58,20 +61,6 @@ type UseAssemblyGraphActionsOptions = {
   onStepCanvasRemoved: (visualId: string | null) => void
 }
 
-function instructionVisualRoleCount(
-  edges: GraphEdge[],
-  operationId: string,
-  role: OsaOperationVisualRole,
-  excludedEdgeId?: string,
-) {
-  return edges.filter((edge) => (
-    edge.id !== excludedEdgeId
-    && edge.source === operationId
-    && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationVisual
-    && edge.data.properties[OSA_PROPERTY.operationVisualRole] === role
-  )).length
-}
-
 /** Changes one exact placement role without disturbing its geometry or identity. */
 export function setInstructionVisualRoleEdges(
   edges: GraphEdge[],
@@ -88,11 +77,6 @@ export function setInstructionVisualRoleEdges(
   ))
   if (!placement) return edges
   if (placement.data.properties[OSA_PROPERTY.operationVisualRole] === role) return edges
-  if (
-    instructionVisualRoleCount(edges, operationId, role, placementEdgeId)
-    >= MAX_INSTRUCTION_VISUALS_PER_ROLE
-  ) return edges
-
   return edges.map((edge) => edge.id === placementEdgeId
     ? {
         ...edge,
@@ -402,6 +386,7 @@ export function useAssemblyGraphActions({
   const createInstructionVisual = useCallback((
     operationId: string,
     role: OsaOperationVisualRole,
+    photo?: InstructionPhotoImport,
   ) => {
     if (!isOsaOperationVisualRole(role)) return ''
     const operation = latestNodes.current.find((node) => node.id === operationId)
@@ -409,20 +394,22 @@ export function useAssemblyGraphActions({
       !operation
       || (operation.data.kind !== 'action' && osaRole(operation) !== 'operation')
     ) return ''
-    if (
-      instructionVisualRoleCount(latestEdges.current, operationId, role)
-      >= MAX_INSTRUCTION_VISUALS_PER_ROLE
-    ) return ''
-
+    const roleLabel = role === OSA_OPERATION_VISUAL_ROLE.before ? 'Before' : 'After'
+    const photoAlt = photo?.alt.trim() ?? ''
     const visualId = createObjectNode(
-      `${operation.data.name.trim() || 'Instruction'} ${
-        role === OSA_OPERATION_VISUAL_ROLE.before ? 'Before' : 'After'
-      }`,
+      photoAlt || `${operation.data.name.trim() || 'Instruction'} ${roleLabel}`,
       'visual',
       null,
       '',
       undefined,
-      {
+      photo ? {
+        [OSA_PROPERTY.role]: 'visual',
+        [OSA_PROPERTY.visualContent]: 'image',
+        [OSA_PROPERTY.visualIdentity]: 'photo',
+        [OSA_PROPERTY.visualImmutable]: 'true',
+        [OSA_PROPERTY.assetImage]: photo.imageData,
+        [OSA_PROPERTY.assetImageAlt]: photoAlt || `${operation.data.name.trim() || 'Instruction'} ${roleLabel}`,
+      } : {
         [OSA_PROPERTY.role]: 'visual',
         [OSA_PROPERTY.visualContent]: 'canvas',
         [OSA_PROPERTY.visualIdentity]: 'untyped',
@@ -431,14 +418,6 @@ export function useAssemblyGraphActions({
     )
     const placementEdgeId = `edge-${nextEdgeIdRef.current++}`
     setEdges((currentEdges) => {
-      // Recheck in the state updater so two rapid requests cannot place a
-      // fourth image. The first-class Visual remains recoverable even if a
-      // concurrent update filled the group before this edge was committed.
-      if (
-        instructionVisualRoleCount(currentEdges, operationId, role)
-        >= MAX_INSTRUCTION_VISUALS_PER_ROLE
-      ) return currentEdges
-
       return [...currentEdges, createGraphEdge({
         id: placementEdgeId,
         source: operationId,
@@ -454,7 +433,7 @@ export function useAssemblyGraphActions({
       })]
     })
     return visualId
-  }, [createObjectNode, latestEdges, latestNodes, nextEdgeIdRef, setEdges])
+  }, [createObjectNode, latestNodes, nextEdgeIdRef, setEdges])
 
   const setInstructionVisualRole = useCallback((
     operationId: string,

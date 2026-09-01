@@ -19,8 +19,8 @@ try {
   const { AssemblyIndexCard } = await server.ssrLoadModule(
     '/src/components/AssemblyIndexCard.tsx',
   )
-  const { AssemblyInstructionVisuals } = await server.ssrLoadModule(
-    '/src/components/AssemblyInstructionVisuals.tsx',
+  const { instructionPhotoFiles } = await server.ssrLoadModule(
+    '/src/components/assemblyInstructionPhotoFiles.ts',
   )
   const { AssemblyPeople } = await server.ssrLoadModule(
     '/src/components/AssemblyPeople.tsx',
@@ -29,12 +29,10 @@ try {
     '/src/components/AssemblyInstructionsView.tsx',
   )
   const {
-    instructionVisualsForOperation,
     operationAttentionNote,
     operationCompletedCount,
     operationStatus,
     operationStatusLabel,
-    stepsForOperation,
   } = await server.ssrLoadModule('/src/components/assemblyProjection.ts')
   const { createAssemblyViewUiState } = await server.ssrLoadModule(
     '/src/components/assemblyViewState.ts',
@@ -118,6 +116,7 @@ try {
     pictureVisual('assembly-view-before-1', 'Before picture one', '/test/before-1.png'),
     pictureVisual('assembly-view-before-2', 'Before picture two', '/test/before-2.png'),
     pictureVisual('assembly-view-before-3', 'Before picture three', '/test/before-3.png'),
+    pictureVisual('assembly-view-before-4', 'Before picture four', '/test/before-4.png'),
   ]
   const afterVisuals = [
     pictureVisual('assembly-view-after-1', 'After picture one', '/test/after-1.png'),
@@ -389,8 +388,8 @@ try {
   assert.match(connectorCard, /aria-label="Connector Box Drill After pictures"/)
   assert.equal(
     (connectorCard.match(/aria-label="open Connector Box Drill before visual \d+"/g) ?? []).length,
-    3,
-    'The editor defensively caps Before at three pictures.',
+    4,
+    'The open instruction shows every Before picture even when the summary previews only three.',
   )
   assert.equal(
     (connectorCard.match(/aria-label="open Connector Box Drill after visual \d+"/g) ?? []).length,
@@ -398,10 +397,27 @@ try {
   )
   assert.equal(
     (connectorCard.match(/aria-label="remove Connector Box Drill (?:before|after) visual \d+"/g) ?? []).length,
-    6,
+    7,
     'Every visible placement has its own remove-from-instruction action.',
   )
-  assert.doesNotMatch(connectorCard, /Roleless legacy picture|>\+ picture<\/button>/)
+  assert.doesNotMatch(connectorCard, /Roleless legacy picture/)
+  assert.match(connectorCard, />\+ canvas<\/button>/)
+  assert.match(connectorCard, /aria-label="Add Before photos to Connector Box Drill"/)
+  assert.match(connectorCard, /aria-label="Add After photos to Connector Box Drill"/)
+  assert.equal(
+    (connectorCard.match(/accept="image\/\*" multiple=""/g) ?? []).length,
+    2,
+    'Before and After each expose one multi-photo picker for phone and desktop.',
+  )
+  assert.deepEqual(
+    instructionPhotoFiles([
+      { name: 'one.jpg', type: 'image/jpeg' },
+      { name: 'notes.pdf', type: 'application/pdf' },
+      { name: 'two.png', type: 'image/png' },
+    ]).map((file) => file.name),
+    ['one.jpg', 'two.png'],
+    'A mixed drop keeps every image in its original order and skips other files.',
+  )
   assert.doesNotMatch(connectorCard, /<figcaption/)
   assert.match(connectorCard, /aria-label="Connector Box Drill status"/)
   assert.match(connectorCard, />Pending<\/option>/)
@@ -475,27 +491,6 @@ try {
     'A middle instruction can navigate both backward and forward.',
   )
 
-  const connectorPlacements = instructionVisualsForOperation(
-    connectorBoxDrill.id,
-    stepsForOperation(connectorBoxDrill.id, nodes, edges),
-    nodes,
-    edges,
-  )
-  const removedPlacements = []
-  const interactionTree = AssemblyInstructionVisuals({
-    operationId: connectorBoxDrill.id,
-    operationTitle: 'Connector Box Drill',
-    visuals: connectorPlacements,
-    nodes,
-    edges,
-    annotationTargets: [],
-    readOnly: false,
-    actions: {
-      ...actions,
-      onRemoveInstructionVisual: (...args) => removedPlacements.push(args),
-    },
-    onEditVisual: noop,
-  })
   const findElement = (value, predicate) => {
     if (Array.isArray(value)) {
       for (const child of value) {
@@ -508,18 +503,6 @@ try {
     if (predicate(value)) return value
     return findElement(value.props.children, predicate)
   }
-  const firstRemove = findElement(interactionTree, (element) => (
-    element.type === 'button'
-    && element.props['aria-label'] === 'remove Connector Box Drill before visual 1'
-  ))
-  assert.ok(firstRemove, 'Expected the first Before placement remove button.')
-  firstRemove.props.onClick()
-  assert.deepEqual(
-    removedPlacements,
-    [[connectorBoxDrill.id, 'assembly-view-check-before-1-placement']],
-    'The UI removes the exact operationVisual edge, not the reusable Visual id.',
-  )
-
   const singleDescriptionNodes = nodes.map((node) => node.id === connectorBoxDrill.id
     ? {
         ...node,
@@ -748,7 +731,11 @@ try {
     'Connector Box Drill card',
   )
   assert.match(sharedAttentionCard, /10 more regular and 5 more large requested\./)
-  assert.doesNotMatch(sharedAttentionCard, /attention note"|placeholder="add a shortage/)
+  assert.doesNotMatch(
+    sharedAttentionCard,
+    /attention note"|placeholder="add a shortage|Add Before photos|Add After photos|>\+ canvas</,
+    'Read-only instruction details expose neither editing nor photo-import controls.',
+  )
 
   const sharedAfterOnlyState = {
     ...createAssemblyViewUiState(),
@@ -941,7 +928,7 @@ try {
   assert.match(previewInstructionsMarkup, />back to Assembly<\/button>/)
 
   console.log(
-    'Assembly checks passed: one Description, explicit capped pictures, status, exact removal, shared omission, and phone navigation.',
+    'Assembly checks passed: one Description, unlimited detail photos, three-photo compact previews, status, shared omission, and phone navigation.',
   )
 } finally {
   await server.close()

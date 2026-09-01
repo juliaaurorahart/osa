@@ -795,17 +795,20 @@ try {
     'Only a canonical Visual can receive an explicit Before/After role.',
   )
   for (const role of [OSA_OPERATION_VISUAL_ROLE.before, OSA_OPERATION_VISUAL_ROLE.after]) {
-    assert.throws(
-      () => parseOsaImportPackage({
+    const expandedRolePackage = parseOsaImportPackage({
         ...instructionVisualRoleSource,
-        id: `too-many-${role}-visuals`,
+        id: `many-${role}-visuals`,
         edges: [
           ...instructionVisualEdges,
           instructionVisualEdge(`fourth-${role}`, 'instruction-visual-8', role),
         ],
-      }),
-      new RegExp(`more than 3 ${role} visuals`),
-      `An instruction cannot import a fourth ${role} visual.`,
+      })
+    assert.equal(
+      expandedRolePackage.edges.filter((edge) => (
+        edge.properties[OSA_PROPERTY.operationVisualRole] === role
+      )).length,
+      4,
+      `An instruction can import more than three ${role} visuals.`,
     )
   }
 

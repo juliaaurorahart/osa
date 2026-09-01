@@ -5,7 +5,7 @@ import {
 } from 'react'
 import type { GraphEdge } from '../graph/graphEdge'
 import {
-  MAX_INSTRUCTION_VISUALS_PER_ROLE,
+  MAX_ASSEMBLY_VISUAL_PREVIEWS_PER_ROLE,
   OSA_OPERATION_VISUAL_ROLE,
   OSA_RELATION,
   osaRole,
@@ -122,11 +122,11 @@ export function AssemblyView({
       operation,
       beforeVisuals: instructionVisuals
         .filter(({ role }) => role === OSA_OPERATION_VISUAL_ROLE.before)
-        .slice(0, MAX_INSTRUCTION_VISUALS_PER_ROLE)
+        .slice(0, MAX_ASSEMBLY_VISUAL_PREVIEWS_PER_ROLE)
         .map(({ visual }) => visual),
       afterVisuals: instructionVisuals
         .filter(({ role }) => role === OSA_OPERATION_VISUAL_ROLE.after)
-        .slice(0, MAX_INSTRUCTION_VISUALS_PER_ROLE)
+        .slice(0, MAX_ASSEMBLY_VISUAL_PREVIEWS_PER_ROLE)
         .map(({ visual }) => visual),
       toolCount: new Set(operationTools.map((tool) => tool.id)).size,
       completedCount: operationCompletedCount(operation),

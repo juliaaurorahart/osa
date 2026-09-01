@@ -3,7 +3,7 @@ import type { GraphEdge } from '../graph/graphEdge'
 import {
   appearanceAccentColor,
   isPartLike,
-  MAX_INSTRUCTION_VISUALS_PER_ROLE,
+  MAX_ASSEMBLY_VISUAL_PREVIEWS_PER_ROLE,
   OSA_OPERATION_VISUAL_ROLE,
   OSA_RELATION,
   osaRole,
@@ -208,10 +208,10 @@ export function AssemblyInstructionsView({
             .filter(({ visual }) => visualHasInstructionContent(visual, nodes, edges))
           const before = visuals
             .filter(({ role }) => role === OSA_OPERATION_VISUAL_ROLE.before)
-            .slice(0, MAX_INSTRUCTION_VISUALS_PER_ROLE)
+            .slice(0, MAX_ASSEMBLY_VISUAL_PREVIEWS_PER_ROLE)
           const after = visuals
             .filter(({ role }) => role === OSA_OPERATION_VISUAL_ROLE.after)
-            .slice(0, MAX_INSTRUCTION_VISUALS_PER_ROLE)
+            .slice(0, MAX_ASSEMBLY_VISUAL_PREVIEWS_PER_ROLE)
           const description = instructionDescription(operation, steps)
 
           const pictureGroup = (

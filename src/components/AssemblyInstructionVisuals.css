@@ -24,6 +24,22 @@
   min-width: 0;
 }
 
+.assembly-instruction-visuals__group {
+  padding: 10px;
+  border: 1px dashed transparent;
+  border-radius: 9px;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.assembly-instruction-visuals__group.is-dragging {
+  border-color: var(--osa-focus);
+  background: var(--osa-hover-surface);
+}
+
+.assembly-instruction-visuals__group.is-importing {
+  opacity: 0.82;
+}
+
 .assembly-instruction-visuals__group-header {
   display: flex;
   align-items: center;
@@ -97,6 +113,57 @@
   color: var(--osa-danger-text);
 }
 
+.assembly-instruction-visuals__drop-target {
+  position: relative;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  min-height: 58px;
+  padding: 10px 14px;
+  border: 1px dashed var(--osa-border);
+  border-radius: 8px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-muted);
+  cursor: pointer;
+  font-size: 0.86rem;
+  font-weight: 650;
+  line-height: 1.3;
+  text-align: center;
+}
+
+.assembly-instruction-visuals__drop-target:hover,
+.assembly-instruction-visuals__drop-target:focus-within,
+.assembly-instruction-visuals__group.is-dragging .assembly-instruction-visuals__drop-target {
+  border-color: var(--osa-focus);
+  color: var(--osa-text);
+  outline: 2px solid color-mix(in srgb, var(--osa-focus) 35%, transparent);
+  outline-offset: 2px;
+}
+
+.assembly-instruction-visuals__drop-target input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.assembly-instruction-visuals__drop-target:has(input:disabled) {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.assembly-instruction-visuals__import-message {
+  margin: 0;
+  color: var(--osa-muted);
+  font-size: 0.82rem;
+}
+
+.assembly-instruction-visuals__import-message.is-error {
+  color: var(--osa-danger-text);
+}
+
 .assembly-instruction-visuals__unassigned {
   margin-top: 6px;
   padding: 14px;
@@ -114,7 +181,8 @@
   }
 
   .assembly-instruction-visuals__group-header .text-action,
-  .assembly-instruction-visuals__item-actions .text-action {
+  .assembly-instruction-visuals__item-actions .text-action,
+  .assembly-instruction-visuals__drop-target {
     min-height: 44px;
   }
 }

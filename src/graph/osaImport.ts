@@ -3,8 +3,6 @@ import { NODE_KINDS, type NodeKind } from './nodeKinds'
 import {
   isOsaOperationStatus,
   isOsaOperationVisualRole,
-  MAX_INSTRUCTION_VISUALS_PER_ROLE,
-  OSA_OPERATION_VISUAL_ROLE,
   OSA_PROPERTY,
   OSA_RELATION,
   normalizeCurrencyCode,
@@ -378,28 +376,6 @@ function validateManagedEdgeProperties(
   }
 }
 
-/** Each instruction has at most three deliberately assigned Before and After images. */
-function validateOperationVisualRoleCounts(edges: OsaImportEdge[]) {
-  const counts = new Map<string, number>()
-  for (const edge of edges) {
-    if (edge.properties[OSA_PROPERTY.relationRole] !== OSA_RELATION.operationVisual) continue
-    const visualRole = edge.properties[OSA_PROPERTY.operationVisualRole]
-    if (
-      visualRole !== OSA_OPERATION_VISUAL_ROLE.before
-      && visualRole !== OSA_OPERATION_VISUAL_ROLE.after
-    ) continue
-
-    const key = `${edge.source}\u0000${visualRole}`
-    const count = (counts.get(key) ?? 0) + 1
-    if (count > MAX_INSTRUCTION_VISUALS_PER_ROLE) {
-      throw new Error(
-        `Operation ${edge.source} has more than ${MAX_INSTRUCTION_VISUALS_PER_ROLE} ${visualRole} visuals.`,
-      )
-    }
-    counts.set(key, count)
-  }
-}
-
 /** An operation card can designate one, not several, primary represented part. */
 function validateOperationPrimaryOutputs(edges: OsaImportEdge[]) {
   const primaryOutputCounts = new Map<string, number>()
@@ -532,7 +508,6 @@ export function parseOsaImportPackage(value: unknown): OsaImportPackage {
     nodesById.get(edge.target)!,
     `edges[${index}].properties`,
   ))
-  validateOperationVisualRoleCounts(edges)
   validateOperationPrimaryOutputs(edges)
   validateObjectVisualOwnership(nodes, edges)
 

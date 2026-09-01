@@ -170,8 +170,8 @@ export const OSA_OPERATION_VISUAL_ROLE = {
   after: 'after',
 } as const
 
-/** One instruction can show at most three images in either state group. */
-export const MAX_INSTRUCTION_VISUALS_PER_ROLE = 3
+/** Compact Assembly projections preview only the first three pictures per state. */
+export const MAX_ASSEMBLY_VISUAL_PREVIEWS_PER_ROLE = 3
 
 export type OsaOperationVisualRole = (
   typeof OSA_OPERATION_VISUAL_ROLE
