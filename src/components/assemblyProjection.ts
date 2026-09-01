@@ -1,12 +1,14 @@
 import type { GraphEdge } from '../graph/graphEdge'
 import {
   isOsaOperationStatus,
+  MAX_ASSEMBLY_VISUAL_PREVIEWS,
   OSA_OPERATION_INSTRUCTION_MODE,
   OSA_OPERATION_STATUS,
   OSA_OPERATION_VISUAL_ROLE,
   OSA_PROPERTY,
   OSA_RELATION,
   operationVisualDisplayOrder,
+  operationVisualFlag,
   operationVisualRole,
   operationOrder,
   osaRole,
@@ -101,13 +103,39 @@ export type InstructionVisual = {
   /** Exact operation placement or legacy Step-to-Visual link identity. */
   edgeId: string | null
   visual: TextFlowNode
+  /** Preserved compatibility metadata; new unified placements are roleless. */
   role: OsaOperationVisualRole | null
+  /** Whether this placement belongs in the instruction's published Visuals. */
+  published: boolean
+  /** Whether this placement is one of the three compact Assembly previews. */
+  compact: boolean
+  /** Distinguishes an explicit placement choice from a legacy fallback. */
+  publishedExplicit: boolean
+  /** Distinguishes an explicit compact choice from a legacy fallback. */
+  compactExplicit: boolean
+}
+
+type ProjectedInstructionVisual = InstructionVisual & {
+  publishedSetting: boolean | null
+  compactSetting: boolean | null
+}
+
+/** Published detail visuals, including safe fallbacks for older boards. */
+export function publishedInstructionVisuals(visuals: readonly InstructionVisual[]) {
+  return visuals.filter((visual) => visual.published)
+}
+
+/** The explicitly selected (or legacy-fallback) compact preview, capped globally. */
+export function compactInstructionVisuals(visuals: readonly InstructionVisual[]) {
+  return visuals
+    .filter((visual) => visual.published && visual.compact)
+    .slice(0, MAX_ASSEMBLY_VISUAL_PREVIEWS)
 }
 
 /**
  * Collects explicit operation Visuals plus any older Step-owned Visuals.
- * Legacy Visuals remain unassigned until someone deliberately chooses Before
- * or After; no image is guessed or moved during this compatibility projection.
+ * Legacy Before/After roles remain readable compatibility metadata; the
+ * unified Visuals editor does not rewrite or move them on load.
  */
 export function instructionVisualsForOperation(
   operationId: string,
@@ -133,38 +161,86 @@ export function instructionVisualsForOperation(
     .flatMap(({ edge }) => {
       const visual = nodes.find((node) => node.id === edge.target)
       if (!visual || !isVisualNode(visual)) return []
-      const placement: InstructionVisual = {
+      const role = operationVisualRole(
+        edge.data.properties[OSA_PROPERTY.operationVisualRole],
+      ) ?? (visual.data.properties[OSA_PROPERTY.visualIncludeInInstructions] === 'true'
+        ? OSA_OPERATION_VISUAL_ROLE.after
+        : null)
+      const publishedSetting = operationVisualFlag(
+        edge.data.properties[OSA_PROPERTY.operationVisualPublished],
+      )
+      const compactSetting = operationVisualFlag(
+        edge.data.properties[OSA_PROPERTY.operationVisualCompact],
+      )
+      const placement: ProjectedInstructionVisual = {
         edgeId: edge.id,
         visual,
         // Existing Step canvases were deliberately published with this flag
         // before Before/After roles existed. Keep those visible as After until
         // the author explicitly moves them; unpublished roleless work remains
         // private and unprojected.
-        role: operationVisualRole(
-          edge.data.properties[OSA_PROPERTY.operationVisualRole],
-        ) ?? (visual.data.properties[OSA_PROPERTY.visualIncludeInInstructions] === 'true'
-          ? OSA_OPERATION_VISUAL_ROLE.after
-          : null),
+        role,
+        published: publishedSetting ?? role !== null,
+        compact: false,
+        publishedExplicit: publishedSetting !== null,
+        compactExplicit: compactSetting !== null,
+        publishedSetting,
+        compactSetting,
       }
       return [placement]
     })
 
   const placedVisualIds = new Set(placements.map((placement) => placement.visual.id))
-  const legacyStepVisuals: InstructionVisual[] = []
+  const legacyStepVisuals: ProjectedInstructionVisual[] = []
   steps.forEach((step) => {
     const ownership = canvasOwnershipForStep(step.id, nodes, edges)
     if (ownership && !placedVisualIds.has(ownership.visual.id)) {
+      const publishedSetting = operationVisualFlag(
+        ownership.edge.data.properties[OSA_PROPERTY.operationVisualPublished],
+      )
+      const compactSetting = operationVisualFlag(
+        ownership.edge.data.properties[OSA_PROPERTY.operationVisualCompact],
+      )
+      const legacyPublished = (
+        ownership.visual.data.properties[OSA_PROPERTY.visualIncludeInInstructions] === 'true'
+      )
       legacyStepVisuals.push({
         edgeId: ownership.edge.id,
         visual: ownership.visual,
-        role: ownership.visual.data.properties[OSA_PROPERTY.visualIncludeInInstructions] === 'true'
+        role: legacyPublished
           ? OSA_OPERATION_VISUAL_ROLE.after
           : null,
+        published: publishedSetting ?? legacyPublished,
+        compact: false,
+        publishedExplicit: publishedSetting !== null,
+        compactExplicit: compactSetting !== null,
+        publishedSetting,
+        compactSetting,
       })
     }
   })
 
-  return [...placements, ...legacyStepVisuals]
+  const projected = [...placements, ...legacyStepVisuals]
+  const published = projected.filter((placement) => placement.published)
+  const hasExplicitCompactChoice = published.some((placement) => (
+    placement.compactSetting !== null
+  ))
+  const compactCandidates = hasExplicitCompactChoice
+    ? published.filter((placement) => placement.compactSetting === true)
+    : published
+  const compactEdgeIds = new Set(compactCandidates
+    .slice(0, MAX_ASSEMBLY_VISUAL_PREVIEWS)
+    .map((placement) => placement.edgeId))
+
+  return projected.map((placement): InstructionVisual => ({
+    edgeId: placement.edgeId,
+    visual: placement.visual,
+    role: placement.role,
+    published: placement.published,
+    compact: placement.published && compactEdgeIds.has(placement.edgeId),
+    publishedExplicit: placement.publishedExplicit,
+    compactExplicit: placement.compactExplicit,
+  }))
 }
 
 /**

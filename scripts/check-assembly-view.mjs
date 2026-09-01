@@ -6,8 +6,8 @@ import { createServer } from 'vite'
 
 /**
  * Proves the final Assembly instruction contract: one title and Description,
- * explicit Before/After picture groups, no nested Step editor, and the same
- * deliberately small projection in summary and shared-reader views.
+ * one reusable Visuals section, no nested Step editor, a deliberate three-
+ * picture compact selection, and all published pictures in read-only detail.
  */
 const server = await createServer({
   appType: 'custom',
@@ -19,7 +19,12 @@ try {
   const { AssemblyIndexCard } = await server.ssrLoadModule(
     '/src/components/AssemblyIndexCard.tsx',
   )
-  const { instructionPhotoFiles } = await server.ssrLoadModule(
+  const {
+    instructionPhotoFileFromUrl,
+    instructionPhotoFiles,
+    instructionPhotoTransferUrls,
+    normalizedInstructionPhotoFile,
+  } = await server.ssrLoadModule(
     '/src/components/assemblyInstructionPhotoFiles.ts',
   )
   const { AssemblyPeople } = await server.ssrLoadModule(
@@ -165,7 +170,14 @@ try {
     blankRoleVisual,
     legacyUnassignedVisual,
   ]
-  const operationVisualEdge = (id, operationId, visualId, role, order) => createGraphEdge({
+  const operationVisualEdge = (
+    id,
+    operationId,
+    visualId,
+    role,
+    order,
+    flags = {},
+  ) => createGraphEdge({
     id,
     source: operationId,
     target: visualId,
@@ -174,6 +186,12 @@ try {
       [OSA_PROPERTY.relationRole]: OSA_RELATION.operationVisual,
       [OSA_PROPERTY.operationVisualRole]: role,
       [OSA_PROPERTY.operationVisualOrder]: String(order),
+      ...(flags.published === undefined
+        ? {}
+        : { [OSA_PROPERTY.operationVisualPublished]: flags.published }),
+      ...(flags.compact === undefined
+        ? {}
+        : { [OSA_PROPERTY.operationVisualCompact]: flags.compact }),
     },
   })
   const edges = [
@@ -212,6 +230,7 @@ try {
       visual.id,
       OSA_OPERATION_VISUAL_ROLE.before,
       index,
+      { published: 'true', compact: index === 1 || index === 3 ? 'true' : 'false' },
     )),
     ...afterVisuals.map((visual, index) => operationVisualEdge(
       `assembly-view-check-after-${index + 1}-placement`,
@@ -219,6 +238,7 @@ try {
       visual.id,
       OSA_OPERATION_VISUAL_ROLE.after,
       beforeVisuals.length + index,
+      { published: 'true', compact: index === 1 ? 'true' : 'false' },
     )),
     operationVisualEdge(
       'assembly-view-check-after-only-placement',
@@ -258,6 +278,8 @@ try {
     onMoveOperation: noop,
     onRemoveOperation: noop,
     onCreateInstructionVisual: () => '',
+    onLinkInstructionVisual: () => '',
+    onSetInstructionVisualCompact: noop,
     onSetInstructionVisualRole: noop,
     onRemoveInstructionVisual: noop,
     onCreateTool: () => '',
@@ -337,17 +359,16 @@ try {
   )
 
   const connectorSummary = summaryRowFor(compactMarkup, 'Connector Box Drill')
-  assert.match(connectorSummary, /aria-label="Connector Box Drill Before pictures"/)
-  assert.match(connectorSummary, /aria-label="Connector Box Drill After pictures"/)
+  assert.match(connectorSummary, /aria-label="Connector Box Drill visuals"/)
   assert.equal(
-    (connectorSummary.match(/aria-label="Before picture \d+"/g) ?? []).length,
+    (connectorSummary.match(/aria-label="Visual \d+"/g) ?? []).length,
     3,
-    'The summary caps Before at three pictures.',
+    'The summary has one global three-picture compact selection.',
   )
-  assert.equal(
-    (connectorSummary.match(/aria-label="After picture \d+"/g) ?? []).length,
-    3,
-  )
+  assert.match(connectorSummary, /href="\/test\/before-2\.png"/)
+  assert.match(connectorSummary, /href="\/test\/before-4\.png"/)
+  assert.match(connectorSummary, /href="\/test\/after-2\.png"/)
+  assert.doesNotMatch(connectorSummary, /Before pictures|After pictures|before-1\.png|after-1\.png/)
   assert.doesNotMatch(
     connectorSummary,
     /<figcaption|>Electronics Box<|>Connector Box Drilled<|>—</,
@@ -355,10 +376,10 @@ try {
   )
 
   const afterOnlySummary = summaryRowFor(compactMarkup, 'Shako Wrap Punch Holes')
-  assert.match(afterOnlySummary, /aria-label="Shako Wrap Punch Holes After pictures"/)
-  assert.doesNotMatch(afterOnlySummary, /aria-label="Shako Wrap Punch Holes Before pictures"/)
+  assert.match(afterOnlySummary, /aria-label="Shako Wrap Punch Holes visuals"/)
+  assert.equal((afterOnlySummary.match(/aria-label="Visual \d+"/g) ?? []).length, 1)
   const emptySummary = summaryRowFor(compactMarkup, 'Front Center – 1 Hole')
-  assert.doesNotMatch(emptySummary, /Before pictures|After pictures|has-pictures/)
+  assert.doesNotMatch(emptySummary, /aria-label="Front Center – 1 Hole visuals"|has-pictures/)
   assert.doesNotMatch(
     compactMarkup,
     /aria-label="[^"]+ tools"|<dt>tools<\/dt>/,
@@ -384,41 +405,192 @@ try {
     /add step|add another|remove step|assembly-operation-step|assembly-operation-steps|aria-label="[^"]+ instructions"|>Step(?: \d+)?</i,
     'The instruction has one Description and no nested Step editor.',
   )
-  assert.match(connectorCard, /aria-label="Connector Box Drill Before pictures"/)
-  assert.match(connectorCard, /aria-label="Connector Box Drill After pictures"/)
+  assert.match(connectorCard, /aria-label="Connector Box Drill visuals"/)
+  assert.equal((connectorCard.match(/<h2>Visuals<\/h2>/g) ?? []).length, 1)
   assert.equal(
-    (connectorCard.match(/aria-label="open Connector Box Drill before visual \d+"/g) ?? []).length,
-    4,
-    'The open instruction shows every Before picture even when the summary previews only three.',
+    (connectorCard.match(/class="assembly-instruction-visuals__item"/g) ?? []).length,
+    8,
+    'The open instruction shows every linked Visual, not only the three compact choices.',
   )
   assert.equal(
-    (connectorCard.match(/aria-label="open Connector Box Drill after visual \d+"/g) ?? []).length,
-    3,
+    (connectorCard.match(/class="assembly-instruction-visuals__item-name"/g) ?? []).length,
+    8,
+    'The author can identify each linked reusable Visual.',
   )
   assert.equal(
-    (connectorCard.match(/aria-label="remove Connector Box Drill (?:before|after) visual \d+"/g) ?? []).length,
-    7,
+    (connectorCard.match(/aria-label="remove [^"]+ from Connector Box Drill"/g) ?? []).length,
+    8,
     'Every visible placement has its own remove-from-instruction action.',
   )
-  assert.doesNotMatch(connectorCard, /Roleless legacy picture/)
-  assert.match(connectorCard, />\+ canvas<\/button>/)
-  assert.match(connectorCard, /aria-label="Add Before photos to Connector Box Drill"/)
-  assert.match(connectorCard, /aria-label="Add After photos to Connector Box Drill"/)
+  assert.match(connectorCard, /Roleless legacy picture/)
+  assert.match(connectorCard, />\+ new canvas<\/button>/)
+  assert.match(connectorCard, />Link existing Visual<\/label>/)
+  assert.match(connectorCard, />Choose a Visual…<\/option>/)
+  assert.match(
+    connectorCard,
+    /aria-label="Add photos to Connector Box Drill\. Drop or paste photos here, or open the photo picker\."/,
+  )
+  assert.match(connectorCard, />3 of 3 shown in the Assembly overview\. Deselect one before choosing another\.<\/p>/)
+  assert.equal((connectorCard.match(/>Show in Assembly<\/span>/g) ?? []).length, 8)
   assert.equal(
     (connectorCard.match(/accept="image\/\*" multiple=""/g) ?? []).length,
-    2,
-    'Before and After each expose one multi-photo picker for phone and desktop.',
+    1,
+    'The unified Visuals section exposes one multi-photo picker for phone and desktop.',
   )
   assert.deepEqual(
     instructionPhotoFiles([
       { name: 'one.jpg', type: 'image/jpeg' },
+      { name: 'empty.jpg', type: 'image/jpeg', size: 0 },
       { name: 'notes.pdf', type: 'application/pdf' },
       { name: 'two.png', type: 'image/png' },
     ]).map((file) => file.name),
     ['one.jpg', 'two.png'],
     'A mixed drop keeps every image in its original order and skips other files.',
   )
-  assert.doesNotMatch(connectorCard, /<figcaption/)
+  const mimeLessHeic = new File(['phone photo'], 'IMG_1042.HEIC', {
+    type: '',
+    lastModified: 1_788_270_000_000,
+  })
+  assert.deepEqual(
+    instructionPhotoFiles([
+      { name: mimeLessHeic.name, type: mimeLessHeic.type },
+      { name: 'notes.txt', type: '' },
+    ]).map((file) => file.name),
+    ['IMG_1042.HEIC'],
+    'A phone photo with a missing MIME type remains eligible by its image extension.',
+  )
+  const normalizedHeic = normalizedInstructionPhotoFile(mimeLessHeic)
+  assert.equal(normalizedHeic.type, 'image/heic')
+  assert.equal(normalizedHeic.name, mimeLessHeic.name)
+  assert.equal(normalizedHeic.lastModified, mimeLessHeic.lastModified)
+
+  const firstGooglePhoto = 'https://lh3.googleusercontent.com/pw/first-photo=w1600-h1200?authuser=0&token=one'
+  const secondGooglePhoto = 'https://lh3.googleusercontent.com/pw/second-photo=w1600-h1200'
+  assert.deepEqual(
+    instructionPhotoTransferUrls({
+      html: [
+        `<a href="https://photos.google.com/photo/page"><img src="${firstGooglePhoto.replace('&', '&amp;')}"></a>`,
+        `<img src='${secondGooglePhoto}'>`,
+        `<img src="${firstGooglePhoto.replace('&', '&amp;')}">`,
+        '<img src="javascript:alert(1)">',
+      ].join(''),
+      uriList: `# browser source page\n${secondGooglePhoto}\nfile:///private/photo.jpg`,
+      plainText: 'https://images.example.test/plain-fallback.webp',
+    }),
+    [firstGooglePhoto, secondGooglePhoto],
+    'Google Photos image sources win over the surrounding URI and plain-text fallback without duplicates.',
+  )
+  assert.deepEqual(
+    instructionPhotoTransferUrls({
+      uriList: '# browser comment\nhttps://images.example.test/uri-photo.jpg',
+      plainText: 'https://images.example.test/plain-photo.jpg',
+    }),
+    ['https://images.example.test/uri-photo.jpg'],
+    'A URI-list image wins over a duplicate browser plain-text fallback.',
+  )
+  assert.deepEqual(
+    instructionPhotoTransferUrls({ plainText: 'https://images.example.test/no-native-file.jpg' }),
+    ['https://images.example.test/no-native-file.jpg'],
+    'A URL-only browser transfer remains usable when it supplies no native File.',
+  )
+  const inlineRaster = 'data:image/png;base64,aGVsbG8='
+  assert.deepEqual(
+    instructionPhotoTransferUrls({ plainText: inlineRaster }),
+    [],
+    'Pasted pixels must arrive as a native File rather than executable or unbounded inline data.',
+  )
+  for (const unsafeTransferUrl of [
+    'http://images.example.test/insecure.jpg',
+    'https://user:secret@images.example.test/credentialed.jpg',
+    'javascript:alert(1)',
+    'file:///private/photo.jpg',
+    'blob:https://photos.google.com/private-object',
+    'data:text/html,bad',
+    'data:image/svg+xml,<svg onload="alert(1)"/>',
+  ]) {
+    assert.deepEqual(
+      instructionPhotoTransferUrls({ plainText: unsafeTransferUrl }),
+      [],
+      `Unsafe transfer URL must be rejected: ${unsafeTransferUrl}`,
+    )
+  }
+
+  let fetchedWebPhoto = null
+  const fetchedPhotoFile = await instructionPhotoFileFromUrl(
+    'https://lh3.googleusercontent.com/pw/connector-box',
+    2,
+    async (url, options) => {
+      fetchedWebPhoto = { url, options }
+      return new Response(new Blob(['jpeg pixels'], { type: 'image/jpeg' }), { status: 200 })
+    },
+  )
+  const { signal: fetchedWebPhotoSignal, ...fetchedWebPhotoOptions } = fetchedWebPhoto.options
+  assert.ok(fetchedWebPhotoSignal instanceof AbortSignal, 'Remote photo requests have a finite abort signal.')
+  assert.deepEqual({ ...fetchedWebPhoto, options: fetchedWebPhotoOptions }, {
+    url: 'https://lh3.googleusercontent.com/pw/connector-box',
+    options: {
+      mode: 'cors',
+      credentials: 'omit',
+      cache: 'no-store',
+      referrerPolicy: 'no-referrer',
+    },
+  })
+  assert.equal(fetchedPhotoFile.name, 'connector-box.jpg')
+  assert.equal(fetchedPhotoFile.type, 'image/jpeg')
+  assert.equal(await fetchedPhotoFile.text(), 'jpeg pixels')
+  await assert.rejects(
+    instructionPhotoFileFromUrl(
+      'https://photos.google.com/photo/page',
+      0,
+      async () => new Response('<html>photo page</html>', {
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+      }),
+    ),
+    /not a supported photo/,
+    'A Google Photos page URL cannot masquerade as imported photo bytes.',
+  )
+  await assert.rejects(
+    instructionPhotoFileFromUrl(
+      'https://images.example.test/vector.svg',
+      0,
+      async () => new Response('<svg/>', {
+        status: 200,
+        headers: { 'content-type': 'image/svg+xml' },
+      }),
+    ),
+    /not a supported photo/,
+    'Remote image links are restricted to raster photo formats.',
+  )
+  let oversizedBodyReads = 0
+  await assert.rejects(
+    instructionPhotoFileFromUrl(
+      'https://images.example.test/oversized.jpg',
+      0,
+      async () => ({
+        ok: true,
+        headers: new Headers({ 'content-length': String(25 * 1024 * 1024 + 1) }),
+        blob: async () => {
+          oversizedBodyReads += 1
+          return new Blob(['not reached'], { type: 'image/jpeg' })
+        },
+      }),
+    ),
+    /larger than 25 MB/,
+    'Advertised oversized remote photos are rejected before buffering their bytes.',
+  )
+  assert.equal(oversizedBodyReads, 0)
+  let unsafeFetches = 0
+  await assert.rejects(
+    instructionPhotoFileFromUrl('javascript:alert(1)', 0, async () => {
+      unsafeFetches += 1
+      return new Response(new Blob(['bad'], { type: 'image/png' }))
+    }),
+    /not a supported image URL/,
+  )
+  assert.equal(unsafeFetches, 0, 'Unsafe transfer URLs are rejected before any request is made.')
+  assert.match(connectorCard, /Drop or paste photos here/)
+  assert.match(connectorCard, /<figcaption/)
   assert.match(connectorCard, /aria-label="Connector Box Drill status"/)
   assert.match(connectorCard, />Pending<\/option>/)
   assert.match(connectorCard, /aria-label="Connector Box Drill people"/)
@@ -536,9 +708,7 @@ try {
     assembly,
     instructionSummaries: [connectorBoxDrill, afterOnlyOperation].map((operation) => ({
       operation,
-      beforeVisuals: [],
-      afterVisuals: [],
-      toolCount: 0,
+      visuals: [],
       completedCount: 0,
     })),
     nodes,
@@ -731,9 +901,15 @@ try {
     'Connector Box Drill card',
   )
   assert.match(sharedAttentionCard, /10 more regular and 5 more large requested\./)
+  assert.equal(
+    (sharedAttentionCard.match(/class="assembly-instruction-visuals__item"/g) ?? []).length,
+    7,
+    'Read-only detail includes every published Visual, not only the three compact previews.',
+  )
+  assert.doesNotMatch(sharedAttentionCard, /Roleless legacy picture|<figcaption/)
   assert.doesNotMatch(
     sharedAttentionCard,
-    /attention note"|placeholder="add a shortage|Add Before photos|Add After photos|>\+ canvas</,
+    /attention note"|placeholder="add a shortage|Add photos to|Link existing Visual|>\+ new canvas</,
     'Read-only instruction details expose neither editing nor photo-import controls.',
   )
 
@@ -746,12 +922,8 @@ try {
     renderAssembly(edges, sharedAfterOnlyState, nodes, true),
     'Shako Wrap Punch Holes card',
   )
-  assert.match(sharedAfterOnlyCard, /aria-label="Shako Wrap Punch Holes After pictures"/)
-  assert.doesNotMatch(
-    sharedAfterOnlyCard,
-    /aria-label="Shako Wrap Punch Holes Before pictures"/,
-    'Read-only detail omits an unset Before group.',
-  )
+  assert.match(sharedAfterOnlyCard, /aria-label="Shako Wrap Punch Holes visuals"/)
+  assert.doesNotMatch(sharedAfterOnlyCard, /Before pictures|After pictures/)
   const sharedEmptyState = {
     ...createAssemblyViewUiState(),
     focusedCardId: emptyPictureOperation.id,
@@ -763,7 +935,7 @@ try {
   )
   assert.doesNotMatch(
     sharedEmptyCard,
-    /assembly-instruction-visuals|Before pictures|After pictures/,
+    /assembly-instruction-visuals|aria-label="Front Center – 1 Hole visuals"/,
     'Read-only detail omits the visual region when no visible picture exists.',
   )
   const appSource = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
@@ -808,20 +980,16 @@ try {
   assert.match(peopleReaderCard, />Bria<\/span>/)
   assert.match(peopleReaderCard, />Sam<\/span>/)
   assert.doesNotMatch(peopleReaderCard, /add person|remove Bria/)
-  assert.match(readerConnectorCard, /aria-label="Connector Box Drill Before pictures"/)
-  assert.match(readerConnectorCard, /aria-label="Connector Box Drill After pictures"/)
+  assert.match(readerConnectorCard, /aria-label="Connector Box Drill visuals"/)
   assert.equal(
-    (readerConnectorCard.match(/aria-label="View Before picture \d+"/g) ?? []).length,
-    3,
-  )
-  assert.equal(
-    (readerConnectorCard.match(/aria-label="View After picture \d+"/g) ?? []).length,
-    3,
+    (readerConnectorCard.match(/aria-label="View visual \d+"/g) ?? []).length,
+    7,
+    'The standalone read-only page includes every published detail Visual.',
   )
   assert.doesNotMatch(
     readerConnectorCard,
     /<figcaption|Roleless legacy picture/,
-    'The reader sees only the capped role pictures, without visible captions.',
+    'Private legacy links and author-only captions remain outside the reader view.',
   )
   const readerPicturesStart = readerConnectorCard.indexOf('class="assembly-instructions-view__pictures"')
   const readerResourcesStart = readerConnectorCard.indexOf(
@@ -842,15 +1010,15 @@ try {
     instructionsMarkup,
     'Shako Wrap Punch Holes assembly instruction',
   )
-  assert.match(readerAfterOnlyCard, /aria-label="Shako Wrap Punch Holes After pictures"/)
-  assert.doesNotMatch(readerAfterOnlyCard, /aria-label="Shako Wrap Punch Holes Before pictures"/)
+  assert.match(readerAfterOnlyCard, /aria-label="Shako Wrap Punch Holes visuals"/)
+  assert.doesNotMatch(readerAfterOnlyCard, /Before pictures|After pictures/)
   const readerEmptyCard = articleFor(
     instructionsMarkup,
     'Front Center – 1 Hole assembly instruction',
   )
   assert.doesNotMatch(
     readerEmptyCard,
-    /assembly-instructions-view__pictures|Before pictures|After pictures/,
+    /assembly-instructions-view__pictures|aria-label="Front Center – 1 Hole visuals"/,
     'An assigned but content-empty Visual does not create an empty shared group.',
   )
   assert.doesNotMatch(instructionsMarkup, /<figcaption/)

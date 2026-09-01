@@ -52,7 +52,7 @@ type AssemblyOperationCardProps = {
   onToolDraftForChange: (value: AssemblyToolDraft | null) => void
 }
 
-/** One instruction: title, description, Before/After pictures, and its resources. */
+/** One instruction: title, description, reusable Visuals, and its resources. */
 export function AssemblyOperationCard({
   operation,
   description,

@@ -17,9 +17,11 @@ import {
   isContainableOsaObject,
   isPartLike,
   isOsaOperationVisualRole,
+  MAX_ASSEMBLY_VISUAL_PREVIEWS,
   OSA_OPERATION_STATUS,
   OSA_OPERATION_VISUAL_ROLE,
   operationVisualDisplayOrder,
+  operationVisualFlag,
   OSA_PROPERTY,
   OSA_RELATION,
   osaRole,
@@ -122,6 +124,238 @@ function instructionVisualLink(
       )
     )
   ))
+}
+
+type InstructionVisualLinkState = {
+  edge: GraphEdge
+  role: OsaOperationVisualRole | null
+  published: boolean
+  compactSetting: boolean | null
+}
+
+/**
+ * Resolves every reusable Visual placement that belongs to one instruction.
+ * Operation placements remain ordered; old Step ownership links stay available
+ * until the author deliberately unlinks or republishes them.
+ */
+function instructionVisualLinkStates(
+  edges: GraphEdge[],
+  nodes: TextFlowNode[],
+  operationId: string,
+): InstructionVisualLinkState[] {
+  const nodesById = new Map(nodes.map((node) => [node.id, node]))
+  const operationLinks = edges
+    .map((edge, edgeIndex) => ({ edge, edgeIndex }))
+    .filter(({ edge }) => (
+      edge.source === operationId
+      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationVisual
+      && isVisualNode(nodesById.get(edge.target))
+    ))
+    .sort((left, right) => (
+      operationVisualDisplayOrder(
+        left.edge.data.properties[OSA_PROPERTY.operationVisualOrder],
+        left.edgeIndex,
+      ) - operationVisualDisplayOrder(
+        right.edge.data.properties[OSA_PROPERTY.operationVisualOrder],
+        right.edgeIndex,
+      )
+    ))
+    .map(({ edge }): InstructionVisualLinkState => {
+      const visual = nodesById.get(edge.target) as TextFlowNode
+      const storedRole = edge.data.properties[OSA_PROPERTY.operationVisualRole]
+      const role = isOsaOperationVisualRole(storedRole)
+        ? storedRole
+        : visual.data.properties[OSA_PROPERTY.visualIncludeInInstructions] === 'true'
+          ? OSA_OPERATION_VISUAL_ROLE.after
+          : null
+      const publishedSetting = operationVisualFlag(
+        edge.data.properties[OSA_PROPERTY.operationVisualPublished],
+      )
+      return {
+        edge,
+        role,
+        published: publishedSetting ?? role !== null,
+        compactSetting: operationVisualFlag(
+          edge.data.properties[OSA_PROPERTY.operationVisualCompact],
+        ),
+      }
+    })
+
+  const placedVisualIds = new Set(operationLinks.map(({ edge }) => edge.target))
+  const stepIds = instructionStepIds(edges, operationId)
+  const stepEdgeOrder = new Map(edges.flatMap((edge) => (
+    edge.source === operationId
+      && (
+        edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationStep
+        || /\b(step|steps)\b/i.test(edge.data.relationship)
+      )
+      ? [edge.target]
+      : []
+  )).map((id, index) => [id, index]))
+  const orderedSteps = nodes
+    .filter((node) => stepIds.has(node.id) && osaRole(node) === 'step')
+    .sort((left, right) => {
+      const leftOrder = Number(left.data.properties[OSA_PROPERTY.order])
+      const rightOrder = Number(right.data.properties[OSA_PROPERTY.order])
+      return (Number.isFinite(leftOrder) ? leftOrder : Number.MAX_SAFE_INTEGER)
+        - (Number.isFinite(rightOrder) ? rightOrder : Number.MAX_SAFE_INTEGER)
+        || (stepEdgeOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER)
+        - (stepEdgeOrder.get(right.id) ?? Number.MAX_SAFE_INTEGER)
+    })
+  const legacyLinks = orderedSteps.flatMap((step): InstructionVisualLinkState[] => {
+    const edge = edges.find((candidate) => (
+      candidate.source === step.id
+      && candidate.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
+    ))
+    if (!edge || placedVisualIds.has(edge.target)) return []
+    const visual = nodesById.get(edge.target)
+    if (!isVisualNode(visual)) return []
+    const visualNode = visual as TextFlowNode
+    const legacyPublished = (
+      visualNode.data.properties[OSA_PROPERTY.visualIncludeInInstructions] === 'true'
+    )
+    const publishedSetting = operationVisualFlag(
+      edge.data.properties[OSA_PROPERTY.operationVisualPublished],
+    )
+    return [{
+      edge,
+      role: legacyPublished ? OSA_OPERATION_VISUAL_ROLE.after : null,
+      published: publishedSetting ?? legacyPublished,
+      compactSetting: operationVisualFlag(
+        edge.data.properties[OSA_PROPERTY.operationVisualCompact],
+      ),
+    }]
+  })
+
+  return [...operationLinks, ...legacyLinks]
+}
+
+function compactInstructionVisualEdgeIds(states: InstructionVisualLinkState[]) {
+  const published = states.filter((state) => state.published)
+  const hasExplicitChoice = published.some((state) => state.compactSetting !== null)
+  const candidates = hasExplicitChoice
+    ? published.filter((state) => state.compactSetting === true)
+    : published
+  return new Set(candidates
+    .slice(0, MAX_ASSEMBLY_VISUAL_PREVIEWS)
+    .map(({ edge }) => edge.id))
+}
+
+/**
+ * Counts selected links even while a batch-created Visual node is still
+ * waiting to reach `latestNodes`. Existing projected links use their derived
+ * publication state; brand-new unresolved links are counted only when both
+ * durable switches are explicitly true.
+ */
+function selectedInstructionVisualCount(
+  edges: GraphEdge[],
+  nodes: TextFlowNode[],
+  operationId: string,
+) {
+  const states = instructionVisualLinkStates(edges, nodes, operationId)
+  const projectedEdgeIds = new Set(states.map((state) => state.edge.id))
+  const projectedCount = states.filter((state) => (
+    state.published && state.compactSetting === true
+  )).length
+  const unresolvedNewCount = edges.filter((edge) => (
+    !projectedEdgeIds.has(edge.id)
+    && edge.source === operationId
+    && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationVisual
+    && operationVisualFlag(
+      edge.data.properties[OSA_PROPERTY.operationVisualPublished],
+    ) === true
+    && operationVisualFlag(
+      edge.data.properties[OSA_PROPERTY.operationVisualCompact],
+    ) === true
+  )).length
+  return projectedCount + unresolvedNewCount
+}
+
+/** Makes an old board's derived compact fallback explicit before its first edit. */
+export function materializeInstructionVisualCompactEdges(
+  edges: GraphEdge[],
+  nodes: TextFlowNode[],
+  operationId: string,
+) {
+  const states = instructionVisualLinkStates(edges, nodes, operationId)
+  if (!states.length) return edges
+  const stateByEdgeId = new Map(states.map((state) => [state.edge.id, state]))
+  const selectedEdgeIds = compactInstructionVisualEdgeIds(states)
+  let changed = false
+  const nextEdges = edges.map((edge) => {
+    const state = stateByEdgeId.get(edge.id)
+    if (!state) return edge
+    const compact = state.published && selectedEdgeIds.has(edge.id) ? 'true' : 'false'
+    if (edge.data.properties[OSA_PROPERTY.operationVisualCompact] === compact) return edge
+    changed = true
+    return {
+      ...edge,
+      data: {
+        ...edge.data,
+        properties: {
+          ...edge.data.properties,
+          [OSA_PROPERTY.operationVisualCompact]: compact,
+        },
+      },
+    }
+  })
+  return changed ? nextEdges : edges
+}
+
+/** Changes one compact selection while enforcing the shared three-picture cap. */
+export function setInstructionVisualCompactEdges(
+  edges: GraphEdge[],
+  nodes: TextFlowNode[],
+  operationId: string,
+  placementEdgeId: string,
+  compact: boolean,
+) {
+  const initialPlacement = instructionVisualLinkStates(edges, nodes, operationId)
+    .find((state) => state.edge.id === placementEdgeId)
+  if (!initialPlacement) return edges
+
+  // Choosing a placement for the public compact summary necessarily publishes
+  // it in the instruction detail as well. This also gives old private Step
+  // placements a direct, non-destructive upgrade path.
+  const publishedEdges = compact && !initialPlacement.published
+    ? edges.map((edge) => edge.id === placementEdgeId
+        ? {
+            ...edge,
+            data: {
+              ...edge.data,
+              properties: {
+                ...edge.data.properties,
+                [OSA_PROPERTY.operationVisualPublished]: 'true',
+              },
+            },
+          }
+        : edge)
+    : edges
+  const materialized = materializeInstructionVisualCompactEdges(
+    publishedEdges,
+    nodes,
+    operationId,
+  )
+  const states = instructionVisualLinkStates(materialized, nodes, operationId)
+  const placement = states.find((state) => state.edge.id === placementEdgeId)
+  if (!placement?.published) return materialized
+  const selectedCount = selectedInstructionVisualCount(materialized, nodes, operationId)
+  const isSelected = placement.compactSetting === true
+  if (isSelected === compact) return materialized
+  if (compact && selectedCount >= MAX_ASSEMBLY_VISUAL_PREVIEWS) return materialized
+
+  return materialized.map((edge) => edge.id === placementEdgeId
+    ? {
+        ...edge,
+        data: {
+          ...edge.data,
+          properties: {
+            ...edge.data.properties,
+            [OSA_PROPERTY.operationVisualCompact]: compact ? 'true' : 'false',
+          },
+        },
+      }
+    : edge)
 }
 
 /**
@@ -382,22 +616,30 @@ export function useAssemblyGraphActions({
     onOperationRemoved(operationId)
   }, [latestNodes, onOperationRemoved, setEdges, setNodes])
 
-  /** Creates one unowned, first-class Visual in an instruction image group. */
+  /** Creates one unowned, first-class Visual in an instruction's published detail. */
   const createInstructionVisual = useCallback((
     operationId: string,
-    role: OsaOperationVisualRole,
-    photo?: InstructionPhotoImport,
+    photoOrLegacyRole?: InstructionPhotoImport | OsaOperationVisualRole,
+    legacyPhoto?: InstructionPhotoImport,
   ) => {
-    if (!isOsaOperationVisualRole(role)) return ''
     const operation = latestNodes.current.find((node) => node.id === operationId)
     if (
       !operation
       || (operation.data.kind !== 'action' && osaRole(operation) !== 'operation')
     ) return ''
-    const roleLabel = role === OSA_OPERATION_VISUAL_ROLE.before ? 'Before' : 'After'
+    // The string branch is temporary call compatibility for boards/UI opened
+    // during the Before/After cutover. The canonical two-argument action below
+    // creates a roleless placement.
+    const legacyRole = typeof photoOrLegacyRole === 'string'
+      && isOsaOperationVisualRole(photoOrLegacyRole)
+      ? photoOrLegacyRole
+      : null
+    const photo = typeof photoOrLegacyRole === 'object'
+      ? photoOrLegacyRole
+      : legacyPhoto
     const photoAlt = photo?.alt.trim() ?? ''
     const visualId = createObjectNode(
-      photoAlt || `${operation.data.name.trim() || 'Instruction'} ${roleLabel}`,
+      photoAlt || `${operation.data.name.trim() || 'Instruction'} Visual`,
       'visual',
       null,
       '',
@@ -408,7 +650,7 @@ export function useAssemblyGraphActions({
         [OSA_PROPERTY.visualIdentity]: 'photo',
         [OSA_PROPERTY.visualImmutable]: 'true',
         [OSA_PROPERTY.assetImage]: photo.imageData,
-        [OSA_PROPERTY.assetImageAlt]: photoAlt || `${operation.data.name.trim() || 'Instruction'} ${roleLabel}`,
+        [OSA_PROPERTY.assetImageAlt]: photoAlt || `${operation.data.name.trim() || 'Instruction'} Visual`,
       } : {
         [OSA_PROPERTY.role]: 'visual',
         [OSA_PROPERTY.visualContent]: 'canvas',
@@ -418,22 +660,104 @@ export function useAssemblyGraphActions({
     )
     const placementEdgeId = `edge-${nextEdgeIdRef.current++}`
     setEdges((currentEdges) => {
-      return [...currentEdges, createGraphEdge({
+      const preparedEdges = materializeInstructionVisualCompactEdges(
+        currentEdges,
+        latestNodes.current,
+        operationId,
+      )
+      const selectedCount = selectedInstructionVisualCount(
+        preparedEdges,
+        latestNodes.current,
+        operationId,
+      )
+      return [...preparedEdges, createGraphEdge({
         id: placementEdgeId,
         source: operationId,
         target: visualId,
         relationship: 'shows visual',
         properties: {
           [OSA_PROPERTY.relationRole]: OSA_RELATION.operationVisual,
-          [OSA_PROPERTY.operationVisualRole]: role,
-          [OSA_PROPERTY.operationVisualOrder]: String(
-            nextOperationVisualOrder(operationId, currentEdges),
+          [OSA_PROPERTY.operationVisualPublished]: 'true',
+          [OSA_PROPERTY.operationVisualCompact]: (
+            selectedCount < MAX_ASSEMBLY_VISUAL_PREVIEWS ? 'true' : 'false'
           ),
+          [OSA_PROPERTY.operationVisualOrder]: String(
+            nextOperationVisualOrder(operationId, preparedEdges),
+          ),
+          ...(legacyRole
+            ? { [OSA_PROPERTY.operationVisualRole]: legacyRole }
+            : {}),
         },
       })]
     })
     return visualId
   }, [createObjectNode, latestNodes, nextEdgeIdRef, setEdges])
+
+  /** Links one canonical Visual without copying it or creating a duplicate placement. */
+  const linkInstructionVisual = useCallback((operationId: string, visualId: string) => {
+    const operation = latestNodes.current.find((node) => node.id === operationId)
+    const visual = latestNodes.current.find((node) => node.id === visualId)
+    if (
+      !operation
+      || (operation.data.kind !== 'action' && osaRole(operation) !== 'operation')
+      || !isVisualNode(visual)
+      || instructionVisualLinkStates(
+        latestEdges.current,
+        latestNodes.current,
+        operationId,
+      ).some((state) => state.edge.target === visualId)
+    ) return ''
+
+    const placementEdgeId = `edge-${nextEdgeIdRef.current++}`
+    setEdges((currentEdges) => {
+      if (instructionVisualLinkStates(
+        currentEdges,
+        latestNodes.current,
+        operationId,
+      ).some((state) => state.edge.target === visualId)) return currentEdges
+      const preparedEdges = materializeInstructionVisualCompactEdges(
+        currentEdges,
+        latestNodes.current,
+        operationId,
+      )
+      const selectedCount = selectedInstructionVisualCount(
+        preparedEdges,
+        latestNodes.current,
+        operationId,
+      )
+      return [...preparedEdges, createGraphEdge({
+        id: placementEdgeId,
+        source: operationId,
+        target: visualId,
+        relationship: 'shows visual',
+        properties: {
+          [OSA_PROPERTY.relationRole]: OSA_RELATION.operationVisual,
+          [OSA_PROPERTY.operationVisualPublished]: 'true',
+          [OSA_PROPERTY.operationVisualCompact]: (
+            selectedCount < MAX_ASSEMBLY_VISUAL_PREVIEWS ? 'true' : 'false'
+          ),
+          [OSA_PROPERTY.operationVisualOrder]: String(
+            nextOperationVisualOrder(operationId, preparedEdges),
+          ),
+        },
+      })]
+    })
+    return placementEdgeId
+  }, [latestEdges, latestNodes, nextEdgeIdRef, setEdges])
+
+  const setInstructionVisualCompact = useCallback((
+    operationId: string,
+    placementEdgeId: string,
+    compact: boolean,
+  ) => {
+    setEdges((currentEdges) => setInstructionVisualCompactEdges(
+      currentEdges,
+      latestNodes.current,
+      operationId,
+      placementEdgeId,
+      compact,
+    ))
+  }, [latestNodes, setEdges])
 
   const setInstructionVisualRole = useCallback((
     operationId: string,
@@ -771,6 +1095,8 @@ export function useAssemblyGraphActions({
     onMoveOperation: moveAssemblyOperation,
     onRemoveOperation: removeAssemblyOperation,
     onCreateInstructionVisual: createInstructionVisual,
+    onLinkInstructionVisual: linkInstructionVisual,
+    onSetInstructionVisualCompact: setInstructionVisualCompact,
     onSetInstructionVisualRole: setInstructionVisualRole,
     onRemoveInstructionVisual: removeInstructionVisual,
     onCreateTool: createOperationTool,
@@ -788,6 +1114,7 @@ export function useAssemblyGraphActions({
     createOperationTool,
     createPartForOperation,
     includeInContainer,
+    linkInstructionVisual,
     linkOperationMaterial,
     linkPartToOperation,
     linkToolToOperation,
@@ -796,6 +1123,7 @@ export function useAssemblyGraphActions({
     removeInstructionVisual,
     reorderAssemblyOperation,
     setInstructionVisualRole,
+    setInstructionVisualCompact,
     unlinkOperationMaterial,
     unlinkToolFromOperation,
   ])

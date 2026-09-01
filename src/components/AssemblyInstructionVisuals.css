@@ -6,60 +6,139 @@
   border-top: 1px solid var(--osa-border-subtle);
 }
 
-.assembly-instruction-visuals h3 {
-  margin: 0;
-}
-
-.assembly-instruction-visuals__roles {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: clamp(16px, 3vw, 32px);
-}
-
-.assembly-instruction-visuals__group,
-.assembly-instruction-visuals__unassigned {
-  display: grid;
-  align-content: start;
-  gap: 10px;
+.assembly-instruction-visuals__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
   min-width: 0;
 }
 
-.assembly-instruction-visuals__group {
-  padding: 10px;
-  border: 1px dashed transparent;
-  border-radius: 9px;
+.assembly-instruction-visuals__header h2,
+.assembly-instruction-visuals__header p,
+.assembly-instruction-visuals__empty,
+.assembly-instruction-visuals__import-message {
+  margin: 0;
+}
+
+.assembly-instruction-visuals__header h2 {
+  font-size: clamp(1.1rem, 1.8vw, 1.35rem);
+}
+
+.assembly-instruction-visuals__header p,
+.assembly-instruction-visuals__empty,
+.assembly-instruction-visuals__import-message {
+  color: var(--osa-muted);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.assembly-instruction-visuals__header .text-action {
+  flex: 0 0 auto;
+}
+
+.assembly-instruction-visuals__link-control {
+  display: grid;
+  grid-template-columns: auto minmax(180px, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.assembly-instruction-visuals__link-control label {
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.assembly-instruction-visuals__link-control select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 6px 9px;
+  border: 1px solid var(--osa-border);
+  border-radius: 6px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
+  font: inherit;
+}
+
+.assembly-instruction-visuals__link-control select:disabled {
+  color: var(--osa-muted);
+}
+
+.assembly-instruction-visuals__drop-target {
+  display: grid;
+  place-items: center;
+  gap: 3px;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 68px;
+  padding: 10px 14px;
+  border: 1px dashed var(--osa-border);
+  border-radius: 8px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-muted);
+  cursor: copy;
+  font-size: 0.86rem;
+  font-weight: 650;
+  line-height: 1.3;
+  text-align: center;
   transition: border-color 120ms ease, background-color 120ms ease;
 }
 
-.assembly-instruction-visuals__group.is-dragging {
+.assembly-instruction-visuals__drop-target:focus-visible,
+.assembly-instruction-visuals__drop-target.is-dragging {
   border-color: var(--osa-focus);
+  color: var(--osa-text);
   background: var(--osa-hover-surface);
+  outline: 2px solid color-mix(in srgb, var(--osa-focus) 35%, transparent);
+  outline-offset: 2px;
 }
 
-.assembly-instruction-visuals__group.is-importing {
-  opacity: 0.82;
+.assembly-instruction-visuals__drop-target.is-disabled {
+  cursor: wait;
+  opacity: 0.72;
 }
 
-.assembly-instruction-visuals__group-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-height: 34px;
+.assembly-instruction-visuals__choose {
+  min-height: 30px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--osa-text);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
-.assembly-instruction-visuals__group-header h3,
-.assembly-instruction-visuals__unassigned h3 {
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.assembly-instruction-visuals__choose:hover,
+.assembly-instruction-visuals__choose:focus-visible {
+  color: var(--osa-text);
+  outline: 2px solid var(--osa-focus);
+  outline-offset: 2px;
+}
+
+.assembly-instruction-visuals__photo-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.assembly-instruction-visuals__import-message.is-error {
+  color: var(--osa-danger-text);
 }
 
 .assembly-instruction-visuals__grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  gap: 14px;
+  min-width: 0;
 }
 
 .assembly-instruction-visuals__item {
@@ -91,14 +170,26 @@
 .assembly-instruction-visuals__preview {
   display: block;
   width: 100%;
-  height: clamp(96px, 13vw, 148px);
+  height: clamp(112px, 15vw, 180px);
   border: 0;
   object-fit: contain;
+}
+
+.assembly-instruction-visuals__item-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--osa-text);
+  font-size: 0.84rem;
+  font-weight: 650;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .assembly-instruction-visuals__item-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 5px 9px;
 }
 
@@ -108,86 +199,65 @@
   font-size: 0.78rem;
 }
 
+.assembly-instruction-visuals__compact-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  color: var(--osa-text);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.assembly-instruction-visuals__compact-choice input {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--osa-focus);
+}
+
+.assembly-instruction-visuals__compact-choice.is-disabled {
+  color: var(--osa-muted);
+  cursor: not-allowed;
+}
+
 .assembly-instruction-visuals__item-actions .is-danger:hover,
 .assembly-instruction-visuals__item-actions .is-danger:focus-visible {
   color: var(--osa-danger-text);
 }
 
-.assembly-instruction-visuals__drop-target {
-  position: relative;
-  display: grid;
-  place-items: center;
-  box-sizing: border-box;
-  min-height: 58px;
-  padding: 10px 14px;
-  border: 1px dashed var(--osa-border);
-  border-radius: 8px;
-  background: var(--osa-surface-raised);
-  color: var(--osa-muted);
-  cursor: pointer;
-  font-size: 0.86rem;
-  font-weight: 650;
-  line-height: 1.3;
-  text-align: center;
-}
-
-.assembly-instruction-visuals__drop-target:hover,
-.assembly-instruction-visuals__drop-target:focus-within,
-.assembly-instruction-visuals__group.is-dragging .assembly-instruction-visuals__drop-target {
-  border-color: var(--osa-focus);
-  color: var(--osa-text);
-  outline: 2px solid color-mix(in srgb, var(--osa-focus) 35%, transparent);
-  outline-offset: 2px;
-}
-
-.assembly-instruction-visuals__drop-target input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
-.assembly-instruction-visuals__drop-target:has(input:disabled) {
-  cursor: wait;
-  opacity: 0.72;
-}
-
-.assembly-instruction-visuals__import-message {
-  margin: 0;
-  color: var(--osa-muted);
-  font-size: 0.82rem;
-}
-
-.assembly-instruction-visuals__import-message.is-error {
-  color: var(--osa-danger-text);
-}
-
-.assembly-instruction-visuals__unassigned {
-  margin-top: 6px;
-  padding: 14px;
-  border: 1px dashed var(--osa-border);
-  border-radius: 8px;
-}
-
 @media (max-width: 700px) {
-  .assembly-instruction-visuals__roles {
-    grid-template-columns: minmax(0, 1fr);
+  .assembly-instruction-visuals__header,
+  .assembly-instruction-visuals__link-control {
+    align-items: stretch;
+  }
+
+  .assembly-instruction-visuals__link-control {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .assembly-instruction-visuals__link-control label {
+    grid-column: 1 / -1;
   }
 
   .assembly-instruction-visuals__grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .assembly-instruction-visuals__group-header .text-action,
+  .assembly-instruction-visuals__header .text-action,
+  .assembly-instruction-visuals__link-control .text-action,
+  .assembly-instruction-visuals__choose,
   .assembly-instruction-visuals__item-actions .text-action,
-  .assembly-instruction-visuals__drop-target {
+  .assembly-instruction-visuals__compact-choice {
     min-height: 44px;
   }
 }
 
 @media (max-width: 420px) {
+  .assembly-instruction-visuals__header {
+    flex-direction: column;
+  }
+
   .assembly-instruction-visuals__grid {
     grid-template-columns: minmax(0, 1fr);
   }

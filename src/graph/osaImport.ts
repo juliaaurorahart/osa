@@ -3,6 +3,7 @@ import { NODE_KINDS, type NodeKind } from './nodeKinds'
 import {
   isOsaOperationStatus,
   isOsaOperationVisualRole,
+  MAX_ASSEMBLY_VISUAL_PREVIEWS,
   OSA_PROPERTY,
   OSA_RELATION,
   normalizeCurrencyCode,
@@ -322,6 +323,9 @@ function validateManagedEdgeProperties(
 ) {
   const relationRole = edge.properties[OSA_PROPERTY.relationRole]
   const visualRole = edge.properties[OSA_PROPERTY.operationVisualRole]
+  const visualPublished = edge.properties[OSA_PROPERTY.operationVisualPublished]
+  const visualCompact = edge.properties[OSA_PROPERTY.operationVisualCompact]
+  const sourceRole = importNodeRole(sourceNode)
   if (visualRole !== undefined) {
     if (relationRole !== OSA_RELATION.operationVisual) {
       throw new Error(
@@ -332,17 +336,40 @@ function validateManagedEdgeProperties(
       throw new Error(`${path}.${OSA_PROPERTY.operationVisualRole} must be before or after.`)
     }
   }
+  for (const [propertyName, propertyValue] of [
+    [OSA_PROPERTY.operationVisualPublished, visualPublished],
+    [OSA_PROPERTY.operationVisualCompact, visualCompact],
+  ] as const) {
+    if (propertyValue === undefined) continue
+    const isInstructionVisualPlacement = relationRole === OSA_RELATION.operationVisual
+      || (relationRole === OSA_RELATION.objectVisual && sourceRole === 'step')
+    if (!isInstructionVisualPlacement) {
+      throw new Error(
+        `${path}.${propertyName} is only valid on operation-visual or Step object-visual relations.`,
+      )
+    }
+    if (propertyValue !== 'true' && propertyValue !== 'false') {
+      throw new Error(`${path}.${propertyName} must be true or false.`)
+    }
+  }
 
   if (relationRole === undefined) return
   if (!hasOwn(RELATION_ENDPOINT_ROLES, relationRole)) {
     throw new Error(`${path}.${OSA_PROPERTY.relationRole} is not a recognized OSA relation.`)
   }
 
-  const sourceRole = importNodeRole(sourceNode)
   const targetRole = importNodeRole(targetNode)
-  if (visualRole !== undefined && targetRole !== 'visual') {
+  if (
+    (visualRole !== undefined || visualPublished !== undefined || visualCompact !== undefined)
+    && targetRole !== 'visual'
+  ) {
+    const propertyName = visualRole !== undefined
+      ? OSA_PROPERTY.operationVisualRole
+      : visualPublished !== undefined
+        ? OSA_PROPERTY.operationVisualPublished
+        : OSA_PROPERTY.operationVisualCompact
     throw new Error(
-      `${path}.${OSA_PROPERTY.operationVisualRole} requires a canonical Visual target.`,
+      `${path}.${propertyName} requires a canonical Visual target.`,
     )
   }
   if (relationRole === OSA_RELATION.objectVisual) {
@@ -386,6 +413,22 @@ function validateOperationPrimaryOutputs(edges: OsaImportEdge[]) {
       throw new Error(`Operation ${edge.source} has more than one primary output.`)
     }
     primaryOutputCounts.set(edge.source, count)
+  }
+}
+
+/** Imported explicit compact choices must honor the same three-picture UI cap. */
+function validateOperationCompactVisuals(edges: OsaImportEdge[]) {
+  const compactCounts = new Map<string, number>()
+  for (const edge of edges) {
+    if (
+      edge.properties[OSA_PROPERTY.relationRole] !== OSA_RELATION.operationVisual
+      || edge.properties[OSA_PROPERTY.operationVisualCompact] !== 'true'
+    ) continue
+    const count = (compactCounts.get(edge.source) ?? 0) + 1
+    if (count > MAX_ASSEMBLY_VISUAL_PREVIEWS) {
+      throw new Error(`Operation ${edge.source} selects more than three compact instruction visuals.`)
+    }
+    compactCounts.set(edge.source, count)
   }
 }
 
@@ -509,6 +552,7 @@ export function parseOsaImportPackage(value: unknown): OsaImportPackage {
     `edges[${index}].properties`,
   ))
   validateOperationPrimaryOutputs(edges)
+  validateOperationCompactVisuals(edges)
   validateObjectVisualOwnership(nodes, edges)
 
   return { format: 'osa-import', version: 1, id, name, sources, nodes, edges }

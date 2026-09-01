@@ -110,6 +110,10 @@ export const OSA_PROPERTY = {
   operationVisualOrder: 'operation-visual:order',
   /** Whether an instruction displays this Visual as its Before or After state. */
   operationVisualRole: 'operation-visual:role',
+  /** Whether this one instruction placement is published in its Visuals detail. */
+  operationVisualPublished: 'operation-visual:published',
+  /** Whether this published placement appears in the compact Assembly summary. */
+  operationVisualCompact: 'operation-visual:compact',
   /** Durable physical/logical feature data, independent of any one view. */
   featureType: 'feature:type',
   featureDiameter: 'feature:diameter',
@@ -170,8 +174,8 @@ export const OSA_OPERATION_VISUAL_ROLE = {
   after: 'after',
 } as const
 
-/** Compact Assembly projections preview only the first three pictures per state. */
-export const MAX_ASSEMBLY_VISUAL_PREVIEWS_PER_ROLE = 3
+/** Compact Assembly projections preview at most three pictures total. */
+export const MAX_ASSEMBLY_VISUAL_PREVIEWS = 3
 
 export type OsaOperationVisualRole = (
   typeof OSA_OPERATION_VISUAL_ROLE
@@ -336,6 +340,19 @@ export function operationVisualRole(value: string | undefined): OsaOperationVisu
   return value && isOsaOperationVisualRole(value)
     ? value
     : null
+}
+
+/**
+ * Reads an explicit placement switch without inventing a value for old edges.
+ *
+ * `null` is deliberate: an absent property means the legacy projection still
+ * decides publication/compact defaults, while an explicit `false` remains a
+ * durable user choice through export and import.
+ */
+export function operationVisualFlag(value: string | undefined): boolean | null {
+  if (value === 'true') return true
+  if (value === 'false') return false
+  return null
 }
 
 /** Allocates the next stable section id after the reserved source canvas. */

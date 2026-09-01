@@ -3,8 +3,6 @@ import type { GraphEdge } from '../graph/graphEdge'
 import {
   appearanceAccentColor,
   isPartLike,
-  MAX_ASSEMBLY_VISUAL_PREVIEWS_PER_ROLE,
-  OSA_OPERATION_VISUAL_ROLE,
   OSA_RELATION,
   osaRole,
 } from '../graph/osaData'
@@ -20,6 +18,7 @@ import {
   instructionVisualsForOperation,
   nodeTitle,
   operationsForAssembly,
+  publishedInstructionVisuals,
   stepsForOperation,
   visualHasInstructionContent,
 } from './assemblyProjection'
@@ -87,7 +86,7 @@ function ObjectNames({ objects }: { objects: TextFlowNode[] }) {
   )
 }
 
-/** Full-screen read-only inspection for one Before or After picture. */
+/** Full-screen read-only inspection for one published instruction Visual. */
 export function StepCanvasViewer({
   step,
   canvas,
@@ -126,7 +125,7 @@ export function StepCanvasViewer({
   )
 }
 
-/** Read-only instructions derived from the same title, description, and image roles. */
+/** Read-only instructions derived from the same title, description, and Visual links. */
 export function AssemblyInstructionsView({
   assembly,
   nodes,
@@ -204,45 +203,11 @@ export function AssemblyInstructionsView({
           ).filter(isPartLike)
           const inputParts = structuredInputParts.length ? structuredInputParts : legacyInputParts
           const steps = stepsForOperation(operation.id, nodes, edges)
-          const visuals = instructionVisualsForOperation(operation.id, steps, nodes, edges)
+          const visuals = publishedInstructionVisuals(
+            instructionVisualsForOperation(operation.id, steps, nodes, edges),
+          )
             .filter(({ visual }) => visualHasInstructionContent(visual, nodes, edges))
-          const before = visuals
-            .filter(({ role }) => role === OSA_OPERATION_VISUAL_ROLE.before)
-            .slice(0, MAX_ASSEMBLY_VISUAL_PREVIEWS_PER_ROLE)
-          const after = visuals
-            .filter(({ role }) => role === OSA_OPERATION_VISUAL_ROLE.after)
-            .slice(0, MAX_ASSEMBLY_VISUAL_PREVIEWS_PER_ROLE)
           const description = instructionDescription(operation, steps)
-
-          const pictureGroup = (
-            label: 'Before' | 'After',
-            pictures: typeof before,
-          ) => pictures.length ? (
-            <section
-              className="assembly-instructions-view__picture-group"
-              aria-label={`${nodeTitle(operation)} ${label} pictures`}
-            >
-              <h3>{label}</h3>
-              <div className="assembly-instructions-view__picture-list">
-                {pictures.map(({ edgeId, visual }, index) => (
-                  <button
-                    className="assembly-instructions-view__open-canvas"
-                    type="button"
-                    aria-label={`View ${label} picture ${index + 1}`}
-                    key={edgeId ?? visual.id}
-                    onClick={() => setOpenedVisual({ step: operation, canvas: visual })}
-                  >
-                    <VisualCanvasPreview
-                      visual={visual}
-                      embeddedVisuals={visualEmbedsForCanvas(visual.id, nodes, edges)}
-                      annotationTargets={annotationTargets}
-                      className="assembly-card__visual-preview"
-                    />
-                  </button>
-                ))}
-              </div>
-            </section>
-          ) : null
 
           return (
             <article
@@ -262,10 +227,26 @@ export function AssemblyInstructionsView({
                 <p className="assembly-instructions-view__description">{description}</p>
               ) : null}
 
-              {before.length || after.length ? (
-                <section className="assembly-instructions-view__pictures" aria-label={`${nodeTitle(operation)} pictures`}>
-                  {pictureGroup('Before', before)}
-                  {pictureGroup('After', after)}
+              {visuals.length ? (
+                <section className="assembly-instructions-view__pictures" aria-label={`${nodeTitle(operation)} visuals`}>
+                  <div className="assembly-instructions-view__picture-list">
+                    {visuals.map(({ edgeId, visual }, index) => (
+                      <button
+                        className="assembly-instructions-view__open-canvas"
+                        type="button"
+                        aria-label={`View visual ${index + 1}`}
+                        key={edgeId ?? visual.id}
+                        onClick={() => setOpenedVisual({ step: operation, canvas: visual })}
+                      >
+                        <VisualCanvasPreview
+                          visual={visual}
+                          embeddedVisuals={visualEmbedsForCanvas(visual.id, nodes, edges)}
+                          annotationTargets={annotationTargets}
+                          className="assembly-card__visual-preview"
+                        />
+                      </button>
+                    ))}
+                  </div>
                 </section>
               ) : null}
 

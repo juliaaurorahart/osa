@@ -5,8 +5,6 @@ import {
 } from 'react'
 import type { GraphEdge } from '../graph/graphEdge'
 import {
-  MAX_ASSEMBLY_VISUAL_PREVIEWS_PER_ROLE,
-  OSA_OPERATION_VISUAL_ROLE,
   OSA_RELATION,
   osaRole,
 } from '../graph/osaData'
@@ -20,12 +18,14 @@ import { AssemblyOperationCard } from './AssemblyOperationCard'
 import { AssemblyViewControls } from './AssemblyViewControls'
 import type { AssemblyToolDraft, AssemblyViewUiState } from './assemblyViewState'
 import {
+  compactInstructionVisuals,
   connectedTargets,
   instructionDescription,
   instructionVisualsForOperation,
   nodeTitle,
   operationCompletedCount,
   operationsForAssembly,
+  publishedInstructionVisuals,
   stepsForOperation,
   visualHasInstructionContent,
 } from './assemblyProjection'
@@ -110,25 +110,11 @@ export function AssemblyView({
       nodes,
       edges,
     ).filter(({ visual }) => visualHasInstructionContent(visual, nodes, edges))
-    const operationTools = connectedTargets(
-      operation.id,
-      nodes,
-      edges,
-      OSA_RELATION.operationTool,
-      /\b(tool|tools)\b/i,
-    )
 
     return {
       operation,
-      beforeVisuals: instructionVisuals
-        .filter(({ role }) => role === OSA_OPERATION_VISUAL_ROLE.before)
-        .slice(0, MAX_ASSEMBLY_VISUAL_PREVIEWS_PER_ROLE)
+      visuals: compactInstructionVisuals(instructionVisuals)
         .map(({ visual }) => visual),
-      afterVisuals: instructionVisuals
-        .filter(({ role }) => role === OSA_OPERATION_VISUAL_ROLE.after)
-        .slice(0, MAX_ASSEMBLY_VISUAL_PREVIEWS_PER_ROLE)
-        .map(({ visual }) => visual),
-      toolCount: new Set(operationTools.map((tool) => tool.id)).size,
       completedCount: operationCompletedCount(operation),
     }
   }), [assemblyOperations, edges, nodes])
@@ -322,7 +308,7 @@ export function AssemblyView({
             edges,
           )
           const displayedInstructionVisuals = readOnly
-            ? instructionVisuals.filter(({ visual }) => (
+            ? publishedInstructionVisuals(instructionVisuals).filter(({ visual }) => (
                 visualHasInstructionContent(visual, nodes, edges)
               ))
             : instructionVisuals

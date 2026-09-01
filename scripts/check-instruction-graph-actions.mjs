@@ -8,12 +8,16 @@ const server = await createServer({ appType: 'custom', server: { middlewareMode:
 try {
   const {
     detachInstructionVisualEdges,
+    materializeInstructionVisualCompactEdges,
+    setInstructionVisualCompactEdges,
     setInstructionVisualRoleEdges,
     useAssemblyGraphActions,
   } = await server.ssrLoadModule('/src/app/useAssemblyGraphActions.ts')
   const {
+    compactInstructionVisuals,
     instructionDescription,
     instructionVisualsForOperation,
+    publishedInstructionVisuals,
   } = await server.ssrLoadModule('/src/components/assemblyProjection.ts')
   const { AssemblyInstructionVisuals } = await server.ssrLoadModule(
     '/src/components/AssemblyInstructionVisuals.tsx',
@@ -155,13 +159,20 @@ try {
     preservationEdges,
   )
   assert.deepEqual(
-    projectedPlacements.map(({ edgeId, role }) => [edgeId, role]),
+    projectedPlacements.map(({ edgeId, role, published, compact }) => [
+      edgeId,
+      role,
+      published,
+      compact,
+    ]),
     [
-      ['placement-before', OSA_OPERATION_VISUAL_ROLE.before],
-      ['placement-after', OSA_OPERATION_VISUAL_ROLE.after],
+      ['placement-before', OSA_OPERATION_VISUAL_ROLE.before, true, true],
+      ['placement-after', OSA_OPERATION_VISUAL_ROLE.after, true, true],
     ],
-    'Repeated placements of one reusable Visual keep their exact edge identities.',
+    'Repeated legacy placements keep exact identities and receive the safe compact fallback.',
   )
+  assert.equal(publishedInstructionVisuals(projectedPlacements).length, 2)
+  assert.equal(compactInstructionVisuals(projectedPlacements).length, 2)
 
   const moved = setInstructionVisualRoleEdges(
     preservationEdges,
@@ -209,6 +220,101 @@ try {
     'Before and After groups accept more than three pictures.',
   )
 
+  const compactVisuals = Array.from({ length: 4 }, (_, index) => createTextNode({
+    id: `compact-visual-${index + 1}`,
+    position: { x: 0, y: 0 },
+    name: `Compact visual ${index + 1}`,
+    text: '',
+    kind: 'visual',
+    properties: { [OSA_PROPERTY.role]: 'visual' },
+  }))
+  const compactFallbackEdges = compactVisuals.map((candidate, index) => createGraphEdge({
+    id: `compact-placement-${index + 1}`,
+    source: operation.id,
+    target: candidate.id,
+    properties: {
+      [OSA_PROPERTY.relationRole]: OSA_RELATION.operationVisual,
+      [OSA_PROPERTY.operationVisualRole]: index < 2
+        ? OSA_OPERATION_VISUAL_ROLE.before
+        : OSA_OPERATION_VISUAL_ROLE.after,
+      [OSA_PROPERTY.operationVisualOrder]: String(index),
+      [OSA_PROPERTY.operationVisualX]: String(10 + index),
+    },
+  }))
+  const legacyCompactProjection = instructionVisualsForOperation(
+    operation.id,
+    [],
+    [operation, ...compactVisuals],
+    compactFallbackEdges,
+  )
+  assert.deepEqual(
+    compactInstructionVisuals(legacyCompactProjection).map(({ edgeId }) => edgeId),
+    ['compact-placement-1', 'compact-placement-2', 'compact-placement-3'],
+    'A legacy instruction receives one deterministic three-picture fallback across both old roles.',
+  )
+  assert.equal(
+    publishedInstructionVisuals(legacyCompactProjection).length,
+    4,
+    'The fourth published detail Visual remains available even when it is not compact.',
+  )
+
+  const materializedCompactEdges = materializeInstructionVisualCompactEdges(
+    compactFallbackEdges,
+    [operation, ...compactVisuals],
+    operation.id,
+  )
+  assert.deepEqual(
+    materializedCompactEdges.map((edge) => edge.data.properties[OSA_PROPERTY.operationVisualCompact]),
+    ['true', 'true', 'true', 'false'],
+    'The first compact edit materializes the legacy fallback before changing it.',
+  )
+  assert.deepEqual(
+    materializedCompactEdges.map((edge) => ({
+      id: edge.id,
+      role: edge.data.properties[OSA_PROPERTY.operationVisualRole],
+      order: edge.data.properties[OSA_PROPERTY.operationVisualOrder],
+      x: edge.data.properties[OSA_PROPERTY.operationVisualX],
+    })),
+    compactFallbackEdges.map((edge) => ({
+      id: edge.id,
+      role: edge.data.properties[OSA_PROPERTY.operationVisualRole],
+      order: edge.data.properties[OSA_PROPERTY.operationVisualOrder],
+      x: edge.data.properties[OSA_PROPERTY.operationVisualX],
+    })),
+    'Materializing compact choices preserves every placement identity and legacy property.',
+  )
+  const deniedFourthCompact = setInstructionVisualCompactEdges(
+    materializedCompactEdges,
+    [operation, ...compactVisuals],
+    operation.id,
+    'compact-placement-4',
+    true,
+  )
+  assert.deepEqual(
+    deniedFourthCompact.map((edge) => edge.data.properties[OSA_PROPERTY.operationVisualCompact]),
+    ['true', 'true', 'true', 'false'],
+    'A fourth compact picture is rejected until one of the selected three is cleared.',
+  )
+  const oneDeselected = setInstructionVisualCompactEdges(
+    deniedFourthCompact,
+    [operation, ...compactVisuals],
+    operation.id,
+    'compact-placement-1',
+    false,
+  )
+  const fourthSelected = setInstructionVisualCompactEdges(
+    oneDeselected,
+    [operation, ...compactVisuals],
+    operation.id,
+    'compact-placement-4',
+    true,
+  )
+  assert.deepEqual(
+    fourthSelected.map((edge) => edge.data.properties[OSA_PROPERTY.operationVisualCompact]),
+    ['false', 'true', 'true', 'true'],
+    'Deselecting one compact picture immediately frees its slot for another.',
+  )
+
   const singleInstructionPlacementEdges = preservationEdges.filter((edge) => (
     edge.id !== repeatedPlacement.id
   ))
@@ -228,9 +334,37 @@ try {
     legacyOnlyEdges,
   )
   assert.deepEqual(
-    legacyInstructionVisuals.map(({ edgeId, role }) => [edgeId, role]),
-    [['step-owns-visual', OSA_OPERATION_VISUAL_ROLE.after]],
+    legacyInstructionVisuals.map(({ edgeId, role, published, compact }) => [
+      edgeId,
+      role,
+      published,
+      compact,
+    ]),
+    [['step-owns-visual', OSA_OPERATION_VISUAL_ROLE.after, true, true]],
     'An already-orphaned legacy picture retains an unlinkable edge identity.',
+  )
+  const materializedLegacyEdges = materializeInstructionVisualCompactEdges(
+    legacyOnlyEdges,
+    [operation, genericStep, visual, childVisual],
+    operation.id,
+  )
+  assert.equal(
+    materializedLegacyEdges.find((edge) => edge.id === 'step-owns-visual')
+      ?.data.properties[OSA_PROPERTY.operationVisualCompact],
+    'true',
+    'A published legacy Step-owned Visual can materialize its compact fallback on the ownership edge.',
+  )
+  assert.equal(
+    setInstructionVisualCompactEdges(
+      materializedLegacyEdges,
+      [operation, genericStep, visual, childVisual],
+      operation.id,
+      'step-owns-visual',
+      false,
+    ).find((edge) => edge.id === 'step-owns-visual')
+      ?.data.properties[OSA_PROPERTY.operationVisualCompact],
+    'false',
+    'A legacy Step-owned Visual supports the same explicit compact toggle without relinking it.',
   )
   const legacyInstructionMarkup = renderToStaticMarkup(createElement(AssemblyInstructionVisuals, {
     operationId: operation.id,
@@ -242,6 +376,8 @@ try {
     readOnly: false,
     actions: {
       onCreateInstructionVisual: () => '',
+      onLinkInstructionVisual: () => '',
+      onSetInstructionVisualCompact: () => undefined,
       onSetInstructionVisualRole: () => undefined,
       onRemoveInstructionVisual: () => undefined,
     },
@@ -249,9 +385,10 @@ try {
   }))
   assert.match(
     legacyInstructionMarkup,
-    /aria-label="remove Install connector box after visual 1"/,
+    /aria-label="remove Reusable visual from Install connector box"/,
     'A legacy picture that previously showed only Edit can still be removed.',
   )
+  assert.match(legacyInstructionMarkup, /Show in Assembly/)
   assert.doesNotMatch(
     legacyInstructionMarkup,
     /move to Before/,
@@ -302,6 +439,8 @@ try {
     readOnly: false,
     actions: {
       onCreateInstructionVisual: () => '',
+      onLinkInstructionVisual: () => '',
+      onSetInstructionVisualCompact: () => undefined,
       onSetInstructionVisualRole: () => undefined,
       onRemoveInstructionVisual: () => undefined,
     },
@@ -326,7 +465,23 @@ try {
     'Removing a picture preserves the same reusable Visual on another instruction.',
   )
 
-  let liveNodes = [operation]
+  const otherOperation = createTextNode({
+    id: 'other-live-operation',
+    position: { x: 0, y: 0 },
+    name: 'Inspect connector box',
+    text: '',
+    kind: 'action',
+    properties: { [OSA_PROPERTY.role]: 'operation' },
+  })
+  const reusableLibraryVisual = createTextNode({
+    id: 'reusable-library-visual',
+    position: { x: 0, y: 0 },
+    name: 'Reusable library photo',
+    text: '',
+    kind: 'visual',
+    properties: { [OSA_PROPERTY.role]: 'visual' },
+  })
+  let liveNodes = [operation, otherOperation, reusableLibraryVisual]
   let liveEdges = []
   const latestNodes = { current: liveNodes }
   const latestEdges = { current: liveEdges }
@@ -367,7 +522,7 @@ try {
     actions = useAssemblyGraphActions({
       nodes: liveNodes,
       edges: liveEdges,
-      operations: [operation],
+      operations: [operation, otherOperation],
       latestNodes,
       latestEdges,
       setNodes,
@@ -383,7 +538,6 @@ try {
   renderToStaticMarkup(createElement(GraphActionHarness))
   const photoVisualId = actions.onCreateInstructionVisual(
     operation.id,
-    OSA_OPERATION_VISUAL_ROLE.before,
     {
       imageData: 'data:image/webp;base64,cGhvdG8=',
       alt: 'Drilled battery box',
@@ -404,10 +558,7 @@ try {
     'Drilled battery box',
   )
   for (let index = 0; index < 4; index += 1) {
-    assert.ok(actions.onCreateInstructionVisual(
-      operation.id,
-      OSA_OPERATION_VISUAL_ROLE.before,
-    ))
+    assert.ok(actions.onCreateInstructionVisual(operation.id))
   }
   assert.equal(createdNodeIds.length, 5)
   assert.equal(liveNodes.filter((node) => node.data.properties[OSA_PROPERTY.role] === 'step').length, 0)
@@ -417,10 +568,56 @@ try {
   assert.equal(liveEdges.filter((edge) => (
     edge.source === operation.id
     && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationVisual
-    && edge.data.properties[OSA_PROPERTY.operationVisualRole] === OSA_OPERATION_VISUAL_ROLE.before
   )).length, 5)
+  const createdPlacements = liveEdges.filter((edge) => (
+    edge.source === operation.id
+    && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationVisual
+  ))
+  assert.ok(createdPlacements.every((edge) => (
+    edge.data.properties[OSA_PROPERTY.operationVisualPublished] === 'true'
+    && edge.data.properties[OSA_PROPERTY.operationVisualRole] === undefined
+  )), 'New Visuals are published roleless links rather than another Before/After data model.')
+  assert.equal(createdPlacements.filter((edge) => (
+    edge.data.properties[OSA_PROPERTY.operationVisualCompact] === 'true'
+  )).length, 3, 'Only the first three newly created Visuals enter the compact Assembly overview.')
+  assert.equal(createdPlacements.filter((edge) => (
+    edge.data.properties[OSA_PROPERTY.operationVisualCompact] === 'false'
+  )).length, 2, 'Additional Visuals remain published in detail without exceeding the compact cap.')
 
-  console.log('Instruction graph actions preserve legacy data, unlimited exact placements, direct photos, and blank-description cutover.')
+  const nodeCountBeforeLink = liveNodes.length
+  const firstReusableLinkId = actions.onLinkInstructionVisual(
+    operation.id,
+    reusableLibraryVisual.id,
+  )
+  assert.ok(firstReusableLinkId)
+  assert.equal(liveNodes.length, nodeCountBeforeLink, 'Linking an existing Visual creates no clone node.')
+  assert.equal(liveEdges.filter((edge) => (
+    edge.source === operation.id && edge.target === reusableLibraryVisual.id
+  )).length, 1)
+  assert.equal(
+    liveEdges.find((edge) => edge.id === firstReusableLinkId)
+      ?.data.properties[OSA_PROPERTY.operationVisualCompact],
+    'false',
+    'A linked Visual remains published but does not bypass a full compact selection.',
+  )
+  assert.equal(actions.onLinkInstructionVisual(operation.id, reusableLibraryVisual.id), '')
+  assert.equal(liveEdges.filter((edge) => (
+    edge.source === operation.id && edge.target === reusableLibraryVisual.id
+  )).length, 1, 'Linking the same Visual twice to one instruction is a no-op.')
+
+  const secondReusableLinkId = actions.onLinkInstructionVisual(
+    otherOperation.id,
+    reusableLibraryVisual.id,
+  )
+  assert.ok(secondReusableLinkId, 'The same reusable Visual can be linked to another instruction.')
+  actions.onRemoveInstructionVisual(operation.id, firstReusableLinkId)
+  assert.ok(liveNodes.some((node) => node.id === reusableLibraryVisual.id),
+    'Removing from one instruction keeps the reusable Visual in the library.')
+  assert.ok(!liveEdges.some((edge) => edge.id === firstReusableLinkId))
+  assert.ok(liveEdges.some((edge) => edge.id === secondReusableLinkId),
+    'Removing one placement preserves the other instruction link.')
+
+  console.log('Instruction graph actions preserve legacy data, unified reusable Visual links, compact selection, direct photos, and blank-description cutover.')
 } finally {
   await server.close()
 }

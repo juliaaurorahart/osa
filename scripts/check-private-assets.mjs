@@ -81,8 +81,13 @@ try {
         { id: 'scope-assembly', data: { kind: 'project', properties: { 'osa:role': 'assembly' } } },
         { id: 'scope-operation', data: { kind: 'action', properties: { 'osa:role': 'operation' } } },
         { id: 'scope-legacy-operation', data: { kind: 'action', properties: { 'osa:role': 'operation' } } },
+        { id: 'scope-step-published', data: { kind: 'note', properties: { 'osa:role': 'step' } } },
+        { id: 'scope-step-private', data: { kind: 'note', properties: { 'osa:role': 'step' } } },
+        { id: 'scope-step-legacy', data: { kind: 'note', properties: { 'osa:role': 'step' } } },
         ...['before-1', 'before-2', 'before-3', 'before-4', 'after-2', 'after-3', 'after-4',
-          'unassigned-visual', 'legacy-unassigned-visual', 'source-visual', 'embedded-visual',
+          'unassigned-visual', 'legacy-unassigned-visual', 'new-published-visual',
+          'explicit-private-visual', 'compact-only-visual', 'step-new-published',
+          'step-explicit-private', 'step-legacy-published', 'source-visual', 'embedded-visual',
           'embedded-nested-visual', 'official-visual', 'official-nested-visual',
           'legacy-published-1', 'legacy-published-2', 'legacy-published-3',
           'legacy-published-4'].map((id) => ({
@@ -94,7 +99,12 @@ try {
               ...(id.startsWith('legacy-published-')
                 ? { 'visual:include-in-instructions': 'true' }
                 : {}),
-              ...(id === 'unassigned-visual'
+              ...([
+                'unassigned-visual',
+                'explicit-private-visual',
+                'step-explicit-private',
+                'step-legacy-published',
+              ].includes(id)
                 ? { 'visual:include-in-instructions': 'true' }
                 : {}),
             },
@@ -135,15 +145,60 @@ try {
           data: { properties: { 'osa:relation': 'assembly-operation' } },
         },
         ...[
-          ['before-4', 'before', '3'],
-          ['before-2', 'before', '1'],
-          ['before-1', 'before', '0'],
-          ['before-3', 'before', '2'],
-          ['after-4', 'after', '3'],
-          ['after-2', 'after', '1'],
-          ['after-1', 'after', '0'],
-          ['after-3', 'after', '2'],
-        ].map(([target, role, order]) => ({
+          'scope-step-published',
+          'scope-step-private',
+          'scope-step-legacy',
+        ].map((target) => ({
+          id: `scope-operation-${target}`,
+          source: 'scope-operation',
+          target,
+          data: { properties: { 'osa:relation': 'operation-step' } },
+        })),
+        {
+          id: 'scope-step-published-visual',
+          source: 'scope-step-published',
+          target: 'step-new-published',
+          data: { properties: {
+            'osa:relation': 'object-visual',
+            'operation-visual:published': 'true',
+            'operation-visual:compact': 'false',
+          } },
+        },
+        {
+          id: 'scope-step-private-visual',
+          source: 'scope-step-private',
+          target: 'step-explicit-private',
+          data: { properties: {
+            'osa:relation': 'object-visual',
+            'operation-visual:published': 'false',
+            'operation-visual:compact': 'true',
+          } },
+        },
+        {
+          id: 'scope-step-private-included-target',
+          source: 'scope-step-private',
+          target: 'before-1',
+          data: { properties: {
+            'osa:relation': 'object-visual',
+            'operation-visual:published': 'false',
+          } },
+        },
+        {
+          id: 'scope-step-legacy-visual',
+          source: 'scope-step-legacy',
+          target: 'step-legacy-published',
+          data: { properties: { 'osa:relation': 'object-visual' } },
+        },
+        ...[
+          ['before-4', 'before', '3', undefined, undefined],
+          ['before-2', 'before', '1', 'true', 'false'],
+          ['before-1', 'before', '0', undefined, 'true'],
+          ['before-3', 'before', '2', 'true', 'true'],
+          ['after-4', 'after', '3', undefined, undefined],
+          ['after-2', 'after', '1', 'true', 'false'],
+          ['after-1', 'after', '0', undefined, 'true'],
+          ['after-3', 'after', '2', 'false', 'true'],
+        ].map(([target, role, order, published, compact]) => ({
           id: `scope-${target}`,
           source: 'scope-operation',
           target,
@@ -151,8 +206,19 @@ try {
             'osa:relation': 'operation-visual',
             'operation-visual:role': role,
             'operation-visual:order': order,
+            ...(published === undefined ? {} : { 'operation-visual:published': published }),
+            ...(compact === undefined ? {} : { 'operation-visual:compact': compact }),
           } },
         })),
+        {
+          id: 'scope-before-1-private-duplicate',
+          source: 'scope-operation',
+          target: 'before-1',
+          data: { properties: {
+            'osa:relation': 'operation-visual',
+            'operation-visual:published': 'false',
+          } },
+        },
         {
           id: 'scope-unassigned',
           source: 'scope-operation',
@@ -167,6 +233,35 @@ try {
           source: 'scope-operation',
           target: 'legacy-unassigned-visual',
           data: { properties: { 'osa:relation': 'operation-visual' } },
+        },
+        {
+          id: 'scope-new-published',
+          source: 'scope-operation',
+          target: 'new-published-visual',
+          data: { properties: {
+            'osa:relation': 'operation-visual',
+            'operation-visual:published': 'true',
+            'operation-visual:compact': 'false',
+          } },
+        },
+        {
+          id: 'scope-explicit-private',
+          source: 'scope-operation',
+          target: 'explicit-private-visual',
+          data: { properties: {
+            'osa:relation': 'operation-visual',
+            'operation-visual:published': 'false',
+            'operation-visual:compact': 'true',
+          } },
+        },
+        {
+          id: 'scope-compact-only',
+          source: 'scope-operation',
+          target: 'compact-only-visual',
+          data: { properties: {
+            'osa:relation': 'operation-visual',
+            'operation-visual:compact': 'true',
+          } },
         },
         {
           id: 'scope-source-visual',
@@ -221,14 +316,17 @@ try {
   assert.ok(instructionVisualScope)
   const instructionVisualIds = new Set(instructionVisualScope.snapshot.nodes.map((node) => node.id))
   for (const id of [
-    'before-1', 'before-2', 'before-3', 'after-1', 'after-2', 'after-3',
+    'before-1', 'before-2', 'before-3', 'before-4', 'after-1', 'after-2', 'after-4',
     'embedded-visual', 'embedded-nested-visual', 'official-visual', 'official-nested-visual',
-    'legacy-published-1', 'legacy-published-2', 'legacy-published-3', 'not-a-visual',
+    'new-published-visual', 'step-new-published', 'step-legacy-published',
+    'legacy-published-1', 'legacy-published-2',
+    'legacy-published-3', 'legacy-published-4', 'not-a-visual',
   ]) assert.ok(instructionVisualIds.has(id), `${id} belongs in the shared instruction packet.`)
   for (const id of [
-    'before-4', 'after-4', 'unassigned-visual',
+    'after-3', 'unassigned-visual', 'explicit-private-visual', 'compact-only-visual',
+    'step-explicit-private',
     'legacy-unassigned-visual', 'source-visual', 'not-an-embedded-visual',
-    'not-an-official-visual', 'legacy-published-4',
+    'not-an-official-visual',
   ]) assert.ok(!instructionVisualIds.has(id), `${id} must remain outside the shared instruction packet.`)
   const instructionVisualEdges = instructionVisualScope.snapshot.edges.filter((edge) => (
     edge.source === 'scope-operation'
@@ -237,21 +335,36 @@ try {
   ))
   assert.deepEqual(
     instructionVisualEdges.map((edge) => edge.target),
-    ['before-2', 'before-1', 'before-3', 'after-2', 'after-1', 'after-3'],
-    'A shared instruction includes no more than three canonical Visuals for each explicit role.',
+    ['before-4', 'before-2', 'before-1', 'before-3', 'after-4', 'after-2', 'after-1', 'new-published-visual'],
+    'A share includes every published Visual regardless of its compact-card selection.',
   )
+  assert.ok(!instructionVisualScope.snapshot.edges.some((edge) => edge.id === 'scope-before-1-private-duplicate'),
+    'A private placement cannot leak just because another published edge includes the same Visual node.')
+  assert.ok(!instructionVisualScope.snapshot.edges.some((edge) => (
+    edge.id === 'scope-step-private-included-target'
+  )), 'A private legacy Step placement cannot leak when its target is published elsewhere.')
+  assert.equal(
+    instructionVisualScope.snapshot.edges.find((edge) => (
+      edge.id === 'scope-step-published-visual'
+    ))?.data.properties['operation-visual:compact'],
+    'false',
+    'Compact selection is retained as presentation metadata and never limits publication.',
+  )
+  assert.ok(instructionVisualScope.snapshot.edges.some((edge) => (
+    edge.id === 'scope-step-legacy-visual'
+  )), 'A deliberately published legacy Step Visual remains compatible.')
   const legacyPublishedEdges = instructionVisualScope.snapshot.edges.filter((edge) => (
     edge.source === 'scope-legacy-operation'
     && edge.data.properties['osa:relation'] === 'operation-visual'
   ))
   assert.deepEqual(
     new Set(legacyPublishedEdges.map((edge) => edge.target)),
-    new Set(['legacy-published-1', 'legacy-published-2', 'legacy-published-3']),
-    'Only three roleless Visuals deliberately published by an older instruction enter the packet.',
+    new Set(['legacy-published-1', 'legacy-published-2', 'legacy-published-3', 'legacy-published-4']),
+    'All roleless Visuals deliberately published by an older instruction enter the packet.',
   )
   assert.ok(legacyPublishedEdges.every((edge) => (
-    edge.data.properties['operation-visual:role'] === 'after'
-  )), 'Published legacy placements become After pictures in the derived packet only.')
+    edge.data.properties['operation-visual:role'] === undefined
+  )), 'A read-only projection preserves roleless legacy placements without rewriting durable data.')
 
   assert.equal((await uploadFile(null)).status, 403, 'Anonymous upload is forbidden.')
   assert.equal((await uploadFile(viewer)).status, 403, 'Viewers cannot upload.')

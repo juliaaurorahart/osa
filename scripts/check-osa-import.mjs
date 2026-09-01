@@ -664,6 +664,14 @@ try {
       spaceIds: [],
       properties: { [OSA_PROPERTY.role]: 'bom-item' },
     },
+    {
+      id: 'legacy-step',
+      kind: 'note',
+      name: 'Legacy instruction step',
+      text: '',
+      spaceIds: [],
+      properties: { [OSA_PROPERTY.role]: 'step' },
+    },
     ...Array.from({ length: 8 }, (_, index) => ({
       id: `instruction-visual-${index + 1}`,
       kind: 'visual',
@@ -673,7 +681,7 @@ try {
       properties: { [OSA_PROPERTY.role]: 'visual' },
     })),
   ]
-  const instructionVisualEdge = (id, target, role) => ({
+  const instructionVisualEdge = (id, target, role, flags = {}) => ({
     id,
     source: 'instruction',
     target,
@@ -682,6 +690,12 @@ try {
     properties: {
       [OSA_PROPERTY.relationRole]: OSA_RELATION.operationVisual,
       ...(role ? { [OSA_PROPERTY.operationVisualRole]: role } : {}),
+      ...(flags.published === undefined
+        ? {}
+        : { [OSA_PROPERTY.operationVisualPublished]: flags.published }),
+      ...(flags.compact === undefined
+        ? {}
+        : { [OSA_PROPERTY.operationVisualCompact]: flags.compact }),
     },
   })
   const instructionVisualEdges = [
@@ -689,13 +703,35 @@ try {
       `before-${index + 1}`,
       `instruction-visual-${index + 1}`,
       OSA_OPERATION_VISUAL_ROLE.before,
+      index === 0 ? { published: 'true', compact: 'true' }
+        : index === 1 ? { published: 'true', compact: 'false' }
+          : {},
     )),
     ...Array.from({ length: 3 }, (_, index) => instructionVisualEdge(
       `after-${index + 1}`,
       `instruction-visual-${index + 4}`,
       OSA_OPERATION_VISUAL_ROLE.after,
+      index === 0 ? { published: 'false', compact: 'false' }
+        : index === 1 ? { published: 'true', compact: 'true' }
+          : {},
     )),
+    instructionVisualEdge('unified-roleless', 'instruction-visual-7', undefined, {
+      published: 'true',
+      compact: 'true',
+    }),
     instructionVisualEdge('legacy-unassigned', 'legacy-part'),
+    {
+      id: 'legacy-step-visual',
+      source: 'legacy-step',
+      target: 'instruction-visual-8',
+      relationKind: 'related',
+      relationship: 'owns visual',
+      properties: {
+        [OSA_PROPERTY.relationRole]: OSA_RELATION.objectVisual,
+        [OSA_PROPERTY.operationVisualPublished]: 'true',
+        [OSA_PROPERTY.operationVisualCompact]: 'false',
+      },
+    },
   ]
   const instructionVisualRoleSource = {
     format: 'osa-import',
@@ -707,7 +743,7 @@ try {
     edges: instructionVisualEdges,
   }
   const instructionVisualRolePackage = parseOsaImportPackage(instructionVisualRoleSource)
-  assert.equal(instructionVisualRolePackage.edges.length, 7)
+  assert.equal(instructionVisualRolePackage.edges.length, 9)
   assert.equal(
     instructionVisualRolePackage.edges[0].properties[OSA_PROPERTY.operationVisualRole],
     OSA_OPERATION_VISUAL_ROLE.before,
@@ -719,7 +755,7 @@ try {
     'An explicit After role survives import validation.',
   )
   assert.equal(
-    instructionVisualRolePackage.edges[6].properties[OSA_PROPERTY.operationVisualRole],
+    instructionVisualRolePackage.edges[7].properties[OSA_PROPERTY.operationVisualRole],
     undefined,
     'A roleless legacy operation visual stays importable and unassigned.',
   )
@@ -728,6 +764,56 @@ try {
       .data.properties[OSA_PROPERTY.operationVisualRole],
     OSA_OPERATION_VISUAL_ROLE.before,
     'Planning preserves the role on the operation-to-Visual edge.',
+  )
+  assert.deepEqual(
+    {
+      published: instructionVisualRolePackage.edges[0]
+        .properties[OSA_PROPERTY.operationVisualPublished],
+      compact: instructionVisualRolePackage.edges[0]
+        .properties[OSA_PROPERTY.operationVisualCompact],
+      role: instructionVisualRolePackage.edges[0]
+        .properties[OSA_PROPERTY.operationVisualRole],
+    },
+    {
+      published: 'true',
+      compact: 'true',
+      role: OSA_OPERATION_VISUAL_ROLE.before,
+    },
+    'New publication and compact switches coexist with a preserved legacy role.',
+  )
+  assert.deepEqual(
+    {
+      published: instructionVisualRolePackage.edges[6]
+        .properties[OSA_PROPERTY.operationVisualPublished],
+      compact: instructionVisualRolePackage.edges[6]
+        .properties[OSA_PROPERTY.operationVisualCompact],
+      role: instructionVisualRolePackage.edges[6]
+        .properties[OSA_PROPERTY.operationVisualRole],
+    },
+    { published: 'true', compact: 'true', role: undefined },
+    'A new unified Visual placement does not invent a Before/After role.',
+  )
+  assert.equal(
+    planOsaImport(instructionVisualRolePackage).edges[3]
+      .data.properties[OSA_PROPERTY.operationVisualPublished],
+    'false',
+    'Planning preserves an explicit false switch instead of dropping it.',
+  )
+  assert.deepEqual(
+    {
+      relation: planOsaImport(instructionVisualRolePackage).edges[8]
+        .data.properties[OSA_PROPERTY.relationRole],
+      published: planOsaImport(instructionVisualRolePackage).edges[8]
+        .data.properties[OSA_PROPERTY.operationVisualPublished],
+      compact: planOsaImport(instructionVisualRolePackage).edges[8]
+        .data.properties[OSA_PROPERTY.operationVisualCompact],
+    },
+    {
+      relation: OSA_RELATION.objectVisual,
+      published: 'true',
+      compact: 'false',
+    },
+    'A legacy Step-owned Visual preserves materialized publication and compact choices.',
   )
   for (const invalidRole of ['unassigned', 'during', '']) {
     assert.throws(
@@ -793,6 +879,97 @@ try {
     }),
     /operation-visual:role requires a canonical Visual target/,
     'Only a canonical Visual can receive an explicit Before/After role.',
+  )
+  for (const propertyName of [
+    OSA_PROPERTY.operationVisualPublished,
+    OSA_PROPERTY.operationVisualCompact,
+  ]) {
+    for (const invalidValue of ['yes', '1', '']) {
+      assert.throws(
+        () => parseOsaImportPackage({
+          ...instructionVisualRoleSource,
+          id: `invalid-${propertyName}-${invalidValue || 'blank'}`,
+          edges: instructionVisualEdges.map((edge, index) => index === 0
+            ? {
+                ...edge,
+                properties: { ...edge.properties, [propertyName]: invalidValue },
+              }
+            : edge),
+        }),
+        new RegExp(`${propertyName} must be true or false`),
+        `${propertyName} rejects ${invalidValue || 'blank text'} rather than treating it as truthy.`,
+      )
+    }
+    assert.throws(
+      () => parseOsaImportPackage({
+        ...instructionVisualRoleSource,
+        id: `${propertyName}-on-source-relation`,
+        edges: instructionVisualEdges.map((edge, index) => index === 0
+          ? {
+              ...edge,
+              properties: {
+                [OSA_PROPERTY.relationRole]: OSA_RELATION.operationSourceVisual,
+                [propertyName]: 'true',
+              },
+            }
+          : edge),
+      }),
+      new RegExp(`${propertyName} is only valid on operation-visual or Step object-visual relations`),
+      `${propertyName} cannot be attached to a provenance or ownership edge.`,
+    )
+    assert.throws(
+      () => parseOsaImportPackage({
+        ...instructionVisualRoleSource,
+        id: `${propertyName}-on-non-step-ownership`,
+        edges: instructionVisualEdges.map((edge, index) => index === 8
+          ? {
+              ...edge,
+              source: 'legacy-part',
+              properties: {
+                [OSA_PROPERTY.relationRole]: OSA_RELATION.objectVisual,
+                [propertyName]: 'true',
+              },
+            }
+          : edge),
+      }),
+      new RegExp(`${propertyName} is only valid on operation-visual or Step object-visual relations`),
+      `${propertyName} cannot turn ordinary object ownership into instruction presentation state.`,
+    )
+    assert.throws(
+      () => parseOsaImportPackage({
+        ...instructionVisualRoleSource,
+        id: `${propertyName}-on-legacy-target`,
+        edges: instructionVisualEdges.map((edge, index) => index === 0
+          ? {
+              ...edge,
+              target: 'legacy-part',
+              properties: {
+                [OSA_PROPERTY.relationRole]: OSA_RELATION.operationVisual,
+                [propertyName]: 'true',
+              },
+            }
+          : edge),
+      }),
+      new RegExp(`${propertyName} requires a canonical Visual target`),
+      `${propertyName} only controls a canonical reusable Visual placement.`,
+    )
+  }
+  assert.throws(
+    () => parseOsaImportPackage({
+      ...instructionVisualRoleSource,
+      id: 'four-explicit-compact-visuals',
+      edges: [
+        ...instructionVisualEdges,
+        instructionVisualEdge(
+          'fourth-compact',
+          'instruction-visual-8',
+          undefined,
+          { published: 'true', compact: 'true' },
+        ),
+      ],
+    }),
+    /selects more than three compact instruction visuals/,
+    'An untrusted import cannot bypass the three-picture compact selection cap.',
   )
   for (const role of [OSA_OPERATION_VISUAL_ROLE.before, OSA_OPERATION_VISUAL_ROLE.after]) {
     const expandedRolePackage = parseOsaImportPackage({

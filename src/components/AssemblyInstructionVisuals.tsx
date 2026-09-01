@@ -1,23 +1,28 @@
 import {
   useContext,
+  useId,
   useRef,
   useState,
   type ChangeEvent,
+  type ClipboardEvent,
   type DragEvent,
 } from 'react'
 import type { GraphEdge } from '../graph/graphEdge'
-import {
-  OSA_OPERATION_VISUAL_ROLE,
-  OSA_PROPERTY,
-  OSA_RELATION,
-  type OsaOperationVisualRole,
-} from '../graph/osaData'
+import { MAX_ASSEMBLY_VISUAL_PREVIEWS } from '../graph/osaData'
 import { storeImageFile } from '../graph/imageAsset'
 import { ImageStorageContext } from '../graph/ImageStorageContext'
 import type { SketchAnnotationTarget, TextFlowNode } from '../graph/textNode'
-import { visualEmbedsForCanvas } from '../graph/visualEmbed'
-import type { InstructionVisual } from './assemblyProjection'
-import { instructionPhotoFiles } from './assemblyInstructionPhotoFiles'
+import { isVisualNode, visualEmbedsForCanvas } from '../graph/visualEmbed'
+import {
+  nodeTitle,
+  type InstructionVisual,
+} from './assemblyProjection'
+import {
+  instructionPhotoFileFromUrl,
+  instructionPhotoFiles,
+  instructionPhotoTransferUrls,
+  normalizedInstructionPhotoFile,
+} from './assemblyInstructionPhotoFiles'
 import type { AssemblyViewActions } from './assemblyViewTypes'
 import { VisualCanvasPreview } from './VisualCanvas'
 import './AssemblyInstructionVisuals.css'
@@ -39,15 +44,15 @@ type ImportMessage = {
   isError: boolean
 }
 
+type PhotoTransfer = Pick<DataTransfer, 'files' | 'getData' | 'items'>
+
 function photoTitle(file: File) {
   return file.name.replace(/\.[^.]+$/, '').trim() || 'Photo'
 }
 
 /**
- * The instruction owns no second Step hierarchy. It places any number of
- * reusable Visuals Before and After; compact Assembly projections decide how
- * many previews to show. Roleless legacy placements
- * remain preserved in the graph, but they are not invented into either group.
+ * One instruction links reusable Visuals. The editor shows every link, while
+ * the compact Assembly card deliberately features at most three of them.
  */
 export function AssemblyInstructionVisuals({
   operationId,
@@ -61,132 +66,151 @@ export function AssemblyInstructionVisuals({
   onEditVisual,
 }: AssemblyInstructionVisualsProps) {
   const imageBoardId = useContext(ImageStorageContext)
+  const linkVisualSelectId = useId()
+  const compactHelpId = useId()
   const importLock = useRef(false)
-  const [dragRole, setDragRole] = useState<OsaOperationVisualRole | null>(null)
-  const [importingRole, setImportingRole] = useState<OsaOperationVisualRole | null>(null)
-  const [messages, setMessages] = useState<Partial<Record<OsaOperationVisualRole, ImportMessage>>>({})
-  const before = visuals.filter(({ role }) => role === OSA_OPERATION_VISUAL_ROLE.before)
-  const after = visuals.filter(({ role }) => role === OSA_OPERATION_VISUAL_ROLE.after)
+  const photoInput = useRef<HTMLInputElement | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const [isImporting, setIsImporting] = useState(false)
+  const [message, setMessage] = useState<ImportMessage | null>(null)
+  const [visualToLink, setVisualToLink] = useState('')
+  const linkedVisualIds = new Set(visuals.map(({ visual }) => visual.id))
+  const availableVisuals = nodes
+    .filter((node) => isVisualNode(node) && !linkedVisualIds.has(node.id))
+    .sort((left, right) => nodeTitle(left).localeCompare(nodeTitle(right)))
+  const compactCount = visuals.filter(({ compact }) => compact).length
+  const compactLimitReached = compactCount >= MAX_ASSEMBLY_VISUAL_PREVIEWS
 
-  if (readOnly && before.length === 0 && after.length === 0) return null
+  if (readOnly && visuals.length === 0) return null
 
-  const addVisual = (role: OsaOperationVisualRole) => {
+  const addCanvas = () => {
     if (readOnly) return
-    const visualId = actions.onCreateInstructionVisual(operationId, role)
+    const visualId = actions.onCreateInstructionVisual(operationId)
     if (visualId) onEditVisual(visualId)
   }
 
-  const setMessage = (role: OsaOperationVisualRole, message: ImportMessage) => {
-    setMessages((current) => ({ ...current, [role]: message }))
+  const linkExistingVisual = () => {
+    if (readOnly || !visualToLink) return
+    actions.onLinkInstructionVisual(operationId, visualToLink)
+    setVisualToLink('')
   }
 
-  const importPhotos = async (role: OsaOperationVisualRole, files: readonly File[]) => {
-    if (readOnly || importLock.current || files.length === 0) return
-    const photos = instructionPhotoFiles(files)
+  const importPhotos = async (
+    files: readonly File[],
+    webPhotoUrls: readonly string[] = [],
+  ) => {
+    if (readOnly || importLock.current || (files.length === 0 && webPhotoUrls.length === 0)) return
+    const photos = instructionPhotoFiles(files).map(normalizedInstructionPhotoFile)
     const skipped = files.length - photos.length
-    if (photos.length === 0) {
-      setMessage(role, { text: 'Choose image files to add here.', isError: true })
+    // A native file and the HTML drag payload usually describe the same
+    // picture. Prefer bytes already supplied by the browser to avoid duplicates.
+    const sources: Array<File | string> = photos.length ? photos : [...webPhotoUrls]
+    if (sources.length === 0) {
+      setMessage({ text: 'Choose image files to add here.', isError: true })
       return
     }
 
     importLock.current = true
-    setImportingRole(role)
+    setIsImporting(true)
     let added = 0
     let failed = 0
-    for (let index = 0; index < photos.length; index += 1) {
-      const file = photos[index]
-      setMessage(role, {
-        text: `Adding photo ${index + 1} of ${photos.length}…`,
-        isError: false,
-      })
-      try {
-        const imageData = await storeImageFile(file, imageBoardId)
-        const visualId = actions.onCreateInstructionVisual(operationId, role, {
-          imageData,
-          alt: photoTitle(file),
+    let unreadableWebPhotos = 0
+    try {
+      for (let index = 0; index < sources.length; index += 1) {
+        setMessage({
+          text: `Adding photo ${index + 1} of ${sources.length}…`,
+          isError: false,
         })
-        if (visualId) added += 1
-        else failed += 1
-      } catch {
-        failed += 1
+        try {
+          const source = sources[index]
+          const file = typeof source === 'string'
+            ? await instructionPhotoFileFromUrl(source, index)
+            : source
+          const imageData = await storeImageFile(file, imageBoardId)
+          const visualId = actions.onCreateInstructionVisual(operationId, {
+            imageData,
+            alt: photoTitle(file),
+          })
+          if (visualId) added += 1
+          else failed += 1
+        } catch {
+          if (typeof sources[index] === 'string') unreadableWebPhotos += 1
+          failed += 1
+        }
       }
+    } finally {
+      importLock.current = false
+      setIsImporting(false)
     }
-    importLock.current = false
-    setImportingRole(null)
 
     const details = [
       `${added} ${added === 1 ? 'photo' : 'photos'} added.`,
-      skipped ? `${skipped} non-image ${skipped === 1 ? 'file was' : 'files were'} skipped.` : '',
+      skipped ? `${skipped} unsupported or empty ${skipped === 1 ? 'file was' : 'files were'} skipped.` : '',
       failed ? `${failed} ${failed === 1 ? 'photo could' : 'photos could'} not be added.` : '',
+      unreadableWebPhotos
+        ? 'Google Photos may block direct dragging; copy the image and paste it here, or choose it after downloading.'
+        : '',
     ].filter(Boolean).join(' ')
-    setMessage(role, { text: details, isError: failed > 0 || added === 0 })
+    setMessage({ text: details, isError: failed > 0 || added === 0 })
   }
 
-  const onPhotoInput = (
-    role: OsaOperationVisualRole,
-    event: ChangeEvent<HTMLInputElement>,
-  ) => {
+  const onPhotoInput = (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.currentTarget.files ?? [])
     event.currentTarget.value = ''
-    void importPhotos(role, files)
+    void importPhotos(files)
   }
 
-  const onPhotoDragEnter = (
-    role: OsaOperationVisualRole,
-    event: DragEvent<HTMLElement>,
-  ) => {
-    event.preventDefault()
-    event.stopPropagation()
-    if (!readOnly && importingRole === null) setDragRole(role)
+  const importPhotoTransfer = (transfer: PhotoTransfer) => {
+    const listedFiles = Array.from(transfer.files)
+    const itemFiles = listedFiles.length ? [] : Array.from(transfer.items)
+      .filter((item) => item.kind === 'file')
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => file !== null)
+    const files = listedFiles.length ? listedFiles : itemFiles
+    const photos = instructionPhotoFiles(files)
+    const urls = photos.length ? [] : instructionPhotoTransferUrls({
+      html: transfer.getData('text/html'),
+      uriList: transfer.getData('text/uri-list'),
+      plainText: transfer.getData('text/plain'),
+    })
+    if (files.length === 0 && urls.length === 0) {
+      setMessage({
+        text: 'No picture was shared. In Google Photos, copy the image and paste it here.',
+        isError: true,
+      })
+      return
+    }
+    void importPhotos(files, urls)
   }
 
-  const onPhotoDragLeave = (
-    role: OsaOperationVisualRole,
-    event: DragEvent<HTMLElement>,
-  ) => {
+  const onPhotoDrop = (event: DragEvent<HTMLElement>) => {
     event.preventDefault()
     event.stopPropagation()
-    const nextTarget = event.relatedTarget
-    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return
-    setDragRole((current) => current === role ? null : current)
-  }
-
-  const onPhotoDrop = (
-    role: OsaOperationVisualRole,
-    event: DragEvent<HTMLElement>,
-  ) => {
-    event.preventDefault()
-    event.stopPropagation()
-    setDragRole(null)
+    setIsDragging(false)
     if (readOnly) return
-    void importPhotos(role, Array.from(event.dataTransfer.files))
+    importPhotoTransfer(event.dataTransfer)
   }
 
-  const renderPreview = (
-    placement: InstructionVisual,
-    role: OsaOperationVisualRole,
-    index: number,
-  ) => {
-    const { edgeId, visual } = placement
-    const isExplicitPlacement = edgeId !== null && edges.some((edge) => (
-      edge.id === edgeId
-      && edge.source === operationId
-      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationVisual
-    ))
-    const otherRole = role === OSA_OPERATION_VISUAL_ROLE.before
-      ? OSA_OPERATION_VISUAL_ROLE.after
-      : OSA_OPERATION_VISUAL_ROLE.before
-    const otherLabel = otherRole === OSA_OPERATION_VISUAL_ROLE.before ? 'Before' : 'After'
+  const onPhotoPaste = (event: ClipboardEvent<HTMLElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    if (readOnly) return
+    importPhotoTransfer(event.clipboardData)
+  }
+
+  const renderPreview = (placement: InstructionVisual, index: number) => {
+    const { edgeId, visual, compact } = placement
+    const cannotSelect = !compact && compactLimitReached
 
     return (
       <figure
         className="assembly-instruction-visuals__item"
-        key={`${role}-${edgeId ?? visual.id}-${index}`}
+        key={`${edgeId ?? visual.id}-${index}`}
       >
         <button
           className="assembly-instruction-visuals__preview-button"
           type="button"
-          aria-label={`open ${operationTitle} ${role} visual ${index + 1}`}
+          aria-label={`open ${nodeTitle(visual) || operationTitle} visual ${index + 1}`}
           onClick={() => onEditVisual(visual.id)}
         >
           <VisualCanvasPreview
@@ -197,25 +221,40 @@ export function AssemblyInstructionVisuals({
           />
         </button>
         {!readOnly ? (
+          <figcaption className="assembly-instruction-visuals__item-name">
+            {nodeTitle(visual)}
+          </figcaption>
+        ) : null}
+        {!readOnly ? (
           <div className="assembly-instruction-visuals__item-actions">
+            {edgeId ? (
+              <label
+                className={`assembly-instruction-visuals__compact-choice${cannotSelect ? ' is-disabled' : ''}`}
+                title={cannotSelect ? 'Three visuals are already shown. Deselect one first.' : undefined}
+              >
+                <input
+                  type="checkbox"
+                  checked={compact}
+                  disabled={cannotSelect}
+                  aria-describedby={compactHelpId}
+                  onChange={(event) => actions.onSetInstructionVisualCompact(
+                    operationId,
+                    edgeId,
+                    event.currentTarget.checked,
+                  )}
+                />
+                <span>Show in Assembly</span>
+              </label>
+            ) : null}
             <button className="text-action" type="button" onClick={() => onEditVisual(visual.id)}>
               edit
             </button>
-            {isExplicitPlacement && edgeId ? (
-              <button
-                className="text-action"
-                type="button"
-                onClick={() => actions.onSetInstructionVisualRole(operationId, edgeId, otherRole)}
-              >
-                move to {otherLabel}
-              </button>
-            ) : null}
             {edgeId ? (
               <button
                 className="text-action is-danger"
                 type="button"
-                aria-label={`remove ${operationTitle} ${role} visual ${index + 1}`}
-                title="Remove this picture from the instruction without deleting the Visual"
+                aria-label={`remove ${nodeTitle(visual)} from ${operationTitle}`}
+                title="Unlink from this instruction. The Visual stays available to reuse."
                 onClick={() => actions.onRemoveInstructionVisual(operationId, edgeId)}
               >
                 remove
@@ -227,82 +266,118 @@ export function AssemblyInstructionVisuals({
     )
   }
 
-  const renderGroup = (
-    label: 'Before' | 'After',
-    role: OsaOperationVisualRole,
-    roleVisuals: InstructionVisual[],
-  ) => {
-    const isImporting = importingRole === role
-    const message = messages[role]
-    return (
-      <section
-        className={`assembly-instruction-visuals__group${dragRole === role ? ' is-dragging' : ''}${isImporting ? ' is-importing' : ''}`}
-        aria-label={`${operationTitle} ${label} pictures`}
-        aria-busy={isImporting}
-        data-photo-drop-role={role}
-        onDragEnter={(event) => onPhotoDragEnter(role, event)}
-        onDragOver={(event) => {
-          event.preventDefault()
-          event.stopPropagation()
-          event.dataTransfer.dropEffect = 'copy'
-        }}
-        onDragLeave={(event) => onPhotoDragLeave(role, event)}
-        onDrop={(event) => onPhotoDrop(role, event)}
-      >
-      <header className="assembly-instruction-visuals__group-header">
-        <h3>{label}</h3>
-        {!readOnly ? (
-          <button className="text-action" type="button" onClick={() => addVisual(role)}>
-            + canvas
-          </button>
-        ) : null}
-      </header>
-      {roleVisuals.length ? (
-        <div className="assembly-instruction-visuals__grid">
-          {roleVisuals.map((visual, index) => (
-            renderPreview(visual, role, index)
-          ))}
-        </div>
-      ) : null}
-      {!readOnly ? (
-        <label className="assembly-instruction-visuals__drop-target">
-          <span>{dragRole === role
-            ? `Drop ${label} photos here`
-            : `Drop photos here or choose ${label.toLowerCase()} photos`}</span>
-          <input
-            type="file"
-            accept="image/*"
-            multiple
-            disabled={importingRole !== null}
-            aria-label={`Add ${label} photos to ${operationTitle}`}
-            onChange={(event) => onPhotoInput(role, event)}
-          />
-        </label>
-      ) : null}
-      {message ? (
-        <p
-          className={`assembly-instruction-visuals__import-message${message.isError ? ' is-error' : ''}`}
-          role={message.isError ? 'alert' : 'status'}
-          aria-live="polite"
-        >
-          {message.text}
-        </p>
-      ) : null}
-      </section>
-    )
-  }
-
   return (
     <section className="assembly-instruction-visuals" aria-label={`${operationTitle} visuals`}>
-      <div className="assembly-instruction-visuals__roles">
-        {!readOnly || before.length
-          ? renderGroup('Before', OSA_OPERATION_VISUAL_ROLE.before, before)
-          : null}
-        {!readOnly || after.length
-          ? renderGroup('After', OSA_OPERATION_VISUAL_ROLE.after, after)
-          : null}
-      </div>
+      {!readOnly ? (
+        <>
+          <header className="assembly-instruction-visuals__header">
+            <div>
+              <h2>Visuals</h2>
+              <p id={compactHelpId}>
+                {compactCount} of {MAX_ASSEMBLY_VISUAL_PREVIEWS} shown in the Assembly overview.
+                {compactLimitReached ? ' Deselect one before choosing another.' : ''}
+              </p>
+            </div>
+            <button className="text-action" type="button" onClick={addCanvas}>
+              + new canvas
+            </button>
+          </header>
 
+          <div className="assembly-instruction-visuals__link-control">
+            <label htmlFor={linkVisualSelectId}>Link existing Visual</label>
+            <select
+              id={linkVisualSelectId}
+              value={visualToLink}
+              disabled={availableVisuals.length === 0}
+              onChange={(event) => setVisualToLink(event.currentTarget.value)}
+            >
+              <option value="">
+                {availableVisuals.length ? 'Choose a Visual…' : 'No other Visuals available'}
+              </option>
+              {availableVisuals.map((visual) => (
+                <option key={visual.id} value={visual.id}>{nodeTitle(visual)}</option>
+              ))}
+            </select>
+            <button
+              className="text-action"
+              type="button"
+              disabled={!visualToLink}
+              onClick={linkExistingVisual}
+            >
+              link
+            </button>
+          </div>
+
+          <div
+            className={`assembly-instruction-visuals__drop-target${isDragging ? ' is-dragging' : ''}${isImporting ? ' is-disabled' : ''}`}
+            tabIndex={0}
+            role="group"
+            aria-label={`Add photos to ${operationTitle}. Drop or paste photos here, or open the photo picker.`}
+            aria-busy={isImporting}
+            onPaste={onPhotoPaste}
+            onDragEnter={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              if (!isImporting) setIsDragging(true)
+            }}
+            onDragOver={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              event.dataTransfer.dropEffect = 'copy'
+            }}
+            onDragLeave={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              const nextTarget = event.relatedTarget
+              if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return
+              setIsDragging(false)
+            }}
+            onDrop={onPhotoDrop}
+          >
+            <span>{isDragging ? 'Drop photos here' : 'Drop or paste photos here'}</span>
+            <button
+              className="assembly-instruction-visuals__choose"
+              type="button"
+              disabled={isImporting}
+              aria-label={`Choose photos for ${operationTitle}`}
+              onClick={() => photoInput.current?.click()}
+            >
+              + add photos
+            </button>
+            <input
+              className="assembly-instruction-visuals__photo-input"
+              ref={photoInput}
+              type="file"
+              accept="image/*"
+              multiple
+              hidden
+              tabIndex={-1}
+              aria-hidden="true"
+              disabled={isImporting}
+              onChange={onPhotoInput}
+            />
+          </div>
+
+          {message ? (
+            <p
+              className={`assembly-instruction-visuals__import-message${message.isError ? ' is-error' : ''}`}
+              role={message.isError ? 'alert' : 'status'}
+              aria-live={message.isError ? 'assertive' : 'polite'}
+              aria-atomic="true"
+            >
+              {message.text}
+            </p>
+          ) : null}
+        </>
+      ) : null}
+
+      {visuals.length ? (
+        <div className="assembly-instruction-visuals__grid">
+          {visuals.map(renderPreview)}
+        </div>
+      ) : !readOnly ? (
+        <p className="assembly-instruction-visuals__empty">No visuals linked yet.</p>
+      ) : null}
     </section>
   )
 }

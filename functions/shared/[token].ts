@@ -65,9 +65,9 @@ function edgeRelationKind(edge: JsonRecord) {
 function isOperationTargetEdge(edge: JsonRecord, nodesById: Map<string, JsonRecord>) {
   const relation = edgeRelation(edge)
   const target = typeof edge.target === 'string' ? nodesById.get(edge.target) : undefined
-  // Canonical instruction Visuals are published only through their explicit
-  // Before/After role below. Legacy operation-visual links to Parts and Tools
-  // keep their existing operation-context behavior.
+  // Canonical instruction Visuals pass through the publication rules below.
+  // Legacy operation-visual links to Parts and Tools keep their existing
+  // operation-context behavior.
   if (
     relation === 'operation-visual'
     && isCanonicalVisual(target)
@@ -87,29 +87,32 @@ function isOperationTargetEdge(edge: JsonRecord, nodesById: Map<string, JsonReco
   return role === 'bom-item' || role === 'tool' || nodeKind(target) === 'part' || nodeKind(target) === 'tool'
 }
 
-const MAX_SHARED_VISUALS_PER_ROLE = 3
-
-function sharedInstructionVisualRole(
+function isSharedInstructionVisualPublished(
   edge: JsonRecord,
   nodesById: Map<string, JsonRecord>,
-): 'before' | 'after' | null {
-  if (edgeRelation(edge) !== 'operation-visual' || typeof edge.target !== 'string') return null
+): boolean {
+  if (edgeRelation(edge) !== 'operation-visual' || typeof edge.target !== 'string') return false
 
   const target = nodesById.get(edge.target)
-  if (!isCanonicalVisual(target)) return null
+  if (!isCanonicalVisual(target)) return false
 
-  const role = edgeProperties(edge)?.['operation-visual:role']
-  if (role === 'before' || role === 'after') return role
+  const properties = edgeProperties(edge)
+  const published = properties?.['operation-visual:published']
+  // A present value is authoritative. Invalid values are kept private rather
+  // than falling through to a permissive legacy rule.
+  if (published !== undefined) return published === 'true'
+
+  const role = properties?.['operation-visual:role']
+  if (role === 'before' || role === 'after') return true
   return role === undefined
     && nodeProperties(target)?.['visual:include-in-instructions'] === 'true'
-    ? 'after'
-    : null
 }
 
-function sharedInstructionVisualOrder(edge: JsonRecord, fallback: number) {
-  const value = edgeProperties(edge)?.['operation-visual:order']
-  const parsed = typeof value === 'string' && value.trim() ? Number(value) : Number.NaN
-  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : fallback
+function isSharedLegacyStepVisualPublished(edge: JsonRecord, target: JsonRecord | undefined) {
+  if (edgeRelation(edge) !== 'object-visual' || !isCanonicalVisual(target)) return false
+  const published = edgeProperties(edge)?.['operation-visual:published']
+  if (published !== undefined) return published === 'true'
+  return nodeProperties(target)?.['visual:include-in-instructions'] === 'true'
 }
 
 function officialVisualEmbedIds(node: JsonRecord) {
@@ -187,7 +190,8 @@ export function createAssemblyScopedBoard(board: unknown, assemblyId: string): J
     pendingNodeIds.push(nodeId)
   }
   const operationIds = new Set<string>()
-  const legacyPublishedAfterEdges = new Set<JsonRecord>()
+  const publishedInstructionVisualEdges = new Set<JsonRecord>()
+  const publishedLegacyStepVisualEdges = new Set<JsonRecord>()
   includeNode(assemblyId)
 
   // Assembly -> operation links have a durable structured relation. Retain a
@@ -207,38 +211,11 @@ export function createAssemblyScopedBoard(board: unknown, assemblyId: string): J
   }
 
   for (const operationId of operationIds) {
-    const publishedVisualTargets = {
-      before: new Set<string>(),
-      after: new Set<string>(),
+    for (const edge of edges) {
+      if (edge.source !== operationId || !isSharedInstructionVisualPublished(edge, nodesById)) continue
+      publishedInstructionVisualEdges.add(edge)
+      includeNode(edge.target as string)
     }
-    edges
-      .map((edge, edgeIndex) => ({ edge, edgeIndex }))
-      .filter(({ edge }) => edge.source === operationId)
-      .map(({ edge, edgeIndex }) => ({
-        edge,
-        edgeIndex,
-        role: sharedInstructionVisualRole(edge, nodesById),
-      }))
-      .filter((entry): entry is typeof entry & { role: 'before' | 'after' } => entry.role !== null)
-      .sort((left, right) => (
-        sharedInstructionVisualOrder(left.edge, left.edgeIndex)
-        - sharedInstructionVisualOrder(right.edge, right.edgeIndex)
-        || left.edgeIndex - right.edgeIndex
-      ))
-      .forEach(({ edge, role }) => {
-        const visualId = edge.target as string
-        const targetsForRole = publishedVisualTargets[role]
-        if (
-          targetsForRole.has(visualId)
-          || targetsForRole.size >= MAX_SHARED_VISUALS_PER_ROLE
-        ) return
-        targetsForRole.add(visualId)
-        if (
-          role === 'after'
-          && edgeProperties(edge)?.['operation-visual:role'] === undefined
-        ) legacyPublishedAfterEdges.add(edge)
-        includeNode(visualId)
-      })
 
     for (const edge of edges) {
       if (edge.source !== operationId || !isOperationTargetEdge(edge, nodesById)) continue
@@ -246,10 +223,10 @@ export function createAssemblyScopedBoard(board: unknown, assemblyId: string): J
     }
   }
 
-  // A shared instruction needs only its explicit Before/After Visuals and any
-  // deliberately published legacy Step canvas. Follow embedded and official
-  // Visual dependencies recursively while source slides, unassigned drafts,
-  // and other design work stay outside the public packet.
+  // A shared instruction receives every deliberately published Visual, not
+  // only the compact-card selection. Follow embedded and official Visual
+  // dependencies recursively while source slides, unassigned drafts, and
+  // other design work stay outside the public packet.
   while (pendingNodeIds.length) {
     const includedNodeId = pendingNodeIds.shift()!
     const includedNode = nodesById.get(includedNodeId)
@@ -260,7 +237,8 @@ export function createAssemblyScopedBoard(board: unknown, assemblyId: string): J
       for (const edge of edges) {
         if (edge.source === includedNodeId && edgeRelation(edge) === 'object-visual') {
           const stepCanvas = nodesById.get(edge.target as string)
-            if (nodeProperties(stepCanvas)?.['visual:include-in-instructions'] === 'true') {
+          if (isSharedLegacyStepVisualPublished(edge, stepCanvas)) {
+            publishedLegacyStepVisualEdges.add(edge)
             includeNode(edge.target as string)
           }
         }
@@ -286,23 +264,22 @@ export function createAssemblyScopedBoard(board: unknown, assemblyId: string): J
       ...snapshot,
       nodes: nodes.filter((node) => includedNodeIds.has(node.id as string)),
       // This deliberately prevents an edge from revealing an out-of-scope node.
-      edges: edges
-        .filter((edge) => (
-          includedNodeIds.has(edge.source as string) && includedNodeIds.has(edge.target as string)
-        ))
-        .map((edge) => {
-          if (!legacyPublishedAfterEdges.has(edge)) return edge
-          return {
-            ...edge,
-            data: {
-              ...edgeData(edge),
-              properties: {
-                ...edgeProperties(edge),
-                'operation-visual:role': 'after',
-              },
-            },
-          }
-        }),
+      edges: edges.filter((edge) => {
+        if (!includedNodeIds.has(edge.source as string) || !includedNodeIds.has(edge.target as string)) {
+          return false
+        }
+        if (
+          operationIds.has(edge.source as string)
+          && edgeRelation(edge) === 'operation-visual'
+          && isCanonicalVisual(nodesById.get(edge.target as string))
+        ) return publishedInstructionVisualEdges.has(edge)
+        if (
+          nodeProperties(nodesById.get(edge.source as string) ?? {})?.['osa:role'] === 'step'
+          && edgeRelation(edge) === 'object-visual'
+          && isCanonicalVisual(nodesById.get(edge.target as string))
+        ) return publishedLegacyStepVisualEdges.has(edge)
+        return true
+      }),
     },
   }
 }

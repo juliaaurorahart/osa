@@ -18,9 +18,7 @@ import './AssemblyIndexCard.css'
 
 export type AssemblyInstructionSummary = {
   operation: TextFlowNode
-  beforeVisuals: TextFlowNode[]
-  afterVisuals: TextFlowNode[]
-  toolCount: number
+  visuals: TextFlowNode[]
   completedCount: number
 }
 
@@ -212,28 +210,23 @@ export function AssemblyIndexCard({
               {instructionSummaries.map((summary, operationIndex) => {
                 const {
                   operation,
-                  beforeVisuals,
-                  afterVisuals,
+                  visuals,
                   completedCount,
                 } = summary
                 const operationTitle = nodeTitle(operation)
                 const attentionNote = operationAttentionNote(operation)
                 const statusLabel = operationStatusLabel(operationStatus(operation))
-                const renderPictureGroup = (
-                  label: 'Before' | 'After',
-                  visuals: TextFlowNode[],
-                ) => visuals.length ? (
+                const renderPictures = visuals.length ? (
                   <div
                     className="assembly-index-card__summary-picture-group"
-                    aria-label={`${operationTitle} ${label} pictures`}
+                    aria-label={`${operationTitle} visuals`}
                   >
-                    <span className="assembly-index-card__summary-label">{label}</span>
                     <span className="assembly-index-card__summary-pictures">
                       {visuals.slice(0, 3).map((visual, visualIndex) => (
                         <span
                           className="assembly-index-card__summary-picture"
-                          aria-label={`${label} picture ${visualIndex + 1}`}
-                          key={`${label}-${visual.id}-${visualIndex}`}
+                          aria-label={`Visual ${visualIndex + 1}`}
+                          key={`${visual.id}-${visualIndex}`}
                         >
                           <VisualCanvasPreview
                             visual={visual}
@@ -272,11 +265,10 @@ export function AssemblyIndexCard({
                       </span>
                     </button>
                     <div
-                      className={`assembly-index-card__summary-info${beforeVisuals.length || afterVisuals.length ? ' has-pictures' : ''}${Boolean(beforeVisuals.length) !== Boolean(afterVisuals.length) ? ' has-one-picture-group' : ''}`}
+                      className={`assembly-index-card__summary-info${visuals.length ? ' has-pictures' : ''}`}
                       aria-label={`${operationTitle} overview`}
                     >
-                      {renderPictureGroup('Before', beforeVisuals)}
-                      {renderPictureGroup('After', afterVisuals)}
+                      {renderPictures}
                       <div className="assembly-index-card__summary-meta">
                         <AssemblyPeople operation={operation} compact />
                         <dl className="assembly-index-card__summary-metrics">

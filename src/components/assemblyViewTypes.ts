@@ -16,9 +16,14 @@ export type AssemblyViewActions = {
   onRemoveOperation: (operationId: string) => void
   onCreateInstructionVisual: (
     operationId: string,
-    role: OsaOperationVisualRole,
     photo?: InstructionPhotoImport,
   ) => string
+  onLinkInstructionVisual: (operationId: string, visualId: string) => string
+  onSetInstructionVisualCompact: (
+    operationId: string,
+    placementEdgeId: string,
+    compact: boolean,
+  ) => void
   onSetInstructionVisualRole: (
     operationId: string,
     placementEdgeId: string,
