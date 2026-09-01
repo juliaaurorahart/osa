@@ -50,7 +50,7 @@ export function operationCompletedCount(operation: TextFlowNode) {
  * Reads one instruction's deliberate workflow state.
  *
  * Status stays independent from physical throughput and legacy task
- * completion. An older instruction therefore begins as Not started until
+ * completion. An older instruction therefore begins as Pending until
  * someone deliberately changes this field.
  */
 export function operationStatus(operation: TextFlowNode): OsaOperationStatus {
@@ -62,7 +62,7 @@ export function operationStatus(operation: TextFlowNode): OsaOperationStatus {
 export function operationStatusLabel(status: OsaOperationStatus) {
   if (status === OSA_OPERATION_STATUS.inProgress) return 'In progress'
   if (status === OSA_OPERATION_STATUS.complete) return 'Complete'
-  return 'Not started'
+  return 'Pending'
 }
 
 /**

@@ -312,7 +312,7 @@ try {
     'Every instruction summary shows a status light.',
   )
   assert.equal(
-    (compactMarkup.match(/status: Not started/g) ?? []).length,
+    (compactMarkup.match(/status: Pending/g) ?? []).length,
     6,
     'Status remains readable text as well as color.',
   )
@@ -384,7 +384,7 @@ try {
   assert.doesNotMatch(connectorCard, /Roleless legacy picture|>\+ picture<\/button>/)
   assert.doesNotMatch(connectorCard, /<figcaption/)
   assert.match(connectorCard, /aria-label="Connector Box Drill status"/)
-  assert.match(connectorCard, />Not started<\/option>/)
+  assert.match(connectorCard, />Pending<\/option>/)
 
   const navigationStart = connectorCard.indexOf('aria-label="Instruction navigation"')
   const navigation = connectorCard.slice(navigationStart)
@@ -548,7 +548,7 @@ try {
     'Connector Box Drill assembly instruction',
   )
   assert.match(readerConnectorCard, /<h2[^>]*>Connector Box Drill<\/h2>/)
-  assert.match(readerConnectorCard, /status: Not started/)
+  assert.match(readerConnectorCard, /status: Pending/)
   assert.match(readerConnectorCard, /Drill the 5\/16 in side hole/)
   assert.match(readerConnectorCard, /Confirm the opening is clean before continuing\./)
   assert.doesNotMatch(
