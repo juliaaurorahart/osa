@@ -64,6 +64,8 @@ type AssemblyViewProps = {
   onInspectNode: (nodeId: string) => void
   /** A shared link can project a board without exposing editing controls. */
   readOnly?: boolean
+  /** Local read-only preview can return to the authoring Assembly. */
+  onBackToAssembly?: () => void
   /** Optional project starter presented when building an Assembly. */
   starterAction?: {
     label: string
@@ -89,6 +91,7 @@ export function AssemblyView({
   actions,
   onInspectNode,
   readOnly = false,
+  onBackToAssembly,
   starterAction,
 }: AssemblyViewProps) {
   const selectedAssembly = assemblies.find((assembly) => assembly.id === selectedAssemblyId)
@@ -265,6 +268,7 @@ export function AssemblyView({
         readOnly={readOnly}
         activeLockedCardId={activeLockedCardId}
         onUnlockCardView={() => setLockedCardId(null)}
+        onBackToAssembly={onBackToAssembly}
       />
 
       <div
@@ -317,6 +321,11 @@ export function AssemblyView({
             nodes,
             edges,
           )
+          const displayedInstructionVisuals = readOnly
+            ? instructionVisuals.filter(({ visual }) => (
+                visualHasInstructionContent(visual, nodes, edges)
+              ))
+            : instructionVisuals
           // Older boards used one undirected operation-item relationship.
           const legacyInputParts = connectedTargets(
             operation.id,
@@ -348,7 +357,7 @@ export function AssemblyView({
               key={operation.id}
               operation={operation}
               description={instructionDescription(operation, steps)}
-              instructionVisuals={instructionVisuals}
+              instructionVisuals={displayedInstructionVisuals}
               nodes={nodes}
               edges={edges}
               inputParts={inputParts}

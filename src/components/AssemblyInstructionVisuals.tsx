@@ -46,6 +46,8 @@ export function AssemblyInstructionVisuals({
     [OSA_OPERATION_VISUAL_ROLE.after]: after.length,
   }
 
+  if (readOnly && before.length === 0 && after.length === 0) return null
+
   const addVisual = (role: OsaOperationVisualRole) => {
     if (readOnly || countByRole[role] >= MAX_INSTRUCTION_VISUALS_PER_ROLE) return
     const visualId = actions.onCreateInstructionVisual(operationId, role)
@@ -142,8 +144,12 @@ export function AssemblyInstructionVisuals({
   return (
     <section className="assembly-instruction-visuals" aria-label={`${operationTitle} visuals`}>
       <div className="assembly-instruction-visuals__roles">
-        {renderGroup('Before', OSA_OPERATION_VISUAL_ROLE.before, before)}
-        {renderGroup('After', OSA_OPERATION_VISUAL_ROLE.after, after)}
+        {!readOnly || before.length
+          ? renderGroup('Before', OSA_OPERATION_VISUAL_ROLE.before, before)
+          : null}
+        {!readOnly || after.length
+          ? renderGroup('After', OSA_OPERATION_VISUAL_ROLE.after, after)
+          : null}
       </div>
 
     </section>

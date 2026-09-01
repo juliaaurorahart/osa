@@ -18,6 +18,10 @@ export const OSA_PROPERTY = {
   operationCompletedCount: 'operation:completedCount',
   /** Deliberate workflow state for one Assembly instruction. */
   operationStatus: 'operation:status',
+  /** Short, visible exception or supply note that needs immediate attention. */
+  operationAttention: 'operation:attention',
+  /** JSON list of people currently associated with one Assembly instruction. */
+  operationPeople: 'operation:people',
   /** Selects the instruction-level description instead of legacy Step text. */
   operationInstructionMode: 'operation:instruction-mode',
   /**
@@ -143,6 +147,7 @@ export const OSA_PROPERTY = {
 export const OSA_OPERATION_STATUS = {
   notStarted: 'not-started',
   inProgress: 'in-progress',
+  partialComplete: 'partial-complete',
   complete: 'complete',
 } as const
 

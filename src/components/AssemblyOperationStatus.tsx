@@ -49,6 +49,7 @@ export function AssemblyOperationStatus({
       >
         <option value={OSA_OPERATION_STATUS.notStarted}>Pending</option>
         <option value={OSA_OPERATION_STATUS.inProgress}>In progress</option>
+        <option value={OSA_OPERATION_STATUS.partialComplete}>Partial Complete</option>
         <option value={OSA_OPERATION_STATUS.complete}>Complete</option>
       </select>
     </label>

@@ -61,8 +61,14 @@ export function operationStatus(operation: TextFlowNode): OsaOperationStatus {
 
 export function operationStatusLabel(status: OsaOperationStatus) {
   if (status === OSA_OPERATION_STATUS.inProgress) return 'In progress'
+  if (status === OSA_OPERATION_STATUS.partialComplete) return 'Partial Complete'
   if (status === OSA_OPERATION_STATUS.complete) return 'Complete'
   return 'Pending'
+}
+
+/** A concise exception shown directly beneath an instruction's status. */
+export function operationAttentionNote(operation: TextFlowNode) {
+  return operation.data.properties[OSA_PROPERTY.operationAttention]?.trim() ?? ''
 }
 
 /**

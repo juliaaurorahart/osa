@@ -16,21 +16,33 @@ const server = await createServer({
 
 try {
   const { AssemblyView } = await server.ssrLoadModule('/src/components/AssemblyView.tsx')
+  const { AssemblyIndexCard } = await server.ssrLoadModule(
+    '/src/components/AssemblyIndexCard.tsx',
+  )
   const { AssemblyInstructionVisuals } = await server.ssrLoadModule(
     '/src/components/AssemblyInstructionVisuals.tsx',
+  )
+  const { AssemblyPeople } = await server.ssrLoadModule(
+    '/src/components/AssemblyPeople.tsx',
   )
   const { AssemblyInstructionsView, StepCanvasViewer } = await server.ssrLoadModule(
     '/src/components/AssemblyInstructionsView.tsx',
   )
   const {
     instructionVisualsForOperation,
+    operationAttentionNote,
     operationCompletedCount,
     operationStatus,
+    operationStatusLabel,
     stepsForOperation,
   } = await server.ssrLoadModule('/src/components/assemblyProjection.ts')
   const { createAssemblyViewUiState } = await server.ssrLoadModule(
     '/src/components/assemblyViewState.ts',
   )
+  const {
+    operationPeople,
+    serializeOperationPeople,
+  } = await server.ssrLoadModule('/src/components/assemblyPeopleData.ts')
   const {
     OSA_OPERATION_INSTRUCTION_MODE,
     OSA_OPERATION_STATUS,
@@ -265,6 +277,7 @@ try {
     boardEdges = edges,
     uiState = focusedUiState,
     boardNodes = nodes,
+    readOnly = false,
   ) => renderToStaticMarkup(createElement(AssemblyView, {
     assemblies: boardNodes.filter((node) => osaRole(node) === 'assembly'),
     nodes: boardNodes,
@@ -276,6 +289,7 @@ try {
     onSelectAssembly: noop,
     actions,
     onInspectNode: noop,
+    readOnly,
   }))
   const articleFor = (markup, ariaLabel) => {
     const start = markup.indexOf(`aria-label="${ariaLabel}"`)
@@ -285,8 +299,9 @@ try {
     return markup.slice(articleStart, end + '</article>'.length)
   }
   const summaryRowFor = (markup, operationTitle) => {
-    const label = `aria-label="Edit ${operationTitle} instruction"`
-    const button = markup.indexOf(label)
+    const authorLabel = `aria-label="Edit ${operationTitle} instruction`
+    const readerLabel = `aria-label="Open ${operationTitle} instruction`
+    const button = Math.max(markup.indexOf(authorLabel), markup.indexOf(readerLabel))
     const start = markup.lastIndexOf('<li', button)
     const end = markup.indexOf('</li>', button)
     assert.ok(button >= 0 && start >= 0 && end >= 0, `Expected ${operationTitle} summary row.`)
@@ -385,6 +400,9 @@ try {
   assert.doesNotMatch(connectorCard, /<figcaption/)
   assert.match(connectorCard, /aria-label="Connector Box Drill status"/)
   assert.match(connectorCard, />Pending<\/option>/)
+  assert.match(connectorCard, /aria-label="Connector Box Drill people"/)
+  assert.match(connectorCard, /aria-label="Connector Box Drill add person"/)
+  assert.match(connectorCard, />No one added yet\.<\/span>/)
 
   const navigationStart = connectorCard.indexOf('aria-label="Instruction navigation"')
   const navigation = connectorCard.slice(navigationStart)
@@ -418,8 +436,8 @@ try {
   )
   assert.match(
     assemblyViewCss,
-    /\.assembly-operation-status\[data-status='complete'\]\s*\{[^}]*--assembly-status-color:\s*var\(--osa-status-complete\);[^}]*--assembly-status-background:\s*color-mix\([^;]+;[^}]*--assembly-status-text:\s*color-mix\([^;]+;/s,
-    'Complete status uses the theme-aware green treatment.',
+    /\.assembly-operation-status\[data-status='partial-complete'\],\s*\.assembly-operation-status\[data-status='complete'\]\s*\{[^}]*--assembly-status-color:\s*var\(--osa-status-complete\);[^}]*--assembly-status-background:\s*color-mix\([^;]+;[^}]*--assembly-status-text:\s*color-mix\([^;]+;/s,
+    'Partial Complete and Complete use the theme-aware green treatment.',
   )
   const operationCardCss = await readFile(
     new URL('../src/components/AssemblyOperationCard.css', import.meta.url),
@@ -516,8 +534,45 @@ try {
     ...createAssemblyViewUiState(),
     openCardId: 'assembly-index',
   })
+  assert.match(openedIndexMarkup, />Reorder instructions<\/h2>/)
   assert.match(openedIndexMarkup, /aria-label="Move Connector Box Drill to position"/)
+  assert.match(openedIndexMarkup, />Position 1<\/option>/)
   assert.match(openedIndexMarkup, />\+ instruction<\/button>/)
+  const moveRequests = []
+  const reorderTree = AssemblyIndexCard({
+    assembly,
+    instructionSummaries: [connectorBoxDrill, afterOnlyOperation].map((operation) => ({
+      operation,
+      beforeVisuals: [],
+      afterVisuals: [],
+      toolCount: 0,
+      completedCount: 0,
+    })),
+    nodes,
+    edges,
+    annotationTargets: [],
+    readOnly: false,
+    isOpen: true,
+    onOpen: noop,
+    onClose: noop,
+    onFocusCard: noop,
+    onOpenOperation: noop,
+    onNameChange: noop,
+    onMoveOperation: (...request) => moveRequests.push(request),
+    onRemoveOperation: noop,
+    onAddCard: noop,
+  })
+  const positionSelect = findElement(reorderTree, (element) => (
+    element.type === 'select'
+    && element.props['aria-label'] === 'Move Connector Box Drill to position'
+  ))
+  assert.ok(positionSelect, 'Expected a position selector for Connector Box Drill.')
+  positionSelect.props.onChange({ currentTarget: { value: '2' } })
+  assert.deepEqual(
+    moveRequests,
+    [[connectorBoxDrill.id, 2]],
+    'Selecting a position sends the intended instruction id and one-based destination.',
+  )
 
   const completedNodes = nodes.map((node) => node.id === connectorBoxDrill.id
     ? {
@@ -555,6 +610,165 @@ try {
   assert.equal(operationCompletedCount(inProgressOperation), 12)
   assert.equal(operationStatus(inProgressOperation), OSA_OPERATION_STATUS.inProgress)
 
+  const attentionText = '10 more regular and 5 more large requested.'
+  const attentionNodes = nodes.map((node) => node.id === connectorBoxDrill.id
+    ? {
+        ...node,
+        data: {
+          ...node.data,
+          properties: {
+            ...node.data.properties,
+            [OSA_PROPERTY.operationStatus]: OSA_OPERATION_STATUS.partialComplete,
+            [OSA_PROPERTY.operationAttention]: attentionText,
+          },
+        },
+      }
+    : node)
+  const attentionOperation = attentionNodes.find((node) => node.id === connectorBoxDrill.id)
+  assert.equal(operationStatus(attentionOperation), OSA_OPERATION_STATUS.partialComplete)
+  assert.equal(operationStatusLabel(operationStatus(attentionOperation)), 'Partial Complete')
+  assert.equal(operationAttentionNote(attentionOperation), attentionText)
+  const attentionSummary = summaryRowFor(
+    renderAssembly(edges, createAssemblyViewUiState(), attentionNodes),
+    'Connector Box Drill',
+  )
+  assert.match(attentionSummary, /data-status="partial-complete"/)
+  assert.match(attentionSummary, />Partial Complete<\/span>/)
+  assert.match(attentionSummary, /assembly-index-card__attention-note/)
+  assert.match(attentionSummary, /10 more regular and 5 more large requested\./)
+  const attentionAuthorCard = articleFor(
+    renderAssembly(edges, focusedUiState, attentionNodes),
+    'Connector Box Drill card',
+  )
+  assert.match(attentionAuthorCard, /aria-label="Connector Box Drill attention note"/)
+  assert.match(attentionAuthorCard, /value="10 more regular and 5 more large requested\."/)
+
+  const peopleValue = serializeOperationPeople(['Bria', ' Sam ', 'bria'])
+  assert.equal(peopleValue, '["Bria","Sam"]')
+  const peopleNodes = nodes.map((node) => node.id === connectorBoxDrill.id
+    ? {
+        ...node,
+        data: {
+          ...node.data,
+          properties: {
+            ...node.data.properties,
+            [OSA_PROPERTY.operationPeople]: peopleValue,
+          },
+        },
+      }
+    : node)
+  const peopleOperation = peopleNodes.find((node) => node.id === connectorBoxDrill.id)
+  assert.deepEqual(operationPeople(peopleOperation), ['Bria', 'Sam'])
+  assert.deepEqual(operationPeople({
+    ...connectorBoxDrill,
+    data: {
+      ...connectorBoxDrill.data,
+      properties: {
+        ...connectorBoxDrill.data.properties,
+        [OSA_PROPERTY.operationPeople]: 'Olivia, Bria\nOlivia',
+      },
+    },
+  }), ['Olivia', 'Bria'], 'Early plain-text names remain readable and deduplicated.')
+
+  const peopleSummary = summaryRowFor(
+    renderAssembly(edges, createAssemblyViewUiState(), peopleNodes),
+    'Connector Box Drill',
+  )
+  assert.match(peopleSummary, /aria-label="Connector Box Drill people"/)
+  assert.match(peopleSummary, />Bria<\/span>/)
+  assert.match(peopleSummary, />Sam<\/span>/)
+  assert.doesNotMatch(peopleSummary, /add person|remove Bria/)
+
+  const peopleAuthorCard = articleFor(
+    renderAssembly(edges, focusedUiState, peopleNodes),
+    'Connector Box Drill card',
+  )
+  assert.match(peopleAuthorCard, /aria-label="remove Bria from Connector Box Drill"/)
+  assert.match(peopleAuthorCard, /aria-label="remove Sam from Connector Box Drill"/)
+  assert.match(peopleAuthorCard, /aria-label="Connector Box Drill add person"/)
+
+  const peopleChanges = []
+  const peopleTree = AssemblyPeople({
+    operation: peopleOperation,
+    editable: true,
+    onChange: (people) => peopleChanges.push(people),
+  })
+  const removeBria = findElement(peopleTree, (element) => (
+    element.type === 'button'
+    && element.props['aria-label'] === 'remove Bria from Connector Box Drill'
+  ))
+  assert.ok(removeBria, 'Expected the People editor to expose Bria removal.')
+  removeBria.props.onClick()
+  assert.deepEqual(peopleChanges, [['Sam']])
+  const peopleForm = findElement(peopleTree, (element) => element.type === 'form')
+  assert.ok(peopleForm, 'Expected the People editor add form.')
+  const personInput = { value: ' Olivia ' }
+  peopleForm.props.onSubmit({
+    preventDefault: noop,
+    currentTarget: {
+      elements: {
+        namedItem: () => personInput,
+      },
+    },
+  })
+  assert.deepEqual(peopleChanges.at(-1), ['Bria', 'Sam', 'Olivia'])
+  assert.equal(personInput.value, '')
+
+  const sharedMainMarkup = renderAssembly(
+    edges,
+    createAssemblyViewUiState(),
+    peopleNodes,
+    true,
+  )
+  assert.match(sharedMainMarkup, />shared assembly · read-only<\/span>/)
+  assert.match(sharedMainMarkup, /aria-label="Open Connector Box Drill instruction\. Status: Pending"/)
+  assert.match(sharedMainMarkup, /aria-label="Connector Box Drill people"/)
+  assert.match(sharedMainMarkup, />Bria<\/span>/)
+  assert.doesNotMatch(sharedMainMarkup, /Reorder instructions|>\+ instruction<|add person|remove Bria/)
+
+  const sharedAttentionCard = articleFor(
+    renderAssembly(edges, focusedUiState, attentionNodes, true),
+    'Connector Box Drill card',
+  )
+  assert.match(sharedAttentionCard, /10 more regular and 5 more large requested\./)
+  assert.doesNotMatch(sharedAttentionCard, /attention note"|placeholder="add a shortage/)
+
+  const sharedAfterOnlyState = {
+    ...createAssemblyViewUiState(),
+    focusedCardId: afterOnlyOperation.id,
+    openCardId: afterOnlyOperation.id,
+  }
+  const sharedAfterOnlyCard = articleFor(
+    renderAssembly(edges, sharedAfterOnlyState, nodes, true),
+    'Shako Wrap Punch Holes card',
+  )
+  assert.match(sharedAfterOnlyCard, /aria-label="Shako Wrap Punch Holes After pictures"/)
+  assert.doesNotMatch(
+    sharedAfterOnlyCard,
+    /aria-label="Shako Wrap Punch Holes Before pictures"/,
+    'Read-only detail omits an unset Before group.',
+  )
+  const sharedEmptyState = {
+    ...createAssemblyViewUiState(),
+    focusedCardId: emptyPictureOperation.id,
+    openCardId: emptyPictureOperation.id,
+  }
+  const sharedEmptyCard = articleFor(
+    renderAssembly(edges, sharedEmptyState, nodes, true),
+    'Front Center – 1 Hole card',
+  )
+  assert.doesNotMatch(
+    sharedEmptyCard,
+    /assembly-instruction-visuals|Before pictures|After pictures/,
+    'Read-only detail omits the visual region when no visible picture exists.',
+  )
+  const appSource = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
+  assert.match(
+    appSource,
+    /<VisualCanvasEditor[\s\S]*?readOnly=\{boardAccess === 'viewer' \|\| isSharedAssembly \|\| assemblyInstructionsPreview\}/,
+    'A Visual opened from a shared or preview Assembly remains read-only.',
+  )
+
   const instructionsMarkup = renderToStaticMarkup(createElement(AssemblyInstructionsView, {
     assembly,
     nodes,
@@ -575,6 +789,21 @@ try {
     /add step|add another|remove step|>steps<|>visuals<|assembly-operation-step/i,
     'The shared instruction has no nested Step language or author controls.',
   )
+
+  const peopleInstructionsMarkup = renderToStaticMarkup(createElement(AssemblyInstructionsView, {
+    assembly: peopleNodes.find((node) => node.id === assembly.id),
+    nodes: peopleNodes,
+    operations: peopleNodes.filter((node) => node.data.kind === 'action'),
+    edges,
+  }))
+  const peopleReaderCard = articleFor(
+    peopleInstructionsMarkup,
+    'Connector Box Drill assembly instruction',
+  )
+  assert.match(peopleReaderCard, /aria-label="Connector Box Drill people"/)
+  assert.match(peopleReaderCard, />Bria<\/span>/)
+  assert.match(peopleReaderCard, />Sam<\/span>/)
+  assert.doesNotMatch(peopleReaderCard, /add person|remove Bria/)
   assert.match(readerConnectorCard, /aria-label="Connector Box Drill Before pictures"/)
   assert.match(readerConnectorCard, /aria-label="Connector Box Drill After pictures"/)
   assert.equal(
@@ -659,8 +888,8 @@ try {
   })
   const reorderedSummary = renderAssembly(edges, createAssemblyViewUiState(), reorderedNodes)
   assert.ok(
-    reorderedSummary.indexOf('aria-label="Edit Shako Wrap Punch Holes instruction"')
-      < reorderedSummary.indexOf('aria-label="Edit Connector Box Drill instruction"'),
+    reorderedSummary.indexOf('aria-label="Edit Shako Wrap Punch Holes instruction')
+      < reorderedSummary.indexOf('aria-label="Edit Connector Box Drill instruction'),
     'The summary follows durable instruction order.',
   )
   const reorderedInstructions = renderToStaticMarkup(createElement(AssemblyInstructionsView, {

@@ -35,7 +35,6 @@ import {
   AssemblyView,
   type AssemblyViewActions,
 } from './components/AssemblyView'
-import { AssemblyInstructionsView } from './components/AssemblyInstructionsView'
 import {
   createAssemblyViewUiState,
   type AssemblyViewUiState,
@@ -3677,18 +3676,12 @@ function Flow({ identity, startupDraft }: { identity: string | null; startupDraf
               </div>
             ) : null}
           </div>
-        ) : (
-          <p className="shared-assembly-status" role="status">
-            {shareStatus || 'Loading shared assembly…'}
-          </p>
-        )
+        ) : null
       ) : null}
       {!canvasLabVisible && workspaceView !== 'nodes' ? (
         <div
           className={`work-view-shell${
             workspaceView === 'assembly'
-              && !isSharedAssembly
-              && !assemblyInstructionsPreview
               ? ' work-view-shell--assembly'
               : ''
           }`}
@@ -3729,15 +3722,26 @@ function Flow({ identity, startupDraft }: { identity: string | null; startupDraf
               onUnlinkTask={(projectId, taskId) => unlinkTaskFromProject(taskId, projectId)}
               onOpenNode={openNodeInSpace}
             />
+          ) : isSharedAssembly && sharedAssemblyLoadState !== 'ready' ? (
+            <p className="shared-assembly-status" role="status">
+              {shareStatus || 'Loading shared assembly…'}
+            </p>
           ) : isSharedAssembly || assemblyInstructionsPreview ? (
-            <AssemblyInstructionsView
-              assembly={assemblies.find((assembly) => assembly.id === activeAssemblyId)}
+            <AssemblyView
+              assemblies={assemblies}
               nodes={nodes}
               operations={operations}
               edges={edges}
-              statusMessage={isSharedAssembly && sharedAssemblyLoadState !== 'ready'
-                ? shareStatus || 'Loading shared assembly…'
-                : undefined}
+              uiState={assemblyViewState}
+              onUiStateChange={setAssemblyViewState}
+              tools={nodes.filter((node) => (
+                node.data.kind === 'tool' || node.data.properties[OSA_PROPERTY.role] === 'tool'
+              ))}
+              selectedAssemblyId={activeAssemblyId}
+              onSelectAssembly={setSelectedAssemblyId}
+              actions={assemblyViewActions}
+              onInspectNode={() => undefined}
+              readOnly={true}
               onBackToAssembly={isSharedAssembly
                 ? undefined
                 : () => setAssemblyInstructionsPreview(false)}
@@ -3798,7 +3802,7 @@ function Flow({ identity, startupDraft }: { identity: string | null; startupDraf
           visual={editingVisual}
           embeddedVisuals={editingVisualEmbeds}
           availableVisuals={editingVisualCandidates}
-          readOnly={boardAccess === 'viewer'}
+          readOnly={boardAccess === 'viewer' || isSharedAssembly || assemblyInstructionsPreview}
           onClose={closeVisualCanvasEditor}
           onNameChange={onNameChange}
           nameReadOnly={editingVisualNameIsInherited}

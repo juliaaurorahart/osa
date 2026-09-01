@@ -146,6 +146,58 @@
   border-top: 1px solid var(--osa-border-subtle);
 }
 
+.assembly-operation-card__attention {
+  display: grid;
+  grid-template-columns: minmax(120px, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px 12px;
+  margin: 0;
+  padding: 10px 0;
+  color: var(--osa-danger-text);
+}
+
+.assembly-operation-card__attention.is-read-only {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.assembly-operation-card__attention-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 700;
+}
+
+.assembly-operation-card__attention-dot,
+.assembly-index-card__attention-dot {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--osa-danger-border);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--osa-danger-border) 22%, transparent);
+}
+
+.assembly-operation-card__attention input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 40px;
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, var(--osa-danger-border) 52%, var(--osa-border));
+  border-radius: 7px;
+  background: var(--osa-input);
+  color: var(--osa-danger-text);
+  font: inherit;
+}
+
+.assembly-operation-card__attention input::placeholder {
+  color: color-mix(in srgb, var(--osa-danger-text) 58%, var(--osa-muted));
+}
+
+.assembly-operation-card__attention input:focus-visible {
+  outline: 2px solid var(--osa-danger-border);
+  outline-offset: 1px;
+}
+
 .assembly-operation-card__description {
   display: grid;
   gap: 8px;
@@ -224,6 +276,10 @@
 
   .assembly-card__summary-heading {
     align-items: flex-start;
+  }
+
+  .assembly-operation-card__attention {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .assembly-operation-card__navigation {

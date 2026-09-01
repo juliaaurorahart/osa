@@ -13,6 +13,7 @@ import { annotationTargetsForNodes } from '../graph/sketchAnnotation'
 import { visualEmbedsForCanvas } from '../graph/visualEmbed'
 import { VisualCanvasPreview } from './VisualCanvas'
 import { AssemblyOperationStatus } from './AssemblyOperationStatus'
+import { AssemblyPeople } from './AssemblyPeople'
 import {
   connectedTargets,
   instructionDescription,
@@ -254,6 +255,8 @@ export function AssemblyInstructionsView({
                 <h2 className="assembly-instructions-view__card-title">{nodeTitle(operation)}</h2>
                 <AssemblyOperationStatus operation={operation} />
               </header>
+
+              <AssemblyPeople operation={operation} compact />
 
               {description.trim() ? (
                 <p className="assembly-instructions-view__description">{description}</p>

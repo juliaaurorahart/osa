@@ -1,8 +1,14 @@
 import type { GraphEdge } from '../graph/graphEdge'
 import type { SketchAnnotationTarget, TextFlowNode } from '../graph/textNode'
 import { visualEmbedsForCanvas } from '../graph/visualEmbed'
-import { nodeTitle } from './assemblyProjection'
+import {
+  nodeTitle,
+  operationAttentionNote,
+  operationStatus,
+  operationStatusLabel,
+} from './assemblyProjection'
 import { AssemblyOperationStatus } from './AssemblyOperationStatus'
+import { AssemblyPeople } from './AssemblyPeople'
 import {
   ASSEMBLY_INDEX_CARD_ID,
   transparentInput,
@@ -93,6 +99,12 @@ export function AssemblyIndexCard({
             }}
           />
           <div className="assembly-index-card__title-list">
+            {!readOnly ? (
+              <header className="assembly-index-card__organize-heading">
+                <h2>Reorder instructions</h2>
+                <p>Select a position for any instruction.</p>
+              </header>
+            ) : null}
             <div style={{ display: 'grid', alignContent: 'start', gap: 8 }}>
               <ol className="assembly-index-card__organize-list">
                 {operations.length ? operations.map((operation, operationIndex) => (
@@ -126,7 +138,7 @@ export function AssemblyIndexCard({
                         >
                           {operations.map((_, positionIndex) => (
                             <option value={positionIndex + 1} key={positionIndex + 1}>
-                              {positionIndex + 1}
+                              Position {positionIndex + 1}
                             </option>
                           ))}
                         </select>
@@ -177,16 +189,23 @@ export function AssemblyIndexCard({
             <button
               className="assembly-index-card__summary-title-button"
               type="button"
-              aria-label={`Edit ${nodeTitle(assembly)} summary`}
+              aria-label={`${readOnly ? 'Open' : 'Edit'} ${nodeTitle(assembly)} summary`}
               onClick={onOpen}
             >
               <strong className="assembly-card__summary-title">{nodeTitle(assembly)}</strong>
             </button>
-            {operations.length ? (
-              <span className="assembly-index-card__summary-total">
-                {operations.length} {operations.length === 1 ? 'instruction' : 'instructions'}
-              </span>
-            ) : null}
+            <span className="assembly-index-card__summary-actions">
+              {operations.length ? (
+                <span className="assembly-index-card__summary-total">
+                  {operations.length} {operations.length === 1 ? 'instruction' : 'instructions'}
+                </span>
+              ) : null}
+              {!readOnly && operations.length > 1 ? (
+                <button className="text-action" type="button" onClick={onOpen}>
+                  Reorder instructions
+                </button>
+              ) : null}
+            </span>
           </div>
           {operations.length ? (
             <ol className="assembly-index-card__summary-index" aria-label="instruction cards">
@@ -199,6 +218,8 @@ export function AssemblyIndexCard({
                   completedCount,
                 } = summary
                 const operationTitle = nodeTitle(operation)
+                const attentionNote = operationAttentionNote(operation)
+                const statusLabel = operationStatusLabel(operationStatus(operation))
                 const renderPictureGroup = (
                   label: 'Before' | 'After',
                   visuals: TextFlowNode[],
@@ -232,7 +253,7 @@ export function AssemblyIndexCard({
                     <button
                       className="assembly-index-card__summary-step"
                       type="button"
-                      aria-label={`Edit ${operationTitle} instruction`}
+                      aria-label={`${readOnly ? 'Open' : 'Edit'} ${operationTitle} instruction. Status: ${statusLabel}${attentionNote ? `. Attention: ${attentionNote}` : ''}`}
                       onClick={() => onOpenOperation(operation.id)}
                     >
                       <span className="assembly-index-card__summary-marker" aria-hidden="true">
@@ -241,12 +262,21 @@ export function AssemblyIndexCard({
                       <span className="assembly-index-card__summary-step-title">
                         {operationTitle}
                       </span>
-                      <AssemblyOperationStatus operation={operation} />
+                      <span className="assembly-index-card__summary-status">
+                        <AssemblyOperationStatus operation={operation} />
+                        {attentionNote ? (
+                          <span className="assembly-index-card__attention-note">
+                            <span className="assembly-index-card__attention-dot" aria-hidden="true" />
+                            <span>{attentionNote}</span>
+                          </span>
+                        ) : null}
+                      </span>
                     </button>
                     <div
                       className={`assembly-index-card__summary-info${beforeVisuals.length || afterVisuals.length ? ' has-pictures' : ''}`}
                       aria-label={`${operationTitle} overview`}
                     >
+                      <AssemblyPeople operation={operation} compact />
                       {renderPictureGroup('Before', beforeVisuals)}
                       {renderPictureGroup('After', afterVisuals)}
                       <dl className="assembly-index-card__summary-metrics">

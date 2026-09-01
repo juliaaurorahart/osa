@@ -3,9 +3,12 @@ import { OSA_PROPERTY } from '../graph/osaData'
 import type { SketchAnnotationTarget, TextFlowNode } from '../graph/textNode'
 import { AssemblyInstructionVisuals } from './AssemblyInstructionVisuals'
 import { AssemblyOperationStatus } from './AssemblyOperationStatus'
+import { serializeOperationPeople } from './assemblyPeopleData'
+import { AssemblyPeople } from './AssemblyPeople'
 import { AssemblyPartsAndTools } from './AssemblyPartsAndTools'
 import {
   nodeTitle,
+  operationAttentionNote,
   operationCompletedCount,
   type InstructionVisual,
 } from './assemblyProjection'
@@ -80,6 +83,8 @@ export function AssemblyOperationCard({
   onToolDraftForChange,
 }: AssemblyOperationCardProps) {
   const completedCount = operationCompletedCount(operation)
+  const attentionValue = operation.data.properties[OSA_PROPERTY.operationAttention] ?? ''
+  const attentionNote = operationAttentionNote(operation)
   const title = nodeTitle(operation)
 
   return (
@@ -166,6 +171,43 @@ export function AssemblyOperationCard({
           </header>
 
           <div className="assembly-card__details">
+            <AssemblyPeople
+              operation={operation}
+              editable={!readOnly && Boolean(actions.onPropertyChange)}
+              onChange={(people) => actions.onPropertyChange?.(
+                operation.id,
+                OSA_PROPERTY.operationPeople,
+                serializeOperationPeople(people),
+              )}
+            />
+
+            {readOnly ? (
+              attentionNote ? (
+                <p className="assembly-operation-card__attention is-read-only">
+                  <span className="assembly-operation-card__attention-dot" aria-hidden="true" />
+                  <span>{attentionNote}</span>
+                </p>
+              ) : null
+            ) : (
+              <label className="assembly-operation-card__attention">
+                <span className="assembly-operation-card__attention-heading">
+                  <span className="assembly-operation-card__attention-dot" aria-hidden="true" />
+                  Attention note
+                </span>
+                <input
+                  aria-label={`${title} attention note`}
+                  placeholder="add a shortage, blocker, or urgent note"
+                  value={attentionValue}
+                  onFocus={onFocusCard}
+                  onChange={(event) => actions.onPropertyChange?.(
+                    operation.id,
+                    OSA_PROPERTY.operationAttention,
+                    event.currentTarget.value,
+                  )}
+                />
+              </label>
+            )}
+
             <label className="assembly-operation-card__description">
               <span>Description</span>
               <textarea

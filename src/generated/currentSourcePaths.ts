@@ -23,6 +23,8 @@ export const CURRENT_SOURCE_PATHS = [
   "src/components/AssemblyOperationStatus.tsx",
   "src/components/AssemblyPartsAndTools.css",
   "src/components/AssemblyPartsAndTools.tsx",
+  "src/components/AssemblyPeople.tsx",
+  "src/components/assemblyPeopleData.ts",
   "src/components/assemblyProjection.ts",
   "src/components/AssemblyView.css",
   "src/components/AssemblyView.tsx",

@@ -4,6 +4,7 @@ type AssemblyViewControlsProps = {
   readOnly: boolean
   activeLockedCardId: string | null
   onUnlockCardView: () => void
+  onBackToAssembly?: () => void
 }
 
 /**
@@ -14,12 +15,20 @@ export function AssemblyViewControls({
   readOnly,
   activeLockedCardId,
   onUnlockCardView,
+  onBackToAssembly,
 }: AssemblyViewControlsProps) {
   return (
     <>
       {readOnly ? (
         <div className="assembly-view__access-status">
-          <span className="assembly-view__shared-label">shared assembly · read-only</span>
+          {onBackToAssembly ? (
+            <button className="text-action" type="button" onClick={onBackToAssembly}>
+              back to Assembly
+            </button>
+          ) : null}
+          <span className="assembly-view__shared-label">
+            {onBackToAssembly ? 'preview · read-only' : 'shared assembly · read-only'}
+          </span>
         </div>
       ) : null}
 
