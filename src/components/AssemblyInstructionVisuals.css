@@ -1,0 +1,126 @@
+.assembly-instruction-visuals {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding-top: clamp(16px, 2vw, 24px);
+  border-top: 1px solid var(--osa-border-subtle);
+}
+
+.assembly-instruction-visuals h3 {
+  margin: 0;
+}
+
+.assembly-instruction-visuals__roles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(16px, 3vw, 32px);
+}
+
+.assembly-instruction-visuals__group,
+.assembly-instruction-visuals__unassigned {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.assembly-instruction-visuals__group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 34px;
+}
+
+.assembly-instruction-visuals__group-header h3,
+.assembly-instruction-visuals__unassigned h3 {
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.assembly-instruction-visuals__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.assembly-instruction-visuals__item {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  min-width: 0;
+  margin: 0;
+}
+
+.assembly-instruction-visuals__preview-button {
+  display: block;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--osa-border);
+  border-radius: 7px;
+  background: var(--osa-surface-raised);
+  cursor: pointer;
+}
+
+.assembly-instruction-visuals__preview-button:hover,
+.assembly-instruction-visuals__preview-button:focus-visible {
+  border-color: var(--osa-focus);
+  outline: 2px solid var(--osa-focus);
+  outline-offset: 2px;
+}
+
+.assembly-instruction-visuals__preview {
+  display: block;
+  width: 100%;
+  height: clamp(96px, 13vw, 148px);
+  border: 0;
+  object-fit: contain;
+}
+
+.assembly-instruction-visuals__item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 9px;
+}
+
+.assembly-instruction-visuals__item-actions .text-action {
+  min-height: 30px;
+  padding: 3px 5px;
+  font-size: 0.78rem;
+}
+
+.assembly-instruction-visuals__item-actions .is-danger:hover,
+.assembly-instruction-visuals__item-actions .is-danger:focus-visible {
+  color: var(--osa-danger-text);
+}
+
+.assembly-instruction-visuals__unassigned {
+  margin-top: 6px;
+  padding: 14px;
+  border: 1px dashed var(--osa-border);
+  border-radius: 8px;
+}
+
+@media (max-width: 700px) {
+  .assembly-instruction-visuals__roles {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .assembly-instruction-visuals__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .assembly-instruction-visuals__group-header .text-action,
+  .assembly-instruction-visuals__item-actions .text-action {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 420px) {
+  .assembly-instruction-visuals__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

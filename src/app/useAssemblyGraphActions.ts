@@ -12,10 +12,15 @@ import {
   containmentWouldCreateCycle,
   isContainableOsaObject,
   isPartLike,
+  isOsaOperationVisualRole,
+  MAX_INSTRUCTION_VISUALS_PER_ROLE,
+  OSA_OPERATION_STATUS,
+  OSA_OPERATION_VISUAL_ROLE,
   operationVisualDisplayOrder,
   OSA_PROPERTY,
   OSA_RELATION,
   osaRole,
+  type OsaOperationVisualRole,
 } from '../graph/osaData'
 import { createProjectTaskEdge } from '../graph/taskProject'
 import type { TextFlowNode } from '../graph/textNode'
@@ -53,11 +58,66 @@ type UseAssemblyGraphActionsOptions = {
   onStepCanvasRemoved: (visualId: string | null) => void
 }
 
-/** Converts the card's original freeform instruction into its first Step. */
-export function migrateOperationTextForNewStep(operationText: string, existingStepCount: number) {
-  return existingStepCount === 0 && operationText
-    ? { stepText: operationText, operationText: '' }
-    : { stepText: '', operationText }
+function instructionVisualRoleCount(
+  edges: GraphEdge[],
+  operationId: string,
+  role: OsaOperationVisualRole,
+  excludedEdgeId?: string,
+) {
+  return edges.filter((edge) => (
+    edge.id !== excludedEdgeId
+    && edge.source === operationId
+    && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationVisual
+    && edge.data.properties[OSA_PROPERTY.operationVisualRole] === role
+  )).length
+}
+
+/** Changes one exact placement role without disturbing its geometry or identity. */
+export function setInstructionVisualRoleEdges(
+  edges: GraphEdge[],
+  operationId: string,
+  placementEdgeId: string,
+  role: OsaOperationVisualRole,
+) {
+  if (!isOsaOperationVisualRole(role)) return edges
+
+  const placement = edges.find((edge) => (
+    edge.id === placementEdgeId
+    && edge.source === operationId
+    && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationVisual
+  ))
+  if (!placement) return edges
+  if (placement.data.properties[OSA_PROPERTY.operationVisualRole] === role) return edges
+  if (
+    instructionVisualRoleCount(edges, operationId, role, placementEdgeId)
+    >= MAX_INSTRUCTION_VISUALS_PER_ROLE
+  ) return edges
+
+  return edges.map((edge) => edge.id === placementEdgeId
+    ? {
+        ...edge,
+        data: {
+          ...edge.data,
+          properties: {
+            ...edge.data.properties,
+            [OSA_PROPERTY.operationVisualRole]: role,
+          },
+        },
+      }
+    : edge)
+}
+
+/** Detaches one exact placement while preserving every node and other edge. */
+export function detachInstructionVisualEdges(
+  edges: GraphEdge[],
+  operationId: string,
+  placementEdgeId: string,
+) {
+  return edges.filter((edge) => !(
+    edge.id === placementEdgeId
+    && edge.source === operationId
+    && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationVisual
+  ))
 }
 
 /** Finds the Assembly that contains a particular instruction operation. */
@@ -159,6 +219,7 @@ export function useAssemblyGraphActions({
       {
         [OSA_PROPERTY.role]: 'operation',
         [OSA_PROPERTY.order]: String(order),
+        [OSA_PROPERTY.operationStatus]: OSA_OPERATION_STATUS.notStarted,
         [OSA_PROPERTY.operationEntrance]: '',
         [OSA_PROPERTY.operationExit]: '',
       },
@@ -282,196 +343,26 @@ export function useAssemblyGraphActions({
     onOperationRemoved(operationId)
   }, [latestNodes, onOperationRemoved, setEdges, setNodes])
 
-  const createOperationStep = useCallback((operationId: string) => {
-    const currentNodes = latestNodes.current
-    const currentEdges = latestEdges.current
-    const operation = currentNodes.find((node) => node.id === operationId)
-    if (!operation) return ''
-
-    const linkedStepIds = new Set(currentEdges
-      .filter((edge) => (
-        edge.source === operationId
-        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationStep
-      ))
-      .map((edge) => edge.target))
-    const greatestOrder = currentNodes
-      .filter((node) => linkedStepIds.has(node.id) && osaRole(node) === 'step')
-      .reduce((greatest, step) => {
-        const order = Number(step.data.properties[OSA_PROPERTY.order])
-        return Number.isFinite(order) ? Math.max(greatest, order) : greatest
-      }, 0)
-    const order = Math.floor(greatestOrder) + 1
-    // Before structured Steps exist, the card-level text area is the first
-    // instruction. Move that text into the first real Step so changing editor
-    // modes never makes the person's work appear to vanish.
-    const textMigration = migrateOperationTextForNewStep(operation.data.text, linkedStepIds.size)
-    const stepId = createObjectNode(
-      `Step ${order}`,
-      'note',
-      null,
-      textMigration.stepText,
-      undefined,
-      {
-        [OSA_PROPERTY.role]: 'step',
-        [OSA_PROPERTY.order]: String(order),
-      },
-      operation.data.spaceIds,
-    )
-    if (textMigration.operationText !== operation.data.text) {
-      setNodes((currentNodes) => currentNodes.map((node) => node.id === operationId
-        ? { ...node, data: { ...node.data, text: textMigration.operationText } }
-        : node))
-    }
-    const edgeId = `edge-${nextEdgeIdRef.current++}`
-    setEdges((currentEdges) => [...currentEdges, createGraphEdge({
-      id: edgeId,
-      source: operationId,
-      target: stepId,
-      relationship: 'has step',
-      properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.operationStep },
-    })])
-    return stepId
-  }, [createObjectNode, latestEdges, latestNodes, nextEdgeIdRef, setEdges, setNodes])
-
-  const reorderOperationStep = useCallback((
+  /** Creates one unowned, first-class Visual in an instruction image group. */
+  const createInstructionVisual = useCallback((
     operationId: string,
-    stepId: string,
-    direction: 'up' | 'down',
+    role: OsaOperationVisualRole,
   ) => {
-    const targetIds = latestEdges.current
-      .filter((edge) => (
-        edge.source === operationId
-        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationStep
-      ))
-      .map((edge) => edge.target)
-    const edgePosition = new Map(targetIds.map((id, index) => [id, index]))
-    const orderedSteps = latestNodes.current
-      .filter((node) => targetIds.includes(node.id) && osaRole(node) === 'step')
-      .sort((left, right) => {
-        const leftOrder = Number(left.data.properties[OSA_PROPERTY.order])
-        const rightOrder = Number(right.data.properties[OSA_PROPERTY.order])
-        return (Number.isFinite(leftOrder) ? leftOrder : edgePosition.get(left.id) ?? 0)
-          - (Number.isFinite(rightOrder) ? rightOrder : edgePosition.get(right.id) ?? 0)
-      })
-    const currentIndex = orderedSteps.findIndex((step) => step.id === stepId)
-    const nextIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
-    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= orderedSteps.length) return
-
-    const reordered = [...orderedSteps]
-    ;[reordered[currentIndex], reordered[nextIndex]] = [reordered[nextIndex], reordered[currentIndex]]
-    const orderByStepId = new Map(reordered.map((step, index) => [step.id, String(index + 1)]))
-    setNodes((currentNodes) => currentNodes.map((node) => {
-      const order = orderByStepId.get(node.id)
-      if (order === undefined || node.data.properties[OSA_PROPERTY.order] === order) return node
-      return {
-        ...node,
-        data: {
-          ...node.data,
-          properties: { ...node.data.properties, [OSA_PROPERTY.order]: order },
-        },
-      }
-    }))
-  }, [latestEdges, latestNodes, setNodes])
-
-  const removeOperationStep = useCallback((operationId: string, stepId: string) => {
-    const step = latestNodes.current.find((node) => node.id === stepId)
-    const belongsToOperation = latestEdges.current.some((edge) => (
-      edge.source === operationId
-      && edge.target === stepId
-      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationStep
-    ))
-    if (!step || osaRole(step) !== 'step' || !belongsToOperation) return
-
-    const visualId = latestEdges.current.find((edge) => (
-      edge.source === stepId
-      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
-    ))?.target ?? null
-    const removedIds = new Set([stepId, ...(visualId ? [visualId] : [])])
-    const remainingStepIds = latestEdges.current
-      .filter((edge) => (
-        edge.source === operationId
-        && edge.target !== stepId
-        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationStep
-      ))
-      .map((edge) => edge.target)
-    const edgePosition = new Map(remainingStepIds.map((id, index) => [id, index]))
-    const orderedRemainingSteps = latestNodes.current
-      .filter((node) => remainingStepIds.includes(node.id) && osaRole(node) === 'step')
-      .sort((left, right) => {
-        const leftOrder = Number(left.data.properties[OSA_PROPERTY.order])
-        const rightOrder = Number(right.data.properties[OSA_PROPERTY.order])
-        return (Number.isFinite(leftOrder) ? leftOrder : edgePosition.get(left.id) ?? 0)
-          - (Number.isFinite(rightOrder) ? rightOrder : edgePosition.get(right.id) ?? 0)
-      })
-    const orderByStepId = new Map(
-      orderedRemainingSteps.map((remainingStep, index) => [remainingStep.id, String(index + 1)]),
-    )
-
-    setEdges((currentEdges) => currentEdges.filter((edge) => (
-      !removedIds.has(edge.source) && !removedIds.has(edge.target)
-    )))
-    setNodes((currentNodes) => currentNodes
-      .filter((node) => !removedIds.has(node.id))
-      .map((node) => {
-        const order = orderByStepId.get(node.id)
-        if (order === undefined || node.data.properties[OSA_PROPERTY.order] === order) return node
-        return {
-          ...node,
-          data: {
-            ...node.data,
-            properties: { ...node.data.properties, [OSA_PROPERTY.order]: order },
-          },
-        }
-      }))
-    onStepCanvasRemoved(visualId)
-  }, [latestEdges, latestNodes, onStepCanvasRemoved, setEdges, setNodes])
-
-  const ensureStepCanvas = useCallback((stepId: string) => {
-    const step = latestNodes.current.find((node) => node.id === stepId)
-    if (!step || osaRole(step) !== 'step') return ''
-
-    const operationId = latestEdges.current.find((edge) => (
-      edge.target === stepId
-      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationStep
-    ))?.source
-    const showOnOperation = (currentEdges: GraphEdge[], visualId: string) => {
-      if (!operationId || currentEdges.some((edge) => (
-        edge.source === operationId
-        && edge.target === visualId
-        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationVisual
-      ))) {
-        return currentEdges
-      }
-
-      const operationEdgeId = `edge-${nextEdgeIdRef.current++}`
-      return [...currentEdges, createGraphEdge({
-        id: operationEdgeId,
-        source: operationId,
-        target: visualId,
-        relationship: 'shows visual',
-        properties: {
-          [OSA_PROPERTY.relationRole]: OSA_RELATION.operationVisual,
-          [OSA_PROPERTY.operationVisualOrder]: String(
-            nextOperationVisualOrder(operationId, currentEdges),
-          ),
-        },
-      })]
-    }
-
-    const existingVisualId = latestEdges.current.find((edge) => (
-      edge.source === stepId
-      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
-    ))?.target
-    const existingVisual = existingVisualId
-      ? latestNodes.current.find((node) => node.id === existingVisualId)
-      : undefined
-    if (existingVisual && isVisualNode(existingVisual)) {
-      setEdges((currentEdges) => showOnOperation(currentEdges, existingVisual.id))
-      return existingVisual.id
-    }
+    if (!isOsaOperationVisualRole(role)) return ''
+    const operation = latestNodes.current.find((node) => node.id === operationId)
+    if (
+      !operation
+      || (operation.data.kind !== 'action' && osaRole(operation) !== 'operation')
+    ) return ''
+    if (
+      instructionVisualRoleCount(latestEdges.current, operationId, role)
+      >= MAX_INSTRUCTION_VISUALS_PER_ROLE
+    ) return ''
 
     const visualId = createObjectNode(
-      step.data.name.trim() || `#${step.id}`,
+      `${operation.data.name.trim() || 'Instruction'} ${
+        role === OSA_OPERATION_VISUAL_ROLE.before ? 'Before' : 'After'
+      }`,
       'visual',
       null,
       '',
@@ -481,24 +372,77 @@ export function useAssemblyGraphActions({
         [OSA_PROPERTY.visualContent]: 'canvas',
         [OSA_PROPERTY.visualIdentity]: 'untyped',
       },
-      step.data.spaceIds,
+      operation.data.spaceIds,
     )
-    const edgeId = `edge-${nextEdgeIdRef.current++}`
-    setEdges((currentEdges) => showOnOperation([
-      ...currentEdges.filter((edge) => !(
-        edge.source === stepId
-        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
-      )),
-      createGraphEdge({
-        id: edgeId,
-        source: stepId,
+    const placementEdgeId = `edge-${nextEdgeIdRef.current++}`
+    setEdges((currentEdges) => {
+      // Recheck in the state updater so two rapid requests cannot place a
+      // fourth image. The first-class Visual remains recoverable even if a
+      // concurrent update filled the group before this edge was committed.
+      if (
+        instructionVisualRoleCount(currentEdges, operationId, role)
+        >= MAX_INSTRUCTION_VISUALS_PER_ROLE
+      ) return currentEdges
+
+      return [...currentEdges, createGraphEdge({
+        id: placementEdgeId,
+        source: operationId,
         target: visualId,
-        relationship: 'owns visual',
-        properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.objectVisual },
-      }),
-    ], visualId))
+        relationship: 'shows visual',
+        properties: {
+          [OSA_PROPERTY.relationRole]: OSA_RELATION.operationVisual,
+          [OSA_PROPERTY.operationVisualRole]: role,
+          [OSA_PROPERTY.operationVisualOrder]: String(
+            nextOperationVisualOrder(operationId, currentEdges),
+          ),
+        },
+      })]
+    })
     return visualId
   }, [createObjectNode, latestEdges, latestNodes, nextEdgeIdRef, setEdges])
+
+  const setInstructionVisualRole = useCallback((
+    operationId: string,
+    placementEdgeId: string,
+    role: OsaOperationVisualRole,
+  ) => {
+    if (!isOsaOperationVisualRole(role)) return
+    const placement = latestEdges.current.find((edge) => (
+      edge.id === placementEdgeId
+      && edge.source === operationId
+      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationVisual
+    ))
+    const visual = placement
+      ? latestNodes.current.find((node) => node.id === placement.target)
+      : undefined
+    if (!placement || !isVisualNode(visual)) return
+
+    setEdges((currentEdges) => setInstructionVisualRoleEdges(
+      currentEdges,
+      operationId,
+      placementEdgeId,
+      role,
+    ))
+  }, [latestEdges, latestNodes, setEdges])
+
+  const removeInstructionVisual = useCallback((
+    operationId: string,
+    placementEdgeId: string,
+  ) => {
+    const placement = latestEdges.current.find((edge) => (
+      edge.id === placementEdgeId
+      && edge.source === operationId
+      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationVisual
+    ))
+    if (!placement) return
+
+    setEdges((currentEdges) => detachInstructionVisualEdges(
+      currentEdges,
+      operationId,
+      placementEdgeId,
+    ))
+    onStepCanvasRemoved(placement.target)
+  }, [latestEdges, onStepCanvasRemoved, setEdges])
 
   const createOperationTool = useCallback((
     operationId: string,
@@ -796,10 +740,9 @@ export function useAssemblyGraphActions({
     onReorderOperation: reorderAssemblyOperation,
     onMoveOperation: moveAssemblyOperation,
     onRemoveOperation: removeAssemblyOperation,
-    onCreateStep: createOperationStep,
-    onReorderStep: reorderOperationStep,
-    onRemoveStep: removeOperationStep,
-    onEnsureStepCanvas: ensureStepCanvas,
+    onCreateInstructionVisual: createInstructionVisual,
+    onSetInstructionVisualRole: setInstructionVisualRole,
+    onRemoveInstructionVisual: removeInstructionVisual,
     onCreateTool: createOperationTool,
     onLinkPart: linkPartToOperation,
     onLinkPartInput: (operationId, partId) => linkOperationMaterial(operationId, partId, 'input'),
@@ -811,19 +754,18 @@ export function useAssemblyGraphActions({
   }), [
     createAssembly,
     createAssemblyOperation,
-    createOperationStep,
+    createInstructionVisual,
     createOperationTool,
     createPartForOperation,
     includeInContainer,
-    ensureStepCanvas,
     linkOperationMaterial,
     linkPartToOperation,
     linkToolToOperation,
     moveAssemblyOperation,
     removeAssemblyOperation,
-    removeOperationStep,
+    removeInstructionVisual,
     reorderAssemblyOperation,
-    reorderOperationStep,
+    setInstructionVisualRole,
     unlinkOperationMaterial,
     unlinkToolFromOperation,
   ])

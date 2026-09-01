@@ -146,6 +146,67 @@
   border-top: 1px solid var(--osa-border-subtle);
 }
 
+.assembly-operation-card__description {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.assembly-operation-card__description > span {
+  font-size: clamp(1.1rem, 1.7vw, 1.4rem);
+  font-weight: 700;
+}
+
+.assembly-operation-card__description textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 5.5rem;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--osa-border-subtle) !important;
+  font-size: clamp(1rem, 1.2vw, 1.12rem) !important;
+  line-height: 1.55 !important;
+  resize: vertical;
+}
+
+.assembly-operation-card__navigation {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  margin-top: clamp(28px, 5vw, 52px);
+  padding-top: 16px;
+  border-top: 1px solid var(--osa-border-subtle);
+}
+
+.assembly-operation-card__navigation button {
+  min-height: 38px;
+  padding: 6px 10px;
+  border: 1px solid var(--osa-border);
+  border-radius: 999px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.86rem;
+}
+
+.assembly-operation-card__navigation button:hover,
+.assembly-operation-card__navigation button:focus-visible {
+  border-color: var(--osa-focus);
+  outline: 0;
+}
+
+.assembly-operation-card__navigation button:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+.assembly-operation-card__navigation span {
+  justify-self: center;
+  color: var(--osa-muted);
+  font-size: 0.84rem;
+}
+
 @media (max-width: 700px) {
   .assembly-operation-card__header {
     grid-template-columns: minmax(0, 1fr);
@@ -163,5 +224,41 @@
 
   .assembly-card__summary-heading {
     align-items: flex-start;
+  }
+
+  .assembly-operation-card__navigation {
+    position: sticky;
+    z-index: 8;
+    bottom: max(8px, env(safe-area-inset-bottom));
+    grid-template-columns: 1fr 1fr 1fr;
+    margin: 30px -8px 0;
+    padding: 8px;
+    border: 1px solid var(--osa-border);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--osa-surface-raised) 94%, transparent);
+    box-shadow: 0 10px 30px rgb(0 0 0 / 42%);
+    backdrop-filter: blur(12px);
+  }
+
+  .assembly-operation-card__navigation button {
+    min-height: 48px;
+    padding-inline: 6px;
+  }
+
+  .assembly-operation-card__navigation span {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .assembly-operation-card__navigation button:nth-of-type(1) {
+    grid-column: 1;
+  }
+
+  .assembly-operation-card__navigation button:nth-of-type(2) {
+    grid-column: 2;
+  }
+
+  .assembly-operation-card__navigation button:nth-of-type(3) {
+    grid-column: 3;
   }
 }

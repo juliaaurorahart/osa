@@ -1,6 +1,10 @@
 import { RELATION_KINDS, createGraphEdge, type GraphEdge } from './graphEdge'
 import { NODE_KINDS, type NodeKind } from './nodeKinds'
 import {
+  isOsaOperationStatus,
+  isOsaOperationVisualRole,
+  MAX_INSTRUCTION_VISUALS_PER_ROLE,
+  OSA_OPERATION_VISUAL_ROLE,
   OSA_PROPERTY,
   OSA_RELATION,
   normalizeCurrencyCode,
@@ -290,6 +294,13 @@ function validateManagedNodeProperties(
     throw new Error(`${path}.${OSA_PROPERTY.order} must be blank or a positive finite decimal.`)
   }
 
+  const operationStatus = properties[OSA_PROPERTY.operationStatus]
+  if (operationStatus !== undefined && !isOsaOperationStatus(operationStatus)) {
+    throw new Error(
+      `${path}.${OSA_PROPERTY.operationStatus} must be not-started, in-progress, or complete.`,
+    )
+  }
+
   const currency = properties[OSA_PROPERTY.currency]
   if (currency !== undefined) {
     const normalizedCurrency = normalizeCurrencyCode(currency)
@@ -312,6 +323,18 @@ function validateManagedEdgeProperties(
   path: string,
 ) {
   const relationRole = edge.properties[OSA_PROPERTY.relationRole]
+  const visualRole = edge.properties[OSA_PROPERTY.operationVisualRole]
+  if (visualRole !== undefined) {
+    if (relationRole !== OSA_RELATION.operationVisual) {
+      throw new Error(
+        `${path}.${OSA_PROPERTY.operationVisualRole} is only valid on operation-visual relations.`,
+      )
+    }
+    if (!isOsaOperationVisualRole(visualRole)) {
+      throw new Error(`${path}.${OSA_PROPERTY.operationVisualRole} must be before or after.`)
+    }
+  }
+
   if (relationRole === undefined) return
   if (!hasOwn(RELATION_ENDPOINT_ROLES, relationRole)) {
     throw new Error(`${path}.${OSA_PROPERTY.relationRole} is not a recognized OSA relation.`)
@@ -319,6 +342,11 @@ function validateManagedEdgeProperties(
 
   const sourceRole = importNodeRole(sourceNode)
   const targetRole = importNodeRole(targetNode)
+  if (visualRole !== undefined && targetRole !== 'visual') {
+    throw new Error(
+      `${path}.${OSA_PROPERTY.operationVisualRole} requires a canonical Visual target.`,
+    )
+  }
   if (relationRole === OSA_RELATION.objectVisual) {
     if (!canImportNodeOwnVisual(sourceNode) || targetRole !== 'visual') {
       throw new Error(`${path}.${OSA_PROPERTY.relationRole} has incompatible endpoint roles.`)
@@ -347,6 +375,28 @@ function validateManagedEdgeProperties(
 
   if (relationRole === OSA_RELATION.visualEmbed) {
     validateVisualEmbedGeometry(edge.properties, path)
+  }
+}
+
+/** Each instruction has at most three deliberately assigned Before and After images. */
+function validateOperationVisualRoleCounts(edges: OsaImportEdge[]) {
+  const counts = new Map<string, number>()
+  for (const edge of edges) {
+    if (edge.properties[OSA_PROPERTY.relationRole] !== OSA_RELATION.operationVisual) continue
+    const visualRole = edge.properties[OSA_PROPERTY.operationVisualRole]
+    if (
+      visualRole !== OSA_OPERATION_VISUAL_ROLE.before
+      && visualRole !== OSA_OPERATION_VISUAL_ROLE.after
+    ) continue
+
+    const key = `${edge.source}\u0000${visualRole}`
+    const count = (counts.get(key) ?? 0) + 1
+    if (count > MAX_INSTRUCTION_VISUALS_PER_ROLE) {
+      throw new Error(
+        `Operation ${edge.source} has more than ${MAX_INSTRUCTION_VISUALS_PER_ROLE} ${visualRole} visuals.`,
+      )
+    }
+    counts.set(key, count)
   }
 }
 
@@ -482,6 +532,7 @@ export function parseOsaImportPackage(value: unknown): OsaImportPackage {
     nodesById.get(edge.target)!,
     `edges[${index}].properties`,
   ))
+  validateOperationVisualRoleCounts(edges)
   validateOperationPrimaryOutputs(edges)
   validateObjectVisualOwnership(nodes, edges)
 

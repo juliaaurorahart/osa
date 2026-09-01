@@ -5,13 +5,13 @@ import {
 } from 'react'
 import type { GraphEdge } from '../graph/graphEdge'
 import {
-  OSA_PROPERTY,
+  MAX_INSTRUCTION_VISUALS_PER_ROLE,
+  OSA_OPERATION_VISUAL_ROLE,
   OSA_RELATION,
   osaRole,
 } from '../graph/osaData'
 import type { TextFlowNode } from '../graph/textNode'
 import { annotationTargetsForNodes } from '../graph/sketchAnnotation'
-import { visualEmbedsForCanvas } from '../graph/visualEmbed'
 import {
   AssemblyIndexCard,
   type AssemblyInstructionSummary,
@@ -20,8 +20,9 @@ import { AssemblyOperationCard } from './AssemblyOperationCard'
 import { AssemblyViewControls } from './AssemblyViewControls'
 import type { AssemblyToolDraft, AssemblyViewUiState } from './assemblyViewState'
 import {
-  canvasOwnedByStep,
   connectedTargets,
+  instructionDescription,
+  instructionVisualsForOperation,
   nodeTitle,
   operationCompletedCount,
   operationsForAssembly,
@@ -32,7 +33,7 @@ import {
   ASSEMBLY_INDEX_CARD_ID,
   uniqueNodes,
 } from './assemblyViewPresentation'
-import type { AssemblyStepCanvas, AssemblyViewActions } from './assemblyViewTypes'
+import type { AssemblyViewActions } from './assemblyViewTypes'
 import './AssemblyView.css'
 
 // Preserve the public type API used by App while keeping component types in a
@@ -99,26 +100,13 @@ export function AssemblyView({
     ? operationsForAssembly(selectedAssembly.id, operations, edges)
     : [], [edges, operations, selectedAssembly])
   const instructionSummaries = useMemo(() => assemblyOperations.map((operation): AssemblyInstructionSummary => {
-    // Older boards used one undirected operation-item relationship. Structured
-    // inputs take precedence whenever the operation has them.
-    const legacyInputParts = connectedTargets(
+    const steps = stepsForOperation(operation.id, nodes, edges)
+    const instructionVisuals = instructionVisualsForOperation(
       operation.id,
+      steps,
       nodes,
       edges,
-      OSA_RELATION.operationItem,
-      /\b(part|parts|material|materials|component|components)\b/i,
-    ).filter((node) => node.data.kind !== 'tool' && osaRole(node) !== 'tool')
-    const structuredInputParts = connectedTargets(
-      operation.id,
-      nodes,
-      edges,
-      OSA_RELATION.operationInput,
-      /\b(parts? in|input|inputs|requires?|needs?)\b/i,
-    )
-    const primaryOutputId = edges.find((edge) => (
-      edge.source === operation.id
-      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationPrimaryOutput
-    ))?.target
+    ).filter(({ visual }) => visualHasInstructionContent(visual, nodes, edges))
     const operationTools = connectedTargets(
       operation.id,
       nodes,
@@ -129,9 +117,14 @@ export function AssemblyView({
 
     return {
       operation,
-      before: structuredInputParts.length ? structuredInputParts : legacyInputParts,
-      after: nodes.find((node) => node.id === primaryOutputId) ?? null,
-      stepCount: stepsForOperation(operation.id, nodes, edges).length,
+      beforeVisuals: instructionVisuals
+        .filter(({ role }) => role === OSA_OPERATION_VISUAL_ROLE.before)
+        .slice(0, MAX_INSTRUCTION_VISUALS_PER_ROLE)
+        .map(({ visual }) => visual),
+      afterVisuals: instructionVisuals
+        .filter(({ role }) => role === OSA_OPERATION_VISUAL_ROLE.after)
+        .slice(0, MAX_INSTRUCTION_VISUALS_PER_ROLE)
+        .map(({ visual }) => visual),
       toolCount: new Set(operationTools.map((tool) => tool.id)).size,
       completedCount: operationCompletedCount(operation),
     }
@@ -213,6 +206,11 @@ export function AssemblyView({
   const openCard = (cardId: string) => {
     setFocusedCardId(cardId)
     setOpenCardId(cardId)
+    if (typeof window !== 'undefined') {
+      window.requestAnimationFrame(() => {
+        document.querySelector<HTMLElement>('.work-view-shell')?.scrollTo({ top: 0 })
+      })
+    }
   }
   const closeCard = () => setOpenCardId(null)
   const createAssembly = () => {
@@ -282,6 +280,9 @@ export function AssemblyView({
           <AssemblyIndexCard
             assembly={selectedAssembly}
             instructionSummaries={instructionSummaries}
+            nodes={nodes}
+            edges={edges}
+            annotationTargets={annotationTargets}
             readOnly={readOnly}
             isOpen={activeOpenCardId === ASSEMBLY_INDEX_CARD_ID}
             onOpen={() => openCard(ASSEMBLY_INDEX_CARD_ID)}
@@ -297,7 +298,7 @@ export function AssemblyView({
           />
         ) : null}
 
-        {assemblyOperations.map((operation) => {
+        {assemblyOperations.map((operation, operationIndex) => {
           // The Assembly summary is the only default card. Selecting one
           // instruction replaces it with that instruction's editor.
           if (visibleCardId !== operation.id) return null
@@ -310,24 +311,12 @@ export function AssemblyView({
             /\b(tool|tools)\b/i,
           )
           const steps = stepsForOperation(operation.id, nodes, edges)
-          const stepCanvasByStepId = new Map(steps.map((step) => [
-            step.id,
-            canvasOwnedByStep(step.id, nodes, edges),
-          ]))
-          // Compact Assembly cards use the same deliberately published Step
-          // canvas contract as the team-facing instructions.
-          const stepCanvases = steps.flatMap((step): AssemblyStepCanvas[] => {
-            const canvas = stepCanvasByStepId.get(step.id)
-            return canvas
-              && canvas.data.properties[OSA_PROPERTY.visualIncludeInInstructions] === 'true'
-              && visualHasInstructionContent(canvas, nodes, edges)
-              ? [{
-                  step,
-                  canvas,
-                  embeddedVisuals: visualEmbedsForCanvas(canvas.id, nodes, edges),
-                }]
-              : []
-          })
+          const instructionVisuals = instructionVisualsForOperation(
+            operation.id,
+            steps,
+            nodes,
+            edges,
+          )
           // Older boards used one undirected operation-item relationship.
           const legacyInputParts = connectedTargets(
             operation.id,
@@ -358,23 +347,32 @@ export function AssemblyView({
             <AssemblyOperationCard
               key={operation.id}
               operation={operation}
+              description={instructionDescription(operation, steps)}
+              instructionVisuals={instructionVisuals}
+              nodes={nodes}
+              edges={edges}
               inputParts={inputParts}
               tools={operationTools}
               availableParts={availableParts}
               toolInventory={toolInventory}
-              steps={steps}
-              stepCanvasByStepId={stepCanvasByStepId}
-              stepCanvases={stepCanvases}
               annotationTargets={annotationTargets}
               focused={activeFocusedCardId === operation.id}
               isOpen={activeOpenCardId === operation.id}
               readOnly={readOnly}
+              operationPosition={operationIndex + 1}
+              operationCount={assemblyOperations.length}
               toolDraft={toolDraft}
               toolDraftFor={toolDraftForOperation}
               actions={actions}
               onInspectNode={onInspectNode}
               onOpen={() => openCard(operation.id)}
               onClose={closeCard}
+              onPrevious={operationIndex > 0
+                ? () => openCard(assemblyOperations[operationIndex - 1].id)
+                : null}
+              onNext={operationIndex < assemblyOperations.length - 1
+                ? () => openCard(assemblyOperations[operationIndex + 1].id)
+                : null}
               onFocusCard={() => setFocusedCardId(operation.id)}
               onEditVisual={(visualId) => setEditingVisual(visualId, operation.id)}
               onToolDraftChange={setToolDraft}

@@ -3,7 +3,8 @@ import type { GraphEdge } from '../graph/graphEdge'
 import {
   appearanceAccentColor,
   isPartLike,
-  OSA_PROPERTY,
+  MAX_INSTRUCTION_VISUALS_PER_ROLE,
+  OSA_OPERATION_VISUAL_ROLE,
   OSA_RELATION,
   osaRole,
 } from '../graph/osaData'
@@ -11,16 +12,17 @@ import type { TextFlowNode } from '../graph/textNode'
 import { annotationTargetsForNodes } from '../graph/sketchAnnotation'
 import { visualEmbedsForCanvas } from '../graph/visualEmbed'
 import { VisualCanvasPreview } from './VisualCanvas'
+import { AssemblyOperationStatus } from './AssemblyOperationStatus'
 import {
-  canvasOwnedByStep,
   connectedTargets,
+  instructionDescription,
+  instructionVisualsForOperation,
   nodeTitle,
   operationsForAssembly,
   stepsForOperation,
   visualHasInstructionContent,
 } from './assemblyProjection'
 import './AssemblyView.css'
-import './AssemblyStepVisuals.css'
 import './AssemblyInstructionsView.css'
 
 type AssemblyInstructionsViewProps = {
@@ -28,13 +30,11 @@ type AssemblyInstructionsViewProps = {
   nodes: TextFlowNode[]
   operations: TextFlowNode[]
   edges: GraphEdge[]
-  /** A public recipient sees a loading or service message before data exists. */
   statusMessage?: string
-  /** Present only when this is a local author preview rather than a shared link. */
   onBackToAssembly?: () => void
 }
 
-type OpenStepCanvas = {
+type OpenInstructionVisual = {
   step: TextFlowNode
   canvas: TextFlowNode
 }
@@ -86,11 +86,7 @@ function ObjectNames({ objects }: { objects: TextFlowNode[] }) {
   )
 }
 
-/**
- * A team member can enlarge an instruction image without entering the canvas
- * editor. It deliberately renders the same official canvas as the card's
- * thumbnail, with no authoring controls or mutable state.
- */
+/** Full-screen read-only inspection for one Before or After picture. */
 export function StepCanvasViewer({
   step,
   canvas,
@@ -98,7 +94,7 @@ export function StepCanvasViewer({
   edges,
   annotationTargets,
   onClose,
-}: OpenStepCanvas & {
+}: OpenInstructionVisual & {
   nodes: TextFlowNode[]
   edges: GraphEdge[]
   annotationTargets: ReturnType<typeof annotationTargetsForNodes>
@@ -129,11 +125,7 @@ export function StepCanvasViewer({
   )
 }
 
-/**
- * The team-facing projection of one Assembly. It reads the same durable
- * objects and edges as the authoring view, but intentionally exposes only
- * the sequence needed to perform the work.
- */
+/** Read-only instructions derived from the same title, description, and image roles. */
 export function AssemblyInstructionsView({
   assembly,
   nodes,
@@ -142,9 +134,7 @@ export function AssemblyInstructionsView({
   statusMessage,
   onBackToAssembly,
 }: AssemblyInstructionsViewProps) {
-  const [openedStepCanvas, setOpenedStepCanvas] = useState<OpenStepCanvas | null>(null)
-  // The shared instructions render the same live project-backed annotations
-  // as Assembly, without copying names or properties into canvas content.
+  const [openedVisual, setOpenedVisual] = useState<OpenInstructionVisual | null>(null)
   const annotationTargets = annotationTargetsForNodes(nodes)
 
   if (!assembly) {
@@ -213,17 +203,45 @@ export function AssemblyInstructionsView({
           ).filter(isPartLike)
           const inputParts = structuredInputParts.length ? structuredInputParts : legacyInputParts
           const steps = stepsForOperation(operation.id, nodes, edges)
-          const stepCanvases = steps.flatMap((step) => {
-            const canvas = canvasOwnedByStep(step.id, nodes, edges)
-            // Assembly Instructions is a deliberate publication, not an
-            // authoring dump. A real Step-owned visual appears only after an
-            // author deliberately checks “show” in Assembly.
-            return canvas
-              && canvas.data.properties[OSA_PROPERTY.visualIncludeInInstructions] === 'true'
-              && visualHasInstructionContent(canvas, nodes, edges)
-              ? [{ step, canvas }]
-              : []
-          })
+          const visuals = instructionVisualsForOperation(operation.id, steps, nodes, edges)
+            .filter(({ visual }) => visualHasInstructionContent(visual, nodes, edges))
+          const before = visuals
+            .filter(({ role }) => role === OSA_OPERATION_VISUAL_ROLE.before)
+            .slice(0, MAX_INSTRUCTION_VISUALS_PER_ROLE)
+          const after = visuals
+            .filter(({ role }) => role === OSA_OPERATION_VISUAL_ROLE.after)
+            .slice(0, MAX_INSTRUCTION_VISUALS_PER_ROLE)
+          const description = instructionDescription(operation, steps)
+
+          const pictureGroup = (
+            label: 'Before' | 'After',
+            pictures: typeof before,
+          ) => pictures.length ? (
+            <section
+              className="assembly-instructions-view__picture-group"
+              aria-label={`${nodeTitle(operation)} ${label} pictures`}
+            >
+              <h3>{label}</h3>
+              <div className="assembly-instructions-view__picture-list">
+                {pictures.map(({ edgeId, visual }, index) => (
+                  <button
+                    className="assembly-instructions-view__open-canvas"
+                    type="button"
+                    aria-label={`View ${label} picture ${index + 1}`}
+                    key={edgeId ?? visual.id}
+                    onClick={() => setOpenedVisual({ step: operation, canvas: visual })}
+                  >
+                    <VisualCanvasPreview
+                      visual={visual}
+                      embeddedVisuals={visualEmbedsForCanvas(visual.id, nodes, edges)}
+                      annotationTargets={annotationTargets}
+                      className="assembly-card__visual-preview"
+                    />
+                  </button>
+                ))}
+              </div>
+            </section>
+          ) : null
 
           return (
             <article
@@ -232,95 +250,50 @@ export function AssemblyInstructionsView({
               key={operation.id}
               aria-label={`${nodeTitle(operation)} assembly instruction`}
             >
-              <div className={stepCanvases.length
-                ? 'assembly-card__columns'
-                : 'assembly-card__columns assembly-instructions-view__columns--details-only'}>
-                <div className="assembly-card__details">
-                  <h2 className="assembly-instructions-view__card-title">{nodeTitle(operation)}</h2>
+              <header className="assembly-instructions-view__instruction-header">
+                <h2 className="assembly-instructions-view__card-title">{nodeTitle(operation)}</h2>
+                <AssemblyOperationStatus operation={operation} />
+              </header>
 
-                  <section className="assembly-instructions-view__parts-tools" aria-label={`${nodeTitle(operation)} parts and tools`}>
-                    <strong>parts &amp; tools</strong>
-                    {inputParts.length ? (
-                      <div style={fieldLabel}>
-                        <span>parts</span>
-                        <ObjectNames objects={inputParts} />
-                      </div>
-                    ) : null}
-                    {tools.length ? (
-                      <div style={fieldLabel}>
-                        <span>tools</span>
-                        <ObjectNames objects={tools} />
-                      </div>
-                    ) : null}
-                  </section>
+              {description.trim() ? (
+                <p className="assembly-instructions-view__description">{description}</p>
+              ) : null}
 
-                  {steps.length || operation.data.text.trim() ? (
-                    <section className="assembly-instructions-view__steps" aria-label={`${nodeTitle(operation)} steps`}>
-                      <strong>steps</strong>
-                      {/* Once individual Step objects exist, they are the
-                          instruction. Card-level draft text often contains
-                          an old summary such as "4 steps", so it stays out
-                          of the team-facing document instead of competing
-                          with the actual ordered instructions. */}
-                      {operation.data.text.trim() && !steps.length ? (
-                        <p className="assembly-instructions-view__operation-notes">{operation.data.text}</p>
-                      ) : null}
-                      {steps.length ? (
-                      <ol>
-                        {steps.map((step) => (
-                          <li key={step.id}>
-                            <strong>{nodeTitle(step)}</strong>
-                            {step.data.text.trim() ? <p>{step.data.text}</p> : null}
-                          </li>
-                        ))}
-                      </ol>
-                      ) : null}
-                    </section>
-                  ) : null}
-                </div>
+              {before.length || after.length ? (
+                <section className="assembly-instructions-view__pictures" aria-label={`${nodeTitle(operation)} pictures`}>
+                  {pictureGroup('Before', before)}
+                  {pictureGroup('After', after)}
+                </section>
+              ) : null}
 
-                {stepCanvases.length ? (
-                  <section className="assembly-card__view assembly-instructions-view__step-visuals" aria-label={`${nodeTitle(operation)} step visuals`}>
-                    <header className="assembly-card__view-header">
-                      <h2>visuals</h2>
-                    </header>
-                    <div className="assembly-instructions-view__canvas-list">
-                      {stepCanvases.map(({ step, canvas }) => (
-                        <figure className="assembly-instructions-view__step-canvas" key={canvas.id}>
-                          <figcaption>
-                            <span>{nodeTitle(step)}</span>
-                          </figcaption>
-                          <button
-                            className="assembly-instructions-view__open-canvas"
-                            type="button"
-                            aria-label={`View ${nodeTitle(step)} visual`}
-                            title="View visual"
-                            onClick={() => setOpenedStepCanvas({ step, canvas })}
-                          >
-                            <VisualCanvasPreview
-                              visual={canvas}
-                              embeddedVisuals={visualEmbedsForCanvas(canvas.id, nodes, edges)}
-                              annotationTargets={annotationTargets}
-                              className="assembly-card__visual-preview"
-                            />
-                          </button>
-                        </figure>
-                      ))}
+              {inputParts.length || tools.length ? (
+                <section className="assembly-instructions-view__parts-tools" aria-label={`${nodeTitle(operation)} parts and tools`}>
+                  {inputParts.length ? (
+                    <div style={fieldLabel}>
+                      <span>parts</span>
+                      <ObjectNames objects={inputParts} />
                     </div>
-                  </section>
-                ) : null}
-              </div>
+                  ) : null}
+                  {tools.length ? (
+                    <div style={fieldLabel}>
+                      <span>tools</span>
+                      <ObjectNames objects={tools} />
+                    </div>
+                  ) : null}
+                </section>
+              ) : null}
             </article>
           )
         })}
       </div>
-      {openedStepCanvas ? (
+
+      {openedVisual ? (
         <StepCanvasViewer
-          {...openedStepCanvas}
+          {...openedVisual}
           nodes={nodes}
           edges={edges}
           annotationTargets={annotationTargets}
-          onClose={() => setOpenedStepCanvas(null)}
+          onClose={() => setOpenedVisual(null)}
         />
       ) : null}
     </section>

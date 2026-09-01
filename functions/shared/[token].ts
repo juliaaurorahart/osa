@@ -34,6 +34,13 @@ function nodeKind(node: JsonRecord) {
   return isRecord(data) && typeof data.kind === 'string' ? data.kind : null
 }
 
+function isCanonicalVisual(node: JsonRecord | undefined) {
+  return Boolean(node && (
+    nodeProperties(node)?.['osa:role'] === 'visual'
+    || nodeKind(node) === 'visual'
+  ))
+}
+
 function edgeData(edge: JsonRecord) {
   return isRecord(edge.data) ? edge.data : null
 }
@@ -45,6 +52,11 @@ function edgeRelation(edge: JsonRecord) {
     : null
 }
 
+function edgeProperties(edge: JsonRecord) {
+  const properties = edgeData(edge)?.properties
+  return isRecord(properties) ? properties : null
+}
+
 function edgeRelationKind(edge: JsonRecord) {
   const relationKind = edgeData(edge)?.relationKind
   return typeof relationKind === 'string' ? relationKind : null
@@ -52,6 +64,14 @@ function edgeRelationKind(edge: JsonRecord) {
 
 function isOperationTargetEdge(edge: JsonRecord, nodesById: Map<string, JsonRecord>) {
   const relation = edgeRelation(edge)
+  const target = typeof edge.target === 'string' ? nodesById.get(edge.target) : undefined
+  // Canonical instruction Visuals are published only through their explicit
+  // Before/After role below. Legacy operation-visual links to Parts and Tools
+  // keep their existing operation-context behavior.
+  if (
+    relation === 'operation-visual'
+    && isCanonicalVisual(target)
+  ) return false
   if (
     relation === 'operation-item'
     || relation === 'operation-input'
@@ -61,11 +81,35 @@ function isOperationTargetEdge(edge: JsonRecord, nodesById: Map<string, JsonReco
     || relation === 'operation-step'
   ) return true
 
-  const target = typeof edge.target === 'string' ? nodesById.get(edge.target) : undefined
   if (!target) return false
 
   const role = nodeProperties(target)?.['osa:role']
   return role === 'bom-item' || role === 'tool' || nodeKind(target) === 'part' || nodeKind(target) === 'tool'
+}
+
+const MAX_SHARED_VISUALS_PER_ROLE = 3
+
+function sharedInstructionVisualRole(
+  edge: JsonRecord,
+  nodesById: Map<string, JsonRecord>,
+): 'before' | 'after' | null {
+  if (edgeRelation(edge) !== 'operation-visual' || typeof edge.target !== 'string') return null
+
+  const target = nodesById.get(edge.target)
+  if (!isCanonicalVisual(target)) return null
+
+  const role = edgeProperties(edge)?.['operation-visual:role']
+  if (role === 'before' || role === 'after') return role
+  return role === undefined
+    && nodeProperties(target)?.['visual:include-in-instructions'] === 'true'
+    ? 'after'
+    : null
+}
+
+function sharedInstructionVisualOrder(edge: JsonRecord, fallback: number) {
+  const value = edgeProperties(edge)?.['operation-visual:order']
+  const parsed = typeof value === 'string' && value.trim() ? Number(value) : Number.NaN
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : fallback
 }
 
 function officialVisualEmbedIds(node: JsonRecord) {
@@ -143,6 +187,7 @@ export function createAssemblyScopedBoard(board: unknown, assemblyId: string): J
     pendingNodeIds.push(nodeId)
   }
   const operationIds = new Set<string>()
+  const legacyPublishedAfterEdges = new Set<JsonRecord>()
   includeNode(assemblyId)
 
   // Assembly -> operation links have a durable structured relation. Retain a
@@ -162,16 +207,49 @@ export function createAssemblyScopedBoard(board: unknown, assemblyId: string): J
   }
 
   for (const operationId of operationIds) {
+    const publishedVisualTargets = {
+      before: new Set<string>(),
+      after: new Set<string>(),
+    }
+    edges
+      .map((edge, edgeIndex) => ({ edge, edgeIndex }))
+      .filter(({ edge }) => edge.source === operationId)
+      .map(({ edge, edgeIndex }) => ({
+        edge,
+        edgeIndex,
+        role: sharedInstructionVisualRole(edge, nodesById),
+      }))
+      .filter((entry): entry is typeof entry & { role: 'before' | 'after' } => entry.role !== null)
+      .sort((left, right) => (
+        sharedInstructionVisualOrder(left.edge, left.edgeIndex)
+        - sharedInstructionVisualOrder(right.edge, right.edgeIndex)
+        || left.edgeIndex - right.edgeIndex
+      ))
+      .forEach(({ edge, role }) => {
+        const visualId = edge.target as string
+        const targetsForRole = publishedVisualTargets[role]
+        if (
+          targetsForRole.has(visualId)
+          || targetsForRole.size >= MAX_SHARED_VISUALS_PER_ROLE
+        ) return
+        targetsForRole.add(visualId)
+        if (
+          role === 'after'
+          && edgeProperties(edge)?.['operation-visual:role'] === undefined
+        ) legacyPublishedAfterEdges.add(edge)
+        includeNode(visualId)
+      })
+
     for (const edge of edges) {
       if (edge.source !== operationId || !isOperationTargetEdge(edge, nodesById)) continue
       if (nodesById.has(edge.target as string)) includeNode(edge.target as string)
     }
   }
 
-  // A shared instruction needs only the explicitly published Visual owned by
-  // each included Step, plus the Visuals embedded inside that canvas. This
-  // keeps source slides, references, empty draft surfaces, and unpublished
-  // design work out of the public packet entirely.
+  // A shared instruction needs only its explicit Before/After Visuals and any
+  // deliberately published legacy Step canvas. Follow embedded and official
+  // Visual dependencies recursively while source slides, unassigned drafts,
+  // and other design work stay outside the public packet.
   while (pendingNodeIds.length) {
     const includedNodeId = pendingNodeIds.shift()!
     const includedNode = nodesById.get(includedNodeId)
@@ -189,13 +267,16 @@ export function createAssemblyScopedBoard(board: unknown, assemblyId: string): J
       }
     }
 
-    if (role === 'visual') {
+    if (role === 'visual' || nodeKind(includedNode) === 'visual') {
       for (const edge of edges) {
         if (edge.source === includedNodeId && edgeRelation(edge) === 'visual-embed') {
-          includeNode(edge.target as string)
+          const embeddedId = edge.target as string
+          if (isCanonicalVisual(nodesById.get(embeddedId))) includeNode(embeddedId)
         }
       }
-      officialVisualEmbedIds(includedNode).forEach(includeNode)
+      officialVisualEmbedIds(includedNode).forEach((embeddedId) => {
+        if (isCanonicalVisual(nodesById.get(embeddedId))) includeNode(embeddedId)
+      })
     }
   }
 
@@ -205,9 +286,23 @@ export function createAssemblyScopedBoard(board: unknown, assemblyId: string): J
       ...snapshot,
       nodes: nodes.filter((node) => includedNodeIds.has(node.id as string)),
       // This deliberately prevents an edge from revealing an out-of-scope node.
-      edges: edges.filter((edge) => (
-        includedNodeIds.has(edge.source as string) && includedNodeIds.has(edge.target as string)
-      )),
+      edges: edges
+        .filter((edge) => (
+          includedNodeIds.has(edge.source as string) && includedNodeIds.has(edge.target as string)
+        ))
+        .map((edge) => {
+          if (!legacyPublishedAfterEdges.has(edge)) return edge
+          return {
+            ...edge,
+            data: {
+              ...edgeData(edge),
+              properties: {
+                ...edgeProperties(edge),
+                'operation-visual:role': 'after',
+              },
+            },
+          }
+        }),
     },
   }
 }

@@ -17,17 +17,10 @@
   line-height: 1.08;
 }
 
-.assembly-instructions-view__operation-notes {
-  margin: 0;
-  color: var(--osa-muted);
-  line-height: 1.45;
-  white-space: pre-wrap;
-}
-
-.assembly-instructions-view__steps p {
+.assembly-instructions-view__description {
   margin: 0;
   color: var(--osa-text);
-  line-height: 1.45;
+  line-height: 1.55;
   white-space: pre-wrap;
 }
 
@@ -41,28 +34,32 @@
 }
 
 .assembly-instructions-view__card-title {
-  margin-bottom: clamp(12px, 2vw, 24px);
   font-size: clamp(1.15rem, 2.25vw, 2.1rem);
   font-weight: 400;
   line-height: 1.05;
 }
 
-/* A card without a Step canvas is a readable full-width instruction. */
-.assembly-instructions-view__columns--details-only {
-  grid-template-columns: minmax(0, 1fr);
+.assembly-instructions-view__instruction-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
 }
 
-.assembly-instructions-view__parts-tools,
-.assembly-instructions-view__steps {
+.assembly-instructions-view__parts-tools {
   display: grid;
   gap: 8px;
   min-width: 0;
+  margin-top: clamp(18px, 3vw, 30px);
+  padding-top: 14px;
+  border-top: 1px solid var(--osa-border-subtle);
 }
 
-.assembly-instructions-view__parts-tools > strong,
-.assembly-instructions-view__steps > strong {
-  font-size: clamp(0.76rem, 1.5vw, 1.15rem);
-  font-weight: 500;
+.assembly-instructions-view__pictures {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(18px, 3vw, 34px);
+  margin-top: clamp(18px, 3vw, 30px);
 }
 
 .assembly-instructions__object-list {
@@ -74,21 +71,47 @@
   color: var(--osa-text);
 }
 
-.assembly-instructions-view__steps ol {
+.assembly-instructions-view__picture-group {
   display: grid;
-  gap: 12px;
+  gap: 8px;
+  min-width: 0;
+}
+
+.assembly-instructions-view__picture-group h3 {
   margin: 0;
-  padding-left: 1.35em;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-.assembly-instructions-view__steps li {
+.assembly-instructions-view__picture-list {
   display: grid;
-  gap: 4px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
 }
 
-/* The team-facing sheet labels its single visual column once. */
-.assembly-instructions-view__step-visuals {
-  grid-template-rows: auto minmax(0, 1fr);
+.assembly-instructions-view__open-canvas {
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--osa-border);
+  border-radius: 7px;
+  background: var(--osa-surface-raised);
+  cursor: pointer;
+}
+
+.assembly-instructions-view__open-canvas:hover,
+.assembly-instructions-view__open-canvas:focus-visible {
+  border-color: var(--osa-focus);
+  outline: 2px solid var(--osa-focus);
+  outline-offset: 2px;
+}
+
+.assembly-instructions-view__open-canvas .assembly-card__visual-preview {
+  height: clamp(110px, 15vw, 180px);
+  border: 0;
 }
 
 .assembly-instructions-view__canvas-viewer-scrim {
@@ -175,4 +198,18 @@
   max-height: 100%;
   height: auto;
   background: #fff;
+}
+
+@media (max-width: 700px) {
+  .assembly-instructions-view__instruction-header {
+    align-items: flex-start;
+  }
+
+  .assembly-instructions-view__pictures {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .assembly-instructions-view__picture-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }

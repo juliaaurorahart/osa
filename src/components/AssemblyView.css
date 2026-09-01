@@ -173,6 +173,59 @@
   min-width: 0;
 }
 
+/* Status is always written as text as well as color, so it remains legible
+   without relying on color perception or remembering a legend. */
+.assembly-operation-status {
+  --assembly-status-color: var(--osa-status-not-started);
+  display: inline-flex;
+  box-sizing: border-box;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 9px;
+  border: 1px solid color-mix(in srgb, var(--assembly-status-color) 62%, var(--osa-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--assembly-status-color) 9%, var(--osa-surface));
+  color: var(--osa-text);
+  font-size: 0.84rem;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.assembly-operation-status[data-status='in-progress'] {
+  --assembly-status-color: var(--osa-status-in-progress);
+}
+
+.assembly-operation-status[data-status='complete'] {
+  --assembly-status-color: var(--osa-status-complete);
+}
+
+.assembly-operation-status__dot {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--assembly-status-color);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--assembly-status-color) 22%, transparent);
+}
+
+.assembly-operation-status select {
+  min-height: 24px;
+  padding: 0 20px 0 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+.assembly-operation-status select:focus-visible {
+  outline: 2px solid var(--osa-focus);
+  outline-offset: 2px;
+}
+
 .assembly-card__close-button,
 .assembly-card__lock-button {
   min-height: 27px;

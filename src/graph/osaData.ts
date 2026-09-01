@@ -16,6 +16,10 @@ export const OSA_PROPERTY = {
   operationEntrance: 'operation:entrance',
   /** Number of physical items that have completed this operation. */
   operationCompletedCount: 'operation:completedCount',
+  /** Deliberate workflow state for one Assembly instruction. */
+  operationStatus: 'operation:status',
+  /** Selects the instruction-level description instead of legacy Step text. */
+  operationInstructionMode: 'operation:instruction-mode',
   /**
    * Source or author notes describing what leaves an operation.
    *
@@ -100,6 +104,8 @@ export const OSA_PROPERTY = {
    * on another instruction card.
    */
   operationVisualOrder: 'operation-visual:order',
+  /** Whether an instruction displays this Visual as its Before or After state. */
+  operationVisualRole: 'operation-visual:role',
   /** Durable physical/logical feature data, independent of any one view. */
   featureType: 'feature:type',
   featureDiameter: 'feature:diameter',
@@ -132,6 +138,43 @@ export const OSA_PROPERTY = {
   sourceTitle: 'source:title',
   sourceHash: 'source:sha256',
 } as const
+
+/** Durable workflow states for Assembly instructions. */
+export const OSA_OPERATION_STATUS = {
+  notStarted: 'not-started',
+  inProgress: 'in-progress',
+  complete: 'complete',
+} as const
+
+export type OsaOperationStatus = (
+  typeof OSA_OPERATION_STATUS
+)[keyof typeof OSA_OPERATION_STATUS]
+
+export function isOsaOperationStatus(value: string): value is OsaOperationStatus {
+  return Object.values(OSA_OPERATION_STATUS).some((status) => status === value)
+}
+
+/** The instruction itself owns one description; legacy Step nodes remain intact. */
+export const OSA_OPERATION_INSTRUCTION_MODE = {
+  single: 'single',
+} as const
+
+/** One Visual's meaning inside a particular Assembly instruction. */
+export const OSA_OPERATION_VISUAL_ROLE = {
+  before: 'before',
+  after: 'after',
+} as const
+
+/** One instruction can show at most three images in either state group. */
+export const MAX_INSTRUCTION_VISUALS_PER_ROLE = 3
+
+export type OsaOperationVisualRole = (
+  typeof OSA_OPERATION_VISUAL_ROLE
+)[keyof typeof OSA_OPERATION_VISUAL_ROLE]
+
+export function isOsaOperationVisualRole(value: string): value is OsaOperationVisualRole {
+  return Object.values(OSA_OPERATION_VISUAL_ROLE).some((role) => role === value)
+}
 
 /** A point inside a canvas expressed as percentages of its usable area. */
 export type CanvasPercentPosition = {
@@ -281,6 +324,13 @@ export function operationVisualDisplayOrder(value: string | undefined, fallback:
   return Number.isSafeInteger(parsed) && parsed >= 0
     ? parsed
     : Math.max(0, Math.trunc(fallback))
+}
+
+/** Missing roles are untouched legacy placements, not a third visible group. */
+export function operationVisualRole(value: string | undefined): OsaOperationVisualRole | null {
+  return value && isOsaOperationVisualRole(value)
+    ? value
+    : null
 }
 
 /** Allocates the next stable section id after the reserved source canvas. */

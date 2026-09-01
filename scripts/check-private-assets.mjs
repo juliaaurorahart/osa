@@ -48,7 +48,11 @@ try {
   sqlite.prepare('INSERT INTO board_shares (token, board_id, assembly_id, slug) VALUES (?, ?, ?, ?)').run('share-a-token', 'board-a', 'assembly', 'shako')
 
   const { onRequestPost: upload, onRequestGet: read, onRequestHead: head } = await server.ssrLoadModule('/functions/api/assets.ts')
-  const { onRequestGet: shared, onRequestHead: sharedHead } = await server.ssrLoadModule('/functions/shared/[token].ts')
+  const {
+    createAssemblyScopedBoard,
+    onRequestGet: shared,
+    onRequestHead: sharedHead,
+  } = await server.ssrLoadModule('/functions/shared/[token].ts')
   const { onRequestGet: bareMedia, onRequestHead: bareMediaHead } = await server.ssrLoadModule('/functions/media/[[key]].ts')
   const { onRequestGet: session } = await server.ssrLoadModule('/functions/api/session.ts')
   const { expectedAccountGuard } = await server.ssrLoadModule('/functions/accountGuard.ts')
@@ -66,6 +70,188 @@ try {
   const migrate = (email, key = legacyKey, boardId = 'board-a', requestOrigin = origin) => upload({
     env, data: data(email), request: new Request(`${requestOrigin}/api/assets?boardId=${boardId}&legacyKey=${encodeURIComponent(key)}`, { method: 'POST' }),
   })
+
+  const instructionVisualScope = createAssemblyScopedBoard({
+    id: 'instruction-visual-scope',
+    name: 'Instruction Visual scope',
+    updatedAt: '2026-09-01T00:00:00.000Z',
+    snapshot: {
+      version: 7,
+      nodes: [
+        { id: 'scope-assembly', data: { kind: 'project', properties: { 'osa:role': 'assembly' } } },
+        { id: 'scope-operation', data: { kind: 'action', properties: { 'osa:role': 'operation' } } },
+        { id: 'scope-legacy-operation', data: { kind: 'action', properties: { 'osa:role': 'operation' } } },
+        ...['before-1', 'before-2', 'before-3', 'before-4', 'after-2', 'after-3', 'after-4',
+          'unassigned-visual', 'legacy-unassigned-visual', 'source-visual', 'embedded-visual',
+          'embedded-nested-visual', 'official-visual', 'official-nested-visual',
+          'legacy-published-1', 'legacy-published-2', 'legacy-published-3',
+          'legacy-published-4'].map((id) => ({
+          id,
+          data: {
+            kind: 'visual',
+            properties: {
+              'osa:role': 'visual',
+              ...(id.startsWith('legacy-published-')
+                ? { 'visual:include-in-instructions': 'true' }
+                : {}),
+              ...(id === 'unassigned-visual'
+                ? { 'visual:include-in-instructions': 'true' }
+                : {}),
+            },
+            ...(['before-1', 'official-visual'].includes(id) ? {
+              visualVersions: {
+                officialId: `${id}-official-record`,
+                records: [{
+                  id: `${id}-official-record`,
+                  kind: 'official',
+                  embeds: [
+                    { visualId: id === 'before-1' ? 'official-visual' : 'official-nested-visual' },
+                    ...(id === 'before-1' ? [{ visualId: 'not-an-official-visual' }] : []),
+                  ],
+                }],
+              },
+            } : {}),
+          },
+        })),
+        {
+          id: 'after-1',
+          data: { kind: 'visual', properties: {} },
+        },
+        { id: 'not-a-visual', data: { kind: 'part', properties: { 'osa:role': 'bom-item' } } },
+        { id: 'not-an-embedded-visual', data: { kind: 'part', properties: {} } },
+        { id: 'not-an-official-visual', data: { kind: 'part', properties: {} } },
+      ],
+      edges: [
+        {
+          id: 'scope-assembly-operation',
+          source: 'scope-assembly',
+          target: 'scope-operation',
+          data: { properties: { 'osa:relation': 'assembly-operation' } },
+        },
+        {
+          id: 'scope-assembly-legacy-operation',
+          source: 'scope-assembly',
+          target: 'scope-legacy-operation',
+          data: { properties: { 'osa:relation': 'assembly-operation' } },
+        },
+        ...[
+          ['before-4', 'before', '3'],
+          ['before-2', 'before', '1'],
+          ['before-1', 'before', '0'],
+          ['before-3', 'before', '2'],
+          ['after-4', 'after', '3'],
+          ['after-2', 'after', '1'],
+          ['after-1', 'after', '0'],
+          ['after-3', 'after', '2'],
+        ].map(([target, role, order]) => ({
+          id: `scope-${target}`,
+          source: 'scope-operation',
+          target,
+          data: { properties: {
+            'osa:relation': 'operation-visual',
+            'operation-visual:role': role,
+            'operation-visual:order': order,
+          } },
+        })),
+        {
+          id: 'scope-unassigned',
+          source: 'scope-operation',
+          target: 'unassigned-visual',
+          data: { properties: {
+            'osa:relation': 'operation-visual',
+            'operation-visual:role': 'unassigned',
+          } },
+        },
+        {
+          id: 'scope-legacy-unassigned',
+          source: 'scope-operation',
+          target: 'legacy-unassigned-visual',
+          data: { properties: { 'osa:relation': 'operation-visual' } },
+        },
+        {
+          id: 'scope-source-visual',
+          source: 'scope-operation',
+          target: 'source-visual',
+          data: { properties: { 'osa:relation': 'operation-source-visual' } },
+        },
+        {
+          id: 'scope-nonvisual-placement',
+          source: 'scope-operation',
+          target: 'not-a-visual',
+          data: { properties: {
+            'osa:relation': 'operation-visual',
+            'operation-visual:role': 'before',
+          } },
+        },
+        {
+          id: 'scope-before-embed',
+          source: 'before-1',
+          target: 'embedded-visual',
+          data: { properties: { 'osa:relation': 'visual-embed' } },
+        },
+        {
+          id: 'scope-embedded-nested',
+          source: 'embedded-visual',
+          target: 'embedded-nested-visual',
+          data: { properties: { 'osa:relation': 'visual-embed' } },
+        },
+        {
+          id: 'scope-nonvisual-embed',
+          source: 'before-1',
+          target: 'not-an-embedded-visual',
+          data: { properties: { 'osa:relation': 'visual-embed' } },
+        },
+        ...[
+          ['legacy-published-4', '3'],
+          ['legacy-published-2', '1'],
+          ['legacy-published-1', '0'],
+          ['legacy-published-3', '2'],
+        ].map(([target, order]) => ({
+          id: `scope-${target}`,
+          source: 'scope-legacy-operation',
+          target,
+          data: { properties: {
+            'osa:relation': 'operation-visual',
+            'operation-visual:order': order,
+          } },
+        })),
+      ],
+    },
+  }, 'scope-assembly')
+  assert.ok(instructionVisualScope)
+  const instructionVisualIds = new Set(instructionVisualScope.snapshot.nodes.map((node) => node.id))
+  for (const id of [
+    'before-1', 'before-2', 'before-3', 'after-1', 'after-2', 'after-3',
+    'embedded-visual', 'embedded-nested-visual', 'official-visual', 'official-nested-visual',
+    'legacy-published-1', 'legacy-published-2', 'legacy-published-3', 'not-a-visual',
+  ]) assert.ok(instructionVisualIds.has(id), `${id} belongs in the shared instruction packet.`)
+  for (const id of [
+    'before-4', 'after-4', 'unassigned-visual',
+    'legacy-unassigned-visual', 'source-visual', 'not-an-embedded-visual',
+    'not-an-official-visual', 'legacy-published-4',
+  ]) assert.ok(!instructionVisualIds.has(id), `${id} must remain outside the shared instruction packet.`)
+  const instructionVisualEdges = instructionVisualScope.snapshot.edges.filter((edge) => (
+    edge.source === 'scope-operation'
+    && edge.data.properties['osa:relation'] === 'operation-visual'
+    && edge.target !== 'not-a-visual'
+  ))
+  assert.deepEqual(
+    instructionVisualEdges.map((edge) => edge.target),
+    ['before-2', 'before-1', 'before-3', 'after-2', 'after-1', 'after-3'],
+    'A shared instruction includes no more than three canonical Visuals for each explicit role.',
+  )
+  const legacyPublishedEdges = instructionVisualScope.snapshot.edges.filter((edge) => (
+    edge.source === 'scope-legacy-operation'
+    && edge.data.properties['osa:relation'] === 'operation-visual'
+  ))
+  assert.deepEqual(
+    new Set(legacyPublishedEdges.map((edge) => edge.target)),
+    new Set(['legacy-published-1', 'legacy-published-2', 'legacy-published-3']),
+    'Only three roleless Visuals deliberately published by an older instruction enter the packet.',
+  )
+  assert.ok(legacyPublishedEdges.every((edge) => (
+    edge.data.properties['operation-visual:role'] === 'after'
+  )), 'Published legacy placements become After pictures in the derived packet only.')
 
   assert.equal((await uploadFile(null)).status, 403, 'Anonymous upload is forbidden.')
   assert.equal((await uploadFile(viewer)).status, 403, 'Viewers cannot upload.')
@@ -182,6 +368,56 @@ try {
   assert.equal((await sharedFile(`?asset=${uploaded.id}`, 'share-a-token')).status, 200, 'Existing opaque share references continue working.')
   assert.equal((await bareMedia({ env, params: { key: legacyKey } })).status, 404)
   assert.equal((await bareMediaHead({ env, params: { key: legacyKey } })).status, 404)
+
+  const nodesBeforeInstructionVisualAssetCheck = structuredClone(boardA.snapshot.nodes)
+  const edgesBeforeInstructionVisualAssetCheck = structuredClone(boardA.snapshot.edges)
+  boardA.snapshot.nodes.push(
+    { id: 'shared-operation', data: { kind: 'action', properties: { 'osa:role': 'operation' } } },
+    {
+      id: 'shared-before-visual',
+      data: { kind: 'visual', properties: { 'osa:role': 'visual', 'private:file': source.url } },
+    },
+    {
+      id: 'private-unassigned-visual',
+      data: { kind: 'visual', properties: { 'osa:role': 'visual', 'private:file': html.url } },
+    },
+  )
+  boardA.snapshot.edges.push(
+    {
+      source: 'assembly',
+      target: 'shared-operation',
+      data: { properties: { 'osa:relation': 'assembly-operation' } },
+    },
+    {
+      source: 'shared-operation',
+      target: 'shared-before-visual',
+      data: { properties: {
+        'osa:relation': 'operation-visual',
+        'operation-visual:role': 'before',
+      } },
+    },
+    {
+      source: 'shared-operation',
+      target: 'private-unassigned-visual',
+      data: { properties: {
+        'osa:relation': 'operation-visual',
+        'operation-visual:role': 'unassigned',
+      } },
+    },
+  )
+  updateFixture(boardA)
+  const instructionAssetPacket = (await (await sharedFile()).json()).board
+  assert.ok(instructionAssetPacket.snapshot.nodes.some((node) => node.id === 'shared-before-visual'))
+  assert.ok(!instructionAssetPacket.snapshot.nodes.some((node) => node.id === 'private-unassigned-visual'))
+  const sharedBeforeVisual = instructionAssetPacket.snapshot.nodes.find((node) => node.id === 'shared-before-visual')
+  assert.equal(new URL(sharedBeforeVisual.data.properties['private:file']).searchParams.get('asset'), source.id)
+  assert.equal((await sharedFile(`?asset=${source.id}`)).status, 200,
+    'An explicitly assigned Before Visual grants access to its referenced private file.')
+  assert.equal((await sharedFile(`?asset=${html.id}`)).status, 404,
+    'An unassigned Visual cannot grant access to its referenced private file.')
+  boardA.snapshot.nodes = nodesBeforeInstructionVisualAssetCheck
+  boardA.snapshot.edges = edgesBeforeInstructionVisualAssetCheck
+  updateFixture(boardA)
 
   const originalPartProperties = structuredClone(boardA.snapshot.nodes[1].data.properties)
   const unchangedOtherBoard = sqlite.prepare('SELECT content FROM boards WHERE id = ?').get('board-b').content

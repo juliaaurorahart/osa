@@ -1,17 +1,19 @@
-import { OSA_PROPERTY } from '../graph/osaData'
-import type { TextFlowNode } from '../graph/textNode'
+import type { GraphEdge } from '../graph/graphEdge'
+import type { SketchAnnotationTarget, TextFlowNode } from '../graph/textNode'
+import { visualEmbedsForCanvas } from '../graph/visualEmbed'
 import { nodeTitle } from './assemblyProjection'
+import { AssemblyOperationStatus } from './AssemblyOperationStatus'
 import {
   ASSEMBLY_INDEX_CARD_ID,
   transparentInput,
 } from './assemblyViewPresentation'
+import { VisualCanvasPreview } from './VisualCanvas'
 import './AssemblyIndexCard.css'
 
 export type AssemblyInstructionSummary = {
   operation: TextFlowNode
-  before: TextFlowNode[]
-  after: TextFlowNode | null
-  stepCount: number
+  beforeVisuals: TextFlowNode[]
+  afterVisuals: TextFlowNode[]
   toolCount: number
   completedCount: number
 }
@@ -19,6 +21,9 @@ export type AssemblyInstructionSummary = {
 type AssemblyIndexCardProps = {
   assembly: TextFlowNode
   instructionSummaries: AssemblyInstructionSummary[]
+  nodes: TextFlowNode[]
+  edges: GraphEdge[]
+  annotationTargets: SketchAnnotationTarget[]
   readOnly: boolean
   isOpen: boolean
   onOpen: () => void
@@ -35,6 +40,9 @@ type AssemblyIndexCardProps = {
 export function AssemblyIndexCard({
   assembly,
   instructionSummaries,
+  nodes,
+  edges,
+  annotationTargets,
   readOnly,
   isOpen,
   onOpen,
@@ -185,20 +193,39 @@ export function AssemblyIndexCard({
               {instructionSummaries.map((summary, operationIndex) => {
                 const {
                   operation,
-                  before,
-                  after,
-                  stepCount,
+                  beforeVisuals,
+                  afterVisuals,
                   toolCount,
                   completedCount,
                 } = summary
                 const operationTitle = nodeTitle(operation)
-                const beforeImage = before.find((part) => (
-                  part.data.properties[OSA_PROPERTY.assetImage]?.trim()
-                ))
-                const beforeImageSource = beforeImage
-                  ?.data.properties[OSA_PROPERTY.assetImage]?.trim()
-                const afterImageSource = after
-                  ?.data.properties[OSA_PROPERTY.assetImage]?.trim()
+                const renderPictureGroup = (
+                  label: 'Before' | 'After',
+                  visuals: TextFlowNode[],
+                ) => visuals.length ? (
+                  <div
+                    className="assembly-index-card__summary-picture-group"
+                    aria-label={`${operationTitle} ${label} pictures`}
+                  >
+                    <span className="assembly-index-card__summary-label">{label}</span>
+                    <span className="assembly-index-card__summary-pictures">
+                      {visuals.slice(0, 3).map((visual, visualIndex) => (
+                        <span
+                          className="assembly-index-card__summary-picture"
+                          aria-label={`${label} picture ${visualIndex + 1}`}
+                          key={`${label}-${visual.id}-${visualIndex}`}
+                        >
+                          <VisualCanvasPreview
+                            visual={visual}
+                            embeddedVisuals={visualEmbedsForCanvas(visual.id, nodes, edges)}
+                            annotationTargets={annotationTargets}
+                            className="assembly-index-card__summary-thumbnail"
+                          />
+                        </span>
+                      ))}
+                    </span>
+                  </div>
+                ) : null
 
                 return (
                   <li key={operation.id}>
@@ -214,66 +241,22 @@ export function AssemblyIndexCard({
                       <span className="assembly-index-card__summary-step-title">
                         {operationTitle}
                       </span>
+                      <AssemblyOperationStatus operation={operation} />
                     </button>
                     <div
-                      className="assembly-index-card__summary-info"
+                      className={`assembly-index-card__summary-info${beforeVisuals.length || afterVisuals.length ? ' has-pictures' : ''}`}
                       aria-label={`${operationTitle} overview`}
                     >
-                      <div className="assembly-index-card__summary-object">
-                        {beforeImageSource ? (
-                          <img
-                            className="assembly-index-card__summary-thumbnail"
-                            src={beforeImageSource}
-                            alt={beforeImage?.data.properties[OSA_PROPERTY.assetImageAlt]?.trim()
-                              || nodeTitle(beforeImage!)}
-                            loading="lazy"
-                            decoding="async"
-                          />
-                        ) : null}
-                        <span className="assembly-index-card__summary-object-copy">
-                          <span className="assembly-index-card__summary-label">Before</span>
-                          <span
-                            className="assembly-index-card__summary-value"
-                            aria-label={`${operationTitle} before`}
-                          >
-                            {before.length ? before.map(nodeTitle).join(', ') : '—'}
-                          </span>
-                        </span>
-                      </div>
-                      <span className="assembly-index-card__summary-flow-arrow" aria-hidden="true">→</span>
-                      <div className="assembly-index-card__summary-object">
-                        {afterImageSource ? (
-                          <img
-                            className="assembly-index-card__summary-thumbnail"
-                            src={afterImageSource}
-                            alt={after?.data.properties[OSA_PROPERTY.assetImageAlt]?.trim()
-                              || nodeTitle(after!)}
-                            loading="lazy"
-                            decoding="async"
-                          />
-                        ) : null}
-                        <span className="assembly-index-card__summary-object-copy">
-                          <span className="assembly-index-card__summary-label">After</span>
-                          <span
-                            className="assembly-index-card__summary-value"
-                            aria-label={`${operationTitle} after`}
-                          >
-                            {after ? nodeTitle(after) : '—'}
-                          </span>
-                        </span>
-                      </div>
+                      {renderPictureGroup('Before', beforeVisuals)}
+                      {renderPictureGroup('After', afterVisuals)}
                       <dl className="assembly-index-card__summary-metrics">
-                        <div>
-                          <dt>steps</dt>
-                          <dd aria-label={`${operationTitle} steps`}>{stepCount}</dd>
-                        </div>
                         <div>
                           <dt>tools</dt>
                           <dd aria-label={`${operationTitle} tools`}>{toolCount}</dd>
                         </div>
                         <div>
-                          <dt>complete</dt>
-                          <dd aria-label={`${operationTitle} complete`}><b>{completedCount}</b> complete</dd>
+                          <dt># complete</dt>
+                            <dd aria-label={`${operationTitle} number complete`}><b>{completedCount}</b></dd>
                         </div>
                       </dl>
                     </div>

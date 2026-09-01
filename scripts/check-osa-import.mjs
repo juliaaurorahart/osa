@@ -21,6 +21,7 @@ try {
     '/src/starters/shakoLightWrap.ts',
   )
   const {
+    OSA_OPERATION_VISUAL_ROLE,
     OSA_PROPERTY,
     OSA_RELATION,
     OPERATION_CANVAS_SOURCE_SECTION_ID,
@@ -645,6 +646,169 @@ try {
     },
     'An image-box instance stores only its placement geometry, not a copied visual asset.',
   )
+
+  const instructionVisualNodes = [
+    {
+      id: 'instruction',
+      kind: 'action',
+      name: 'Install connector box',
+      text: '',
+      spaceIds: [],
+      properties: { [OSA_PROPERTY.role]: 'operation' },
+    },
+    {
+      id: 'legacy-part',
+      kind: 'part',
+      name: 'Legacy image owner',
+      text: '',
+      spaceIds: [],
+      properties: { [OSA_PROPERTY.role]: 'bom-item' },
+    },
+    ...Array.from({ length: 8 }, (_, index) => ({
+      id: `instruction-visual-${index + 1}`,
+      kind: 'visual',
+      name: `Instruction visual ${index + 1}`,
+      text: '',
+      spaceIds: [],
+      properties: { [OSA_PROPERTY.role]: 'visual' },
+    })),
+  ]
+  const instructionVisualEdge = (id, target, role) => ({
+    id,
+    source: 'instruction',
+    target,
+    relationKind: 'related',
+    relationship: 'shows visual',
+    properties: {
+      [OSA_PROPERTY.relationRole]: OSA_RELATION.operationVisual,
+      ...(role ? { [OSA_PROPERTY.operationVisualRole]: role } : {}),
+    },
+  })
+  const instructionVisualEdges = [
+    ...Array.from({ length: 3 }, (_, index) => instructionVisualEdge(
+      `before-${index + 1}`,
+      `instruction-visual-${index + 1}`,
+      OSA_OPERATION_VISUAL_ROLE.before,
+    )),
+    ...Array.from({ length: 3 }, (_, index) => instructionVisualEdge(
+      `after-${index + 1}`,
+      `instruction-visual-${index + 4}`,
+      OSA_OPERATION_VISUAL_ROLE.after,
+    )),
+    instructionVisualEdge('legacy-unassigned', 'legacy-part'),
+  ]
+  const instructionVisualRoleSource = {
+    format: 'osa-import',
+    version: 1,
+    id: 'instruction-visual-roles',
+    name: 'Instruction visual roles',
+    sources: [],
+    nodes: instructionVisualNodes,
+    edges: instructionVisualEdges,
+  }
+  const instructionVisualRolePackage = parseOsaImportPackage(instructionVisualRoleSource)
+  assert.equal(instructionVisualRolePackage.edges.length, 7)
+  assert.equal(
+    instructionVisualRolePackage.edges[0].properties[OSA_PROPERTY.operationVisualRole],
+    OSA_OPERATION_VISUAL_ROLE.before,
+    'An explicit Before role survives import validation.',
+  )
+  assert.equal(
+    instructionVisualRolePackage.edges[3].properties[OSA_PROPERTY.operationVisualRole],
+    OSA_OPERATION_VISUAL_ROLE.after,
+    'An explicit After role survives import validation.',
+  )
+  assert.equal(
+    instructionVisualRolePackage.edges[6].properties[OSA_PROPERTY.operationVisualRole],
+    undefined,
+    'A roleless legacy operation visual stays importable and unassigned.',
+  )
+  assert.equal(
+    planOsaImport(instructionVisualRolePackage).edges[0]
+      .data.properties[OSA_PROPERTY.operationVisualRole],
+    OSA_OPERATION_VISUAL_ROLE.before,
+    'Planning preserves the role on the operation-to-Visual edge.',
+  )
+  for (const invalidRole of ['unassigned', 'during', '']) {
+    assert.throws(
+      () => parseOsaImportPackage({
+        ...instructionVisualRoleSource,
+        id: `invalid-instruction-visual-role-${invalidRole || 'blank'}`,
+        edges: instructionVisualEdges.map((edge, index) => index === 0
+          ? {
+              ...edge,
+              properties: {
+                ...edge.properties,
+                [OSA_PROPERTY.operationVisualRole]: invalidRole,
+              },
+            }
+          : edge),
+      }),
+      /operation-visual:role must be before or after/,
+      `The persisted instruction role rejects ${invalidRole || 'blank text'}.`,
+    )
+  }
+  assert.throws(
+    () => parseOsaImportPackage({
+      ...instructionVisualRoleSource,
+      id: 'instruction-visual-role-on-source-relation',
+      edges: instructionVisualEdges.map((edge, index) => index === 0
+        ? {
+            ...edge,
+            properties: {
+              ...edge.properties,
+              [OSA_PROPERTY.relationRole]: OSA_RELATION.operationSourceVisual,
+            },
+          }
+        : edge),
+    }),
+    /operation-visual:role is only valid on operation-visual relations/,
+    'A Before/After role cannot change a provenance edge into a display placement.',
+  )
+  assert.throws(
+    () => parseOsaImportPackage({
+      ...instructionVisualRoleSource,
+      id: 'instruction-visual-role-on-ownership-relation',
+      edges: instructionVisualEdges.map((edge, index) => index === 0
+        ? {
+            ...edge,
+            source: 'legacy-part',
+            properties: {
+              ...edge.properties,
+              [OSA_PROPERTY.relationRole]: OSA_RELATION.objectVisual,
+            },
+          }
+        : edge),
+    }),
+    /operation-visual:role is only valid on operation-visual relations/,
+    'Visual ownership cannot carry an instruction-only Before/After role.',
+  )
+  assert.throws(
+    () => parseOsaImportPackage({
+      ...instructionVisualRoleSource,
+      id: 'instruction-visual-role-on-legacy-target',
+      edges: instructionVisualEdges.map((edge, index) => index === 0
+        ? { ...edge, target: 'legacy-part' }
+        : edge),
+    }),
+    /operation-visual:role requires a canonical Visual target/,
+    'Only a canonical Visual can receive an explicit Before/After role.',
+  )
+  for (const role of [OSA_OPERATION_VISUAL_ROLE.before, OSA_OPERATION_VISUAL_ROLE.after]) {
+    assert.throws(
+      () => parseOsaImportPackage({
+        ...instructionVisualRoleSource,
+        id: `too-many-${role}-visuals`,
+        edges: [
+          ...instructionVisualEdges,
+          instructionVisualEdge(`fourth-${role}`, 'instruction-visual-8', role),
+        ],
+      }),
+      new RegExp(`more than 3 ${role} visuals`),
+      `An instruction cannot import a fourth ${role} visual.`,
+    )
+  }
+
   assert.deepEqual(defaultOperationVisualPosition(0), { x: 78, y: 18 })
   assert.deepEqual(defaultOperationVisualPosition(Number.NaN), { x: 78, y: 18 })
   assert.deepEqual(defaultOperationVisualSize(), { width: 36, height: 36 })

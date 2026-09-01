@@ -19,6 +19,9 @@
   --osa-positive-border: #2f6f4f;
   --osa-positive-surface: #122b20;
   --osa-positive-text: #a5e4c2;
+  --osa-status-not-started: #8b949e;
+  --osa-status-in-progress: #f2cc60;
+  --osa-status-complete: #56d364;
   --osa-danger-border: #ff7b72;
   --osa-danger-surface: #401f24;
   --osa-danger-text: #ffd8d3;
@@ -44,6 +47,9 @@ html[data-theme='light'] {
   --osa-positive-border: #1a7f37;
   --osa-positive-surface: #dafbe1;
   --osa-positive-text: #116329;
+  --osa-status-not-started: #6e7781;
+  --osa-status-in-progress: #9a6700;
+  --osa-status-complete: #1a7f37;
   --osa-danger-border: #cf222e;
   --osa-danger-surface: #ffebe9;
   --osa-danger-text: #a40e26;
