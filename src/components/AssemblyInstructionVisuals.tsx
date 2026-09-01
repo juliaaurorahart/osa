@@ -207,6 +207,11 @@ export function AssemblyInstructionVisuals({
         className="assembly-instruction-visuals__item"
         key={`${edgeId ?? visual.id}-${index}`}
       >
+        {!readOnly ? (
+          <figcaption className="assembly-instruction-visuals__item-name">
+            {nodeTitle(visual)}
+          </figcaption>
+        ) : null}
         <button
           className="assembly-instruction-visuals__preview-button"
           type="button"
@@ -220,11 +225,6 @@ export function AssemblyInstructionVisuals({
             className="assembly-instruction-visuals__preview"
           />
         </button>
-        {!readOnly ? (
-          <figcaption className="assembly-instruction-visuals__item-name">
-            {nodeTitle(visual)}
-          </figcaption>
-        ) : null}
         {!readOnly ? (
           <div className="assembly-instruction-visuals__item-actions">
             {edgeId ? (
@@ -273,10 +273,14 @@ export function AssemblyInstructionVisuals({
           <header className="assembly-instruction-visuals__header">
             <div>
               <h2>Visuals</h2>
-              <p id={compactHelpId}>
-                {compactCount} of {MAX_ASSEMBLY_VISUAL_PREVIEWS} shown in the Assembly overview.
-                {compactLimitReached ? ' Deselect one before choosing another.' : ''}
-              </p>
+              {visuals.length ? (
+                <p id={compactHelpId}>
+                  {compactCount
+                    ? `${compactCount} of ${MAX_ASSEMBLY_VISUAL_PREVIEWS} shown in the Assembly overview.`
+                    : `Choose up to ${MAX_ASSEMBLY_VISUAL_PREVIEWS} for the Assembly overview.`}
+                  {compactLimitReached ? ' Deselect one before choosing another.' : ''}
+                </p>
+              ) : null}
             </div>
             <button className="text-action" type="button" onClick={addCanvas}>
               + new canvas
@@ -375,8 +379,6 @@ export function AssemblyInstructionVisuals({
         <div className="assembly-instruction-visuals__grid">
           {visuals.map(renderPreview)}
         </div>
-      ) : !readOnly ? (
-        <p className="assembly-instruction-visuals__empty">No visuals linked yet.</p>
       ) : null}
     </section>
   )

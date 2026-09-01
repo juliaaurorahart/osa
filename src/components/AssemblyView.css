@@ -297,9 +297,46 @@
   outline: 2px solid var(--osa-focus);
 }
 
-.assembly-people__empty {
+.assembly-people__add {
+  min-width: 0;
+}
+
+.assembly-people__add summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 2px 5px;
   color: var(--osa-muted);
+  cursor: pointer;
   font-size: 0.92rem;
+  font-weight: 600;
+  list-style: none;
+  white-space: nowrap;
+}
+
+.assembly-people__add summary::-webkit-details-marker {
+  display: none;
+}
+
+.assembly-people__add summary:hover,
+.assembly-people__add summary:focus-visible {
+  color: var(--osa-text);
+  outline: 2px solid var(--osa-focus);
+  outline-offset: 1px;
+}
+
+.assembly-people__add[open] {
+  min-width: min(100%, 280px);
+}
+
+.assembly-people__add[open] summary {
+  margin-bottom: 5px;
+}
+
+.assembly-people.is-empty {
+  display: block;
+  padding: 0;
+  border: 0;
 }
 
 .assembly-people__form {
@@ -657,7 +694,7 @@ button.assembly-card__summary:focus-visible {
 .assembly-view .assembly-operation-card__complete-count,
 .assembly-view .assembly-operation-card__status,
 .assembly-view .assembly-people__person,
-.assembly-view .assembly-people__empty,
+.assembly-view .assembly-people__add summary,
 .assembly-view .assembly-card__close-button,
 .assembly-view .assembly-card__lock-button,
 .assembly-view .assembly-object-unlink,
@@ -681,9 +718,12 @@ button.assembly-card__summary:focus-visible {
 }
 
 .assembly-view .assembly-index-card__summary-metrics dd,
-.assembly-view .assembly-index-card__attention-note,
-.assembly-view .assembly-instruction-visuals__item-actions .text-action {
+.assembly-view .assembly-index-card__attention-note {
   font-size: 1.15rem;
+}
+
+.assembly-view .assembly-instruction-visuals__item-actions .text-action {
+  font-size: clamp(0.96rem, 1.1vw, 1.08rem);
 }
 
 .assembly-view .assembly-operation-card__description > span,
@@ -727,7 +767,8 @@ button.assembly-card__summary:focus-visible {
 
   .assembly-people__form input,
   .assembly-people__form button,
-  .assembly-people__person {
+  .assembly-people__person,
+  .assembly-people__add summary {
     min-height: 44px;
   }
 

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { GraphEdge } from '../graph/graphEdge'
 import { OSA_PROPERTY } from '../graph/osaData'
 import type { SketchAnnotationTarget, TextFlowNode } from '../graph/textNode'
@@ -82,6 +83,8 @@ export function AssemblyOperationCard({
   onToolDraftChange,
   onToolDraftForChange,
 }: AssemblyOperationCardProps) {
+  const [isDescriptionEditing, setIsDescriptionEditing] = useState(false)
+  const [isAttentionEditing, setIsAttentionEditing] = useState(false)
   const completedCount = operationCompletedCount(operation)
   const attentionValue = operation.data.properties[OSA_PROPERTY.operationAttention] ?? ''
   const attentionNote = operationAttentionNote(operation)
@@ -116,47 +119,6 @@ export function AssemblyOperationCard({
               style={transparentInput}
             />
             <div className="assembly-card__focus-controls">
-              <AssemblyOperationStatus
-                operation={operation}
-                onChange={!readOnly && actions.onPropertyChange
-                  ? (status) => actions.onPropertyChange?.(
-                      operation.id,
-                      OSA_PROPERTY.operationStatus,
-                      status,
-                    )
-                  : undefined}
-              />
-              {!readOnly ? (
-                <label
-                  className="assembly-operation-card__complete-count"
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  <span># complete</span>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min="0"
-                    step="1"
-                    aria-label={`${title} number complete`}
-                    value={completedCount}
-                    onChange={(event) => {
-                      const requestedCount = event.currentTarget.valueAsNumber
-                      const nextCount = Number.isFinite(requestedCount)
-                        ? Math.max(0, Math.floor(requestedCount))
-                        : 0
-                      actions.onPropertyChange?.(
-                        operation.id,
-                        OSA_PROPERTY.operationCompletedCount,
-                        String(nextCount),
-                      )
-                    }}
-                  />
-                </label>
-              ) : (
-                <span className="assembly-operation-card__status">
-                  <b>{completedCount}</b> complete
-                </span>
-              )}
               <button
                 className="assembly-card__close-button"
                 type="button"
@@ -170,7 +132,51 @@ export function AssemblyOperationCard({
             </div>
           </header>
 
-          <div className="assembly-card__details">
+          <section
+            className="assembly-operation-card__progress-ownership"
+            aria-label={`${title} status, completion, and people`}
+          >
+            <AssemblyOperationStatus
+              operation={operation}
+              onChange={!readOnly && actions.onPropertyChange
+                ? (status) => actions.onPropertyChange?.(
+                    operation.id,
+                    OSA_PROPERTY.operationStatus,
+                    status,
+                  )
+                : undefined}
+            />
+            {!readOnly ? (
+              <label
+                className="assembly-operation-card__complete-count"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <span># complete</span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min="0"
+                  step="1"
+                  aria-label={`${title} number complete`}
+                  value={completedCount}
+                  onChange={(event) => {
+                    const requestedCount = event.currentTarget.valueAsNumber
+                    const nextCount = Number.isFinite(requestedCount)
+                      ? Math.max(0, Math.floor(requestedCount))
+                      : 0
+                    actions.onPropertyChange?.(
+                      operation.id,
+                      OSA_PROPERTY.operationCompletedCount,
+                      String(nextCount),
+                    )
+                  }}
+                />
+              </label>
+            ) : (
+              <span className="assembly-operation-card__status">
+                <b>{completedCount}</b> complete
+              </span>
+            )}
             <AssemblyPeople
               operation={operation}
               editable={!readOnly && Boolean(actions.onPropertyChange)}
@@ -180,6 +186,47 @@ export function AssemblyOperationCard({
                 serializeOperationPeople(people),
               )}
             />
+          </section>
+
+          <div className="assembly-card__details">
+            {description.trim() || isDescriptionEditing ? (
+              <label className="assembly-operation-card__description">
+                <span>Description</span>
+                <textarea
+                  aria-label={`${title} description`}
+                  placeholder="Description"
+                  value={description}
+                  readOnly={readOnly}
+                  autoFocus={isDescriptionEditing && !description.trim()}
+                  onFocus={() => {
+                    if (!readOnly) setIsDescriptionEditing(true)
+                    onFocusCard()
+                  }}
+                  onBlur={() => {
+                    if (!description.trim()) setIsDescriptionEditing(false)
+                  }}
+                  onChange={(event) => {
+                    if (readOnly) return
+                    actions.onTextChange(operation.id, event.currentTarget.value)
+                    actions.onPropertyChange?.(
+                      operation.id,
+                      OSA_PROPERTY.operationInstructionMode,
+                      'single',
+                    )
+                  }}
+                  style={transparentInput}
+                />
+              </label>
+            ) : !readOnly ? (
+              <button
+                className="assembly-operation-card__description-add text-action"
+                type="button"
+                onPointerDown={() => setIsDescriptionEditing(true)}
+                onClick={() => setIsDescriptionEditing(true)}
+              >
+                + description
+              </button>
+            ) : null}
 
             {readOnly ? (
               attentionNote ? (
@@ -188,17 +235,26 @@ export function AssemblyOperationCard({
                   <span>{attentionNote}</span>
                 </p>
               ) : null
-            ) : (
+            ) : attentionValue.trim() || isAttentionEditing ? (
               <label className="assembly-operation-card__attention">
                 <span className="assembly-operation-card__attention-heading">
-                  <span className="assembly-operation-card__attention-dot" aria-hidden="true" />
+                  {attentionValue.trim() ? (
+                    <span className="assembly-operation-card__attention-dot" aria-hidden="true" />
+                  ) : null}
                   Attention note
                 </span>
                 <input
                   aria-label={`${title} attention note`}
-                  placeholder="add a shortage, blocker, or urgent note"
+                  placeholder="shortage or blocker"
                   value={attentionValue}
-                  onFocus={onFocusCard}
+                  autoFocus={isAttentionEditing && !attentionValue.trim()}
+                  onFocus={() => {
+                    setIsAttentionEditing(true)
+                    onFocusCard()
+                  }}
+                  onBlur={() => {
+                    if (!attentionValue.trim()) setIsAttentionEditing(false)
+                  }}
                   onChange={(event) => actions.onPropertyChange?.(
                     operation.id,
                     OSA_PROPERTY.operationAttention,
@@ -206,28 +262,16 @@ export function AssemblyOperationCard({
                   )}
                 />
               </label>
+            ) : (
+              <button
+                className="assembly-operation-card__attention-add text-action"
+                type="button"
+                onPointerDown={() => setIsAttentionEditing(true)}
+                onClick={() => setIsAttentionEditing(true)}
+              >
+                + attention note
+              </button>
             )}
-
-            <label className="assembly-operation-card__description">
-              <span>Description</span>
-              <textarea
-                aria-label={`${title} description`}
-                placeholder="describe this instruction."
-                value={description}
-                readOnly={readOnly}
-                onFocus={onFocusCard}
-                onChange={(event) => {
-                  if (readOnly) return
-                  actions.onTextChange(operation.id, event.currentTarget.value)
-                  actions.onPropertyChange?.(
-                    operation.id,
-                    OSA_PROPERTY.operationInstructionMode,
-                    'single',
-                  )
-                }}
-                style={transparentInput}
-              />
-            </label>
 
             <AssemblyInstructionVisuals
               operationId={operation.id}
@@ -241,29 +285,31 @@ export function AssemblyOperationCard({
               onEditVisual={onEditVisual}
             />
 
-            <div className="assembly-operation-card__resources">
-              <AssemblyPartsAndTools
-                operation={operation}
-                inputParts={inputParts}
-                tools={tools}
-                availableParts={availableParts}
-                toolInventory={toolInventory}
-                focused={focused}
-                readOnly={readOnly}
-                toolDraft={toolDraft}
-                toolDraftFor={toolDraftFor}
-                onInspectNode={onInspectNode}
-                onLinkPart={actions.onLinkPart}
-                onLinkPartInput={actions.onLinkPartInput}
-                onUnlinkPartInput={actions.onUnlinkPartInput}
-                onCreatePartForOperation={actions.onCreatePartForOperation}
-                onCreateTool={actions.onCreateTool}
-                onLinkTool={actions.onLinkTool}
-                onUnlinkTool={actions.onUnlinkTool}
-                onToolDraftChange={onToolDraftChange}
-                onToolDraftForChange={onToolDraftForChange}
-              />
-            </div>
+            {!readOnly || inputParts.length || tools.length ? (
+              <div className={`assembly-operation-card__resources${inputParts.length || tools.length ? '' : ' is-empty'}`}>
+                <AssemblyPartsAndTools
+                  operation={operation}
+                  inputParts={inputParts}
+                  tools={tools}
+                  availableParts={availableParts}
+                  toolInventory={toolInventory}
+                  focused={focused}
+                  readOnly={readOnly}
+                  toolDraft={toolDraft}
+                  toolDraftFor={toolDraftFor}
+                  onInspectNode={onInspectNode}
+                  onLinkPart={actions.onLinkPart}
+                  onLinkPartInput={actions.onLinkPartInput}
+                  onUnlinkPartInput={actions.onUnlinkPartInput}
+                  onCreatePartForOperation={actions.onCreatePartForOperation}
+                  onCreateTool={actions.onCreateTool}
+                  onLinkTool={actions.onLinkTool}
+                  onUnlinkTool={actions.onUnlinkTool}
+                  onToolDraftChange={onToolDraftChange}
+                  onToolDraftForChange={onToolDraftForChange}
+                />
+              </div>
+            ) : null}
           </div>
 
           <nav className="assembly-operation-card__navigation" aria-label="Instruction navigation">

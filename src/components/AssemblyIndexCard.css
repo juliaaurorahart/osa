@@ -141,19 +141,24 @@
 .assembly-index-card__summary-index > li {
   overflow: hidden;
   border: 1px solid var(--osa-border-subtle);
-  border-radius: 7px;
+  border-radius: 10px;
   background: var(--osa-surface-raised);
+}
+
+.assembly-index-card__summary-heading {
+  display: grid;
+  min-width: 0;
 }
 
 .assembly-index-card__summary-step {
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) auto;
+  grid-template-columns: 30px minmax(0, 1fr);
   align-items: center;
   gap: 10px;
   box-sizing: border-box;
   width: 100%;
-  min-height: 44px;
-  padding: 7px 9px;
+  min-height: 48px;
+  padding: 10px 12px 6px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -190,26 +195,44 @@
   overflow-wrap: anywhere;
 }
 
-.assembly-index-card__summary-step .assembly-operation-status {
-  justify-self: end;
+.assembly-index-card__summary-progress {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px 12px;
+  min-width: 0;
+  padding: 0 12px 11px 52px;
 }
 
-.assembly-index-card__summary-status {
-  display: grid;
-  justify-items: end;
-  gap: 5px;
+.assembly-index-card__summary-progress > .assembly-operation-status {
+  justify-self: start;
+}
+
+.assembly-index-card__summary-progress > .assembly-people.is-compact {
+  grid-column: auto;
+  grid-template-columns: auto minmax(0, 1fr);
+  justify-items: start;
+}
+
+.assembly-index-card__summary-progress > .assembly-people.is-compact .assembly-people__list {
+  justify-content: flex-start;
 }
 
 .assembly-index-card__attention-note {
-  display: inline-flex;
+  display: flex;
   align-items: flex-start;
-  justify-content: flex-end;
-  gap: 6px;
-  max-width: 310px;
+  gap: 8px;
+  margin: 0 12px 10px 52px;
+  padding: 7px 10px;
+  border: 1px solid color-mix(in srgb, var(--osa-danger-border) 42%, var(--osa-border-subtle));
+  border-left-width: 3px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--osa-danger-border) 8%, transparent);
   color: var(--osa-danger-text);
-  font-size: 0.75rem;
-  line-height: 1.25;
-  text-align: right;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  text-align: left;
+  overflow-wrap: anywhere;
 }
 
 .assembly-index-card__attention-dot {
@@ -217,37 +240,15 @@
 }
 
 .assembly-index-card__summary-info {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px 18px;
+  display: block;
   min-width: 0;
-  padding: 7px 10px 8px 49px;
+  padding: 10px 12px 12px 52px;
   border-top: 1px solid var(--osa-border-subtle);
   background: color-mix(in srgb, var(--osa-surface) 68%, transparent);
 }
 
 .assembly-index-card__summary-info.has-pictures {
-  grid-template-columns: minmax(0, 1fr) auto;
-}
-
-.assembly-index-card__summary-meta {
-  display: grid;
-  grid-column: -2 / -1;
-  justify-items: end;
-  justify-self: end;
-  gap: 7px;
-  min-width: 0;
-}
-
-.assembly-index-card__summary-meta > .assembly-people.is-compact {
-  grid-column: auto;
-  grid-template-columns: minmax(0, 1fr);
-  justify-items: end;
-}
-
-.assembly-index-card__summary-meta > .assembly-people.is-compact .assembly-people__list {
-  justify-content: flex-end;
+  display: block;
 }
 
 .assembly-index-card__summary-picture-group {
@@ -255,53 +256,67 @@
 }
 
 .assembly-index-card__summary-pictures {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  width: min(100%, 820px);
   min-width: 0;
+}
+
+.assembly-index-card__summary-pictures[data-count="1"] {
+  grid-template-columns: minmax(0, 320px);
+}
+
+.assembly-index-card__summary-pictures[data-count="2"] {
+  grid-template-columns: repeat(2, minmax(0, 260px));
+  width: min(100%, 528px);
 }
 
 .assembly-index-card__summary-picture {
   display: block;
-  flex: 0 1 160px;
   min-width: 0;
 }
 
 .assembly-index-card__summary-thumbnail {
   display: block;
   width: 100%;
-  height: 105px;
+  height: auto;
+  aspect-ratio: 10 / 7;
   border: 1px solid var(--osa-border);
-  border-radius: 5px;
+  border-radius: 7px;
   background: var(--osa-surface);
   object-fit: cover;
 }
 
 .assembly-index-card__summary-metrics dt {
   color: var(--osa-muted);
-  font-size: 0.66rem;
+  font-size: 0.72rem;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0;
   line-height: 1;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 .assembly-index-card__summary-metrics {
-  display: grid;
-  grid-auto-flow: column;
-  gap: 11px;
+  display: block;
   margin: 0;
 }
 
 .assembly-index-card__summary-metrics > div {
-  display: grid;
-  gap: 2px;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-height: 32px;
+  box-sizing: border-box;
+  padding: 4px 9px;
+  border: 1px solid var(--osa-border);
+  border-radius: 999px;
 }
 
 .assembly-index-card__summary-metrics dd {
   margin: 0;
   color: var(--osa-text);
-  font-size: 0.78rem;
+  font-size: 0.88rem;
   line-height: 1.15;
   white-space: nowrap;
 }
@@ -352,43 +367,50 @@
 
   .assembly-index-card__summary-step {
     grid-template-columns: 34px minmax(0, 1fr);
-    align-items: start;
+    align-items: center;
   }
 
-  .assembly-index-card__summary-status {
-    grid-column: 2;
-    justify-items: start;
-    max-width: none;
+  .assembly-index-card__summary-progress {
+    grid-template-columns: auto auto;
+    justify-content: start;
+    padding-left: 56px;
+  }
+
+  .assembly-index-card__summary-progress > .assembly-people.is-compact {
+    grid-column: 1 / -1;
+    width: 100%;
   }
 
   .assembly-index-card__summary-step-title {
     overflow-wrap: break-word;
   }
 
+  .assembly-index-card__attention-note {
+    margin-right: 10px;
+    margin-left: 10px;
+  }
+
   .assembly-index-card__summary-info {
-    grid-template-columns: minmax(0, 1fr);
+    padding-right: 10px;
     padding-left: 10px;
   }
 
-  .assembly-index-card__summary-info.has-pictures {
+  .assembly-index-card__summary-pictures {
+    gap: 7px;
+  }
+}
+
+@media (max-width: 520px) {
+  .assembly-index-card__summary-progress {
     grid-template-columns: minmax(0, 1fr);
+    gap: 7px;
   }
 
-  .assembly-index-card__summary-meta {
-    grid-column: 1 / -1;
-    justify-self: stretch;
-    width: 100%;
+  .assembly-index-card__summary-progress > .assembly-people.is-compact {
+    grid-column: 1;
   }
 
-  .assembly-index-card__summary-metrics {
-    grid-column: 1 / -1;
-    grid-auto-flow: row;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    padding-top: 6px;
-    border-top: 1px solid var(--osa-border-subtle);
-  }
-
-  .assembly-index-card__summary-metrics > div {
-    text-align: center;
+  .assembly-index-card__summary-pictures {
+    gap: 5px;
   }
 }

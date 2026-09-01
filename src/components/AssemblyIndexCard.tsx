@@ -216,13 +216,17 @@ export function AssemblyIndexCard({
                 const operationTitle = nodeTitle(operation)
                 const attentionNote = operationAttentionNote(operation)
                 const statusLabel = operationStatusLabel(operationStatus(operation))
-                const renderPictures = visuals.length ? (
+                const visibleVisuals = visuals.slice(0, 3)
+                const renderPictures = visibleVisuals.length ? (
                   <div
                     className="assembly-index-card__summary-picture-group"
                     aria-label={`${operationTitle} visuals`}
                   >
-                    <span className="assembly-index-card__summary-pictures">
-                      {visuals.slice(0, 3).map((visual, visualIndex) => (
+                    <span
+                      className="assembly-index-card__summary-pictures"
+                      data-count={visibleVisuals.length}
+                    >
+                      {visibleVisuals.map((visual, visualIndex) => (
                         <span
                           className="assembly-index-card__summary-picture"
                           aria-label={`Visual ${visualIndex + 1}`}
@@ -242,43 +246,49 @@ export function AssemblyIndexCard({
 
                 return (
                   <li key={operation.id}>
-                    <button
-                      className="assembly-index-card__summary-step"
-                      type="button"
-                      aria-label={`${readOnly ? 'Open' : 'Edit'} ${operationTitle} instruction. Status: ${statusLabel}${attentionNote ? `. Attention: ${attentionNote}` : ''}`}
-                      onClick={() => onOpenOperation(operation.id)}
-                    >
-                      <span className="assembly-index-card__summary-marker" aria-hidden="true">
-                        {operationIndex + 1}
-                      </span>
-                      <span className="assembly-index-card__summary-step-title">
-                        {operationTitle}
-                      </span>
-                      <span className="assembly-index-card__summary-status">
+                    <div className="assembly-index-card__summary-heading">
+                      <button
+                        className="assembly-index-card__summary-step"
+                        type="button"
+                        aria-label={`${readOnly ? 'Open' : 'Edit'} ${operationTitle} instruction. Status: ${statusLabel}${attentionNote ? `. Attention: ${attentionNote}` : ''}`}
+                        onClick={() => onOpenOperation(operation.id)}
+                      >
+                        <span className="assembly-index-card__summary-marker" aria-hidden="true">
+                          {operationIndex + 1}
+                        </span>
+                        <span className="assembly-index-card__summary-step-title">
+                          {operationTitle}
+                        </span>
+                      </button>
+                      <div
+                        className="assembly-index-card__summary-progress"
+                        role="group"
+                        aria-label={`${operationTitle} progress`}
+                      >
                         <AssemblyOperationStatus operation={operation} />
-                        {attentionNote ? (
-                          <span className="assembly-index-card__attention-note">
-                            <span className="assembly-index-card__attention-dot" aria-hidden="true" />
-                            <span>{attentionNote}</span>
-                          </span>
-                        ) : null}
-                      </span>
-                    </button>
-                    <div
-                      className={`assembly-index-card__summary-info${visuals.length ? ' has-pictures' : ''}`}
-                      aria-label={`${operationTitle} overview`}
-                    >
-                      {renderPictures}
-                      <div className="assembly-index-card__summary-meta">
-                        <AssemblyPeople operation={operation} compact />
                         <dl className="assembly-index-card__summary-metrics">
                           <div>
                             <dt># complete</dt>
-                              <dd aria-label={`${operationTitle} number complete`}><b>{completedCount}</b></dd>
+                            <dd aria-label={`${operationTitle} number complete`}><b>{completedCount}</b></dd>
                           </div>
                         </dl>
+                        <AssemblyPeople operation={operation} compact />
                       </div>
                     </div>
+                    {attentionNote ? (
+                      <div className="assembly-index-card__attention-note">
+                        <span className="assembly-index-card__attention-dot" aria-hidden="true" />
+                        <span>{attentionNote}</span>
+                      </div>
+                    ) : null}
+                    {renderPictures ? (
+                      <div
+                        className="assembly-index-card__summary-info has-pictures"
+                        aria-label={`${operationTitle} overview`}
+                      >
+                        {renderPictures}
+                      </div>
+                    ) : null}
                   </li>
                 )
               })}

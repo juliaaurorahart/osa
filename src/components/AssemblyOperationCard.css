@@ -5,14 +5,34 @@
   line-height: 1.05 !important;
 }
 
+.assembly-view .assembly-operation-card__header .assembly-card__title {
+  font-size: clamp(1.9rem, 4vw, 3.1rem) !important;
+}
+
 .assembly-operation-card__header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
+  align-items: start;
   gap: 12px 18px;
-  margin-bottom: clamp(12px, 2vw, 20px);
-  padding-bottom: 12px;
+  margin-bottom: clamp(10px, 1.5vw, 16px);
+}
+
+.assembly-operation-card__progress-ownership {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  min-width: 0;
+  margin-bottom: clamp(18px, 3vw, 30px);
+  padding-bottom: clamp(14px, 2vw, 20px);
   border-bottom: 1px solid var(--osa-border-subtle);
+}
+
+.assembly-operation-card__progress-ownership > .assembly-people {
+  flex: 1 1 310px;
+  min-width: min(100%, 240px);
+  padding: 0;
+  border: 0;
 }
 
 .assembly-operation-card__complete-count,
@@ -36,7 +56,7 @@
 }
 
 .assembly-operation-card__complete-count input {
-  width: 5.25rem;
+  width: 4.4rem;
   min-height: 28px;
   margin: 0;
   padding: 2px 6px;
@@ -146,6 +166,11 @@
   border-top: 1px solid var(--osa-border-subtle);
 }
 
+.assembly-operation-card__resources.is-empty {
+  margin-top: clamp(12px, 2vw, 20px);
+  padding-top: clamp(10px, 1.5vw, 14px);
+}
+
 .assembly-operation-card__attention {
   display: grid;
   grid-template-columns: minmax(120px, auto) minmax(0, 1fr);
@@ -198,6 +223,14 @@
   outline-offset: 1px;
 }
 
+.assembly-operation-card__attention-add {
+  justify-self: start;
+  min-height: 38px;
+  padding: 3px 5px;
+  color: var(--osa-muted);
+  font-weight: 600;
+}
+
 .assembly-operation-card__description {
   display: grid;
   gap: 8px;
@@ -218,6 +251,14 @@
   font-size: clamp(1rem, 1.2vw, 1.12rem) !important;
   line-height: 1.55 !important;
   resize: vertical;
+}
+
+.assembly-operation-card__description-add {
+  justify-self: start;
+  min-height: 38px;
+  padding: 3px 5px;
+  color: var(--osa-muted);
+  font-weight: 600;
 }
 
 .assembly-operation-card__navigation {
@@ -261,12 +302,22 @@
 
 @media (max-width: 700px) {
   .assembly-operation-card__header {
-    grid-template-columns: minmax(0, 1fr);
-    align-items: stretch;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 10px;
   }
 
   .assembly-card__focus-controls {
-    justify-content: flex-start;
+    justify-content: flex-end;
+  }
+
+  .assembly-operation-card__progress-ownership {
+    align-items: stretch;
+  }
+
+  .assembly-operation-card__progress-ownership > .assembly-people {
+    flex-basis: 100%;
+    min-width: 0;
   }
 
   .assembly-operation-card__complete-count,
@@ -280,6 +331,11 @@
 
   .assembly-operation-card__attention {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .assembly-operation-card__description-add,
+  .assembly-operation-card__attention-add {
+    min-height: 44px;
   }
 
   .assembly-operation-card__navigation {

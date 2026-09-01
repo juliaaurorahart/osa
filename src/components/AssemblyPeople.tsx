@@ -37,38 +37,41 @@ export function AssemblyPeople({
 
   return (
     <Container
-      className={`assembly-people${compact ? ' is-compact' : ''}`}
+      className={`assembly-people${compact ? ' is-compact' : ''}${people.length ? '' : ' is-empty'}`}
       aria-label={`${title} people`}
     >
-      <span className="assembly-people__label">People</span>
-      <span className="assembly-people__list">
-        {people.length ? people.map((person) => (
-          <span className="assembly-people__person" key={person.toLocaleLowerCase()}>
-            <span>{person}</span>
-            {editable ? (
-              <button
-                type="button"
-                aria-label={`remove ${person} from ${title}`}
-                onClick={() => onChange?.(people.filter((candidate) => candidate !== person))}
-              >
-                ×
-              </button>
-            ) : null}
-          </span>
-        )) : (
-          <span className="assembly-people__empty">No one added yet.</span>
-        )}
-      </span>
+      {people.length ? <span className="assembly-people__label">People</span> : null}
+      {people.length ? (
+        <span className="assembly-people__list">
+          {people.map((person) => (
+            <span className="assembly-people__person" key={person.toLocaleLowerCase()}>
+              <span>{person}</span>
+              {editable ? (
+                <button
+                  type="button"
+                  aria-label={`remove ${person} from ${title}`}
+                  onClick={() => onChange?.(people.filter((candidate) => candidate !== person))}
+                >
+                  ×
+                </button>
+              ) : null}
+            </span>
+          ))}
+        </span>
+      ) : null}
       {editable ? (
-        <form className="assembly-people__form" onSubmit={addPerson}>
-          <input
-            name="person"
-            aria-label={`${title} add person`}
-            placeholder="add person"
-            autoComplete="off"
-          />
-          <button type="submit">Add</button>
-        </form>
+        <details className="assembly-people__add">
+          <summary>+ person</summary>
+          <form className="assembly-people__form" onSubmit={addPerson}>
+            <input
+              name="person"
+              aria-label={`${title} add person`}
+              placeholder="name"
+              autoComplete="off"
+            />
+            <button type="submit">Add</button>
+          </form>
+        </details>
       ) : null}
     </Container>
   )

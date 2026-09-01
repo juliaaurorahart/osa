@@ -59,15 +59,17 @@ export function AssemblyPartsAndTools({
   onToolDraftChange,
   onToolDraftForChange,
 }: AssemblyPartsAndToolsProps) {
+  if (readOnly && inputParts.length === 0 && tools.length === 0) return null
+
   return (
     <section
       className="assembly-parts-tools"
       aria-label={`${nodeTitle(operation)} parts and tools`}
     >
-      <div className="assembly-parts-tools__field">
-        <span className="assembly-parts-tools__field-label">parts</span>
+      <div className={`assembly-parts-tools__field${inputParts.length ? '' : ' is-empty'}`}>
+        {inputParts.length ? <span className="assembly-parts-tools__field-label">parts</span> : null}
         <div style={{ minWidth: 0 }}>
-          <div className="assembly-linked-object-list" style={{ minHeight: '1.3em' }}>
+          <div className="assembly-linked-object-list">
             {inputParts.length
               ? inputParts.map((part) => (
                 <span className="assembly-object-chip" key={part.id}>
@@ -100,7 +102,7 @@ export function AssemblyPartsAndTools({
                   ) : null}
                 </span>
               ))
-              : <span className="assembly-card__empty-link-list">link the parts or assemblies needed.</span>}
+              : null}
           </div>
           {focused && !readOnly ? (
             <select
@@ -123,7 +125,7 @@ export function AssemblyPartsAndTools({
                 color: 'var(--osa-muted)',
               }}
             >
-              <option value="">add part</option>
+              <option value="">+ part</option>
               {availableParts.map((part) => {
                 const isLinked = inputParts.some((linkedPart) => linkedPart.id === part.id)
                 return (
@@ -144,10 +146,10 @@ export function AssemblyPartsAndTools({
         </div>
       </div>
 
-      <div className="assembly-parts-tools__field">
-        <span className="assembly-parts-tools__field-label">tools</span>
+      <div className={`assembly-parts-tools__field${tools.length ? '' : ' is-empty'}`}>
+        {tools.length ? <span className="assembly-parts-tools__field-label">tools</span> : null}
         <div style={{ minWidth: 0 }}>
-          <div className="assembly-linked-object-list" style={{ minHeight: '1.3em' }}>
+          <div className="assembly-linked-object-list">
             {tools.length
               ? tools.map((tool) => (
                 <span className="assembly-object-chip" key={tool.id}>
@@ -180,7 +182,7 @@ export function AssemblyPartsAndTools({
                   ) : null}
                 </span>
               ))
-              : <span style={{ color: 'var(--osa-muted)' }}>add the tools needed here.</span>}
+              : null}
           </div>
           {focused && !readOnly ? (
             <select
@@ -207,7 +209,7 @@ export function AssemblyPartsAndTools({
                 color: 'var(--osa-muted)',
               }}
             >
-              <option value="">add tool</option>
+              <option value="">+ tool</option>
               {toolInventory.length ? (
                 <optgroup label="tool inventory">
                   {toolInventory.map((tool) => {

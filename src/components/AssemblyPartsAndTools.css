@@ -25,6 +25,22 @@
   font-weight: 700;
 }
 
+.assembly-parts-tools__field.is-empty {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+
+.assembly-operation-card__resources.is-empty .assembly-parts-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+}
+
+.assembly-operation-card__resources.is-empty .assembly-parts-tools__field {
+  flex: 0 1 auto;
+}
+
 .assembly-linked-object-list {
   overflow-wrap: anywhere;
 }
@@ -80,6 +96,23 @@
 
 .assembly-operation-card .assembly-parts-tools__add-select {
   color: var(--osa-muted);
+}
+
+.assembly-operation-card .assembly-parts-tools__field.is-empty .assembly-parts-tools__add-select {
+  width: auto;
+  min-height: 38px;
+  margin-top: 0 !important;
+  padding-inline: 5px 24px;
+  border-bottom-color: transparent !important;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.assembly-operation-card .assembly-parts-tools__field.is-empty .assembly-parts-tools__add-select:hover,
+.assembly-operation-card .assembly-parts-tools__field.is-empty .assembly-parts-tools__add-select:focus-visible {
+  border-bottom-color: var(--osa-focus) !important;
+  color: var(--osa-text);
+  outline: 0;
 }
 
 .assembly-object-link {

@@ -359,7 +359,19 @@ try {
   )
 
   const connectorSummary = summaryRowFor(compactMarkup, 'Connector Box Drill')
+  assert.equal(
+    (connectorSummary.match(/class="assembly-index-card__summary-heading"/g) ?? []).length,
+    1,
+    'Each compact row has one heading that keeps the instruction title and progress together.',
+  )
+  assert.match(connectorSummary, /class="assembly-index-card__summary-progress"/)
+  assert.ok(
+    connectorSummary.indexOf('assembly-index-card__summary-step')
+      < connectorSummary.indexOf('assembly-index-card__summary-progress'),
+    'The compact title leads into its status, completion count, and People controls.',
+  )
   assert.match(connectorSummary, /aria-label="Connector Box Drill visuals"/)
+  assert.match(connectorSummary, /class="assembly-index-card__summary-pictures" data-count="3"/)
   assert.equal(
     (connectorSummary.match(/aria-label="Visual \d+"/g) ?? []).length,
     3,
@@ -436,6 +448,110 @@ try {
     (connectorCard.match(/accept="image\/\*" multiple=""/g) ?? []).length,
     1,
     'The unified Visuals section exposes one multi-photo picker for phone and desktop.',
+  )
+
+  const emptyEditorOperation = createTextNode({
+    id: 'assembly-view-empty-editor-operation',
+    position: { x: 0, y: 0 },
+    name: 'Empty instruction',
+    text: '',
+    kind: 'action',
+    properties: {
+      [OSA_PROPERTY.role]: 'operation',
+      [OSA_PROPERTY.operationInstructionMode]: OSA_OPERATION_INSTRUCTION_MODE.single,
+    },
+  })
+  const emptyEditorNodes = [...nodes, emptyEditorOperation]
+  const emptyEditorEdges = [
+    ...edges,
+    createGraphEdge({
+      id: 'assembly-view-empty-editor-link',
+      source: assembly.id,
+      target: emptyEditorOperation.id,
+      relationship: 'has instruction',
+      properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.assemblyOperation },
+    }),
+  ]
+  const emptyEditorCard = articleFor(
+    renderAssembly(
+      emptyEditorEdges,
+      {
+        ...createAssemblyViewUiState(),
+        focusedCardId: emptyEditorOperation.id,
+        openCardId: emptyEditorOperation.id,
+      },
+      emptyEditorNodes,
+    ),
+    'Empty instruction card',
+  )
+  for (const verboseEmptyCopy of [
+    'No one added yet.',
+    'No visuals linked yet.',
+    'link the parts or assemblies needed.',
+    'add the tools needed here.',
+    'add a shortage, blocker, or urgent note',
+    'describe this instruction.',
+    '0 of 3 shown in the Assembly overview.',
+  ]) {
+    assert.equal(
+      emptyEditorCard.toLocaleLowerCase().includes(verboseEmptyCopy.toLocaleLowerCase()),
+      false,
+      `An empty editor does not spend mobile space explaining its lack of ${verboseEmptyCopy}`,
+    )
+  }
+  assert.doesNotMatch(
+    emptyEditorCard,
+    /assembly-people__empty|assembly-instruction-visuals__empty|assembly-card__empty-link-list/,
+    'Empty sections expose concise actions instead of separate placeholder-content rows.',
+  )
+  for (const conciseAction of [
+    '+ person',
+    '+ description',
+    '+ attention note',
+    '+ part',
+    '+ tool',
+    '+ add photos',
+  ]) {
+    assert.equal(
+      emptyEditorCard.split(conciseAction).length - 1,
+      1,
+      `The empty editor exposes one coherent ${conciseAction} action.`,
+    )
+  }
+  assert.doesNotMatch(
+    emptyEditorCard,
+    /<textarea\b|aria-label="Empty instruction description"/,
+    'An empty Description stays collapsed with no textarea until its concise action is chosen.',
+  )
+  assert.equal(
+    (emptyEditorCard.match(/>\+ description<\/button>/g) ?? []).length,
+    1,
+    'The collapsed Description exposes exactly one explicit + description button.',
+  )
+  assert.equal(
+    (emptyEditorCard.match(/aria-label="Empty instruction people"/g) ?? []).length,
+    1,
+    'People actions remain grouped in one semantic region.',
+  )
+  assert.equal(
+    (emptyEditorCard.match(/aria-label="Empty instruction visuals"/g) ?? []).length,
+    1,
+    'Photo and reusable-Visual actions remain grouped in one unified region.',
+  )
+  assert.equal(
+    (emptyEditorCard.match(/aria-label="Empty instruction parts and tools"/g) ?? []).length,
+    1,
+    'Part and tool actions remain grouped in one resources region.',
+  )
+  assert.equal(
+    (emptyEditorCard.match(/aria-label="Empty instruction status"/g) ?? []).length,
+    1,
+    'Cleaning empty fields does not remove the instruction status control.',
+  )
+  assert.equal(
+    (emptyEditorCard.match(/aria-label="Empty instruction number complete"/g) ?? []).length,
+    1,
+    'Cleaning empty fields does not remove # complete.',
   )
   assert.deepEqual(
     instructionPhotoFiles([
@@ -595,7 +711,8 @@ try {
   assert.match(connectorCard, />Pending<\/option>/)
   assert.match(connectorCard, /aria-label="Connector Box Drill people"/)
   assert.match(connectorCard, /aria-label="Connector Box Drill add person"/)
-  assert.match(connectorCard, />No one added yet\.<\/span>/)
+  assert.match(connectorCard, />\+ person<\/summary>/)
+  assert.doesNotMatch(connectorCard, /No one added yet\./)
 
   const navigationStart = connectorCard.indexOf('aria-label="Instruction navigation"')
   const navigation = connectorCard.slice(navigationStart)
@@ -840,13 +957,19 @@ try {
   assert.match(peopleSummary, /aria-label="Connector Box Drill people"/)
   assert.match(peopleSummary, />Bria<\/span>/)
   assert.match(peopleSummary, />Sam<\/span>/)
+  assert.match(peopleSummary, /class="assembly-index-card__summary-metrics"/)
+  assert.match(peopleSummary, /class="assembly-index-card__summary-info has-pictures"/)
   assert.doesNotMatch(peopleSummary, /add person|remove Bria/)
   assert.ok(
-    peopleSummary.indexOf('assembly-index-card__summary-info')
-      < peopleSummary.indexOf('aria-label="Connector Box Drill people"')
+    peopleSummary.indexOf('assembly-index-card__summary-step')
+      < peopleSummary.indexOf('assembly-index-card__summary-progress')
+      && peopleSummary.indexOf('assembly-index-card__summary-progress')
+        < peopleSummary.indexOf('assembly-index-card__summary-metrics')
+      && peopleSummary.indexOf('assembly-index-card__summary-metrics')
+        < peopleSummary.indexOf('aria-label="Connector Box Drill people"')
       && peopleSummary.indexOf('aria-label="Connector Box Drill people"')
-        < peopleSummary.indexOf('assembly-index-card__summary-metrics'),
-    'People use the lower detail row beneath status instead of widening the title row.',
+        < peopleSummary.indexOf('assembly-index-card__summary-info has-pictures'),
+    'Status, # complete, and People share one compact progress group before the separate photo row.',
   )
 
   const peopleAuthorCard = articleFor(
