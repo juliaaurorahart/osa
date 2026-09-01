@@ -177,6 +177,8 @@
    without relying on color perception or remembering a legend. */
 .assembly-operation-status {
   --assembly-status-color: var(--osa-status-not-started);
+  --assembly-status-background: var(--osa-surface-raised);
+  --assembly-status-text: var(--osa-muted);
   display: inline-flex;
   box-sizing: border-box;
   align-items: center;
@@ -185,8 +187,8 @@
   padding: 4px 9px;
   border: 1px solid color-mix(in srgb, var(--assembly-status-color) 62%, var(--osa-border));
   border-radius: 999px;
-  background: color-mix(in srgb, var(--assembly-status-color) 9%, var(--osa-surface));
-  color: var(--osa-text);
+  background: var(--assembly-status-background);
+  color: var(--assembly-status-text);
   font-size: 0.84rem;
   line-height: 1.2;
   white-space: nowrap;
@@ -194,10 +196,14 @@
 
 .assembly-operation-status[data-status='in-progress'] {
   --assembly-status-color: var(--osa-status-in-progress);
+  --assembly-status-background: color-mix(in srgb, var(--assembly-status-color) 16%, var(--osa-surface));
+  --assembly-status-text: color-mix(in srgb, var(--assembly-status-color) 78%, var(--osa-text));
 }
 
 .assembly-operation-status[data-status='complete'] {
   --assembly-status-color: var(--osa-status-complete);
+  --assembly-status-background: color-mix(in srgb, var(--assembly-status-color) 16%, var(--osa-surface));
+  --assembly-status-text: color-mix(in srgb, var(--assembly-status-color) 78%, var(--osa-text));
 }
 
 .assembly-operation-status__dot {

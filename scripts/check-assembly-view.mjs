@@ -402,6 +402,25 @@ try {
   )
   assert.match(navigation, /<button type="button" disabled="">← Previous<\/button>/)
   assert.doesNotMatch(navigation, /<button type="button" disabled="">Next →<\/button>/)
+  const assemblyViewCss = await readFile(
+    new URL('../src/components/AssemblyView.css', import.meta.url),
+    'utf8',
+  )
+  assert.match(
+    assemblyViewCss,
+    /\.assembly-operation-status\s*\{[^}]*--assembly-status-background:\s*var\(--osa-surface-raised\);[^}]*--assembly-status-text:\s*var\(--osa-muted\);[^}]*background:\s*var\(--assembly-status-background\);[^}]*color:\s*var\(--assembly-status-text\);/s,
+    'Pending uses the shared muted gray treatment in static and editable status pills.',
+  )
+  assert.match(
+    assemblyViewCss,
+    /\.assembly-operation-status\[data-status='in-progress'\]\s*\{[^}]*--assembly-status-color:\s*var\(--osa-status-in-progress\);[^}]*--assembly-status-background:\s*color-mix\([^;]+;[^}]*--assembly-status-text:\s*color-mix\([^;]+;/s,
+    'In-progress status uses the theme-aware yellow treatment.',
+  )
+  assert.match(
+    assemblyViewCss,
+    /\.assembly-operation-status\[data-status='complete'\]\s*\{[^}]*--assembly-status-color:\s*var\(--osa-status-complete\);[^}]*--assembly-status-background:\s*color-mix\([^;]+;[^}]*--assembly-status-text:\s*color-mix\([^;]+;/s,
+    'Complete status uses the theme-aware green treatment.',
+  )
   const operationCardCss = await readFile(
     new URL('../src/components/AssemblyOperationCard.css', import.meta.url),
     'utf8',
