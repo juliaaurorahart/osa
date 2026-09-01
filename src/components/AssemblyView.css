@@ -228,6 +228,11 @@
   font-weight: 600;
 }
 
+.assembly-operation-status select option {
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
+}
+
 .assembly-operation-status select:focus-visible {
   outline: 2px solid var(--osa-focus);
   outline-offset: 2px;
@@ -614,6 +619,101 @@ button.assembly-card__summary:focus-visible {
   min-height: 0;
   border: 1px solid var(--osa-border);
   background: var(--osa-surface-raised);
+}
+
+/* Assembly is a working document, so its type is deliberately much larger
+   than the surrounding workspace UI on both the author and shared views. */
+.assembly-view,
+.assembly-view .assembly-card {
+  font-size: clamp(1.55rem, 1.9vw, 1.9rem);
+}
+
+.assembly-view button,
+.assembly-view input,
+.assembly-view select,
+.assembly-view textarea {
+  font-size: inherit;
+}
+
+.assembly-view .assembly-card__title {
+  font-size: clamp(2.35rem, 4.5vw, 4rem) !important;
+}
+
+.assembly-view .assembly-index-card .assembly-card__summary-title,
+.assembly-view .assembly-instructions-view__assembly-title {
+  font-size: clamp(2.5rem, 5vw, 4.4rem);
+}
+
+.assembly-view .assembly-index-card__summary-step,
+.assembly-view .assembly-instructions-view__card-title {
+  font-size: clamp(1.6rem, 2.7vw, 2.25rem);
+}
+
+.assembly-view .assembly-index-card__summary-total,
+.assembly-view .assembly-view__progress-summary,
+.assembly-view .assembly-view__progress-summary strong,
+.assembly-view .assembly-view__progress-step,
+.assembly-view .assembly-operation-status,
+.assembly-view .assembly-operation-card__complete-count,
+.assembly-view .assembly-operation-card__status,
+.assembly-view .assembly-people__person,
+.assembly-view .assembly-people__empty,
+.assembly-view .assembly-card__close-button,
+.assembly-view .assembly-card__lock-button,
+.assembly-view .assembly-object-unlink,
+.assembly-view .assembly-operation-card__navigation button,
+.assembly-view .assembly-operation-card__navigation span {
+  font-size: clamp(1.18rem, 1.45vw, 1.4rem);
+}
+
+.assembly-view .assembly-index-card__summary-marker,
+.assembly-view .assembly-view__progress-marker {
+  font-size: 1.15rem;
+}
+
+.assembly-view .assembly-index-card__summary-label,
+.assembly-view .assembly-index-card__summary-metrics dt,
+.assembly-view .assembly-people.is-compact .assembly-people__label,
+.assembly-view .assembly-instruction-visuals__group-header h3,
+.assembly-view .assembly-instruction-visuals__unassigned h3,
+.assembly-view .assembly-instructions-view__picture-group h3 {
+  font-size: 1rem;
+}
+
+.assembly-view .assembly-index-card__summary-metrics dd,
+.assembly-view .assembly-index-card__attention-note,
+.assembly-view .assembly-instruction-visuals__item-actions .text-action {
+  font-size: 1.15rem;
+}
+
+.assembly-view .assembly-operation-card__description > span,
+.assembly-view .assembly-parts-tools__heading,
+.assembly-view .assembly-card__summary-parts-tools > b,
+.assembly-view .assembly-card__summary-steps > b,
+.assembly-view .assembly-card__view-header h2 {
+  font-size: clamp(1.75rem, 2.5vw, 2.35rem);
+}
+
+.assembly-view .assembly-operation-card__description textarea,
+.assembly-view .assembly-parts-tools__field,
+.assembly-view .assembly-card__summary-notes,
+.assembly-view .assembly-card__summary-fields,
+.assembly-view .assembly-card__summary-step,
+.assembly-view .assembly-card__view-header p,
+.assembly-view .assembly-instructions-view__index,
+.assembly-view .assembly-instructions-view__description {
+  font-size: clamp(1.5rem, 1.85vw, 1.8rem) !important;
+}
+
+.assembly-view .assembly-view__shared-label,
+.assembly-view .assembly-view__lock-status,
+.assembly-view .assembly-instructions-view__canvas-viewer > header span,
+.assembly-view .assembly-instructions-view__canvas-viewer > header button {
+  font-size: 1.12rem;
+}
+
+.assembly-view .assembly-instructions-view__canvas-viewer > header h2 {
+  font-size: 1.5rem;
 }
 
 @media (max-width: 700px) {

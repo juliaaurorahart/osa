@@ -94,7 +94,7 @@ export function AssemblyIndexCard({
             style={{
               ...transparentInput,
               marginBottom: 'clamp(18px, 3vw, 34px)',
-              fontSize: 'clamp(1.8rem, 4vw, 3.25rem)',
+              fontSize: 'clamp(3rem, 6vw, 5.2rem)',
               lineHeight: 1.08,
             }}
           />
@@ -214,7 +214,6 @@ export function AssemblyIndexCard({
                   operation,
                   beforeVisuals,
                   afterVisuals,
-                  toolCount,
                   completedCount,
                 } = summary
                 const operationTitle = nodeTitle(operation)
@@ -264,7 +263,6 @@ export function AssemblyIndexCard({
                       </span>
                       <span className="assembly-index-card__summary-status">
                         <AssemblyOperationStatus operation={operation} />
-                        <AssemblyPeople operation={operation} compact />
                         {attentionNote ? (
                           <span className="assembly-index-card__attention-note">
                             <span className="assembly-index-card__attention-dot" aria-hidden="true" />
@@ -274,21 +272,20 @@ export function AssemblyIndexCard({
                       </span>
                     </button>
                     <div
-                      className={`assembly-index-card__summary-info${beforeVisuals.length || afterVisuals.length ? ' has-pictures' : ''}`}
+                      className={`assembly-index-card__summary-info${beforeVisuals.length || afterVisuals.length ? ' has-pictures' : ''}${Boolean(beforeVisuals.length) !== Boolean(afterVisuals.length) ? ' has-one-picture-group' : ''}`}
                       aria-label={`${operationTitle} overview`}
                     >
                       {renderPictureGroup('Before', beforeVisuals)}
                       {renderPictureGroup('After', afterVisuals)}
-                      <dl className="assembly-index-card__summary-metrics">
-                        <div>
-                          <dt>tools</dt>
-                          <dd aria-label={`${operationTitle} tools`}>{toolCount}</dd>
-                        </div>
-                        <div>
-                          <dt># complete</dt>
-                            <dd aria-label={`${operationTitle} number complete`}><b>{completedCount}</b></dd>
-                        </div>
-                      </dl>
+                      <div className="assembly-index-card__summary-meta">
+                        <AssemblyPeople operation={operation} compact />
+                        <dl className="assembly-index-card__summary-metrics">
+                          <div>
+                            <dt># complete</dt>
+                              <dd aria-label={`${operationTitle} number complete`}><b>{completedCount}</b></dd>
+                          </div>
+                        </dl>
+                      </div>
                     </div>
                   </li>
                 )

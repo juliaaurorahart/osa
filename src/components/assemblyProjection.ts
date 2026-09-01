@@ -98,7 +98,7 @@ export function instructionDescription(operation: TextFlowNode, steps: TextFlowN
 }
 
 export type InstructionVisual = {
-  /** Exact placement identity; a Step-only legacy Visual has no placement yet. */
+  /** Exact operation placement or legacy Step-to-Visual link identity. */
   edgeId: string | null
   visual: TextFlowNode
   role: OsaOperationVisualRole | null
@@ -152,12 +152,12 @@ export function instructionVisualsForOperation(
   const placedVisualIds = new Set(placements.map((placement) => placement.visual.id))
   const legacyStepVisuals: InstructionVisual[] = []
   steps.forEach((step) => {
-    const visual = canvasOwnedByStep(step.id, nodes, edges)
-    if (visual && !placedVisualIds.has(visual.id)) {
+    const ownership = canvasOwnershipForStep(step.id, nodes, edges)
+    if (ownership && !placedVisualIds.has(ownership.visual.id)) {
       legacyStepVisuals.push({
-        edgeId: null,
-        visual,
-        role: visual.data.properties[OSA_PROPERTY.visualIncludeInInstructions] === 'true'
+        edgeId: ownership.edge.id,
+        visual: ownership.visual,
+        role: ownership.visual.data.properties[OSA_PROPERTY.visualIncludeInInstructions] === 'true'
           ? OSA_OPERATION_VISUAL_ROLE.after
           : null,
       })
@@ -266,14 +266,19 @@ export function stepsForOperation(
     })
 }
 
+function canvasOwnershipForStep(stepId: string, nodes: TextFlowNode[], edges: GraphEdge[]) {
+  const edge = edges.find((candidate) => (
+    candidate.source === stepId
+    && candidate.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
+  ))
+  const visual = edge ? nodes.find((node) => node.id === edge.target) : undefined
+  if (!edge || !visual || !isVisualNode(visual)) return undefined
+  return { edge, visual }
+}
+
 /** A step's canvas is a normal Visual owned by that one step. */
 export function canvasOwnedByStep(stepId: string, nodes: TextFlowNode[], edges: GraphEdge[]) {
-  const visualId = edges.find((edge) => (
-    edge.source === stepId
-    && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
-  ))?.target
-  const visual = visualId ? nodes.find((node) => node.id === visualId) : undefined
-  return isVisualNode(visual) ? visual : undefined
+  return canvasOwnershipForStep(stepId, nodes, edges)?.visual
 }
 
 /**

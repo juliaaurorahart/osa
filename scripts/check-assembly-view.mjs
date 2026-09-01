@@ -360,6 +360,11 @@ try {
   assert.doesNotMatch(afterOnlySummary, /aria-label="Shako Wrap Punch Holes Before pictures"/)
   const emptySummary = summaryRowFor(compactMarkup, 'Front Center – 1 Hole')
   assert.doesNotMatch(emptySummary, /Before pictures|After pictures|has-pictures/)
+  assert.doesNotMatch(
+    compactMarkup,
+    /aria-label="[^"]+ tools"|<dt>tools<\/dt>/,
+    'The summary row is reserved for pictures, People, and # Complete rather than tool counts.',
+  )
 
   const authorMarkup = renderAssembly()
   assert.equal(
@@ -438,6 +443,11 @@ try {
     assemblyViewCss,
     /\.assembly-operation-status\[data-status='partial-complete'\],\s*\.assembly-operation-status\[data-status='complete'\]\s*\{[^}]*--assembly-status-color:\s*var\(--osa-status-complete\);[^}]*--assembly-status-background:\s*color-mix\([^;]+;[^}]*--assembly-status-text:\s*color-mix\([^;]+;/s,
     'Partial Complete and Complete use the theme-aware green treatment.',
+  )
+  assert.match(
+    assemblyViewCss,
+    /\.assembly-operation-status select option\s*\{[^}]*background:\s*var\(--osa-surface-raised\);[^}]*color:\s*var\(--osa-text\);/s,
+    'Every native status-menu option gets readable foreground and background colors.',
   )
   const operationCardCss = await readFile(
     new URL('../src/components/AssemblyOperationCard.css', import.meta.url),
@@ -679,11 +689,11 @@ try {
   assert.match(peopleSummary, />Sam<\/span>/)
   assert.doesNotMatch(peopleSummary, /add person|remove Bria/)
   assert.ok(
-    peopleSummary.indexOf('assembly-index-card__summary-status')
+    peopleSummary.indexOf('assembly-index-card__summary-info')
       < peopleSummary.indexOf('aria-label="Connector Box Drill people"')
       && peopleSummary.indexOf('aria-label="Connector Box Drill people"')
-        < peopleSummary.indexOf('assembly-index-card__summary-info'),
-    'People sit with the colored status instead of in the lower detail strip.',
+        < peopleSummary.indexOf('assembly-index-card__summary-metrics'),
+    'People use the lower detail row beneath status instead of widening the title row.',
   )
 
   const peopleAuthorCard = articleFor(

@@ -107,16 +107,71 @@ export function setInstructionVisualRoleEdges(
     : edge)
 }
 
-/** Detaches one exact placement while preserving every node and other edge. */
+function instructionStepIds(edges: GraphEdge[], operationId: string) {
+  return new Set(edges.flatMap((edge) => (
+    edge.source === operationId
+      && (
+        edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationStep
+        || /\b(step|steps)\b/i.test(edge.data.relationship)
+      )
+      ? [edge.target]
+      : []
+  )))
+}
+
+function instructionVisualLink(
+  edges: GraphEdge[],
+  operationId: string,
+  linkEdgeId: string,
+) {
+  const stepIds = instructionStepIds(edges, operationId)
+  return edges.find((edge) => (
+    edge.id === linkEdgeId
+    && (
+      (
+        edge.source === operationId
+        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationVisual
+      )
+      || (
+        stepIds.has(edge.source)
+        && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
+      )
+    )
+  ))
+}
+
+/**
+ * Unlinks one picture from this instruction while preserving the reusable
+ * Visual node, its embeds, and every link from another instruction.
+ */
 export function detachInstructionVisualEdges(
   edges: GraphEdge[],
   operationId: string,
-  placementEdgeId: string,
+  linkEdgeId: string,
 ) {
-  return edges.filter((edge) => !(
-    edge.id === placementEdgeId
+  const link = instructionVisualLink(edges, operationId, linkEdgeId)
+  if (!link) return edges
+
+  const stepIds = instructionStepIds(edges, operationId)
+  const hasAnotherPlacement = edges.some((edge) => (
+    edge.id !== link.id
     && edge.source === operationId
+    && edge.target === link.target
     && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationVisual
+  ))
+  const removeLegacyStepLink = (
+    link.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
+    || !hasAnotherPlacement
+  )
+
+  return edges.filter((edge) => (
+    edge.id !== link.id
+    && !(
+      removeLegacyStepLink
+      && stepIds.has(edge.source)
+      && edge.target === link.target
+      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.objectVisual
+    )
   ))
 }
 
@@ -427,21 +482,17 @@ export function useAssemblyGraphActions({
 
   const removeInstructionVisual = useCallback((
     operationId: string,
-    placementEdgeId: string,
+    linkEdgeId: string,
   ) => {
-    const placement = latestEdges.current.find((edge) => (
-      edge.id === placementEdgeId
-      && edge.source === operationId
-      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationVisual
-    ))
-    if (!placement) return
+    const link = instructionVisualLink(latestEdges.current, operationId, linkEdgeId)
+    if (!link) return
 
     setEdges((currentEdges) => detachInstructionVisualEdges(
       currentEdges,
       operationId,
-      placementEdgeId,
+      linkEdgeId,
     ))
-    onStepCanvasRemoved(placement.target)
+    onStepCanvasRemoved(link.target)
   }, [latestEdges, onStepCanvasRemoved, setEdges])
 
   const createOperationTool = useCallback((

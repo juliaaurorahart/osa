@@ -15,6 +15,9 @@ try {
     instructionDescription,
     instructionVisualsForOperation,
   } = await server.ssrLoadModule('/src/components/assemblyProjection.ts')
+  const { AssemblyInstructionVisuals } = await server.ssrLoadModule(
+    '/src/components/AssemblyInstructionVisuals.tsx',
+  )
   const {
     MAX_INSTRUCTION_VISUALS_PER_ROLE,
     OSA_OPERATION_INSTRUCTION_MODE,
@@ -77,7 +80,10 @@ try {
     name: 'Reusable visual',
     text: '',
     kind: 'visual',
-    properties: { [OSA_PROPERTY.role]: 'visual' },
+    properties: {
+      [OSA_PROPERTY.role]: 'visual',
+      [OSA_PROPERTY.visualIncludeInInstructions]: 'true',
+    },
   })
   const childVisual = createTextNode({
     id: 'child-visual',
@@ -130,7 +136,10 @@ try {
       id: 'other-operation-placement',
       source: 'other-operation',
       target: visual.id,
-      properties: { [OSA_PROPERTY.relationRole]: OSA_RELATION.operationVisual },
+      properties: {
+        [OSA_PROPERTY.relationRole]: OSA_RELATION.operationVisual,
+        [OSA_PROPERTY.operationVisualRole]: OSA_OPERATION_VISUAL_ROLE.after,
+      },
     }),
     createGraphEdge({
       id: 'visual-embed',
@@ -199,20 +208,122 @@ try {
     'Moving into a full three-picture group is an atomic no-op.',
   )
 
+  const singleInstructionPlacementEdges = preservationEdges.filter((edge) => (
+    edge.id !== repeatedPlacement.id
+  ))
+  assert.deepEqual(
+    detachInstructionVisualEdges(preservationEdges, operation.id, placement.id)
+      .map((edge) => edge.id),
+    preservationEdges.map((edge) => edge.id).filter((id) => id !== placement.id),
+    'Removing one repeated placement preserves the other placement and its legacy ownership.',
+  )
+  const legacyOnlyEdges = singleInstructionPlacementEdges.filter((edge) => (
+    edge.id !== placement.id
+  ))
+  const legacyInstructionVisuals = instructionVisualsForOperation(
+    operation.id,
+    [genericStep],
+    [operation, genericStep, visual, childVisual],
+    legacyOnlyEdges,
+  )
+  assert.deepEqual(
+    legacyInstructionVisuals.map(({ edgeId, role }) => [edgeId, role]),
+    [['step-owns-visual', OSA_OPERATION_VISUAL_ROLE.after]],
+    'An already-orphaned legacy picture retains an unlinkable edge identity.',
+  )
+  const legacyInstructionMarkup = renderToStaticMarkup(createElement(AssemblyInstructionVisuals, {
+    operationId: operation.id,
+    operationTitle: 'Install connector box',
+    visuals: legacyInstructionVisuals,
+    nodes: [operation, genericStep, visual, childVisual],
+    edges: legacyOnlyEdges,
+    annotationTargets: [],
+    readOnly: false,
+    actions: {
+      onCreateInstructionVisual: () => '',
+      onSetInstructionVisualRole: () => undefined,
+      onRemoveInstructionVisual: () => undefined,
+    },
+    onEditVisual: () => undefined,
+  }))
+  assert.match(
+    legacyInstructionMarkup,
+    /aria-label="remove Install connector box after visual 1"/,
+    'A legacy picture that previously showed only Edit can still be removed.',
+  )
+  assert.doesNotMatch(
+    legacyInstructionMarkup,
+    /move to Before/,
+    'A legacy Step link is removable but is not mistaken for a movable placement.',
+  )
+  assert.deepEqual(
+    detachInstructionVisualEdges(legacyOnlyEdges, operation.id, 'step-owns-visual')
+      .map((edge) => edge.id),
+    legacyOnlyEdges.map((edge) => edge.id).filter((id) => id !== 'step-owns-visual'),
+    'Removing an already-orphaned legacy picture unlinks only this instruction.',
+  )
+
   const detached = detachInstructionVisualEdges(
-    preservationEdges,
+    singleInstructionPlacementEdges,
     operation.id,
     placement.id,
   )
   assert.deepEqual(
     detached.map((edge) => edge.id),
-    preservationEdges.map((edge) => edge.id).filter((id) => id !== placement.id),
-    'Removing a picture deletes only its exact operationVisual placement.',
+    singleInstructionPlacementEdges.map((edge) => edge.id).filter((id) => (
+      id !== placement.id && id !== 'step-owns-visual'
+    )),
+    'Removing a picture deletes its placement and legacy Step ownership from this instruction.',
   )
-  assert.ok(detached.some((edge) => edge.id === 'step-owns-visual'))
-  assert.ok(detached.some((edge) => edge.id === 'placement-after'))
+  assert.ok(detached.some((edge) => edge.id === 'operation-step'))
   assert.ok(detached.some((edge) => edge.id === 'other-operation-placement'))
   assert.ok(detached.some((edge) => edge.id === 'visual-embed'))
+
+  const nodesAfterRemoval = [operation, genericStep, visual, childVisual]
+  const removedInstructionVisuals = instructionVisualsForOperation(
+    operation.id,
+    [genericStep],
+    nodesAfterRemoval,
+    detached,
+  )
+  assert.equal(
+    removedInstructionVisuals.some(({ visual: candidate }) => candidate.id === visual.id),
+    false,
+    'The removed picture does not return as an edge-less legacy card with only an Edit action.',
+  )
+  const removedInstructionMarkup = renderToStaticMarkup(createElement(AssemblyInstructionVisuals, {
+    operationId: operation.id,
+    operationTitle: 'Install connector box',
+    visuals: removedInstructionVisuals,
+    nodes: nodesAfterRemoval,
+    edges: detached,
+    annotationTargets: [],
+    readOnly: false,
+    actions: {
+      onCreateInstructionVisual: () => '',
+      onSetInstructionVisualRole: () => undefined,
+      onRemoveInstructionVisual: () => undefined,
+    },
+    onEditVisual: () => undefined,
+  }))
+  assert.doesNotMatch(
+    removedInstructionMarkup,
+    /open Install connector box before visual|>edit<\/button>/,
+    'Removing a picture removes its entire preview card instead of leaving Edit behind.',
+  )
+  assert.ok(
+    nodesAfterRemoval.some((node) => node.id === visual.id),
+    'Removing a picture preserves the reusable Visual node in the library.',
+  )
+  assert.ok(
+    instructionVisualsForOperation(
+      'other-operation',
+      [],
+      nodesAfterRemoval,
+      detached,
+    ).some(({ visual: candidate }) => candidate.id === visual.id),
+    'Removing a picture preserves the same reusable Visual on another instruction.',
+  )
 
   let liveNodes = [operation]
   let liveEdges = []

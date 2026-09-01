@@ -2,6 +2,8 @@ import type { GraphEdge } from '../graph/graphEdge'
 import {
   MAX_INSTRUCTION_VISUALS_PER_ROLE,
   OSA_OPERATION_VISUAL_ROLE,
+  OSA_PROPERTY,
+  OSA_RELATION,
   type OsaOperationVisualRole,
 } from '../graph/osaData'
 import type { SketchAnnotationTarget, TextFlowNode } from '../graph/textNode'
@@ -60,6 +62,11 @@ export function AssemblyInstructionVisuals({
     index: number,
   ) => {
     const { edgeId, visual } = placement
+    const isExplicitPlacement = edgeId !== null && edges.some((edge) => (
+      edge.id === edgeId
+      && edge.source === operationId
+      && edge.data.properties[OSA_PROPERTY.relationRole] === OSA_RELATION.operationVisual
+    ))
     const otherRole = role === OSA_OPERATION_VISUAL_ROLE.before
       ? OSA_OPERATION_VISUAL_ROLE.after
       : OSA_OPERATION_VISUAL_ROLE.before
@@ -88,7 +95,9 @@ export function AssemblyInstructionVisuals({
             <button className="text-action" type="button" onClick={() => onEditVisual(visual.id)}>
               edit
             </button>
-            {edgeId && countByRole[otherRole] < MAX_INSTRUCTION_VISUALS_PER_ROLE ? (
+            {isExplicitPlacement
+              && edgeId
+              && countByRole[otherRole] < MAX_INSTRUCTION_VISUALS_PER_ROLE ? (
               <button
                 className="text-action"
                 type="button"

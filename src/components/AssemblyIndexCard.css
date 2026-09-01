@@ -200,16 +200,6 @@
   gap: 5px;
 }
 
-.assembly-index-card__summary-status > .assembly-people.is-compact {
-  grid-column: auto;
-  grid-template-columns: auto minmax(0, 1fr);
-  justify-self: end;
-}
-
-.assembly-index-card__summary-status > .assembly-people.is-compact .assembly-people__list {
-  justify-content: flex-end;
-}
-
 .assembly-index-card__attention-note {
   display: inline-flex;
   align-items: flex-start;
@@ -241,6 +231,29 @@
   grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
 }
 
+.assembly-index-card__summary-info.has-one-picture-group {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.assembly-index-card__summary-meta {
+  display: grid;
+  grid-column: -2 / -1;
+  justify-items: end;
+  justify-self: end;
+  gap: 7px;
+  min-width: 0;
+}
+
+.assembly-index-card__summary-meta > .assembly-people.is-compact {
+  grid-column: auto;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: end;
+}
+
+.assembly-index-card__summary-meta > .assembly-people.is-compact .assembly-people__list {
+  justify-content: flex-end;
+}
+
 .assembly-index-card__summary-picture-group {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -251,20 +264,21 @@
 
 .assembly-index-card__summary-pictures {
   display: flex;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 10px;
   min-width: 0;
 }
 
 .assembly-index-card__summary-picture {
   display: block;
-  flex: 0 1 64px;
+  flex: 0 1 160px;
   min-width: 0;
 }
 
 .assembly-index-card__summary-thumbnail {
   display: block;
   width: 100%;
-  height: 42px;
+  height: 105px;
   border: 1px solid var(--osa-border);
   border-radius: 5px;
   background: var(--osa-surface);
@@ -346,11 +360,18 @@
   }
 
   .assembly-index-card__summary-step {
-    grid-template-columns: 30px minmax(0, 1fr) auto;
+    grid-template-columns: 34px minmax(0, 1fr);
+    align-items: start;
   }
 
   .assembly-index-card__summary-status {
-    max-width: 42vw;
+    grid-column: 2;
+    justify-items: start;
+    max-width: none;
+  }
+
+  .assembly-index-card__summary-step-title {
+    overflow-wrap: break-word;
   }
 
   .assembly-index-card__summary-info {
@@ -362,16 +383,14 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .assembly-index-card__summary-meta {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+    width: 100%;
+  }
+
   .assembly-index-card__summary-picture-group {
     grid-template-columns: 54px minmax(0, 1fr);
-  }
-
-  .assembly-index-card__summary-picture {
-    flex-basis: 88px;
-  }
-
-  .assembly-index-card__summary-thumbnail {
-    height: 64px;
   }
 
   .assembly-index-card__summary-metrics {

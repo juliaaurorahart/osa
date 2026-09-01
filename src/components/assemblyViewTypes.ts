@@ -15,7 +15,7 @@ export type AssemblyViewActions = {
     placementEdgeId: string,
     role: OsaOperationVisualRole,
   ) => void
-  onRemoveInstructionVisual: (operationId: string, placementEdgeId: string) => void
+  onRemoveInstructionVisual: (operationId: string, visualLinkEdgeId: string) => void
   onCreateTool: (
     operationId: string,
     name: string,
