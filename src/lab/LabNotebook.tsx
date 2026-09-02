@@ -353,9 +353,12 @@ export function LabNotebook({
   }
 
   useEffect(() => {
+    // Entering the Library should preserve the command line or control that
+    // opened it. When an editor action disappears, move focus to a useful
+    // Library action instead of leaving it on the document body.
     if (!isUnavailable && isActive) {
       if (view === 'edit') writingRef.current?.focus()
-      else newNoteButtonRef.current?.focus()
+      else if (document.activeElement === document.body) newNoteButtonRef.current?.focus()
     }
   }, [isUnavailable, isActive, selectedNote?.id, view])
 

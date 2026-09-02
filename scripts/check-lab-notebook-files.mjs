@@ -130,6 +130,7 @@ try {
   assert.equal(unloadWithDraft.defaultPrevented, true, 'A standalone notebook still protects unsaved ideas on tab close.')
   await clickButton('← Back to notebook')
   assert.equal(document.querySelector('textarea'), null)
+  assert.equal(document.activeElement, findButton('+ new note'), 'Leaving the editor moves focus to a useful Library action.')
   assert.equal(calls.draft.at(-1), true, 'Browsing must not claim an unsaved draft is gone.')
   await clickButton('Continue idea')
   assert.equal(document.querySelector('textarea').value, 'A quick idea, kept while browsing.')
