@@ -16,11 +16,20 @@ new Function('require', 'module', 'exports', compiled)((id) => id.endsWith('.css
 const { LabNotebookCommandBar } = module.exports
 
 let latestView = 'page'
+const objectCommands = []
+let objectFailure = ''
+let objectWait
 function Harness() {
   const [view, setView] = React.useState('page')
   const [controls, setControls] = React.useState(false)
   latestView = view
-  return React.createElement(LabNotebookCommandBar, { view, controlsOpen: controls, onView: async (next) => setView(next), onControls: setControls })
+  return React.createElement(LabNotebookCommandBar, { view, controlsOpen: controls,
+    onView: async (next) => setView(next), onControls: setControls,
+    onObjectCommand: async (command) => {
+      if (objectFailure) throw new Error(objectFailure)
+      objectCommands.push(command)
+      if (objectWait) await objectWait
+    } })
 }
 const root = createRoot(document.getElementById('root'))
 const input = () => document.querySelector('[aria-label="Notebook command"]')
@@ -43,9 +52,57 @@ try {
   assert.equal(latestView, 'cells', 'A notebook command switches the view')
   await setCommand('show controls'); await run()
   assert.equal(document.querySelector('[aria-expanded="true"]').textContent, 'Hide controls', 'Text can reveal the ordinary controls')
+  assert.deepEqual([...document.querySelectorAll('#lab-notebook-commands option')].map((option) => option.value),
+    ['page', 'cells', 'library', 'start section', 'new text', 'new code', 'new ink', 'show controls', 'help'],
+    'The suggested commands include the bounded object actions.')
+  for (const [text, expected] of [
+    ['section', 'start-section'], ['start section', 'start-section'], ['new section', 'start-section'],
+    ['text', 'new-text'], ['new text', 'new-text'], ['add text', 'new-text'], ['new note', 'new-text'],
+    ['code', 'new-code'], ['new code', 'new-code'], ['add code', 'new-code'],
+    ['ink', 'new-ink'], ['new ink', 'new-ink'], ['add ink', 'new-ink'],
+  ]) {
+    await setCommand(text); await run()
+    assert.equal(objectCommands.at(-1), expected, `${text} resolves to ${expected}`)
+  }
+  assert.match(document.querySelector('.lab-notebook-command__message').textContent, /New ink opened/)
+  objectFailure = 'Start a section first — type “start section”.'
+  await setCommand('new text'); await run()
+  assert.equal(document.querySelector('.lab-notebook-command__message').textContent, 'Start a section first — type “start section”.',
+    'Unavailable object actions report the bridge failure instead of claiming success.')
+  assert.equal(input().value, 'new text', 'A failed command remains available to correct or retry.')
+  objectFailure = ''
+  let finishObject
+  objectWait = new Promise((resolve) => { finishObject = resolve })
+  await setCommand('new code'); await run()
+  assert.equal(document.querySelector('form').getAttribute('aria-busy'), 'true')
+  assert.equal(input().readOnly, true, 'An in-flight object command preserves its exact text.')
+  assert.equal(document.querySelector('[aria-label="Run notebook command"]').disabled, true)
+  const commandCount = objectCommands.length
+  await run()
+  assert.equal(objectCommands.length, commandCount, 'Repeated submit cannot create the same object twice.')
+  await React.act(async () => finishObject())
+  objectWait = undefined
+  assert.equal(input().value, '')
+  await setCommand('new ink')
+  const keyboardCommandCount = objectCommands.length
+  await React.act(async () => {
+    input().dispatchEvent(new window.KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    }))
+    await Promise.resolve()
+  })
+  assert.equal(objectCommands.length, keyboardCommandCount + 1,
+    'Enter runs an exact command immediately instead of only accepting its datalist suggestion.')
+  assert.equal(input().value, '')
+  await setCommand('help'); await run()
+  assert.equal(input().value, '', 'Help leaves the command line ready for the next command.')
+  assert.match(document.querySelector('.lab-notebook-command__message').textContent, /section · text · code · ink/)
   await setCommand('not a command'); await run()
-  assert.match(document.body.textContent, /For now: page, cells, library, or show controls/, 'Unknown commands state the current boundary')
-  console.log('Notebook command row: page commands, idle fallback cue, control reveal, and semantic skin boundary passed.')
+  assert.match(document.body.textContent, /Unknown command\. Type help to see what works\./,
+    'Unknown commands state the current boundary')
+  console.log('Notebook command row: views, bounded object aliases, honest failures, idle fallback cue, and control reveal passed.')
 } finally {
   await React.act(async () => root.unmount())
   dom.window.close()

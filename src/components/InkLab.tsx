@@ -22,7 +22,7 @@ function download(blob: Blob, name: string) {
 }
 
 /** Local ink source and previews only: no OSA graph or board mutations. */
-export function InkLab({ onSave, initialSource }: { onSave?: (capture: LabCapture) => Promise<string>; theme?: 'dark' | 'light'; initialSource?: LabProjectSource } = {}) {
+export function InkLab({ onSave, initialSource, autoFocus = false }: { onSave?: (capture: LabCapture) => Promise<string>; theme?: 'dark' | 'light'; initialSource?: LabProjectSource; autoFocus?: boolean } = {}) {
   const reportDraft = useContext(LabDraftContext)
   const [document, setDocument] = useState<InkDocument>(() => initialSource
     ? parseInkDocument(initialSource.text ?? '') : createInkDocument())
@@ -42,6 +42,7 @@ export function InkLab({ onSave, initialSource }: { onSave?: (capture: LabCaptur
   const svgRef = useRef<SVGSVGElement>(null)
   const importRef = useRef<HTMLInputElement>(null)
   const gesture = useRef<{ pointerId: number; stroke?: InkStroke; pan?: { x: number; y: number; startX: number; startY: number } } | null>(null)
+  useEffect(() => { if (autoFocus) svgRef.current?.focus() }, [autoFocus])
   useEffect(() => { reportDraft?.(() => ({ name: 'drawing.osa-ink.json', blob: new Blob([JSON.stringify(gesture.current?.stroke
     ? { ...document, strokes: [...document.strokes, gesture.current.stroke] } : document)], { type: 'application/json' }) })) }, [document, reportDraft])
   const clipId = useId().replace(/:/g, '')

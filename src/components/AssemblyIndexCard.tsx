@@ -83,7 +83,7 @@ export function AssemblyIndexCard({
   })
   const filterOptions: Array<{ value: AssemblySummaryFilter, label: string, title: string }> = [
     { value: 'all', label: 'All', title: 'All instructions' },
-    { value: 'attention', label: 'A', title: 'Instructions with alerts' },
+    { value: 'attention', label: 'A', title: 'Instructions with open alerts' },
     { value: OSA_OPERATION_STATUS.notStarted, label: 'P', title: 'Pending' },
     { value: OSA_OPERATION_STATUS.inProgress, label: 'IP', title: 'In progress' },
     { value: OSA_OPERATION_STATUS.partialComplete, label: 'PC', title: 'Partial Complete' },

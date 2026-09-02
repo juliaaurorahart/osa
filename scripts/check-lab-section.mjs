@@ -196,13 +196,15 @@ const notebook = {
   },
 }
 const register = (flush) => { closeSection = flush; return () => {} }
+let runSectionCommand
+const registerCommand = (run) => { runSectionCommand = run; return () => { if (runSectionCommand === run) runSectionCommand = undefined } }
 const handoffs = []
 let handoffFailure = '', handoffWait
 function Harness() { const [, setVersion] = React.useState(0), [sectionView, setSectionView] = React.useState('cells'); refresh = () => setVersion((version) => version + 1)
   return React.createElement(React.Fragment, null,
     React.createElement('button', { type: 'button', 'aria-pressed': sectionView === 'cells', onClick: () => setSectionView('cells') }, 'Cells'),
     React.createElement('button', { type: 'button', 'aria-pressed': sectionView === 'page', onClick: () => setSectionView('page') }, 'Page'),
-    React.createElement(LabSection, { notebook: { ...notebook }, theme: 'dark', isActive: true, sectionView, onRegisterFlush: register, onOpenProject: () => {}, onEditorLockChange: lockSection,
+    React.createElement(LabSection, { notebook: { ...notebook }, theme: 'dark', isActive: true, sectionView, onRegisterFlush: register, onRegisterCommand: registerCommand, onOpenProject: () => {}, onEditorLockChange: lockSection,
       onContinueInKonva: async (artifact, sectionId) => { handoffs.push({ artifact, sectionId }); if (handoffWait) await handoffWait; if (handoffFailure) throw new Error(handoffFailure) } })) }
 const root = createRoot(document.getElementById('root'))
 const button = (label) => [...document.querySelectorAll('button')].find((node) => node.textContent === label || node.getAttribute('aria-label') === label)
@@ -216,7 +218,11 @@ const setText = async (label, text) => React.act(async () => { const node = docu
   Object.getOwnPropertyDescriptor(prototype, 'value').set.call(node, text); node.dispatchEvent(new window.Event('input', { bubbles: true })) })
 try {
   await React.act(async () => root.render(React.createElement(Harness)))
-  await click('Start a section'); await click('+ Text')
+  await assert.rejects(() => runSectionCommand('new-text'), /Start a section first — type “start section”\./,
+    'Object commands never imply that a blank notebook already has a section.')
+  await React.act(async () => runSectionCommand('start-section'))
+  await assert.rejects(() => runSectionCommand('start-section'), /already open/)
+  await React.act(async () => runSectionCommand('new-text'))
   assert.equal(document.querySelector('.lab-section__add > button')?.textContent, '+ Text', 'Text stays immediately available')
   assert.equal(disclosure('+ Add')?.parentElement?.classList.contains('lab-section__add-menu'), true, 'Less common additions share one disclosure')
   assert.equal(button('+ Code'), undefined)
@@ -233,7 +239,7 @@ try {
   assert.equal(document.querySelector('.lab-section__editor-bar summary'), null, 'Text hides the empty File menu')
   await setText('Cell note title', 'Testing')
   await setText('Cell note text', 'Think → draw → keep writing')
-  await clickAdd('Code')
+  await React.act(async () => runSectionCommand('new-code'))
   assert.equal(document.querySelector('.lab-section__add-menu').open, false, 'Choosing an addition closes the Add disclosure')
   assert.equal(notes[0].title, 'Testing', 'Header title edits are saved')
   assert.equal(notes[0].body, 'Think → draw → keep writing', 'Switching flushes unsaved text')
@@ -300,7 +306,7 @@ try {
   assert.equal(exampleCell.workspace, 'output'); assert.notEqual(exampleCell.objectId, codeCell.objectId)
   assert.match(JSON.parse(lastEditor.text).code, /function draw/)
   assert.equal(await files.get(notebook.getProjectDraft(codeCell.objectId).id).text(), 'unrun code survives', 'Example is a separate object, never a replacement')
-  await clickAdd('InkPen & handwriting'); const inkA = sections[0].cells[0]
+  await React.act(async () => runSectionCommand('new-ink')); const inkA = sections[0].cells[0]
   await React.act(async () => editorActions.edit('ink A working source'))
   const oldSave = lastEditor.save, oldSource = lastEditor.source
   await clickAdd('InkPen & handwriting'); const inkB = sections[0].cells[0]

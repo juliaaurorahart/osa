@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react'
 import type { useSyncedLabNotebook } from './useSyncedLabNotebook'
 import type { LabArtifact, LabCapture, LabNote, LabProjectSource, LabSectionCell, LabTheme } from './labTypes'
 import type { LabSectionAction } from './labSections'
+import type { LabNotebookObjectCommand } from './LabNotebookCommandBar'
 import { LabDraftContext, type LabDraftReader } from './LabDraftContext'
 import { LabCaptureContext } from './LabCaptureContext'
 import { LabWorkbenchChromeContext } from './LabWorkbenchChromeContext'
@@ -33,10 +34,11 @@ const editorName = (session: Active | null) => session?.artifact?.toolId === 'kl
 const failureText = (failure: unknown) => failure instanceof Error ? failure.message : 'Could not save. Keep this editor open.'
 
 /** A single active editor keeps the same React identity and DOM parent in every layout. */
-export function LabSection({ notebook, theme, isActive, sectionView, controlsVisible = true, onRegisterFlush, onOpenProject, onContinueInKonva, onEditorLockChange }: {
+export function LabSection({ notebook, theme, isActive, sectionView, controlsVisible = true, onRegisterFlush, onRegisterCommand, onOpenProject, onContinueInKonva, onEditorLockChange }: {
   notebook: Notebook; theme: LabTheme; isActive: boolean; sectionView: SectionView;
   controlsVisible?: boolean;
   onRegisterFlush: (flush: () => Promise<void>) => () => void; onOpenProject: (artifact: LabArtifact, version?: 'saved' | 'draft') => void;
+  onRegisterCommand?: (runCommand: (command: LabNotebookObjectCommand) => Promise<void>) => () => void;
   onContinueInKonva?: (artifact: LabArtifact, sectionId?: string) => Promise<void>;
   onEditorLockChange?: (locked: boolean) => void;
 }) {
@@ -143,14 +145,17 @@ export function LabSection({ notebook, theme, isActive, sectionView, controlsVis
       document.removeEventListener('visibilitychange', hidden); window.removeEventListener('beforeunload', unload) }
   }, [flush, notes])
 
+  const execute = useCallback(async (action: () => Promise<void>) => {
+    if (busyRef.current) throw new Error('Wait for the current notebook action to finish')
+    if (activeRef.current?.managedEditing) throw new Error(`Close the ${editorName(activeRef.current)} editor before switching cells. Your draft saves in the background.`)
+    beginBusy()
+    try { await flush(); await action() } finally { endBusy() }
+  }, [beginBusy, endBusy, flush])
   const run = async (action: () => Promise<void>) => {
-    if (busyRef.current) return
-    if (activeRef.current?.managedEditing) { setError(`Close the ${editorName(activeRef.current)} editor before switching cells. Your draft saves in the background.`); return }
-    beginBusy(); setError('')
-    try { await flush(); await action() } catch (failure) { if (mounted.current) setError(failureText(failure)) }
-    finally { endBusy() }
+    setError('')
+    try { await execute(action) } catch (failure) { if (mounted.current) setError(failureText(failure)) }
   }
-  const open = async (cell: LabSectionCell) => {
+  const open = useCallback(async (cell: LabSectionCell) => {
     if (cell.id === activeRef.current?.cell.id) return
     const generation = ++openGeneration.current
     const current = notebookRef.current
@@ -180,7 +185,7 @@ export function LabSection({ notebook, theme, isActive, sectionView, controlsVis
     }
     if (!mounted.current || notebookRef.current.scope !== current.scope || openGeneration.current !== generation) return
     readerRef.current = null; activeRef.current = next; setActive(next); setNoteStatus(''); setPicker(false)
-  }
+  }, [notes])
   const startVersionedEditor = async (version: 'saved' | 'draft') => {
     const session = activeRef.current
     if (!session?.artifact || !hasVersionedEditor(session.artifact.toolId)) return
@@ -206,15 +211,32 @@ export function LabSection({ notebook, theme, isActive, sectionView, controlsVis
       baseFileId: chosen.draftOf ? chosen.draftBaseFileId : chosen.fileId || chosen.id }
     readerRef.current = null; activeRef.current = next; setActive(next)
   }
-  const change = async (action: LabSectionAction | { kind: 'capture'; capture: LabCapture; workspace?: 'p5' | 'output' }) => {
+  const change = useCallback(async (action: LabSectionAction | { kind: 'capture'; capture: LabCapture; workspace?: 'p5' | 'output' }) => {
     const generation = openGeneration.current
-    const result = await notebook.changeSection(section?.id ?? null, action, notebook.scope)
+    const current = notebookRef.current
+    const result = await current.changeSection(section?.id ?? null, action, current.scope)
     if (!mounted.current) return
     if (result.cell && openGeneration.current === generation) await open(result.cell)
     if (action.kind === 'remove' && activeRef.current?.cell.id === action.cellId) {
       activeRef.current = null; readerRef.current = null; setActive(null)
     }
-  }
+  }, [open, section?.id])
+  useEffect(() => onRegisterCommand?.(async (command) => {
+    const currentSection = notebookRef.current.sections?.[0]
+    if (command === 'start-section') {
+      if (currentSection) throw new Error('A section is already open')
+      await execute(() => change({ kind: 'create' }))
+      return
+    }
+    if (!currentSection) throw new Error('Start a section first — type “start section”.')
+    if (command === 'new-text') {
+      await execute(() => change({ kind: 'note',
+        ...(sectionView === 'page' ? { pageAfterCellId: activeRef.current?.cell.id ?? null } : {}) }))
+      return
+    }
+    const tool = command === 'new-code' ? 'code' : 'ink'
+    await execute(async () => change({ kind: 'capture', capture: await newSectionCapture(tool, theme) }))
+  }), [change, execute, onRegisterCommand, sectionView, theme])
   const moveCell = (cellId: string, visualDirection: -1 | 1) => change({ kind: 'move', cellId,
     direction: sectionView === 'page' ? visualDirection === -1 ? 1 : -1 : visualDirection })
   const captureSessionId = active?.sessionId
@@ -371,7 +393,7 @@ export function LabSection({ notebook, theme, isActive, sectionView, controlsVis
                   {active?.note ? <div className="lab-section__text"><textarea autoFocus aria-label="Cell note text" placeholder="Start a thought…" value={active.note.body}
                     onPaste={(event) => { const files = Array.from(event.clipboardData.files); if (files.length) { event.preventDefault(); void run(() => addFiles(files)) } }}
                     onChange={(event) => editNote({ body: event.target.value })} /></div>
-                    : active?.artifact?.toolId === 'ink' ? <InkLab initialSource={active.source} />
+                    : active?.artifact?.toolId === 'ink' ? <InkLab initialSource={active.source} autoFocus />
                     : active?.artifact?.toolId === 'excalidraw' ? <ExcalidrawLab theme={theme} initialSource={active.source} />
                     : active?.artifact?.toolId === 'mermaid' ? <MermaidLab theme={theme} initialSource={active.source} />
                     : active?.artifact?.toolId === 'vega' ? <VegaLab theme={theme} initialSource={active.source} />

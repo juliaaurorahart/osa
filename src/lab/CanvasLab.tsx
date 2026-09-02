@@ -12,7 +12,11 @@ import { LabWorkbenchChromeContext } from './LabWorkbenchChromeContext'
 import { LabMenu } from './LabMenu'
 import { useSyncedLabNotebook } from './useSyncedLabNotebook'
 import { LabNotebookSync } from './LabNotebookSync'
-import { LabNotebookCommandBar, type LabNotebookView } from './LabNotebookCommandBar'
+import {
+  LabNotebookCommandBar,
+  type LabNotebookObjectCommand,
+  type LabNotebookView,
+} from './LabNotebookCommandBar'
 import { readSavedLabProject } from './labSavedProjects'
 import { LabDraftContext, type LabDraftReader } from './LabDraftContext'
 import { DRAFT_TOOLS, readLabDraftSource } from './labDrafts'
@@ -87,6 +91,11 @@ export function CanvasLab({
   const registerSectionFlush = useCallback((flush: () => Promise<void>) => {
     sectionFlushRef.current = flush
     return () => { if (sectionFlushRef.current === flush) sectionFlushRef.current = async () => undefined }
+  }, [])
+  const sectionCommandRef = useRef<((command: LabNotebookObjectCommand) => Promise<void>) | null>(null)
+  const registerSectionCommand = useCallback((runCommand: (command: LabNotebookObjectCommand) => Promise<void>) => {
+    sectionCommandRef.current = runCommand
+    return () => { if (sectionCommandRef.current === runCommand) sectionCommandRef.current = null }
   }, [])
   const [session, setSession] = useState<ProjectSession | null>(null)
   const project = session?.scope === notebook.scope ? session : null
@@ -197,6 +206,14 @@ export function CanvasLab({
     setNotebookView(view)
     if (view !== 'library') setSectionVisited(true)
     setProjectFailure('')
+  }
+  const runNotebookObjectCommand = async (command: LabNotebookObjectCommand) => {
+    if (!notebook.isReady) throw new Error('The notebook is not ready yet')
+    if (sectionLockedRef.current) throw new Error('Close the active editor before adding to the notebook')
+    if (notebookView === 'library') throw new Error('Open Page or Cells first')
+    const runCommand = sectionCommandRef.current
+    if (!runCommand) throw new Error('Notebook section actions are not available yet')
+    await runCommand(command)
   }
   const checkpoint = workingDrafts.report
   const renameDraft = workingDrafts.rename
@@ -509,7 +526,7 @@ export function CanvasLab({
 
         <div hidden={route.page !== 'notebook'}>
           <LabNotebookCommandBar view={notebookView} controlsOpen={notebookControlsOpen} disabled={!notebook.isReady || sectionLocked}
-            onView={selectNotebookView} onControls={setNotebookControlsOpen} />
+            onView={selectNotebookView} onControls={setNotebookControlsOpen} onObjectCommand={runNotebookObjectCommand} />
           {!notebookControlsOpen && (notebook.status === 'error' || notebook.syncStatus === 'offline' || notebook.syncStatus === 'conflict')
             ? <p className="lab-notebook-command-attention" role="alert">{notebook.message}
               <button type="button" onClick={() => setNotebookControlsOpen(true)}>Show controls</button></p> : null}
@@ -524,7 +541,7 @@ export function CanvasLab({
           {projectFailure ? <p role="alert">{projectFailure}</p> : null}
           {sectionVisited || notebookView !== 'library' ? <div hidden={notebookView === 'library'}><LabSection key={`section:${notebook.scope}`} notebook={notebook} theme={theme}
             sectionView={notebookView === 'page' ? 'page' : 'cells'} isActive={route.page === 'notebook' && notebookView !== 'library'} onRegisterFlush={registerSectionFlush} onOpenProject={openSavedProject}
-            controlsVisible={notebookControlsOpen} onContinueInKonva={continueInKonva} onEditorLockChange={setSectionEditorLock} /></div> : null}
+            onRegisterCommand={registerSectionCommand} controlsVisible={notebookControlsOpen} onContinueInKonva={continueInKonva} onEditorLockChange={setSectionEditorLock} /></div> : null}
           <div hidden={notebookView !== 'library'}>
           <LabNotebook
             key={notebook.scope}

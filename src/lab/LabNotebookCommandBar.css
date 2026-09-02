@@ -23,7 +23,7 @@
   box-shadow: 0 0 0 2px color-mix(in srgb, #ff4fc8 20%, transparent), 0 0 12px color-mix(in srgb, #ff4fc8 48%, transparent);
 }
 .lab-notebook-command__cue { color: color-mix(in srgb, #ff8bd7 75%, var(--osa-text)); white-space: nowrap; }
-.lab-notebook-command__message { max-width: 260px; color: var(--osa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lab-notebook-command__message { max-width: min(410px, 36vw); color: var(--osa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lab-notebook-command__run { font-size: 1.05rem !important; padding-inline: 9px !important; }
 .lab-notebook-command-attention {
   box-sizing: border-box; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px;
@@ -38,7 +38,7 @@
   .lab-notebook-command form { flex-wrap: wrap; }
   .lab-notebook-command input { flex-basis: calc(100% - 38px); font-size: 16px; }
   .lab-notebook-command button { min-height: 44px; }
-  .lab-notebook-command__cue, .lab-notebook-command__message { order: 3; flex: 1 1 100%; white-space: normal; }
+  .lab-notebook-command__cue, .lab-notebook-command__message { order: 3; flex: 1 1 100%; max-width: none; white-space: normal; }
   .lab-notebook-command-attention { width: calc(100% - 24px); }
   .lab-notebook-command-attention button { min-height: 44px; }
 }

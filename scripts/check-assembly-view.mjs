@@ -68,6 +68,7 @@ try {
   const {
     operationAlerts,
     serializeOperationAlerts,
+    serializeOperationAlertStates,
   } = await server.ssrLoadModule('/src/components/assemblyAlertsData.ts')
   const {
     OSA_OPERATION_INSTRUCTION_MODE,
@@ -640,7 +641,7 @@ try {
     'Cleaning empty fields does not remove # complete.',
   )
   assert.equal(
-    (emptyEditorCard.match(/aria-label="Empty instruction: 0 alerts\. View or edit alerts\."/g) ?? []).length,
+    (emptyEditorCard.match(/aria-label="Empty instruction: 0 open alerts\. View or edit alerts\."/g) ?? []).length,
     1,
     'An empty instruction keeps one compact alert editor without explanatory placeholder copy.',
   )
@@ -1025,6 +1026,11 @@ try {
   assert.equal(operationStatus(inProgressOperation), OSA_OPERATION_STATUS.inProgress)
 
   const attentionText = '10 more regular and 5 more large requested.'
+  const savedAlerts = [
+    { text: attentionText, open: true },
+    { text: 'Second current problem.', open: true },
+    { text: 'Old shortage resolved.', open: false },
+  ]
   const attentionNodes = nodes.map((node) => node.id === connectorBoxDrill.id
     ? {
         ...node,
@@ -1033,7 +1039,8 @@ try {
           properties: {
             ...node.data.properties,
             [OSA_PROPERTY.operationStatus]: OSA_OPERATION_STATUS.partialComplete,
-            [OSA_PROPERTY.operationAttention]: attentionText,
+            [OSA_PROPERTY.operationAttention]: serializeOperationAlerts(savedAlerts),
+            [OSA_PROPERTY.operationAlertStates]: serializeOperationAlertStates(savedAlerts),
           },
         },
       }
@@ -1042,8 +1049,69 @@ try {
   assert.equal(operationStatus(attentionOperation), OSA_OPERATION_STATUS.partialComplete)
   assert.equal(operationStatusLabel(operationStatus(attentionOperation)), 'Partial Complete')
   assert.equal(operationAttentionNote(attentionOperation), attentionText)
-  assert.deepEqual(operationAlerts(attentionOperation), [attentionText])
-  assert.equal(serializeOperationAlerts([attentionText, 'Second blocker.']), `${attentionText}\nSecond blocker.`)
+  assert.deepEqual(operationAlerts(attentionOperation), savedAlerts)
+  assert.equal(
+    serializeOperationAlerts([attentionText, 'Second blocker.']),
+    `${attentionText}\nSecond blocker.`,
+  )
+  const legacyAlertOperation = {
+    ...attentionOperation,
+    data: {
+      ...attentionOperation.data,
+      properties: {
+        ...attentionOperation.data.properties,
+        [OSA_PROPERTY.operationAttention]: `${attentionText}\nSecond blocker.`,
+        [OSA_PROPERTY.operationAlertStates]: '',
+      },
+    },
+  }
+  assert.deepEqual(operationAlerts(legacyAlertOperation), [
+    { text: attentionText, open: true },
+    { text: 'Second blocker.', open: true },
+  ])
+  const directlyEditedAlertOperation = {
+    ...attentionOperation,
+    data: {
+      ...attentionOperation.data,
+      properties: {
+        ...attentionOperation.data.properties,
+        [OSA_PROPERTY.operationAttention]: 'New direct edit.\nOld shortage resolved.',
+      },
+    },
+  }
+  assert.deepEqual(operationAlerts(directlyEditedAlertOperation), [
+    { text: 'New direct edit.', open: true },
+    { text: 'Old shortage resolved.', open: true },
+  ], 'A direct text edit invalidates the sidecar atomically and defaults every alert open.')
+  const reorderedAlertOperation = {
+    ...attentionOperation,
+    data: {
+      ...attentionOperation.data,
+      properties: {
+        ...attentionOperation.data.properties,
+        [OSA_PROPERTY.operationAttention]: 'Old shortage resolved.\n10 more regular and 5 more large requested.',
+      },
+    },
+  }
+  assert.deepEqual(operationAlerts(reorderedAlertOperation), [
+    { text: 'Old shortage resolved.', open: true },
+    { text: attentionText, open: true },
+  ], 'Reordered alert text cannot shift a closed state onto another alert.')
+  const invalidVersionOperation = {
+    ...attentionOperation,
+    data: {
+      ...attentionOperation.data,
+      properties: {
+        ...attentionOperation.data.properties,
+        [OSA_PROPERTY.operationAlertStates]: serializeOperationAlertStates(savedAlerts)
+          .replace('"version":1', '"version":2'),
+      },
+    },
+  }
+  assert.deepEqual(operationAlerts(invalidVersionOperation), savedAlerts.map((alert) => ({
+    ...alert,
+    open: true,
+  })), 'Unknown status versions fail open without discarding alert text.')
   const attentionMarkup = renderAssembly(edges, createAssemblyViewUiState(), attentionNodes)
   const attentionProductionRow = productionRowFor(
     attentionMarkup,
@@ -1052,16 +1120,46 @@ try {
   assert.match(attentionProductionRow, /data-status="partial-complete"/)
   assert.match(attentionProductionRow, /class="assembly-production__status-badge" aria-hidden="true">PC<\/span>/)
   assert.match(attentionProductionRow, /<option value="partial-complete" selected="">PC — Partial Complete<\/option>/)
-  assert.match(attentionProductionRow, /aria-label="Connector Box Drill: 1 alert\. View or edit alerts\."/)
-  assert.match(attentionProductionRow, /assembly-alerts-cell__count">1<\/span>/)
+  assert.match(attentionProductionRow, /aria-label="Connector Box Drill: 2 open alerts, 1 closed\. View or edit alerts\."/)
+  assert.match(attentionProductionRow, /assembly-alerts-cell__count">2<\/span>/)
   assert.match(attentionProductionRow, /10 more regular and 5 more large requested\./)
+  assert.match(attentionProductionRow, /Second current problem\./)
+  assert.match(attentionProductionRow, /Old shortage resolved\. <small>\(closed\)<\/small>/)
+  assert.match(attentionMarkup, /aria-label="Instructions with open alerts: 1"/,
+    'The top A count is instructions with open alerts, not the number of open alerts.')
   const attentionAuthorCard = articleFor(
     renderAssembly(edges, focusedUiState, attentionNodes),
     'Connector Box Drill card',
   )
-  assert.match(attentionAuthorCard, /aria-label="Connector Box Drill: 1 alert\. View or edit alerts\."/)
+  assert.match(attentionAuthorCard, /aria-label="Connector Box Drill: 2 open alerts, 1 closed\. View or edit alerts\."/)
   assert.match(attentionAuthorCard, /assembly-operation-card__alerts-list/)
   assert.match(attentionAuthorCard, /10 more regular and 5 more large requested\./)
+  assert.match(attentionAuthorCard, /Second current problem\./)
+  assert.doesNotMatch(attentionAuthorCard, /assembly-operation-card__alerts-list[^]*Old shortage resolved\./)
+
+  const closedOnlyAlerts = savedAlerts.map((alert) => ({ ...alert, open: false }))
+  const closedOnlyNodes = attentionNodes.map((node) => node.id === connectorBoxDrill.id
+    ? {
+        ...node,
+        data: {
+          ...node.data,
+          properties: {
+            ...node.data.properties,
+            [OSA_PROPERTY.operationAlertStates]: serializeOperationAlertStates(closedOnlyAlerts),
+          },
+        },
+      }
+    : node)
+  const closedOnlyMarkup = renderAssembly(edges, createAssemblyViewUiState(), closedOnlyNodes)
+  const closedOnlyProductionRow = productionRowFor(
+    closedOnlyMarkup,
+    'Connector Box Drill',
+  )
+  assert.match(closedOnlyProductionRow, /aria-label="Connector Box Drill: 0 open alerts, 3 closed\. View or edit alerts\."/)
+  assert.match(closedOnlyProductionRow, /assembly-alerts-cell has-closed-alerts/)
+  assert.doesNotMatch(closedOnlyProductionRow, /assembly-alerts-cell has-alerts/)
+  assert.match(closedOnlyMarkup, /aria-label="Instructions with open alerts: 0"/,
+    'An instruction with only closed history is not counted as needing attention.')
 
   const peopleValue = serializeOperationPeople(['Bria', ' Sam ', 'bria'])
   assert.equal(peopleValue, '["Bria","Sam"]')

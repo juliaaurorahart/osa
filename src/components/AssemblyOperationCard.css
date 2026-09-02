@@ -177,6 +177,10 @@
   margin: 0;
   padding: 10px 0 12px;
   border-bottom: 1px solid var(--osa-border-subtle);
+  color: var(--osa-muted);
+}
+
+.assembly-operation-card__alerts.has-alerts {
   color: var(--osa-danger-text);
 }
 

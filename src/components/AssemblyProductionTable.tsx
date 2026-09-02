@@ -7,7 +7,10 @@ import {
   type OsaOperationStatus,
 } from '../graph/osaData'
 import { AssemblyAlertsCell } from './AssemblyAlertsCell'
-import { serializeOperationAlerts } from './assemblyAlertsData'
+import {
+  serializeOperationAlerts,
+  serializeOperationAlertStates,
+} from './assemblyAlertsData'
 import { AssemblyDescription } from './AssemblyDescription'
 import type { AssemblyInstructionSummary } from './assemblyInstructionSummary'
 import { serializeOperationPeople } from './assemblyPeopleData'
@@ -253,11 +256,18 @@ export function AssemblyProductionTable({
                       <AssemblyAlertsCell
                         operation={operation}
                         readOnly={!canEditProperties}
-                        onChange={!canEditProperties ? undefined : (alerts) => actions.onPropertyChange?.(
-                          operation.id,
-                          OSA_PROPERTY.operationAttention,
-                          serializeOperationAlerts(alerts),
-                        )}
+                        onChange={!canEditProperties ? undefined : (alerts) => {
+                          actions.onPropertyChange?.(
+                            operation.id,
+                            OSA_PROPERTY.operationAttention,
+                            serializeOperationAlerts(alerts),
+                          )
+                          actions.onPropertyChange?.(
+                            operation.id,
+                            OSA_PROPERTY.operationAlertStates,
+                            serializeOperationAlertStates(alerts),
+                          )
+                        }}
                       />
                     </td>
                     <td className="assembly-production__visuals">

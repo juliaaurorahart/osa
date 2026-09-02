@@ -20,6 +20,8 @@ export const OSA_PROPERTY = {
   operationStatus: 'operation:status',
   /** Short, visible exception or supply note that needs immediate attention. */
   operationAttention: 'operation:attention',
+  /** Versioned open/closed state stored alongside the readable alert lines. */
+  operationAlertStates: 'operation:alertStates',
   /** JSON list of people currently associated with one Assembly instruction. */
   operationPeople: 'operation:people',
   /** Selects the instruction-level description instead of legacy Step text. */
@@ -788,14 +790,20 @@ export function formatMoney(value: number | null, currency = 'USD') {
 }
 
 /**
- * Only optional view hints are protected from accidental renaming/removal.
+ * Optional view hints and internal alert metadata are protected from accidental
+ * renaming/removal. Internal metadata is also omitted from property panels.
  *
  * Operation, item, expense, money, and source fields are ordinary OSA data.
  * They stay editable in the generic inspector even when a focused view also
  * knows how to present them.
  */
 export function isManagedOsaProperty(name: string) {
-  return /^osa:/.test(name)
+  return /^osa:/.test(name) || name === OSA_PROPERTY.operationAlertStates
+}
+
+/** Internal durable metadata that is protected but never shown as raw text. */
+export function isInternalOsaProperty(name: string) {
+  return name === OSA_PROPERTY.operationAlertStates
 }
 
 /**

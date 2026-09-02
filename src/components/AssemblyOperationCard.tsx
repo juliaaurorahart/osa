@@ -8,6 +8,7 @@ import { AssemblyOperationStatus } from './AssemblyOperationStatus'
 import {
   operationAlerts,
   serializeOperationAlerts,
+  serializeOperationAlertStates,
 } from './assemblyAlertsData'
 import { serializeOperationPeople } from './assemblyPeopleData'
 import { AssemblyPeople } from './AssemblyPeople'
@@ -101,6 +102,7 @@ export function AssemblyOperationCard({
   })
   const completedCount = operationCompletedCount(operation)
   const alerts = operationAlerts(operation)
+  const openAlerts = alerts.filter((alert) => alert.open)
   const title = nodeTitle(operation)
   const canEditProperties = !readOnly && Boolean(actions.onPropertyChange)
 
@@ -270,12 +272,12 @@ export function AssemblyOperationCard({
 
             {alerts.length || !readOnly ? (
               <section
-                className={`assembly-operation-card__alerts${alerts.length ? ' has-alerts' : ' is-empty'}`}
+                className={`assembly-operation-card__alerts${openAlerts.length ? ' has-alerts' : alerts.length ? ' has-closed-alerts' : ' is-empty'}`}
                 aria-label={`${title} alerts`}
               >
                 <header className="assembly-operation-card__alerts-header">
                   <span className="assembly-operation-card__alerts-heading">
-                    {alerts.length ? (
+                    {openAlerts.length ? (
                       <span className="assembly-operation-card__attention-dot" aria-hidden="true" />
                     ) : null}
                     Alerts
@@ -290,13 +292,18 @@ export function AssemblyOperationCard({
                         OSA_PROPERTY.operationAttention,
                         serializeOperationAlerts(nextAlerts),
                       )
+                      actions.onPropertyChange?.(
+                        operation.id,
+                        OSA_PROPERTY.operationAlertStates,
+                        serializeOperationAlertStates(nextAlerts),
+                      )
                     }}
                   />
                 </header>
-                {alerts.length ? (
+                {openAlerts.length ? (
                   <ol className="assembly-operation-card__alerts-list">
-                    {alerts.map((alert, index) => (
-                      <li key={`${index}-${alert}`}>{alert}</li>
+                    {openAlerts.map((alert, index) => (
+                      <li key={`${index}-${alert.text}`}>{alert.text}</li>
                     ))}
                   </ol>
                 ) : null}

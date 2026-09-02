@@ -69,7 +69,7 @@
   text-align: left;
 }
 
-.assembly-alerts-cell__preview strong {
+.assembly-alerts-cell.has-alerts .assembly-alerts-cell__preview strong {
   color: var(--osa-danger-text);
 }
 
@@ -79,6 +79,24 @@
   gap: 7px;
   margin: 8px 0 0;
   padding-left: 1.2rem;
+}
+
+.assembly-alerts-cell__preview li.is-closed,
+.assembly-alerts-cell__read-list li.is-closed {
+  color: var(--osa-muted);
+}
+
+.assembly-alerts-cell__read-list li span,
+.assembly-alerts-cell__read-list li small {
+  display: block;
+}
+
+.assembly-alerts-cell__read-list li small {
+  margin-top: 2px;
+  color: var(--osa-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -194,7 +212,28 @@
   resize: vertical;
 }
 
+.assembly-alerts-cell__editor-row.is-closed textarea {
+  border-color: var(--osa-border);
+  color: var(--osa-muted);
+}
+
+.assembly-alerts-cell__editor-controls {
+  display: grid;
+  gap: 8px;
+}
+
+.assembly-alerts-cell__state select {
+  min-height: 40px;
+  padding: 7px 28px 7px 10px;
+  border: 1px solid var(--osa-border);
+  border-radius: 8px;
+  background: var(--osa-input);
+  color: var(--osa-text);
+  font: inherit;
+}
+
 .assembly-alerts-cell__editor-row textarea:focus-visible,
+.assembly-alerts-cell__state select:focus-visible,
 .assembly-alerts-cell__close:focus-visible,
 .assembly-alerts-cell__dialog-actions button:focus-visible {
   border-color: var(--osa-focus);
@@ -255,7 +294,11 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .assembly-alerts-cell__editor-row > button {
+  .assembly-alerts-cell__editor-controls {
+    justify-items: start;
+  }
+
+  .assembly-alerts-cell__editor-controls > button {
     justify-self: start;
     min-height: 44px;
   }

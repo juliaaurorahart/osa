@@ -155,9 +155,11 @@ let mountedEditors = 0
 let unmountedEditors = 0
 const sourceByInstance = new Map()
 let sectionFixture, syncFixture, sectionGuardLocked = false
+const sectionCommandCalls = []
 function SectionFixture(props) {
   sectionFixture = props
   React.useEffect(() => props.onRegisterFlush(async () => { if (sectionGuardLocked) throw new Error('Close the draw.io editor first') }), [props.onRegisterFlush])
+  React.useEffect(() => props.onRegisterCommand?.(async (command) => { sectionCommandCalls.push(command) }), [props.onRegisterCommand])
   return React.createElement('div', { 'data-section-fixture': true }, 'Section fixture')
 }
 function WorkbenchFixture(props) {
@@ -299,6 +301,18 @@ try {
   assert.equal(savedProjects.savedProjectTool(imageArtifact), null)
   assert.ok(artifactRow(imageArtifact.name))
   assert.equal([...artifactRow(imageArtifact.name).querySelectorAll('button')].some((button) => /^Open in /.test(button.textContent)), false, 'Image-only captures get preview/download actions, not a native editor action.')
+  await changeValue(notebookCommandInput, 'add code')
+  await React.act(async () => notebookCommandInput.closest('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true })))
+  assert.equal(sectionCommandCalls.length, 0, 'Library never creates a section object behind its hidden Page.')
+  assert.equal(notebookCommandInput.value, 'add code', 'A Library rejection keeps the requested command intact.')
+  assert.match(document.querySelector('.lab-notebook-command__message').textContent, /Open Page or Cells first/)
+  await changeValue(notebookCommandInput, 'page')
+  await React.act(async () => notebookCommandInput.closest('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true })))
+  await changeValue(notebookCommandInput, 'add code')
+  await React.act(async () => notebookCommandInput.closest('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true })))
+  assert.equal(sectionCommandCalls.at(-1), 'new-code', 'CanvasLab relays object commands to the registered Section action only from Page or Cells.')
+  await changeValue(notebookCommandInput, 'library')
+  await React.act(async () => notebookCommandInput.closest('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true })))
   shellBody().scrollTop = 930
   await clickButton('Return to Ink')
   assert.equal(shellBody().scrollTop, 0, 'Returning from a scrolled notebook resets the workbench viewport.')

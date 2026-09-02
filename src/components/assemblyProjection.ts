@@ -16,6 +16,7 @@ import {
   type OsaOperationVisualRole,
 } from '../graph/osaData'
 import type { TextFlowNode } from '../graph/textNode'
+import { openOperationAlerts } from './assemblyAlertsData'
 import { isVisualNode, visualEmbedsForCanvas } from '../graph/visualEmbed'
 import { visualForOfficialVersion } from '../graph/visualVersion'
 
@@ -70,7 +71,7 @@ export function operationStatusLabel(status: OsaOperationStatus) {
 
 /** A concise exception shown directly beneath an instruction's status. */
 export function operationAttentionNote(operation: TextFlowNode) {
-  return operation.data.properties[OSA_PROPERTY.operationAttention]?.trim() ?? ''
+  return openOperationAlerts(operation)[0]?.text ?? ''
 }
 
 /**

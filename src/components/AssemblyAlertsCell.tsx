@@ -12,13 +12,14 @@ import { nodeTitle } from './assemblyProjection'
 import {
   normalizeOperationAlerts,
   operationAlerts,
+  type OperationAlert,
 } from './assemblyAlertsData'
 import './AssemblyAlertsCell.css'
 
 type AssemblyAlertsCellProps = {
   operation: TextFlowNode
   readOnly: boolean
-  onChange?: (alerts: string[]) => void
+  onChange?: (alerts: OperationAlert[]) => void
 }
 
 function focusableDialogElements(dialog: HTMLElement) {
@@ -35,13 +36,15 @@ export function AssemblyAlertsCell({
 }: AssemblyAlertsCellProps) {
   const title = nodeTitle(operation)
   const alerts = operationAlerts(operation)
+  const openAlerts = alerts.filter((alert) => alert.open)
+  const closedAlertCount = alerts.length - openAlerts.length
   const editorReadOnly = readOnly || !onChange
   const dialogTitleId = useId()
   const previewId = useId()
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const dialogRef = useRef<HTMLElement | null>(null)
   const [isOpen, setIsOpen] = useState(false)
-  const [draftAlerts, setDraftAlerts] = useState<string[]>([])
+  const [draftAlerts, setDraftAlerts] = useState<OperationAlert[]>([])
 
   const closeDialog = () => {
     setIsOpen(false)
@@ -95,7 +98,7 @@ export function AssemblyAlertsCell({
   }, [editorReadOnly, isOpen])
 
   const addAlert = () => {
-    setDraftAlerts((current) => [...current, ''])
+    setDraftAlerts((current) => [...current, { text: '', open: true }])
     window.requestAnimationFrame(() => {
       const inputs = dialogRef.current?.querySelectorAll<HTMLTextAreaElement>('textarea')
       inputs?.[inputs.length - 1]?.focus()
@@ -150,7 +153,12 @@ export function AssemblyAlertsCell({
             {editorReadOnly ? (
               alerts.length ? (
                 <ol className="assembly-alerts-cell__read-list">
-                  {alerts.map((alert, index) => <li key={`${index}-${alert}`}>{alert}</li>)}
+                  {alerts.map((alert, index) => (
+                    <li className={alert.open ? undefined : 'is-closed'} key={`${index}-${alert.text}`}>
+                      <span>{alert.text}</span>
+                      <small>{alert.open ? 'Open' : 'Closed'}</small>
+                    </li>
+                  ))}
                 </ol>
               ) : (
                 <p className="assembly-alerts-cell__empty-message">No alerts.</p>
@@ -159,31 +167,49 @@ export function AssemblyAlertsCell({
               <>
                 <div className="assembly-alerts-cell__editor-list">
                   {draftAlerts.map((alert, index) => (
-                    <div className="assembly-alerts-cell__editor-row" key={index}>
+                    <div className={`assembly-alerts-cell__editor-row${alert.open ? '' : ' is-closed'}`} key={index}>
                       <label>
                         <span>Alert {index + 1}</span>
                         <textarea
                           rows={2}
-                          value={alert}
+                          value={alert.text}
                           placeholder="shortage, blocker, or problem"
                           onChange={(event) => {
                             const value = event.currentTarget.value
                             setDraftAlerts((current) => current.map((candidate, candidateIndex) => (
-                              candidateIndex === index ? value : candidate
+                              candidateIndex === index ? { ...candidate, text: value } : candidate
                             )))
                           }}
                         />
                       </label>
-                      <button
-                        className="text-action is-danger"
-                        type="button"
-                        aria-label={`Remove alert ${index + 1} from ${title}`}
-                        onClick={() => setDraftAlerts((current) => (
-                          current.filter((_, candidateIndex) => candidateIndex !== index)
-                        ))}
-                      >
-                        remove
-                      </button>
+                      <div className="assembly-alerts-cell__editor-controls">
+                        <label className="assembly-alerts-cell__state">
+                          <span>Status</span>
+                          <select
+                            aria-label={`Alert ${index + 1} status for ${title}`}
+                            value={alert.open ? 'open' : 'closed'}
+                            onChange={(event) => {
+                              const open = event.currentTarget.value === 'open'
+                              setDraftAlerts((current) => current.map((candidate, candidateIndex) => (
+                                candidateIndex === index ? { ...candidate, open } : candidate
+                              )))
+                            }}
+                          >
+                            <option value="open">Open</option>
+                            <option value="closed">Closed</option>
+                          </select>
+                        </label>
+                        <button
+                          className="text-action is-danger"
+                          type="button"
+                          aria-label={`Remove alert ${index + 1} from ${title}`}
+                          onClick={() => setDraftAlerts((current) => (
+                            current.filter((_, candidateIndex) => candidateIndex !== index)
+                          ))}
+                        >
+                          remove
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -216,7 +242,7 @@ export function AssemblyAlertsCell({
 
   return (
     <div
-      className={`assembly-alerts-cell${alerts.length ? ' has-alerts' : ' is-empty'}${isOpen ? ' is-open' : ''}`}
+      className={`assembly-alerts-cell${openAlerts.length ? ' has-alerts' : alerts.length ? ' has-closed-alerts' : ' is-empty'}${isOpen ? ' is-open' : ''}`}
       onClick={stopPropagation}
       onKeyDown={stopPropagation}
     >
@@ -224,21 +250,25 @@ export function AssemblyAlertsCell({
         ref={triggerRef}
         className="assembly-alerts-cell__trigger"
         type="button"
-        aria-label={`${title}: ${alerts.length} ${alerts.length === 1 ? 'alert' : 'alerts'}. ${editorReadOnly ? 'View alerts' : 'View or edit alerts'}.`}
+        aria-label={`${title}: ${openAlerts.length} open ${openAlerts.length === 1 ? 'alert' : 'alerts'}${closedAlertCount ? `, ${closedAlertCount} closed` : ''}. ${editorReadOnly ? 'View alerts' : 'View or edit alerts'}.`}
         aria-describedby={alerts.length ? previewId : undefined}
         aria-haspopup="dialog"
         aria-expanded={isOpen}
         onClick={openDialog}
       >
         <span className="assembly-alerts-cell__dot" aria-hidden="true" />
-        <span className="assembly-alerts-cell__count">{alerts.length}</span>
+        <span className="assembly-alerts-cell__count">{openAlerts.length}</span>
       </button>
 
       {alerts.length ? (
         <div className="assembly-alerts-cell__preview" id={previewId}>
-          <strong>{alerts.length === 1 ? 'Alert' : `${alerts.length} alerts`}</strong>
+          <strong>{openAlerts.length === 1 ? '1 open alert' : `${openAlerts.length} open alerts`}</strong>
           <ul>
-            {alerts.map((alert, index) => <li key={`${index}-${alert}`}>{alert}</li>)}
+            {alerts.map((alert, index) => (
+              <li className={alert.open ? undefined : 'is-closed'} key={`${index}-${alert.text}`}>
+                {alert.text} <small>({alert.open ? 'open' : 'closed'})</small>
+              </li>
+            ))}
           </ul>
         </div>
       ) : null}

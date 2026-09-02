@@ -516,6 +516,7 @@ try {
   assert.ok(ordinaryPart)
   assert.equal(isPartLike(ordinaryPart), true, 'An unclassified Part is still part-like.')
   assert.equal(isManagedOsaProperty('operation:entrance'), false)
+  assert.equal(isManagedOsaProperty(OSA_PROPERTY.operationAlertStates), true)
   assert.equal(isManagedOsaProperty('osa:role'), true)
 
   // A card can place a first-class Visual object. Legacy boards that attached

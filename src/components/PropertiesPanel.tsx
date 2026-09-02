@@ -7,6 +7,7 @@ import { NODE_KINDS } from '../graph/nodeKinds'
 import {
   appearanceAccentColor,
   isContainableOsaObject,
+  isInternalOsaProperty,
   isManagedOsaProperty,
   isPartLike,
   OSA_PROPERTY,
@@ -88,9 +89,10 @@ export function PropertiesPanel({
   // rather than rendering that long value in the general property editor.
   const properties = propertyEntries.filter(([name]) => (
     !isManagedOsaProperty(name) && !isAssetProperty(name) && !isAppearanceProperty(name)
+    && !isInternalOsaProperty(name)
   ))
   const managedProperties = propertyEntries.filter(([name]) => (
-    isManagedOsaProperty(name) && !isAssetProperty(name)
+    isManagedOsaProperty(name) && !isAssetProperty(name) && !isInternalOsaProperty(name)
   ))
   const role = osaRole(node)
   const kindLabel = NODE_KINDS.find((kind) => kind.id === node.data.kind)?.label ?? node.data.kind

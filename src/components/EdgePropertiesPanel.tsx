@@ -1,6 +1,6 @@
 import type { GraphEdge } from '../graph/graphEdge'
 import './PropertiesPanel.css'
-import { isManagedOsaProperty } from '../graph/osaData'
+import { isInternalOsaProperty, isManagedOsaProperty } from '../graph/osaData'
 
 type EdgePropertiesPanelProps = {
   edge: GraphEdge
@@ -26,8 +26,12 @@ export function EdgePropertiesPanel({
   onPropertyAdd,
 }: EdgePropertiesPanelProps) {
   const propertyEntries = Object.entries(edge.data.properties)
-  const properties = propertyEntries.filter(([name]) => !isManagedOsaProperty(name))
-  const managedProperties = propertyEntries.filter(([name]) => isManagedOsaProperty(name))
+  const properties = propertyEntries.filter(([name]) => (
+    !isManagedOsaProperty(name) && !isInternalOsaProperty(name)
+  ))
+  const managedProperties = propertyEntries.filter(([name]) => (
+    isManagedOsaProperty(name) && !isInternalOsaProperty(name)
+  ))
 
   return (
     <section className="properties-panel">

@@ -44,7 +44,7 @@ try {
     text: '',
     kind: 'action',
     properties: {
-      [OSA_PROPERTY.operationAlerts]: serializeOperationAlerts(['Parts blocked']),
+      [OSA_PROPERTY.operationAttention]: serializeOperationAlerts(['Parts blocked']),
       [OSA_PROPERTY.operationPeople]: serializeOperationPeople(['Bri', 'Sam']),
     },
   })
@@ -76,6 +76,7 @@ try {
     Object.getOwnPropertyDescriptor(globalThis, name),
   ])
   let root
+  let changedAlerts
 
   try {
     const { window } = dom
@@ -104,7 +105,11 @@ try {
     await act(async () => {
       root.render(createElement('div', null,
         createElement(AssemblyPeopleCell, { operation, readOnly: true }),
-        createElement(AssemblyAlertsCell, { operation, readOnly: true }),
+        createElement(AssemblyAlertsCell, {
+          operation,
+          readOnly: false,
+          onChange: (alerts) => { changedAlerts = alerts },
+        }),
         createElement(StepCanvasViewer, {
           step: operation,
           canvas: visual,
@@ -151,6 +156,21 @@ try {
       alertsBackdrop?.parentElement,
       window.document.body,
       'The Alerts dialog is portaled above table overflow and stacking contexts.',
+    )
+    const statusSelect = alertsBackdrop.querySelector('select')
+    assert.equal(statusSelect?.value, 'open', 'Legacy alert text opens as an active alert.')
+    await act(async () => {
+      statusSelect.value = 'closed'
+      statusSelect.dispatchEvent(new window.Event('change', { bubbles: true }))
+    })
+    await act(async () => {
+      alertsBackdrop.querySelector('.assembly-alerts-cell__dialog-actions .is-primary')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+    })
+    assert.deepEqual(
+      changedAlerts,
+      [{ text: 'Parts blocked', open: false }],
+      'Closing an alert retains its text when the popup saves.',
     )
   } finally {
     if (root) await act(async () => root.unmount())
