@@ -51,7 +51,7 @@
   position: absolute;
   z-index: 40;
   inset-block-end: calc(100% + 9px);
-  inset-inline-start: 0;
+  inset-inline-end: 0;
   display: none;
   box-sizing: border-box;
   width: min(300px, calc(100vw - 32px));

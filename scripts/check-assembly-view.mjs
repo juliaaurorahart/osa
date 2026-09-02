@@ -1301,8 +1301,18 @@ try {
   const appStyles = await readFile(new URL('../src/App.css', import.meta.url), 'utf8')
   assert.match(
     appStyles,
-    /#root\s*\{[^}]*--workspace-switcher-glow:\s*#ff00ff;[\s\S]*\.workspace-switcher\s*\{[^}]*box-shadow:\s*0 12px 34px var\(--workspace-switcher-glow\);[\s\S]*\.workspace-switcher-reveal\s*\{[^}]*box-shadow:[^}]*var\(--workspace-switcher-glow\) 82%/s,
+    /#root\s*\{[^}]*--workspace-switcher-glow:\s*#ff00ff;[\s\S]*\.workspace-switcher\s*\{[^}]*box-shadow:\s*0 12px 34px var\(--workspace-switcher-glow\);[\s\S]*\.workspace-switcher-reveal::before\s*\{[^}]*box-shadow:[^}]*var\(--workspace-switcher-glow\) 82%/s,
     'The hidden top-menu ramp keeps a restrained pink locator glow.',
+  )
+  assert.match(
+    appStyles,
+    /@media \(max-width:\s*700px\)[\s\S]*?\.workspace-switcher\s*\{[^}]*font-size:\s*1\.25rem;[\s\S]*?\.workspace-switcher button,[\s\S]*?min-height:\s*44px;/,
+    'The phone view switcher uses larger text and comfortable tap targets.',
+  )
+  assert.match(
+    appSource,
+    /\{!identity \|\| needsSignIn \? \([\s\S]*?className="workspace-switcher__sign-in" href="\/api\/login"[\s\S]*?>\s*Sign In\s*</,
+    'Signed-out workspaces put a direct Sign In action beside Settings.',
   )
   assert.match(
     appSource,

@@ -12,6 +12,7 @@ import { LabWorkbenchChromeContext } from './LabWorkbenchChromeContext'
 import { LabMenu } from './LabMenu'
 import { useSyncedLabNotebook } from './useSyncedLabNotebook'
 import { LabNotebookSync } from './LabNotebookSync'
+import { LabNotebookCommandBar, type LabNotebookView } from './LabNotebookCommandBar'
 import { readSavedLabProject } from './labSavedProjects'
 import { LabDraftContext, type LabDraftReader } from './LabDraftContext'
 import { DRAFT_TOOLS, readLabDraftSource } from './labDrafts'
@@ -75,7 +76,8 @@ export function CanvasLab({
     catch { setPreferenceMessage('Applied for this session. This browser could not remember the preference.') }
   }
   const [hasUnaddedIdea, setHasUnaddedIdea] = useState(false)
-  const [notebookView, setNotebookView] = useState<'library' | 'cells' | 'page'>('library')
+  const [notebookView, setNotebookView] = useState<'library' | 'cells' | 'page'>('page')
+  const [notebookControlsOpen, setNotebookControlsOpen] = useState(false)
   const [sectionVisited, setSectionVisited] = useState(false)
   const notebook = useSyncedLabNotebook()
   const workingDrafts = useLabWorkingDrafts(notebook.saveProjectDraft)
@@ -187,6 +189,15 @@ export function CanvasLab({
   const originalArtifact = projectOrigin ? notebook.getArtifact(projectOrigin.artifactId) : undefined
   const supportsDrafts = Boolean(project && DRAFT_TOOLS.has(project.toolId))
   const flushDrafts = async () => { await noteFlushRef.current(); await sectionFlushRef.current(); await workingDrafts.flush() }
+  const selectNotebookView = async (view: LabNotebookView) => {
+    // Cells and Page are two projections of one mounted section.
+    // Only crossing the Library boundary closes or flushes an editor.
+    if (view === notebookView) { setProjectFailure(''); return }
+    if (view === 'library' || notebookView === 'library') await flushDrafts()
+    setNotebookView(view)
+    if (view !== 'library') setSectionVisited(true)
+    setProjectFailure('')
+  }
   const checkpoint = workingDrafts.report
   const renameDraft = workingDrafts.rename
   useEffect(() => {
@@ -353,16 +364,7 @@ export function CanvasLab({
 
   const context = (() => {
     if (activeLab) return null
-    if (route.page === 'notebook') {
-      return (
-        <>
-          <strong>{notebook.name || 'Lab notebook'}</strong>
-          <span>{notebook.notes.length} notes</span>
-          <span>{notebook.artifacts.length} saved files</span>
-          <span>{notebook.message}</span>
-        </>
-      )
-    }
+    if (route.page === 'notebook') return null
     if (route.page === 'settings') {
       return (
         <>
@@ -419,52 +421,26 @@ export function CanvasLab({
           >
             Notebook
           </button>
-          <button
-            className={navButtonClass(route.page === 'settings')}
-            type="button"
-            aria-current={route.page === 'settings' ? 'page' : undefined}
-            onClick={() => setRoute({ page: 'settings' })}
-          >
-            Settings
-          </button>
           {project && route.page !== 'workbench' ? <button className="lab-shell__nav-button" type="button"
             onClick={() => setRoute({ page: 'workbench', workbenchId: project.toolId })}>Return to {findLab(project.toolId).name}</button> : null}
         </nav>
 
-        <label className="lab-shell__picker">
-          <span>instrument</span>
-          <select
-            aria-label="Choose Lab instrument"
-            disabled={!notebook.isReady}
-            value={route.page === 'workbench' ? route.workbenchId : ''}
-            onChange={(event) => {
-              if (event.target.value) openWorkbench(event.target.value as LabWorkbenchId)
-            }}
-          >
-            <option value="">choose a workbench…</option>
-            {LAB_GROUPS.map((group) => (
-              <optgroup key={group.name} label={group.name}>
-                {group.labs.map((lab) => (
-                  <option key={lab.id} value={lab.id}>
-                    {lab.name} — {lab.note}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-        </label>
-
         <div className="lab-shell__actions">
           <button type="button" aria-expanded="true" aria-controls="lab-navigation" onClick={() => setNavigationHidden(true)}>Hide top bar ↑</button>
-          <button
-            type="button"
-            aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
-            disabled={sectionLocked}
-            onClick={onToggleTheme}
-          >
-            {theme === 'dark' ? 'light' : 'dark'}
-          </button>
-          <button type="button" disabled={saving} onClick={requestExit}>exit lab</button>
+          <LabMenu className="lab-shell__more" label="More">
+            <label className="lab-shell__menu-picker"><span>Open a workbench</span><select
+              aria-label="Choose Lab instrument" disabled={!notebook.isReady} value={route.page === 'workbench' ? route.workbenchId : ''}
+              onChange={(event) => { if (event.target.value) openWorkbench(event.target.value as LabWorkbenchId) }}>
+              <option value="">choose a workbench…</option>
+              {LAB_GROUPS.map((group) => <optgroup key={group.name} label={group.name}>{group.labs.map((lab) =>
+                <option key={lab.id} value={lab.id}>{lab.name} — {lab.note}</option>)}</optgroup>)}
+            </select></label>
+            <hr />
+            <button type="button" aria-current={route.page === 'settings' ? 'page' : undefined} onClick={() => setRoute({ page: 'settings' })}>Settings</button>
+            <button type="button" aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} disabled={sectionLocked}
+              onClick={onToggleTheme}>Switch to {theme === 'dark' ? 'light' : 'dark'} theme</button>
+            <button type="button" disabled={saving} onClick={requestExit}>exit lab</button>
+          </LabMenu>
         </div>
       </header>
 
@@ -492,7 +468,7 @@ export function CanvasLab({
         <button className="lab-shell__notebook-link" type="button" title="Back to notebook" onClick={() => setRoute({ page: 'notebook' })}>Notebook</button>
         <button className="lab-shell__focus-toggle" type="button" aria-pressed={focusedEditor} onClick={() => setFocusedEditor((value) => !value)}>{focusedEditor ? 'Show navigation' : 'Focus'}</button>
         <button type="button" aria-expanded="true" aria-controls="lab-project-bar" onClick={() => setNavigationHidden(true)}>Hide top bar ↑</button>
-        <LabMenu label="File">
+        <LabMenu label="More">
           <div ref={setFileTarget} />
           {savedArtifact && canContinueInKonva(savedArtifact) ? <button type="button" disabled={saving}
             title="Create a separate Konva project from the Saved picture. The original file and any working draft stay unchanged."
@@ -517,7 +493,7 @@ export function CanvasLab({
         {projectFailure ? <span role="alert">{projectFailure}</span> : null}
         {notebook.status === 'error' ? <span role="alert">{notebook.message}</span> : null}
         {!supportsDrafts ? <span>No automatic drafts here—save or export before leaving.</span> : null}
-      </aside> : <aside className="lab-shell__context" hidden={navigationHidden}>{context}</aside>}
+      </aside> : <aside className="lab-shell__context" hidden={navigationHidden || !context}>{context}</aside>}
 
       <main ref={bodyRef} className={`lab-shell__body is-${route.page}`}>
         {route.page === 'home' ? (
@@ -532,21 +508,23 @@ export function CanvasLab({
         ) : null}
 
         <div hidden={route.page !== 'notebook'}>
-          <LabNotebookSync key={`sync:${notebook.scope}`} notebook={notebook} hasDraft={hasUnaddedIdea} hasProject={Boolean(project)} beforeSwitch={flushDrafts} locked={sectionLocked} />
-          <nav className="lab-notebook-views" aria-label="Notebook view">
-            {(['library', 'cells', 'page'] as const).map((view) => <button key={view} type="button" aria-pressed={notebookView === view} disabled={!notebook.isReady}
-              onClick={async () => { try {
-                // Cells and Page are two projections of one mounted section.
-                // Only crossing the Library boundary closes or flushes an editor.
-                if (view === 'library' || notebookView === 'library') await flushDrafts()
-                setNotebookView(view); if (view !== 'library') setSectionVisited(true); setProjectFailure('')
-              } catch (error) { setProjectFailure(error instanceof Error ? error.message : 'The current editor could not save.') } }}>
-              {view === 'library' ? 'Library' : view === 'cells' ? 'Cells' : 'Page'}</button>)}
-          </nav>
+          <LabNotebookCommandBar view={notebookView} controlsOpen={notebookControlsOpen} disabled={!notebook.isReady || sectionLocked}
+            onView={selectNotebookView} onControls={setNotebookControlsOpen} />
+          {!notebookControlsOpen && (notebook.status === 'error' || notebook.syncStatus === 'offline' || notebook.syncStatus === 'conflict')
+            ? <p className="lab-notebook-command-attention" role="alert">{notebook.message}
+              <button type="button" onClick={() => setNotebookControlsOpen(true)}>Show controls</button></p> : null}
+          <div id="lab-notebook-controls" className="lab-notebook-controls" hidden={!notebookControlsOpen}>
+            <LabNotebookSync key={`sync:${notebook.scope}`} notebook={notebook} hasDraft={hasUnaddedIdea} hasProject={Boolean(project)} beforeSwitch={flushDrafts} locked={sectionLocked} />
+            <nav className="lab-notebook-views" aria-label="Notebook view">
+              {(['library', 'cells', 'page'] as const).map((view) => <button key={view} type="button" aria-pressed={notebookView === view} disabled={!notebook.isReady}
+                onClick={() => { void selectNotebookView(view).catch((error) => setProjectFailure(error instanceof Error ? error.message : 'The current editor could not save.')) }}>
+                {view === 'library' ? 'Library' : view === 'cells' ? 'Cells' : 'Page'}</button>)}
+            </nav>
+          </div>
           {projectFailure ? <p role="alert">{projectFailure}</p> : null}
-          {sectionVisited ? <div hidden={notebookView === 'library'}><LabSection key={`section:${notebook.scope}`} notebook={notebook} theme={theme}
+          {sectionVisited || notebookView !== 'library' ? <div hidden={notebookView === 'library'}><LabSection key={`section:${notebook.scope}`} notebook={notebook} theme={theme}
             sectionView={notebookView === 'page' ? 'page' : 'cells'} isActive={route.page === 'notebook' && notebookView !== 'library'} onRegisterFlush={registerSectionFlush} onOpenProject={openSavedProject}
-            onContinueInKonva={continueInKonva} onEditorLockChange={setSectionEditorLock} /></div> : null}
+            controlsVisible={notebookControlsOpen} onContinueInKonva={continueInKonva} onEditorLockChange={setSectionEditorLock} /></div> : null}
           <div hidden={notebookView !== 'library'}>
           <LabNotebook
             key={notebook.scope}

@@ -25,6 +25,9 @@ try {
   const { AssemblyPeopleCell } = await server.ssrLoadModule(
     '/src/components/AssemblyPeopleCell.tsx',
   )
+  const { StepCanvasViewer } = await server.ssrLoadModule(
+    '/src/components/AssemblyInstructionsView.tsx',
+  )
   const { serializeOperationAlerts } = await server.ssrLoadModule(
     '/src/components/assemblyAlertsData.ts',
   )
@@ -44,6 +47,13 @@ try {
       [OSA_PROPERTY.operationAlerts]: serializeOperationAlerts(['Parts blocked']),
       [OSA_PROPERTY.operationPeople]: serializeOperationPeople(['Bri', 'Sam']),
     },
+  })
+  const visual = createTextNode({
+    id: 'assembly-dialog-layout-visual',
+    position: { x: 0, y: 0 },
+    name: 'Popup visual',
+    text: '',
+    kind: 'visual',
   })
 
   const require = createRequire(import.meta.url)
@@ -95,8 +105,25 @@ try {
       root.render(createElement('div', null,
         createElement(AssemblyPeopleCell, { operation, readOnly: true }),
         createElement(AssemblyAlertsCell, { operation, readOnly: true }),
+        createElement(StepCanvasViewer, {
+          step: operation,
+          canvas: visual,
+          nodes: [operation, visual],
+          edges: [],
+          annotationTargets: [],
+          onClose: () => undefined,
+        }),
       ))
     })
+
+    const canvasViewerScrim = window.document.querySelector(
+      '.assembly-instructions-view__canvas-viewer-scrim',
+    )
+    assert.equal(
+      canvasViewerScrim?.parentElement,
+      window.document.body,
+      'The instruction Visual viewer is portaled above Assembly and app chrome stacking layers.',
+    )
 
     const peopleTrigger = window.document.querySelector('.assembly-people-cell__trigger')
     assert.ok(peopleTrigger, 'Expected the production People trigger.')
@@ -138,6 +165,7 @@ try {
     'AssemblyAlertsCell.css',
     'AssemblyPeopleCell.css',
     'AssemblyVisualsCell.css',
+    'AssemblyInstructionsView.css',
     'VisualCanvas.css',
   ].map(async (name) => [
     name,
@@ -170,6 +198,17 @@ try {
   }
 
   const visualCanvasCss = styleByName.get('VisualCanvas.css')
+  const visualsCellCss = styleByName.get('AssemblyVisualsCell.css')
+  const visualHoverPreview = cssBlock(
+    visualsCellCss,
+    '.assembly-visuals-cell__hover-preview',
+  )
+  assert.match(
+    visualHoverPreview,
+    /inset-inline-end:\s*0;/,
+    'The rightmost Visual-column preview opens inward instead of beyond the viewport.',
+  )
+
   const editorScrim = cssBlock(visualCanvasCss, '.visual-canvas-editor__scrim')
   assert.match(editorScrim, /z-index:\s*3000;/)
   assert.match(editorScrim, /height:\s*100dvh;/)
@@ -183,6 +222,32 @@ try {
   const editorBody = cssBlock(visualCanvasCss, '.visual-canvas-editor__body')
   assert.match(editorBody, /overflow:\s*auto;/)
   assert.match(editorBody, /overscroll-behavior:\s*contain;/)
+
+  const instructionsCss = styleByName.get('AssemblyInstructionsView.css')
+  const canvasViewerScrim = cssBlock(
+    instructionsCss,
+    '.assembly-instructions-view__canvas-viewer-scrim',
+  )
+  assert.match(canvasViewerScrim, /z-index:\s*3000;/)
+  assert.match(canvasViewerScrim, /height:\s*100dvh;/)
+  assert.match(canvasViewerScrim, /max-height:\s*100dvh;/)
+  assert.match(canvasViewerScrim, /overflow:\s*hidden;/)
+  assert.match(canvasViewerScrim, /overscroll-behavior:\s*contain;/)
+
+  const canvasViewer = cssBlock(
+    instructionsCss,
+    '.assembly-instructions-view__canvas-viewer',
+  )
+  assert.match(canvasViewer, /min-height:\s*0;/)
+  assert.match(canvasViewer, /max-height:\s*100%;/)
+  assert.match(canvasViewer, /overflow:\s*hidden;/)
+
+  const canvasViewerBody = cssBlock(
+    instructionsCss,
+    '.assembly-instructions-view__canvas-viewer-body',
+  )
+  assert.match(canvasViewerBody, /overflow:\s*auto;/)
+  assert.match(canvasViewerBody, /overscroll-behavior:\s*contain;/)
 
   console.log('Assembly dialog layout checks passed.')
 } finally {

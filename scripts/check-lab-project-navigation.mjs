@@ -40,6 +40,7 @@ const storage = loadModule('src/lab/labNotebookStorage.ts', { './labNotebookTopi
 const catalog = loadModule('src/lab/labCatalog.ts')
 const captureContext = loadModule('src/lab/LabCaptureContext.ts')
 const { LabCaptureButton } = loadModule('src/lab/LabCaptureButton.tsx', { './LabCaptureContext': captureContext })
+const notebookCommand = loadModule('src/lab/LabNotebookCommandBar.tsx')
 const validations = []
 // Format validators have their own suites. Here we verify their handoff and
 // keep this test focused on navigation, editor lifetime, and version saving.
@@ -194,6 +195,7 @@ const { CanvasLab } = loadModule('src/lab/CanvasLab.tsx', {
     'aria-label': 'Open live items as', value: liveOpenVersion, onChange: (event) => onChangeLiveOpenVersion(event.target.value),
   }, React.createElement('option', { value: 'saved' }, 'Live'), React.createElement('option', { value: 'draft' }, 'Working draft')) },
   './LabNotebookSync': { LabNotebookSync: (props) => { syncFixture = props; return null } },
+  './LabNotebookCommandBar': notebookCommand,
   './LabSection': { LabSection: SectionFixture },
   './LabNotebook': { LabNotebook: (props) => React.createElement(LabNotebook, { ...props,
     onOpenProject: (artifact, version) => {
@@ -284,6 +286,7 @@ try {
   await clickButton('Save', workbar())
   assert.equal(saveCalls.at(-1).id, copiedId, 'Later Save updates the new copy')
   await clickButton('Notebook', workbar())
+  await clickButton('Controls'); await clickButton('Library')
   assert.equal(workbar().hidden, true, 'Shared save controls are hidden while browsing')
   assert.strictEqual(editor(), firstEditor, 'Visiting the notebook hides, rather than unmounts, the active editor.')
   assert.equal(editor().closest('[hidden]')?.hidden, true)
@@ -435,6 +438,7 @@ try {
   await clickButton('Open project', projectDialog())
   assert.equal(editorText().value, 'Unsaved starter')
   await clickButton('Notebook')
+  await clickButton('Controls'); await clickButton('Library')
   const liveRow = () => document.querySelector(`[data-object-id="${draftSaved}"][data-state="live"]`)
   const recoveryFileBeforeOpen = drafts.get(draftSaved).fileId
   await clickButton('Open', liveRow())
@@ -497,6 +501,7 @@ try {
     mimeType: paintedFile.type, previewMimeType: 'image/png', size: paintedFile.size, createdAt: date }
   await React.act(async () => addArtifactFixture(painting, paintedFile))
   await clickButton('Notebook')
+  await clickButton('Controls'); await clickButton('Library')
   await clickButton('Preview', artifactRow(painting.name))
   const previewDialog = () => document.querySelector('dialog[aria-label="Saved visual preview"]')
   assert.equal(previewDialog().open, true)

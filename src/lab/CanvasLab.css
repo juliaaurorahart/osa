@@ -14,7 +14,7 @@
 .lab-shell__header {
   grid-row: 1;
   display: grid;
-  grid-template-columns: minmax(150px, auto) auto minmax(260px, 520px) auto;
+  grid-template-columns: minmax(150px, auto) minmax(0, 1fr) auto;
   align-items: center;
   gap: 14px;
   min-height: 68px;
@@ -55,7 +55,7 @@
   display: none;
 }
 
-.lab-shell.is-home .lab-shell__actions button {
+.lab-shell.is-home .lab-shell__actions :is(button, .lab-menu > summary) {
   border-color: rgb(239 218 244 / 17%);
   background: rgb(255 255 255 / 4%);
   color: #e8dde9;
@@ -102,7 +102,7 @@
 }
 
 .lab-shell__nav-button,
-.lab-shell__actions button {
+.lab-shell__actions :is(button, .lab-menu > summary) {
   min-height: 36px;
   padding: 6px 9px;
   border: 1px solid transparent;
@@ -118,7 +118,9 @@
 .lab-shell__nav-button:focus-visible,
 .lab-shell__nav-button.is-active,
 .lab-shell__actions button:hover,
-.lab-shell__actions button:focus-visible {
+.lab-shell__actions button:focus-visible,
+.lab-shell__actions .lab-menu > summary:hover,
+.lab-shell__actions .lab-menu > summary:focus-visible {
   border-color: var(--osa-border);
   background: var(--osa-hover-surface);
   outline: none;
@@ -136,7 +138,7 @@
 }
 
 .lab-shell.is-home .lab-shell__brand:focus-visible,
-.lab-shell.is-home .lab-shell__actions button:focus-visible {
+.lab-shell.is-home .lab-shell__actions :is(button, .lab-menu > summary):focus-visible {
   border-color: #d97cbd;
   outline: 2px solid #d97cbd;
   outline-offset: 2px;
@@ -177,6 +179,22 @@
   border-color: var(--osa-border);
   background: var(--osa-surface-raised);
 }
+
+.lab-shell__actions .lab-menu > summary { border-color: var(--osa-border); background: var(--osa-surface-raised); }
+.lab-shell__menu-picker { display: grid; gap: 6px; color: var(--osa-muted); }
+.lab-shell__menu-picker select {
+  width: 100%; min-width: 0; min-height: 40px; padding: 6px 30px 6px 9px; border: 1px solid var(--osa-border);
+  border-radius: 7px; background: var(--osa-surface-raised); color: var(--osa-text); font: inherit;
+}
+.lab-shell__menu-picker select:focus-visible { border-color: var(--osa-focus); outline: none; }
+
+.lab-notebook-controls {
+  box-sizing: border-box; display: flex; align-items: flex-start; gap: 8px;
+  width: min(1172px, calc(100% - 32px)); margin: 14px auto 0;
+}
+.lab-notebook-controls[hidden] { display: none !important; }
+.lab-notebook-controls > .lab-notebook-sync { flex: 1 1 auto; width: auto; margin: 0; }
+.lab-notebook-controls > .lab-notebook-views { flex: 0 0 auto; padding: 0; }
 
 .lab-shell__context {
   display: flex;
@@ -287,14 +305,13 @@
     grid-template-columns: minmax(140px, 1fr) auto;
     grid-template-areas:
       'brand actions'
-      'nav picker';
+      'nav nav';
     gap: 6px 10px;
     padding: 8px 12px;
   }
 
   .lab-shell__brand { grid-area: brand; }
   .lab-shell__nav { grid-area: nav; }
-  .lab-shell__picker { grid-area: picker; }
   .lab-shell__actions { grid-area: actions; }
   .lab-shell__context { padding-inline: 12px; }
   .lab-shell__body.is-workbench > *,
@@ -307,15 +324,15 @@
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:
       'brand actions'
-      'nav nav'
-      'picker picker';
+      'nav nav';
   }
 
-  .lab-shell__brand span,
-  .lab-shell__picker > span { display: none; }
-  .lab-shell__picker { grid-template-columns: minmax(0, 1fr); }
-  .lab-shell__nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .lab-shell__brand span { display: none; }
+  .lab-shell__nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .lab-shell__nav-button { width: 100%; }
+  .lab-shell__more .lab-menu__panel :is(button, select) { min-height: 44px; }
+  .lab-notebook-controls { flex-wrap: wrap; width: calc(100% - 24px); }
+  .lab-notebook-controls > .lab-notebook-sync { flex-basis: 100%; }
   .lab-shell__context { align-content: center; min-height: 42px; }
   .lab-shell__context span + span::before { content: none; margin: 0; }
   .lab-shell__body.is-workbench { padding: 7px; }

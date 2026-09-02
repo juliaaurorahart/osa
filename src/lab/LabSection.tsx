@@ -33,8 +33,9 @@ const editorName = (session: Active | null) => session?.artifact?.toolId === 'kl
 const failureText = (failure: unknown) => failure instanceof Error ? failure.message : 'Could not save. Keep this editor open.'
 
 /** A single active editor keeps the same React identity and DOM parent in every layout. */
-export function LabSection({ notebook, theme, isActive, sectionView, onRegisterFlush, onOpenProject, onContinueInKonva, onEditorLockChange }: {
+export function LabSection({ notebook, theme, isActive, sectionView, controlsVisible = true, onRegisterFlush, onOpenProject, onContinueInKonva, onEditorLockChange }: {
   notebook: Notebook; theme: LabTheme; isActive: boolean; sectionView: SectionView;
+  controlsVisible?: boolean;
   onRegisterFlush: (flush: () => Promise<void>) => () => void; onOpenProject: (artifact: LabArtifact, version?: 'saved' | 'draft') => void;
   onContinueInKonva?: (artifact: LabArtifact, sectionId?: string) => Promise<void>;
   onEditorLockChange?: (locked: boolean) => void;
@@ -281,40 +282,53 @@ export function LabSection({ notebook, theme, isActive, sectionView, onRegisterF
   const candidates = [...notebook.notes.map((note) => ({ id: note.id, name: note.title, objectType: 'note' as const })),
     ...notebook.artifacts.map((artifact) => ({ id: artifact.id, name: artifact.name, objectType: 'artifact' as const }))]
     .filter((item) => item.name.toLowerCase().includes(query.toLowerCase()))
+  const statusText = error ? 'Save needs attention'
+    : drafts.state.kind === 'error' ? 'Draft needs attention'
+    : drafts.state.kind === 'saving' ? 'Saving draft…'
+    : active?.note && noteStatus !== 'Text saved on this device' ? noteStatus
+    : ''
 
   const layout = sectionView === 'page' ? 'inline' : mode
   return <section ref={sectionRef} className={`lab-section is-${layout} is-${sectionView}${active ? ' has-active' : ''}`} aria-label="Working section">
     <header className="lab-section__toolbar">
       {section ? <input key={section.id + section.title} className="lab-section__name" aria-label="Section name" defaultValue={section.title} maxLength={120}
         onBlur={(event) => { if (event.target.value !== section.title) void run(() => change({ kind: 'rename', title: event.target.value })) }} /> : <h2>A space to think</h2>}
-      <span className="lab-section__status" role="status">{error ? 'Save needs attention' : hasVersionedEditor(active?.artifact?.toolId) ? !managedEditing ? 'Saved preview' : drafts.state.kind === 'error' ? 'Draft needs attention' : drafts.state.kind === 'saving' ? 'Saving draft…' : drafts.state.kind === 'saved' ? 'Draft saved on this device' : 'Draft autosaves · Push updates Saved' : active?.note ? noteStatus || 'Text autosaves' : active?.artifact && editableArtifact ? drafts.state.kind === 'error' ? 'Draft needs attention' : drafts.state.kind === 'saving' ? 'Saving draft…' : 'Working draft · Save updates live' : sectionView === 'page' ? 'Page · oldest to newest' : 'Upside-down notebook · new cells at the top'}</span>
-      {sectionView === 'cells' ? <div className="lab-section__modes" role="group" aria-label="Editing layout">
-        {(['inline', 'split', 'focus'] as const).map((value) => <button type="button" key={value} aria-pressed={mode === value}
-          onClick={() => setMode(value)}>{value === 'inline' ? 'In place' : value === 'split' ? 'Split' : 'Focus'}</button>)}
-      </div> : null}
-      {section ? <details className="lab-section__topics"><summary>Topics{topicIds.length ? ` · ${topicIds.length}` : ''}</summary>
-        {notebook.topics.map((topic) => <label key={topic.id}><input type="checkbox" checked={topicIds.includes(topic.id)} disabled={!notebook.isReady || busy}
-          onChange={(event) => notebook.setObjectTopics('section', section.id, event.target.checked ? [...topicIds, topic.id] : topicIds.filter((id) => id !== topic.id))} />{topic.name}</label>)}
-        <form onSubmit={(event) => { event.preventDefault(); const field = event.currentTarget.elements.namedItem('topic') as HTMLInputElement
-          const id = notebook.createTopic(field.value); if (id) { notebook.setObjectTopics('section', section.id, [...topicIds, id]); field.value = '' } }}>
-          <input name="topic" aria-label="New section topic" placeholder="New topic" /><button type="submit" disabled={!notebook.isReady || busy}>Add</button></form>
-      </details> : null}
+      {statusText ? <span className="lab-section__status" role="status">{statusText}</span> : null}
+      {section && controlsVisible ? <details className="lab-section__organization"><summary>View &amp; organization</summary><div className="lab-section__organization-panel">
+        {sectionView === 'cells' ? <div className="lab-section__organization-group"><strong>Editing layout</strong>
+          <div className="lab-section__modes" role="group" aria-label="Editing layout">
+            {(['inline', 'split', 'focus'] as const).map((value) => <button type="button" key={value} aria-pressed={mode === value}
+              onClick={() => setMode(value)}>{value === 'inline' ? 'In place' : value === 'split' ? 'Split' : 'Focus'}</button>)}
+          </div></div> : null}
+        <div className="lab-section__organization-group"><strong>Topics{topicIds.length ? ` · ${topicIds.length}` : ''}</strong>
+          <div className="lab-section__topic-list">{notebook.topics.map((topic) => <label key={topic.id}><input type="checkbox" checked={topicIds.includes(topic.id)} disabled={!notebook.isReady || busy}
+            onChange={(event) => notebook.setObjectTopics('section', section.id, event.target.checked ? [...topicIds, topic.id] : topicIds.filter((id) => id !== topic.id))} />{topic.name}</label>)}</div>
+          <form onSubmit={(event) => { event.preventDefault(); const field = event.currentTarget.elements.namedItem('topic') as HTMLInputElement
+            const id = notebook.createTopic(field.value); if (id) { notebook.setObjectTopics('section', section.id, [...topicIds, id]); field.value = '' } }}>
+            <input name="topic" aria-label="New section topic" placeholder="New topic" /><button type="submit" disabled={!notebook.isReady || busy}>Add</button></form>
+        </div>
+      </div></details> : null}
     </header>
     {error || drafts.state.kind === 'error' ? <div className="lab-section__error" role="alert">{error || drafts.state.message}<button type="button" disabled={busy} onClick={() => { setError(''); void flush().catch((failure) => setError(failureText(failure))) }}>Retry draft save</button></div> : null}
     {!section ? <div className="lab-section__empty"><h2>Text, drawing, code. Keep the thought going.</h2><p>Your library stays where it is. A section brings its objects together.</p>
       <button type="button" disabled={!notebook.isReady || busy} onClick={() => void run(() => change({ kind: 'create' }))}>Start a section</button></div> : <>
-      <div className="lab-section__creation" ref={creationRef}>
+      <div className="lab-section__creation" ref={creationRef} hidden={!controlsVisible}>
       <nav className="lab-section__add" aria-label="Add a cell" title={sectionView === 'page' ? 'New text appears after the open object, or at the top when nothing is open' : 'New cells appear at the top'}>
         <button type="button" disabled={!notebook.isReady || busy} onClick={() => void run(() => change({ kind: 'note',
           ...(sectionView === 'page' ? { pageAfterCellId: activeRef.current?.cell.id ?? null } : {}) }))}>+ Text</button>
-        <LabMenu label="+ Workspace" className="lab-section__workspace-menu">
-          {SECTION_WORKSPACES.map((workspace) => <button key={workspace.id} type="button" disabled={!notebook.isReady || busy}
-            onClick={() => void run(async () => change({ kind: 'capture', capture: await newSectionCapture(workspace.id, theme) }))}>
-            <strong>{workspace.name}</strong><small>{workspace.description}</small></button>)}
+        <LabMenu label="+ Add" className="lab-section__add-menu">
+          <div className="lab-section__add-group" role="group" aria-label="Workspace choices"><strong>Workspace</strong>
+            {SECTION_WORKSPACES.map((workspace) => <button key={workspace.id} type="button" disabled={!notebook.isReady || busy}
+              onClick={() => void run(async () => change({ kind: 'capture', capture: await newSectionCapture(workspace.id, theme) }))}>
+              <strong>{workspace.name}</strong><small>{workspace.description}</small></button>)}
+          </div>
+          <hr />
+          <div className="lab-section__add-group" role="group" aria-label="Other ways to add"><strong>Other</strong>
+            <button type="button" disabled={!notebook.isReady || busy} onClick={() => void run(async () => change({ kind: 'capture', capture: await newSectionCapture('code', theme) }))}>Code</button>
+            <button type="button" disabled={!notebook.isReady || busy} onClick={() => inputRef.current?.click()}>Image / file</button>
+            <button type="button" disabled={!notebook.isReady || busy} aria-expanded={picker} onClick={() => setPicker(!picker)}>Existing note or file</button>
+          </div>
         </LabMenu>
-        <button type="button" disabled={!notebook.isReady || busy} onClick={() => void run(async () => change({ kind: 'capture', capture: await newSectionCapture('code', theme) }))}>+ Code</button>
-        <button type="button" disabled={!notebook.isReady || busy} onClick={() => inputRef.current?.click()}>+ Image / file</button>
-        <button type="button" disabled={!notebook.isReady || busy} aria-expanded={picker} onClick={() => setPicker(!picker)}>From notebook</button>
         <input type="file" multiple hidden ref={inputRef} onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; void run(() => addFiles(files)) }} />
         {active && sectionView === 'cells' ? <select aria-label="Active cell" value={active.cell.id} disabled={busy} onChange={(event) => { const cell = section.cells.find((item) => item.id === event.target.value); if (cell) void run(() => open(cell)) }}>
           {displayedCells.map((cell, cellIndex) => <option key={cell.id} value={cell.id}>{cellIndex + 1}. {cellName(cell, notebook)}</option>)}
@@ -340,19 +354,21 @@ export function LabSection({ notebook, theme, isActive, sectionView, onRegisterF
           </div>
         </article>)}
         <div ref={editorRef} className="lab-section__editor" hidden={!active} inert={busy || !isActive ? true : undefined}>
-          <header className="lab-section__editor-bar"><strong>{active?.note ? 'Text' : active?.artifact?.toolId || 'File'}</strong><div ref={setSaveTarget} />
+          <header className="lab-section__editor-bar">{active?.note
+            ? <input className="lab-section__editor-title" aria-label="Cell note title" value={active.note.title === 'Untitled note' ? '' : active.note.title}
+              placeholder="Title (optional)" onChange={(event) => editNote({ title: event.target.value })} />
+            : <strong>{active?.artifact?.toolId || 'File'}</strong>}<div ref={setSaveTarget} />
             {managedEditing ? <button type="button" disabled={busy} onClick={() => void closeManagedEditor().catch(() => undefined)}>Close editor</button> : null}
             <button type="button" aria-label="Move active cell up" disabled={busy || index <= 0} onClick={() => active && void run(() => moveCell(active.cell.id, -1))}>↑</button>
             <button type="button" aria-label="Move active cell down" disabled={busy || index === displayedCells.length - 1} onClick={() => active && void run(() => moveCell(active.cell.id, 1))}>↓</button>
             <button type="button" title="Keep the object in the notebook" aria-label="Remove active cell from section" disabled={busy} onClick={() => active && void run(() => change({ kind: 'remove', cellId: active.cell.id }))}>×</button>
-            <details><summary>File</summary><div ref={setFileTarget} />{active?.artifact ? <button type="button" onClick={() => void notebook.downloadArtifact(active.artifact!.id)}>Download saved file</button> : null}</details>
+            {active?.artifact ? <details><summary>File</summary><div ref={setFileTarget} /><button type="button" onClick={() => void notebook.downloadArtifact(active.artifact!.id)}>Download saved file</button></details> : null}
           </header>
           <LabDraftContext.Provider value={publishDraft}><LabCaptureContext.Provider value={saveCapture}>
             <LabWorkbenchChromeContext.Provider value={{ saveTarget, fileTarget, readOnly: false }}>
               <LabErrorBoundary key={active?.sessionId ?? 'empty'} labName="Section editor" recoveryHint="Your saved object and recovery draft remain in the notebook.">
                 <Suspense fallback={<p>Opening editor…</p>}>
-                  {active?.note ? <div className="lab-section__text"><input aria-label="Cell note title" value={active.note.title === 'Untitled note' ? '' : active.note.title} placeholder="Title (optional)"
-                    onChange={(event) => editNote({ title: event.target.value })} /><textarea autoFocus aria-label="Cell note text" placeholder="Start a thought…" value={active.note.body}
+                  {active?.note ? <div className="lab-section__text"><textarea autoFocus aria-label="Cell note text" placeholder="Start a thought…" value={active.note.body}
                     onPaste={(event) => { const files = Array.from(event.clipboardData.files); if (files.length) { event.preventDefault(); void run(() => addFiles(files)) } }}
                     onChange={(event) => editNote({ body: event.target.value })} /></div>
                     : active?.artifact?.toolId === 'ink' ? <InkLab initialSource={active.source} />

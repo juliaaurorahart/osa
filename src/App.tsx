@@ -3642,7 +3642,14 @@ function Flow({ identity, startupDraft }: { identity: string | null; startupDraf
                 >
                   Lab
                 </button>
-                {renderWorkspaceSettingsMenu()}
+                <div className="workspace-switcher__account-actions">
+                  {renderWorkspaceSettingsMenu()}
+                  {!identity || needsSignIn ? (
+                    <a className="workspace-switcher__sign-in" href="/api/login">
+                      Sign In
+                    </a>
+                  ) : null}
+                </div>
                 <span className="workspace-switcher__status" role="status">
                   {cloudSyncStatus || draftStatus}
                 </span>

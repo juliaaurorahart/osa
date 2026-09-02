@@ -77,6 +77,32 @@
   font-size: 0.72rem;
 }
 
+.workspace-switcher__account-actions {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+}
+
+.workspace-switcher__sign-in {
+  display: inline-flex;
+  box-sizing: border-box;
+  min-height: 32px;
+  align-items: center;
+  padding: 4px 0;
+  border-bottom: 1px solid transparent;
+  color: var(--osa-danger-border);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.workspace-switcher__sign-in:hover,
+.workspace-switcher__sign-in:focus-visible {
+  border-bottom-color: currentColor;
+  outline: 0;
+}
+
 .workspace-switcher__status {
   flex: none;
   padding-left: 10px;
@@ -86,20 +112,45 @@
 }
 
 .workspace-switcher-reveal {
+  position: relative;
   width: 42px;
-  height: 18px;
+  height: 44px;
   padding: 0;
   border: 0;
+  background: transparent;
+  color: var(--osa-text);
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+  pointer-events: auto;
+}
+
+.workspace-switcher-reveal::before {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 42px;
+  height: 18px;
   border-radius: 0 0 18px 18px;
   background: var(--osa-surface);
   box-shadow:
     0 12px 34px var(--osa-shadow),
     0 4px 9px color-mix(in srgb, var(--workspace-switcher-glow) 82%, transparent);
-  color: var(--osa-text);
-  cursor: pointer;
-  font: inherit;
-  line-height: 14px;
-  pointer-events: auto;
+  content: '';
+  transform: translateX(-50%);
+}
+
+.workspace-switcher-reveal > span {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  left: 50%;
+  display: grid;
+  width: 42px;
+  height: 18px;
+  place-items: center;
+  font-size: 1rem;
+  transform: translateX(-50%);
 }
 
 .workspace-switcher-reveal:hover,
@@ -1610,8 +1661,9 @@
     min-width: 0;
     width: 100%;
     justify-content: flex-start;
-    gap: 16px;
-    padding-inline: 10px;
+    gap: 6px;
+    padding-inline: 4px;
+    font-size: 1.25rem;
   }
 
   .workspace-switcher .workspace-switcher__hide {
@@ -1620,7 +1672,19 @@
 
   .workspace-switcher button,
   .workspace-settings-menu > .workspace-settings-menu__trigger {
-    min-height: 36px;
+    min-height: 44px;
+  }
+
+  .workspace-switcher__account-actions {
+    gap: 4px;
+  }
+
+  .workspace-switcher__sign-in {
+    min-height: 44px;
+  }
+
+  .workspace-switcher__status {
+    display: none;
   }
 
   .work-view-shell {

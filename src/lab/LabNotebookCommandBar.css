@@ -1,0 +1,44 @@
+.lab-notebook-command {
+  box-sizing: border-box; width: min(1172px, calc(100% - 32px)); margin: 14px auto 0;
+  color: var(--osa-text); font-size: .82rem;
+}
+.lab-notebook-command form {
+  display: flex; align-items: center; gap: 8px; min-height: 46px; padding: 3px 5px 3px 12px;
+  border: 1px solid var(--osa-border); border-radius: 9px; background: color-mix(in srgb, var(--osa-surface) 72%, transparent);
+}
+.lab-notebook-command__prompt { color: var(--osa-focus); font-size: 1.4rem; line-height: 1; }
+.lab-notebook-command input {
+  flex: 1 1 240px; min-width: 80px; min-height: 38px; padding: 4px 2px; border: 0; outline: 0;
+  background: transparent; color: var(--osa-text); font: inherit; font-size: .95rem;
+}
+.lab-notebook-command input::placeholder { color: var(--osa-muted); }
+.lab-notebook-command button {
+  flex: 0 0 auto; min-height: 36px; padding: 6px 10px; border: 1px solid var(--osa-border); border-radius: 7px;
+  background: var(--osa-surface-raised); color: var(--osa-text); cursor: pointer; font: inherit;
+}
+.lab-notebook-command button:disabled { opacity: .4; cursor: default; }
+.lab-notebook-command button:focus-visible, .lab-notebook-command input:focus-visible { outline: 2px solid var(--osa-focus); outline-offset: 2px; }
+.lab-notebook-command button.is-cued {
+  border-color: color-mix(in srgb, #ff4fc8 72%, var(--osa-border));
+  box-shadow: 0 0 0 2px color-mix(in srgb, #ff4fc8 20%, transparent), 0 0 12px color-mix(in srgb, #ff4fc8 48%, transparent);
+}
+.lab-notebook-command__cue { color: color-mix(in srgb, #ff8bd7 75%, var(--osa-text)); white-space: nowrap; }
+.lab-notebook-command__message { max-width: 260px; color: var(--osa-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lab-notebook-command__run { font-size: 1.05rem !important; padding-inline: 9px !important; }
+.lab-notebook-command-attention {
+  box-sizing: border-box; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px;
+  width: min(1172px, calc(100% - 32px)); margin: 8px auto 0; color: var(--osa-danger-text); font-size: .82rem;
+}
+.lab-notebook-command-attention button {
+  min-height: 36px; padding: 6px 10px; border: 1px solid currentColor; border-radius: 7px;
+  background: transparent; color: inherit; cursor: pointer; font: inherit;
+}
+@media (max-width: 620px) {
+  .lab-notebook-command { width: calc(100% - 24px); }
+  .lab-notebook-command form { flex-wrap: wrap; }
+  .lab-notebook-command input { flex-basis: calc(100% - 38px); font-size: 16px; }
+  .lab-notebook-command button { min-height: 44px; }
+  .lab-notebook-command__cue, .lab-notebook-command__message { order: 3; flex: 1 1 100%; white-space: normal; }
+  .lab-notebook-command-attention { width: calc(100% - 24px); }
+  .lab-notebook-command-attention button { min-height: 44px; }
+}

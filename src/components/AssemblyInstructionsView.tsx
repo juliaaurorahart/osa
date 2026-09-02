@@ -1,4 +1,5 @@
 import { useState, type CSSProperties } from 'react'
+import { createPortal } from 'react-dom'
 import type { GraphEdge } from '../graph/graphEdge'
 import {
   appearanceAccentColor,
@@ -101,8 +102,11 @@ export function StepCanvasViewer({
   annotationTargets: ReturnType<typeof annotationTargetsForNodes>
   onClose: () => void
 }) {
-  return (
-    <div className="assembly-instructions-view__canvas-viewer-scrim" role="presentation">
+  const viewer = (
+    <div
+      className="assembly-view assembly-instructions-view__canvas-viewer-scrim"
+      role="presentation"
+    >
       <section
         className="assembly-instructions-view__canvas-viewer"
         role="dialog"
@@ -124,6 +128,11 @@ export function StepCanvasViewer({
       </section>
     </div>
   )
+
+  // The Assembly page sits in its own stacking layer beneath the fixed app
+  // chrome. Mount the viewer at the document root so its modal layer can
+  // genuinely cover that chrome on narrow screens.
+  return typeof document === 'undefined' ? viewer : createPortal(viewer, document.body)
 }
 
 /** Read-only instructions derived from the same title, description, and Visual links. */

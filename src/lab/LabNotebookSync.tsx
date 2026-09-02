@@ -28,17 +28,26 @@ export function LabNotebookSync({ notebook, hasDraft, hasProject = false, before
   const needsAttention = notebook.status === 'error' || notebook.syncStatus === 'offline' || notebook.syncStatus === 'conflict'
   const syncLabel = notebook.isLocal ? 'This device' : ({ local: 'Private account', syncing: 'Syncing…',
     synced: 'Synced', pending: 'Waiting to sync', conflict: 'Sync needs attention', offline: 'Offline' }[notebook.syncStatus])
+  const noteCount = notebook.notes?.length ?? 0
+  const fileCount = notebook.artifacts?.length ?? 0
   return <aside className="lab-notebook-sync" aria-label="Notebook storage and sync">
+    <details className="lab-notebook-sync__manage">
+      <summary><span className="lab-notebook-sync__summary">
+        <strong>{notebook.name || 'Notebook'}</strong>
+        <span>{noteCount} {noteCount === 1 ? 'note' : 'notes'} · {fileCount} {fileCount === 1 ? 'file' : 'files'}</span>
+        <span className="lab-notebook-sync__summary-status" role="status">{syncLabel}</span>
+      </span></summary>
+      <div className="lab-notebook-sync__panel">
     <div className="lab-notebook-sync__actions lab-notebook-sync__picker">
-      <label>Notebook <select aria-label="Switch notebook" value={notebook.scope} disabled={blocked || !notebook.isReady || Boolean(naming) || pendingCopy}
+      <label>Switch notebook <select aria-label="Switch notebook" value={notebook.scope} disabled={blocked || !notebook.isReady || Boolean(naming) || pendingCopy}
         onChange={(event) => { const scope = event.target.value; void confirmSwitch(() => notebook.openNotebook(scope)) }}>
         {!choices.some((item) => item.scope === notebook.scope) ? <option value={notebook.scope}>{notebook.name || 'Notebook'}</option> : null}
         <optgroup label="This device">{choices.filter((item) => !item.boardId).map((item) => <option key={item.scope} value={item.scope}>{item.name}</option>)}</optgroup>
         {notebook.email ? <optgroup label="Private account">{choices.filter((item) => item.boardId).map((item) => <option key={item.scope} value={item.scope}>{item.name}</option>)}</optgroup> : null}
       </select></label>
-      <button type="button" disabled={blocked || !notebook.isReady} onClick={() => { setName(''); setSaveLocation(notebook.email ? 'account' : 'local'); setNaming('new') }}>New notebook</button>
+      <button type="button" disabled={blocked || !notebook.isReady} onClick={() => { setName(''); setSaveLocation(notebook.email ? 'account' : 'local'); setNaming('new') }}>New</button>
       <button type="button" disabled={blocked || !notebook.isReady} onClick={() => { setName(notebook.name); setNaming('rename') }}>Rename</button>
-      {!notebook.email && notebook.cloudAvailable ? locked ? <span>Close editor to sign in</span> : <a href="/api/login">Sign in</a> : <span>{notebook.email}</span>}
+      {!notebook.email && notebook.cloudAvailable ? locked ? <span className="lab-notebook-sync__account">Close editor to sign in</span> : <a href="/api/login">Sign in</a> : <span className="lab-notebook-sync__account">{notebook.email}</span>}
     </div>
     {naming ? <form className="lab-notebook-sync__naming" aria-label={naming === 'new' ? 'New notebook' : 'Rename notebook'} onSubmit={(event) => {
       event.preventDefault()
@@ -60,9 +69,6 @@ export function LabNotebookSync({ notebook, hasDraft, hasProject = false, before
         <button type="button" disabled={blocked} onClick={() => setNaming(null)}>Cancel</button></div>
       <small>{naming === 'new' ? 'Starts empty. Your current notebook stays intact.' : 'Changes the name only. Files, drafts, and topics stay together.'}</small>
     </form> : null}
-    {needsAttention ? <p role="alert">{notebook.syncMessage}</p> : null}
-    {switchError ? <p role="alert">{switchError}</p> : null}
-    {notebook.notebookListError ? <p role="alert">{notebook.notebookListError}</p> : null}
     <details className="lab-notebook-sync__storage"><summary><span role="status">{syncLabel}</span> · Sync &amp; backups</summary>
     {!needsAttention ? <p>{notebook.syncMessage}</p> : null}
     {globalThis.location?.origin === LAB_ORIGIN ? <details className="lab-notebook-sync__old-address">
@@ -93,5 +99,10 @@ export function LabNotebookSync({ notebook, hasDraft, hasProject = false, before
         <button type="button" disabled={blocked} onClick={() => setPendingCopy(false)}>Cancel</button>
       </div>
     </section> : null}
+      </div>
+    </details>
+    {needsAttention ? <p role="alert">{notebook.syncMessage}</p> : null}
+    {switchError ? <p role="alert">{switchError}</p> : null}
+    {notebook.notebookListError ? <p role="alert">{notebook.notebookListError}</p> : null}
   </aside>
 }

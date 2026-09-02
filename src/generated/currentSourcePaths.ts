@@ -162,6 +162,8 @@ export const CURRENT_SOURCE_PATHS = [
   "src/lab/LabNotebookBrowser.tsx",
   "src/lab/labNotebookCapture.ts",
   "src/lab/labNotebookCloud.ts",
+  "src/lab/LabNotebookCommandBar.css",
+  "src/lab/LabNotebookCommandBar.tsx",
   "src/lab/labNotebookDocumentStorage.ts",
   "src/lab/labNotebookGraph.ts",
   "src/lab/labNotebookSearch.ts",

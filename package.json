@@ -16,7 +16,7 @@
     "test:section": "node scripts/check-lab-section.mjs",
     "test:klecks": "node scripts/generate-klecks-starter.mjs --check && node scripts/check-lab-klecks.mjs",
     "test:handoff": "node scripts/check-lab-workspace-handoff.mjs",
-    "test:notebooks": "node scripts/check-lab-notebook-catalog.mjs && node scripts/check-lab-notebook-picker.mjs && node scripts/check-lab-notebook-browser.mjs",
+    "test:notebooks": "node scripts/check-lab-notebook-catalog.mjs && node scripts/check-lab-notebook-picker.mjs && node scripts/check-lab-notebook-browser.mjs && node scripts/check-lab-notebook-command.mjs",
     "posttest": "npm run test:notebooks && npm run test:code && npm run test:section && npm run test:klecks && npm run test:handoff && npm run test:tone",
     "test:backup": "node scripts/check-osa-backup-verifier.mjs",
     "lint": "eslint .",

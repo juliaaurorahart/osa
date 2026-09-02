@@ -206,7 +206,10 @@ function Harness() { const [, setVersion] = React.useState(0), [sectionView, set
       onContinueInKonva: async (artifact, sectionId) => { handoffs.push({ artifact, sectionId }); if (handoffWait) await handoffWait; if (handoffFailure) throw new Error(handoffFailure) } })) }
 const root = createRoot(document.getElementById('root'))
 const button = (label) => [...document.querySelectorAll('button')].find((node) => node.textContent === label || node.getAttribute('aria-label') === label)
+const disclosure = (label) => [...document.querySelectorAll('summary')].find((node) => node.textContent === label)
 const click = async (label) => React.act(async () => { assert.ok(button(label), label); button(label).click() })
+const clickDisclosure = async (label) => React.act(async () => { assert.ok(disclosure(label), label); disclosure(label).click() })
+const clickAdd = async (label) => { await clickDisclosure('+ Add'); await click(label) }
 const selectCell = async (id) => React.act(async () => { const select = document.querySelector('[aria-label="Active cell"]'); select.value = id; select.dispatchEvent(new window.Event('change', { bubbles: true })) })
 const setText = async (label, text) => React.act(async () => { const node = document.querySelector(`[aria-label="${label}"]`)
   const prototype = node.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype
@@ -214,11 +217,28 @@ const setText = async (label, text) => React.act(async () => { const node = docu
 try {
   await React.act(async () => root.render(React.createElement(Harness)))
   await click('Start a section'); await click('+ Text')
+  assert.equal(document.querySelector('.lab-section__add > button')?.textContent, '+ Text', 'Text stays immediately available')
+  assert.equal(disclosure('+ Add')?.parentElement?.classList.contains('lab-section__add-menu'), true, 'Less common additions share one disclosure')
+  assert.equal(button('+ Code'), undefined)
+  assert.equal(button('From notebook'), undefined)
+  assert.equal(disclosure('View & organization')?.parentElement?.classList.contains('lab-section__organization'), true,
+    'Layout and topics share one header disclosure')
+  assert.equal(document.querySelector('.lab-section__status'), null, 'Routine autosave prose stays out of the compact header')
   const textCell = sections[0].cells[0]
   assert.ok(document.querySelector('[aria-label="Cell note text"]'), 'New text is immediately editable')
+  const noteTitle = document.querySelector('.lab-section__editor-bar [aria-label="Cell note title"]')
+  assert.ok(noteTitle, 'Text title is editable in the editor header')
+  assert.equal(noteTitle.placeholder, 'Title (optional)')
+  assert.equal(document.querySelector('.lab-section__text [aria-label="Cell note title"]'), null, 'Text body does not repeat the title field')
+  assert.equal(document.querySelector('.lab-section__editor-bar summary'), null, 'Text hides the empty File menu')
+  await setText('Cell note title', 'Testing')
   await setText('Cell note text', 'Think → draw → keep writing')
-  await click('+ Code')
+  await clickAdd('Code')
+  assert.equal(document.querySelector('.lab-section__add-menu').open, false, 'Choosing an addition closes the Add disclosure')
+  assert.equal(notes[0].title, 'Testing', 'Header title edits are saved')
   assert.equal(notes[0].body, 'Think → draw → keep writing', 'Switching flushes unsaved text')
+  assert.equal(document.querySelector('.lab-section__editor-bar > strong')?.textContent, 'code', 'Non-text editors keep their tool label')
+  assert.equal(document.querySelector('.lab-section__editor-bar summary')?.textContent, 'File', 'File objects keep their file actions')
   const codeCell = sections[0].cells[0]
   assert.deepEqual(sections[0].cells.map((cell) => cell.id), [codeCell.id, textCell.id], 'New code goes above existing text')
   assert.match(JSON.parse(lastEditor.text).code, /const speed/)
@@ -243,7 +263,7 @@ try {
   assert.equal(lastEditor.text, 'unrun code survives')
 
   await click('Page')
-  await click('Open editor for Untitled note')
+  await click('Open editor for Testing')
   scrolledIntoView.length = 0
   await click('+ Text')
   const contextualTextCell = sections[0].cells[1]
@@ -265,6 +285,7 @@ try {
   await click('Cells'); await click('1 · Section code')
 
   const editorNode = document.querySelector('[data-editor-instance]'), instance = lastEditor.instance
+  await clickDisclosure('View & organization')
   for (const mode of ['Split', 'Focus', 'In place']) {
     await click(mode); assert.equal(lastEditor.instance, instance); assert.equal(document.querySelector('[data-editor-instance]'), editorNode)
     assert.equal(lastEditor.text, 'unrun code survives')
@@ -279,10 +300,10 @@ try {
   assert.equal(exampleCell.workspace, 'output'); assert.notEqual(exampleCell.objectId, codeCell.objectId)
   assert.match(JSON.parse(lastEditor.text).code, /function draw/)
   assert.equal(await files.get(notebook.getProjectDraft(codeCell.objectId).id).text(), 'unrun code survives', 'Example is a separate object, never a replacement')
-  await click('InkPen & handwriting'); const inkA = sections[0].cells[0]
+  await clickAdd('InkPen & handwriting'); const inkA = sections[0].cells[0]
   await React.act(async () => editorActions.edit('ink A working source'))
   const oldSave = lastEditor.save, oldSource = lastEditor.source
-  await click('InkPen & handwriting'); const inkB = sections[0].cells[0]
+  await clickAdd('InkPen & handwriting'); const inkB = sections[0].cells[0]
   await assert.rejects(() => oldSave({ toolId: 'ink', name: 'Wrong tool default', source: oldSource, preview: new Blob(['png']) }), /original cell/)
   assert.equal(saved.length, 0, 'A late async image capture cannot overwrite the next same-tool cell')
   const sameInstance = lastEditor.instance
@@ -299,7 +320,10 @@ try {
   await React.act(async () => lastEditor.save({ toolId: 'ink', name: 'Ignored default', source: lastEditor.source, preview: new Blob(['png']) }))
   assert.equal(saved.at(-1).capture.name, 'Section drawing', 'Live save preserves the notebook object name')
   await click('Remove active cell from section'); assert.ok(notebook.getArtifact(inkA.objectId)); assert.equal(document.querySelector('[data-editor-instance]'), null)
-  await click('From notebook'); await click('Untitled note Text')
+  await clickAdd('Existing note or file')
+  assert.equal(document.querySelector('.lab-section__add-menu').open, false, 'Opening the existing-object picker closes the Add disclosure')
+  assert.ok(document.querySelector('.lab-section__picker'), 'The existing note or file picker opens inline')
+  await click('Testing Text')
   assert.equal(sections[0].cells[0].objectId, textCell.objectId, 'Adding from notebook reuses the object ID at the top')
   let finishLoad
   loadBlock = new Promise((resolve) => { finishLoad = resolve })
@@ -327,18 +351,18 @@ try {
   const writeCount = writes.length; await React.act(async () => closeSection()); assert.equal(writes.length, writeCount, 'Hidden/closed sections cannot republish stale editor drafts')
 
   // New inline editors keep native working data, not just their most recent rendered picture.
-  await click('MermaidDiagrams from text'); const diagramCell = sections[0].cells[0]
+  await clickAdd('MermaidDiagrams from text'); const diagramCell = sections[0].cells[0]
   await React.act(async () => editorActions.edit('flowchart LR\n  A[unfinished'))
   await click('+ Text')
   await selectCell(diagramCell.id)
   assert.equal(lastEditor.text, 'flowchart LR\n  A[unfinished', 'Invalid Mermaid text is recovered without rendering or exposing its envelope')
-  await click('Vega-LiteCharts from data'); const chartCell = sections[0].cells[0]
+  await clickAdd('Vega-LiteCharts from data'); const chartCell = sections[0].cells[0]
   const appliedChart = lastEditor.initialSource.text
   await React.act(async () => editorActions.edit('{ "unfinished":'))
   await click('+ Text'); await selectCell(chartCell.id)
   assert.equal(lastEditor.text, '{ "unfinished":', 'Unapplied invalid chart text survives switching')
   assert.equal(lastEditor.initialSource.appliedText, appliedChart, 'Chart retains its last applied specification separately')
-  await click('ExcalidrawSketches & diagrams'); const sketchCell = sections[0].cells[0]
+  await clickAdd('ExcalidrawSketches & diagrams'); const sketchCell = sections[0].cells[0]
   const scene = { ...JSON.parse(lastEditor.text), elements: [{ id: 'text', type: 'text', text: 'Keep me' }],
     files: { image: { dataURL: 'data:image/png;base64,aW1hZ2U=' } } }
   await React.act(async () => editorActions.edit(JSON.stringify(scene)))
@@ -354,13 +378,15 @@ try {
   assert.match(css, /scroll-margin-top: calc\(var\(--section-add-height\)/)
   assert.match(css, /\.lab-section\.is-page \.lab-section__flow/)
   assert.match(css, /\.lab-section\.is-page \.lab-section__cell:hover > header/)
+  assert.match(css, /\.lab-section__organization-panel\s*\{[^}]*position: absolute/)
+  assert.match(css, /\.lab-section__add-menu \.lab-menu__panel\s*\{[^}]*max-height: 50dvh/)
 
   // draw.io stays a Saved preview until an explicit, consented editing session.
   const xml = (label) => `<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/><mxCell id="2" parent="1" value="${label}"/></root></mxGraphModel>`
   let allowOpen = true
   const confirmations = []
   window.confirm = (message) => { confirmations.push(message); return allowOpen }
-  await click('draw.ioDiagram editor · external')
+  await clickAdd('draw.ioDiagram editor · external')
   const drawioCell = sections[0].cells[0], drawioArtifact = notebook.getArtifact(drawioCell.objectId)
   const originalXml = await files.get(drawioArtifact.id).text()
   assert.equal(document.querySelector('iframe'), null)
@@ -419,7 +445,7 @@ try {
   drawioLoads = true
 
   // Klecks shares the explicit Saved/Draft lifecycle, but keeps native binary layers.
-  await click('KlecksPaint & layers')
+  await clickAdd('KlecksPaint & layers')
   const paintingCell = sections[0].cells[0], paintingArtifact = notebook.getArtifact(paintingCell.objectId)
   assert.equal(document.querySelector('iframe'), null)
   assert.equal(button('Mark up in Konva'), undefined, 'A new PSD placeholder is not a Saved picture to mark up')
