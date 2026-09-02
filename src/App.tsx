@@ -326,6 +326,11 @@ function Flow({ identity, startupDraft }: { identity: string | null; startupDraf
     setWorkspaceMenuVisible(false)
   }, [cancelWorkspaceChromeHide])
 
+  const dismissWorkspaceChrome = useCallback(() => {
+    cancelWorkspaceChromeHide()
+    setWorkspaceMenuVisible(false)
+  }, [cancelWorkspaceChromeHide])
+
   const scheduleWorkspaceChromeHide = useCallback(() => {
     cancelWorkspaceChromeHide()
     if (workspaceSettingsOpenRef.current) return
@@ -3591,7 +3596,7 @@ function Flow({ identity, startupDraft }: { identity: string | null; startupDraf
                   className="workspace-switcher__hide"
                   type="button"
                   aria-label="Hide top menu"
-                  onClick={hideWorkspaceChrome}
+                  onClick={dismissWorkspaceChrome}
                 >
                   Hide
                 </button>

@@ -1199,6 +1199,16 @@ try {
     /<VisualCanvasEditor[\s\S]*?readOnly=\{boardAccess === 'viewer' \|\| isSharedAssembly \|\| assemblyInstructionsPreview\}/,
     'A Visual opened from a shared or preview Assembly remains read-only.',
   )
+  assert.match(
+    appSource,
+    /const dismissWorkspaceChrome = useCallback\(\(\) => \{[\s\S]*?cancelWorkspaceChromeHide\(\)[\s\S]*?setWorkspaceMenuVisible\(false\)[\s\S]*?\}, \[cancelWorkspaceChromeHide\]\)/,
+    'The explicit top-menu dismissal bypasses the focus guard used by automatic hiding.',
+  )
+  assert.match(
+    appSource,
+    /aria-label="Hide top menu"[\s\S]*?onClick=\{dismissWorkspaceChrome\}/,
+    'The Hide button uses the explicit dismissal path so its own focus cannot keep the menu open.',
+  )
 
   const instructionsMarkup = renderToStaticMarkup(createElement(AssemblyInstructionsView, {
     assembly,
