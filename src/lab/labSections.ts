@@ -26,10 +26,24 @@ export function moveSectionCell(cells: LabSectionCell[], cellId: string, directi
   return next
 }
 
+/**
+ * Section storage is newest-first, while Page reads the same cells oldest-first.
+ * An explicit Page anchor therefore inserts before that anchor in storage. A
+ * null anchor starts the visible Page; an omitted anchor keeps normal Cells
+ * behavior and adds at the newest-first top.
+ */
+export function insertSectionCell(cells: LabSectionCell[], cell: LabSectionCell, pageAfterCellId?: string | null) {
+  if (pageAfterCellId === undefined) return [cell, ...cells]
+  if (pageAfterCellId === null) return [...cells, cell]
+  const anchor = cells.findIndex((item) => item.id === pageAfterCellId)
+  if (anchor < 0) return [...cells, cell]
+  return [...cells.slice(0, anchor), cell, ...cells.slice(anchor)]
+}
+
 export type LabSectionAction =
   | { kind: 'create' }
   | { kind: 'rename'; title: string }
-  | { kind: 'note' }
+  | { kind: 'note'; pageAfterCellId?: string | null }
   | { kind: 'attach'; objectType: 'note' | 'artifact'; objectId: string }
   | { kind: 'remove'; cellId: string }
   | { kind: 'move'; cellId: string; direction: -1 | 1 }

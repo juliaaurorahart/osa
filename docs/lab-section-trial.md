@@ -2,7 +2,7 @@
 
 Notebook → **Upside-down notebook** opens one working section per notebook. The existing Library remains available.
 
-- New text, workspaces, code, images/files, and reused notebook objects appear **at the top**. Existing cell order stays intact. The add controls stay visible while scrolling; new text/code editors receive focus.
+- In **Cells**, new text, workspaces, code, images/files, and reused notebook objects appear **at the top**. In **Page**, new text appears immediately after the open object, or at the top when nothing is open; the chronological order of everything else stays intact. The add controls stay visible while scrolling, and new text/code editors receive focus.
 - **+ Workspace** offers Ink, Klecks, Excalidraw, draw.io, Mermaid, and Vega-Lite. Editable native files are created first, with a clearly labeled placeholder until the first visual Save. Imported files for unsupported inline tools still open in their workbenches.
 - **Hide top bar** collapses Lab navigation without closing an editor. **Show Lab bar** restores it; saving errors remain visible.
 - Only one cell is editable. **In place**, **Split**, and **Focus** rearrange the same mounted editor, preserving its current state.

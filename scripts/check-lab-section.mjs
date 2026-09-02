@@ -12,6 +12,8 @@ const dom = new JSDOM('<div id="root"></div>', { url: 'http://localhost' })
 globalThis.window = dom.window; globalThis.document = dom.window.document
 globalThis.HTMLElement = dom.window.HTMLElement; globalThis.IS_REACT_ACT_ENVIRONMENT = true
 globalThis.DOMParser = dom.window.DOMParser
+const scrolledIntoView = []
+globalThis.HTMLElement.prototype.scrollIntoView = function () { scrolledIntoView.push(this) }
 const React = await import('react')
 const { createRoot } = await import('react-dom/client')
 const modules = new Map(), overrides = new Map(), packages = new Map()
@@ -126,7 +128,7 @@ overrides.set(resolve('src/lab/labSavedProjects.ts'), { ...savedProjects, readSa
   return savedProjects.readSavedLabProject(artifact, file)
 } })
 const { LabSection } = load('src/lab/LabSection.tsx')
-const { moveSectionCell, readSectionCells } = load('src/lab/labSections.ts')
+const { insertSectionCell, moveSectionCell, readSectionCells } = load('src/lab/labSections.ts')
 assert.equal(readSectionCells('{"version":2,"cells":[]}'), null)
 assert.equal(readSectionCells('{"version":1,"cells":[{}]}'), null)
 const now = '2026-08-30T00:00:00Z'
@@ -180,7 +182,8 @@ const notebook = {
     let cell
     if (action.kind === 'note') {
       const note = { id: uid(), title: 'Untitled note', body: '', createdAt: now, updatedAt: now }; notes.push(note)
-      cell = { id: uid(), objectType: 'note', objectId: note.id }; section.cells.unshift(cell)
+      cell = { id: uid(), objectType: 'note', objectId: note.id }
+      section.cells = insertSectionCell(section.cells, cell, action.pageAfterCellId)
     } else if (action.kind === 'capture') {
       const artifact = { id: uid(), name: action.capture.name, toolId: action.capture.toolId, sourceName: action.capture.source.name, createdAt: now, mimeType: 'application/json' }
       artifacts.push(artifact); files.set(artifact.id, action.capture.source.blob)
@@ -238,6 +241,29 @@ try {
     'Cells returns to newest-first order')
   assert.equal(document.querySelector('[data-editor-instance]'), pageEditorNode, 'The editor survives the Page and Cells round trip')
   assert.equal(lastEditor.text, 'unrun code survives')
+
+  await click('Page')
+  await click('Open editor for Untitled note')
+  scrolledIntoView.length = 0
+  await click('+ Text')
+  const contextualTextCell = sections[0].cells[1]
+  assert.deepEqual([...document.querySelectorAll('[data-cell-id]')].map((node) => node.dataset.cellId), [textCell.id, contextualTextCell.id, codeCell.id],
+    'Page text appears immediately after the object being edited')
+  assert.equal(document.activeElement?.getAttribute('aria-label'), 'Cell note text', 'Page text opens ready to type')
+  assert.ok(scrolledIntoView.includes(document.querySelector('.lab-section__editor')), 'Page brings the new text editor into view')
+  await click('Remove active cell from section')
+  assert.deepEqual(sections[0].cells.map((cell) => cell.id), [codeCell.id, textCell.id])
+
+  scrolledIntoView.length = 0
+  await click('+ Text')
+  const pageTopTextCell = sections[0].cells.at(-1)
+  assert.deepEqual([...document.querySelectorAll('[data-cell-id]')].map((node) => node.dataset.cellId), [pageTopTextCell.id, textCell.id, codeCell.id],
+    'Page text starts at the visible top when no object is open')
+  assert.equal(document.activeElement?.getAttribute('aria-label'), 'Cell note text')
+  assert.ok(scrolledIntoView.includes(document.querySelector('.lab-section__editor')))
+  await click('Remove active cell from section')
+  await click('Cells'); await click('1 · Section code')
+
   const editorNode = document.querySelector('[data-editor-instance]'), instance = lastEditor.instance
   for (const mode of ['Split', 'Focus', 'In place']) {
     await click(mode); assert.equal(lastEditor.instance, instance); assert.equal(document.querySelector('[data-editor-instance]'), editorNode)

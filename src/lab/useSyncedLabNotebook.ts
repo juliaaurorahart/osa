@@ -9,7 +9,7 @@ import { accountLabScope, GUEST_LAB_SCOPE, keepLabRecovery, LabLocalConflictErro
 import { changeCloudNotebook, checkLabAccount, fetchCloudNotebook, fetchLabSession, listCloudNotebooks,
   loadLabFile, portableLabSnapshot, saveCloudNotebook, type LabCloudBoard } from './labNotebookCloud'
 import type { LabArtifact, LabCapture, LabNote, LabNotebookObjectType, LabSection, LabSectionCell, StoredLabArtifact } from './labTypes'
-import { moveSectionCell, type LabSectionAction } from './labSections'
+import { insertSectionCell, moveSectionCell, type LabSectionAction } from './labSections'
 import type { LabNotebookStatus } from './useLabNotebook'
 import { DRAFT_TOOLS, draftSlotId, draftMatchesSave, labDraftHash, type LabProjectDraftInput } from './labDrafts'
 import { buildKonvaHandoff, canContinueInKonva } from './labWorkspaceHandoff'
@@ -401,8 +401,10 @@ export function useSyncedLabNotebook() {
         if (!target || target.objectType !== 'artifact' || !current.artifacts.some((item) => item.id === target.objectId && item.toolId === 'code')) throw new Error('Connect an output workspace to a code cell.')
         section.cells = section.cells.map((item) => item.id === action.cellId ? { ...item, workspace: 'output' } : item)
       }
-      // New thoughts start at the top; preserve the order of everything already here.
-      if (cell) section.cells.unshift(cell)
+      // Cells normally start at the newest-first top. Page can place new text
+      // beside the current writing position without a second move transaction.
+      if (cell) section.cells = insertSectionCell(section.cells, cell,
+        action.kind === 'note' ? action.pageAfterCellId : undefined)
       if (!commit({ ...current, sections: existing ? current.sections!.map((item) => item.id === section.id ? section : item)
         : [...(current.sections ?? []), section] })) throw new Error('The section could not save.')
       await flushNotebookWrites(expectedScope)

@@ -399,6 +399,17 @@ try {
   let insertedCell
   await React.act(async () => { insertedCell = (await notebook.changeSection(firstSection.id, { kind: 'note' }, localScope)).cell })
   assert.deepEqual(notebook.sections[0].cells.map((cell) => cell.id), [insertedCell.id, codeCell.id, textCell.id], 'New objects appear first without rearranging existing cells')
+  let pagePlacedCell
+  await React.act(async () => { pagePlacedCell = (await notebook.changeSection(firstSection.id,
+    { kind: 'note', pageAfterCellId: codeCell.id }, localScope)).cell })
+  assert.deepEqual(notebook.sections[0].cells.map((cell) => cell.id), [insertedCell.id, pagePlacedCell.id, codeCell.id, textCell.id],
+    'Page text is stored so its oldest-first projection follows the active cell')
+  await React.act(async () => notebook.changeSection(firstSection.id, { kind: 'remove', cellId: pagePlacedCell.id }, localScope))
+  let pageTopCell
+  await React.act(async () => { pageTopCell = (await notebook.changeSection(firstSection.id,
+    { kind: 'note', pageAfterCellId: null }, localScope)).cell })
+  assert.equal(notebook.sections[0].cells.at(-1).id, pageTopCell.id, 'Page text without an active cell begins the oldest-first projection')
+  await React.act(async () => notebook.changeSection(firstSection.id, { kind: 'remove', cellId: pageTopCell.id }, localScope))
   await React.act(async () => notebook.setObjectTopics('section', firstSection.id, [notebook.createTopic('Experiments')]))
   assert.equal(notebook.topicLinks.find((link) => link.objectType === 'section').objectId, firstSection.id)
   await React.act(async () => notebook.changeSection(firstSection.id, { kind: 'remove', cellId: codeCell.id }, localScope))

@@ -304,8 +304,9 @@ export function LabSection({ notebook, theme, isActive, sectionView, onRegisterF
     {!section ? <div className="lab-section__empty"><h2>Text, drawing, code. Keep the thought going.</h2><p>Your library stays where it is. A section brings its objects together.</p>
       <button type="button" disabled={!notebook.isReady || busy} onClick={() => void run(() => change({ kind: 'create' }))}>Start a section</button></div> : <>
       <div className="lab-section__creation" ref={creationRef}>
-      <nav className="lab-section__add" aria-label="Add a cell" title={sectionView === 'page' ? 'New objects appear at the end of the page' : 'New cells appear at the top'}>
-        <button type="button" disabled={!notebook.isReady || busy} onClick={() => void run(() => change({ kind: 'note' }))}>+ Text</button>
+      <nav className="lab-section__add" aria-label="Add a cell" title={sectionView === 'page' ? 'New text appears after the open object, or at the top when nothing is open' : 'New cells appear at the top'}>
+        <button type="button" disabled={!notebook.isReady || busy} onClick={() => void run(() => change({ kind: 'note',
+          ...(sectionView === 'page' ? { pageAfterCellId: activeRef.current?.cell.id ?? null } : {}) }))}>+ Text</button>
         <LabMenu label="+ Workspace" className="lab-section__workspace-menu">
           {SECTION_WORKSPACES.map((workspace) => <button key={workspace.id} type="button" disabled={!notebook.isReady || busy}
             onClick={() => void run(async () => change({ kind: 'capture', capture: await newSectionCapture(workspace.id, theme) }))}>
