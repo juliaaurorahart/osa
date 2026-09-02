@@ -1301,7 +1301,7 @@ try {
   const appStyles = await readFile(new URL('../src/App.css', import.meta.url), 'utf8')
   assert.match(
     appStyles,
-    /\.workspace-switcher-reveal\s*\{[^}]*box-shadow:[^}]*var\(--notebook-sketch-accent\) 52%/s,
+    /\.workspace-switcher-reveal\s*\{[^}]*box-shadow:[^}]*var\(--notebook-sketch-accent\) 82%/s,
     'The hidden top-menu ramp keeps a restrained pink locator glow.',
   )
   assert.match(
