@@ -3,6 +3,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from 'react'
+import type { AssemblyPeopleDisplay } from '../app/browserSession'
 import type { GraphEdge } from '../graph/graphEdge'
 import {
   OSA_RELATION,
@@ -62,6 +63,10 @@ type AssemblyViewProps = {
   onInspectNode: (nodeId: string) => void
   /** A shared link can project a board without exposing editing controls. */
   readOnly?: boolean
+  /** Device-level choice for the compact People column in the overview table. */
+  peopleDisplay?: AssemblyPeopleDisplay
+  /** Individual People entries collapse to a count above this device-level limit. */
+  peopleThreshold?: number
   /** Local read-only preview can return to the authoring Assembly. */
   onBackToAssembly?: () => void
   /** Optional project starter presented when building an Assembly. */
@@ -89,6 +94,8 @@ export function AssemblyView({
   actions,
   onInspectNode,
   readOnly = false,
+  peopleDisplay = 'initials',
+  peopleThreshold = 3,
   onBackToAssembly,
   starterAction,
 }: AssemblyViewProps) {
@@ -173,11 +180,16 @@ export function AssemblyView({
         : nextCardId,
     }))
   }
-  const setEditingVisual = (visualId: string | null, operationId: string | null = null) => {
+  const setEditingVisual = (
+    visualId: string | null,
+    operationId: string | null = null,
+    returnToGallery = false,
+  ) => {
     onUiStateChange((current) => ({
       ...current,
       editingVisualId: visualId,
       editingOperationId: visualId ? operationId : null,
+      visualEditorReturnToGallery: Boolean(visualId && returnToGallery),
     }))
   }
   const setToolDraft = (nextDraft: string) => {
@@ -295,7 +307,14 @@ export function AssemblyView({
             onRemoveOperation={actions.onRemoveOperation}
             onAddCard={addCard}
             actions={actions}
-            onEditVisual={(visualId, operationId) => setEditingVisual(visualId, operationId)}
+            peopleDisplay={peopleDisplay}
+            peopleThreshold={peopleThreshold}
+            visualGallerySuspended={Boolean(
+              uiState.editingVisualId && uiState.visualEditorReturnToGallery
+            )}
+            onEditVisual={(visualId, operationId, returnToGallery) => (
+              setEditingVisual(visualId, operationId, returnToGallery)
+            )}
           />
         ) : null}
 

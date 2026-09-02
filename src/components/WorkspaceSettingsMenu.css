@@ -220,6 +220,127 @@
   background: var(--osa-surface);
 }
 
+.workspace-settings-menu__people-display {
+  width: min(320px, 100%);
+}
+
+.workspace-settings-menu__people-display > summary,
+.workspace-settings-menu__people-display-options button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  padding: 7px 10px;
+  border: 1px solid var(--osa-border);
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 650;
+  list-style: none;
+  text-align: left;
+}
+
+.workspace-settings-menu__people-display > summary {
+  border-radius: 8px;
+}
+
+.workspace-settings-menu__people-display[open] > summary {
+  border-radius: 8px 8px 0 0;
+}
+
+.workspace-settings-menu__people-display > summary::-webkit-details-marker {
+  display: none;
+}
+
+.workspace-settings-menu__people-display > summary:hover,
+.workspace-settings-menu__people-display > summary:focus-visible,
+.workspace-settings-menu__people-display-options button:hover,
+.workspace-settings-menu__people-display-options button:focus-visible,
+.workspace-settings-menu__people-display-options button[aria-pressed='true'] {
+  border-color: var(--osa-focus);
+  background: var(--osa-hover-surface);
+  outline: 0;
+}
+
+.workspace-settings-menu__people-display-options {
+  display: grid;
+}
+
+.workspace-settings-menu__people-display-options button {
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin-top: -1px;
+  border-radius: 0;
+}
+
+.workspace-settings-menu__people-display-options button:last-child {
+  border-radius: 0 0 8px 8px;
+}
+
+.workspace-settings-menu__people-display-arrow {
+  color: var(--osa-muted);
+  font-size: 0.86rem;
+}
+
+.workspace-settings-menu__people-preview {
+  display: grid;
+  gap: 2px;
+  min-width: 54px;
+}
+
+.workspace-settings-menu__people-preview-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 17px;
+}
+
+.workspace-settings-menu__people-preview-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.workspace-settings-menu__people-preview-letter,
+.workspace-settings-menu__people-preview-separator {
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.workspace-settings-menu__people-preview-separator {
+  color: var(--osa-muted);
+}
+
+.workspace-settings-menu__people-preview.is-circles .workspace-settings-menu__people-preview-letter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border: 1px solid var(--osa-border);
+  border-radius: 50%;
+  background: var(--osa-surface);
+}
+
+.workspace-settings-menu__people-threshold {
+  width: min(320px, 100%);
+}
+
+.workspace-settings-menu__people-threshold input {
+  width: 82px;
+}
+
+.workspace-settings-menu__people-threshold small {
+  color: var(--osa-muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
 .workspace-settings-menu__board-picker {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

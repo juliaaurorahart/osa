@@ -7,9 +7,15 @@ const LOCAL_DRAFT_KEY = 'osa:current-draft'
 const WORKSPACE_VIEW_KEY = 'osa:workspace-view'
 const SELECTED_ASSEMBLY_KEY = 'osa:selected-assembly'
 const OSA_THEME_KEY = 'osa:theme'
+const ASSEMBLY_PEOPLE_DISPLAY_KEY = 'osa:assembly-people-display'
+const ASSEMBLY_PEOPLE_THRESHOLD_KEY = 'osa:assembly-people-threshold'
 
 export type OsaTheme = 'dark' | 'light'
 export type WorkspaceView = 'notebook' | 'nodes' | 'projects' | 'assembly'
+export type AssemblyPeopleDisplay = 'initials' | 'circles'
+export const ASSEMBLY_PEOPLE_THRESHOLD_MIN = 1
+export const ASSEMBLY_PEOPLE_THRESHOLD_MAX = 12
+export const DEFAULT_ASSEMBLY_PEOPLE_THRESHOLD = 3
 
 /** Browser recovery data extends a normal saved board with local sync state. */
 export type LocalDraft = SavedBoard & {
@@ -24,6 +30,39 @@ export function readOsaTheme(): OsaTheme {
 export function writeOsaTheme(theme: OsaTheme) {
   document.documentElement.dataset.theme = theme
   window.localStorage.setItem(OSA_THEME_KEY, theme)
+}
+
+export function readAssemblyPeopleDisplay(): AssemblyPeopleDisplay {
+  return window.localStorage.getItem(ASSEMBLY_PEOPLE_DISPLAY_KEY) === 'circles'
+    ? 'circles'
+    : 'initials'
+}
+
+export function writeAssemblyPeopleDisplay(display: AssemblyPeopleDisplay) {
+  window.localStorage.setItem(ASSEMBLY_PEOPLE_DISPLAY_KEY, display)
+}
+
+export function normalizeAssemblyPeopleThreshold(value: number) {
+  if (!Number.isFinite(value)) return DEFAULT_ASSEMBLY_PEOPLE_THRESHOLD
+  return Math.min(
+    ASSEMBLY_PEOPLE_THRESHOLD_MAX,
+    Math.max(ASSEMBLY_PEOPLE_THRESHOLD_MIN, Math.floor(value)),
+  )
+}
+
+export function readAssemblyPeopleThreshold() {
+  const savedThreshold = window.localStorage.getItem(ASSEMBLY_PEOPLE_THRESHOLD_KEY)
+  if (savedThreshold === null || savedThreshold.trim() === '') {
+    return DEFAULT_ASSEMBLY_PEOPLE_THRESHOLD
+  }
+  return normalizeAssemblyPeopleThreshold(Number(savedThreshold))
+}
+
+export function writeAssemblyPeopleThreshold(threshold: number) {
+  window.localStorage.setItem(
+    ASSEMBLY_PEOPLE_THRESHOLD_KEY,
+    String(normalizeAssemblyPeopleThreshold(threshold)),
+  )
 }
 
 export function readWorkspaceView(): WorkspaceView {

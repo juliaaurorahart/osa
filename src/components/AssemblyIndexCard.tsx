@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { AssemblyPeopleDisplay } from '../app/browserSession'
 import type { GraphEdge } from '../graph/graphEdge'
 import {
   OSA_OPERATION_STATUS,
@@ -44,7 +45,10 @@ type AssemblyIndexCardProps = {
   onRemoveOperation: (operationId: string) => void
   onAddCard: () => void
   actions: AssemblyViewActions
-  onEditVisual: (visualId: string, operationId: string) => void
+  peopleDisplay: AssemblyPeopleDisplay
+  peopleThreshold: number
+  visualGallerySuspended: boolean
+  onEditVisual: (visualId: string, operationId: string, returnToGallery?: boolean) => void
 }
 
 /** The Assembly title and ordered table-of-contents card. */
@@ -65,6 +69,9 @@ export function AssemblyIndexCard({
   onRemoveOperation,
   onAddCard,
   actions,
+  peopleDisplay,
+  peopleThreshold,
+  visualGallerySuspended,
   onEditVisual,
 }: AssemblyIndexCardProps) {
   const [summaryFilter, setSummaryFilter] = useState<AssemblySummaryFilter>('all')
@@ -260,6 +267,9 @@ export function AssemblyIndexCard({
             annotationTargets={annotationTargets}
             readOnly={readOnly}
             actions={actions}
+            peopleDisplay={peopleDisplay}
+            peopleThreshold={peopleThreshold}
+            visualGallerySuspended={visualGallerySuspended}
             onFocusCard={onFocusCard}
             onOpenOperation={onOpenOperation}
             onEditVisual={onEditVisual}

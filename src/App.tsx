@@ -172,6 +172,8 @@ import {
   writeSelectedAssemblyId,
 } from './app/browserSession'
 import {
+  useAssemblyPeopleDisplay,
+  useAssemblyPeopleThreshold,
   useCanvasLabLocation,
   useOsaTheme,
   useWorkspaceView,
@@ -276,6 +278,8 @@ function Flow({ identity, startupDraft }: { identity: string | null; startupDraf
   const [sharedAssemblyReference] = useState(readSharedAssemblyReference)
   const isSharedAssembly = sharedAssemblyReference !== null
   const { theme, toggleTheme } = useOsaTheme()
+  const { assemblyPeopleDisplay, setAssemblyPeopleDisplay } = useAssemblyPeopleDisplay()
+  const { assemblyPeopleThreshold, setAssemblyPeopleThreshold } = useAssemblyPeopleThreshold()
   const { workspaceView, setWorkspaceView } = useWorkspaceView(isSharedAssembly)
   const { canvasLabVisible, openCanvasLab, closeCanvasLab } = useCanvasLabLocation()
   const bundledStarterImportPlan = useMemo(
@@ -1308,6 +1312,9 @@ function Flow({ identity, startupDraft }: { identity: string | null; startupDraf
         editingOperationId: current.editingOperationId === operationId
           ? null
           : current.editingOperationId,
+        visualEditorReturnToGallery: current.editingOperationId === operationId
+          ? false
+          : current.visualEditorReturnToGallery,
         hiddenVisualOwnerIdsByOperation: remainingHiddenFilters,
       }
     })
@@ -1317,7 +1324,12 @@ function Flow({ identity, startupDraft }: { identity: string | null; startupDraf
   const handleAssemblyStepCanvasRemoved = useCallback((visualId: string | null) => {
     setAssemblyViewState((current) => (
       visualId && current.editingVisualId === visualId
-        ? { ...current, editingVisualId: null, editingOperationId: null }
+        ? {
+            ...current,
+            editingVisualId: null,
+            editingOperationId: null,
+            visualEditorReturnToGallery: false,
+          }
         : current
     ))
   }, [])
@@ -1763,6 +1775,7 @@ function Flow({ identity, startupDraft }: { identity: string | null; startupDraf
       ...current,
       editingVisualId: visualId,
       editingOperationId: null,
+      visualEditorReturnToGallery: false,
     }))
   }, [])
 
@@ -3310,6 +3323,7 @@ function Flow({ identity, startupDraft }: { identity: string | null; startupDraf
       ...current,
       editingVisualId: null,
       editingOperationId: null,
+      visualEditorReturnToGallery: false,
     }))
   }, [])
 
@@ -3320,6 +3334,10 @@ function Flow({ identity, startupDraft }: { identity: string | null; startupDraf
       triggerLabel={triggerLabel}
       theme={theme}
       onToggleTheme={toggleTheme}
+      assemblyPeopleDisplay={assemblyPeopleDisplay}
+      onAssemblyPeopleDisplayChange={setAssemblyPeopleDisplay}
+      assemblyPeopleThreshold={assemblyPeopleThreshold}
+      onAssemblyPeopleThresholdChange={setAssemblyPeopleThreshold}
       onOpenChange={setWorkspaceSettingsOpen}
       boardId={boardId}
       boardName={boardName}
@@ -3746,6 +3764,8 @@ function Flow({ identity, startupDraft }: { identity: string | null; startupDraf
               onSelectAssembly={setSelectedAssemblyId}
               actions={assemblyViewActions}
               onInspectNode={() => undefined}
+              peopleDisplay={assemblyPeopleDisplay}
+              peopleThreshold={assemblyPeopleThreshold}
               readOnly={true}
               onBackToAssembly={isSharedAssembly
                 ? undefined
@@ -3766,6 +3786,8 @@ function Flow({ identity, startupDraft }: { identity: string | null; startupDraf
               onSelectAssembly={setSelectedAssemblyId}
               actions={assemblyViewActions}
               onInspectNode={openFocusedNodeInspector}
+              peopleDisplay={assemblyPeopleDisplay}
+              peopleThreshold={assemblyPeopleThreshold}
               readOnly={boardAccess === 'viewer'}
               starterAction={{
                 label: bundledStarter.openActionLabel,
@@ -3809,6 +3831,9 @@ function Flow({ identity, startupDraft }: { identity: string | null; startupDraf
           availableVisuals={editingVisualCandidates}
           readOnly={boardAccess === 'viewer' || isSharedAssembly || assemblyInstructionsPreview}
           onClose={closeVisualCanvasEditor}
+          closeLabel={assemblyViewState.visualEditorReturnToGallery
+            ? '← Back to gallery'
+            : undefined}
           onNameChange={onNameChange}
           nameReadOnly={editingVisualNameIsInherited}
           onSketchChange={onSketchChange}

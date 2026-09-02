@@ -2,14 +2,44 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   isCanvasLabRequested,
   isDedicatedLabLocation,
+  readAssemblyPeopleDisplay,
+  readAssemblyPeopleThreshold,
   readOsaTheme,
   readWorkspaceView,
   setCanvasLabRequested,
+  writeAssemblyPeopleDisplay,
+  writeAssemblyPeopleThreshold,
   writeOsaTheme,
   writeWorkspaceView,
+  type AssemblyPeopleDisplay,
   type OsaTheme,
   type WorkspaceView,
 } from './browserSession'
+
+/** Owns the device-level presentation of assigned people in Assembly tables. */
+export function useAssemblyPeopleDisplay() {
+  const [assemblyPeopleDisplay, setAssemblyPeopleDisplay] = useState<AssemblyPeopleDisplay>(
+    readAssemblyPeopleDisplay,
+  )
+
+  useEffect(() => writeAssemblyPeopleDisplay(assemblyPeopleDisplay), [assemblyPeopleDisplay])
+
+  return { assemblyPeopleDisplay, setAssemblyPeopleDisplay }
+}
+
+/** Owns how many assigned people remain individually visible before collapsing to a count. */
+export function useAssemblyPeopleThreshold() {
+  const [assemblyPeopleThreshold, setAssemblyPeopleThreshold] = useState(
+    readAssemblyPeopleThreshold,
+  )
+
+  useEffect(
+    () => writeAssemblyPeopleThreshold(assemblyPeopleThreshold),
+    [assemblyPeopleThreshold],
+  )
+
+  return { assemblyPeopleThreshold, setAssemblyPeopleThreshold }
+}
 
 /** Owns the browser-only theme preference; board data never depends on it. */
 export function useOsaTheme() {

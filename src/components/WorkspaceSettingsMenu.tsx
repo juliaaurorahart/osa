@@ -9,7 +9,13 @@ import {
   type PointerEvent,
 } from 'react'
 import { createPortal } from 'react-dom'
-import type { OsaTheme } from '../app/browserSession'
+import {
+  ASSEMBLY_PEOPLE_THRESHOLD_MAX,
+  ASSEMBLY_PEOPLE_THRESHOLD_MIN,
+  normalizeAssemblyPeopleThreshold,
+  type AssemblyPeopleDisplay,
+  type OsaTheme,
+} from '../app/browserSession'
 import type {
   BoardAccess,
   BoardCollaborator,
@@ -34,6 +40,10 @@ export type WorkspaceSettingsMenuProps = {
   triggerLabel?: string
   theme: OsaTheme
   onToggleTheme: () => void
+  assemblyPeopleDisplay: AssemblyPeopleDisplay
+  onAssemblyPeopleDisplayChange: (display: AssemblyPeopleDisplay) => void
+  assemblyPeopleThreshold: number
+  onAssemblyPeopleThresholdChange: (threshold: number) => void
   onOpenChange?: (open: boolean) => void
 
   boardId: string
@@ -90,6 +100,7 @@ const focusableSelector = [
   'button:not([disabled])',
   'input:not([disabled])',
   'select:not([disabled])',
+  'summary',
   'textarea:not([disabled])',
   '[tabindex]:not([tabindex="-1"])',
 ].join(',')
@@ -100,11 +111,85 @@ function runAction(action: WorkspaceSettingsAction) {
   void action()
 }
 
+function PeopleDisplayPreview({ display }: { display: AssemblyPeopleDisplay }) {
+  const rows = [['P', 'E', 'O'], ['P', 'L', 'E']]
+  return (
+    <span className={`workspace-settings-menu__people-preview is-${display}`} aria-hidden="true">
+      {rows.map((letters, rowIndex) => (
+        <span className="workspace-settings-menu__people-preview-row" key={rowIndex}>
+          {letters.map((letter, letterIndex) => (
+            <span className="workspace-settings-menu__people-preview-item" key={`${letter}-${letterIndex}`}>
+              {letterIndex > 0 && display === 'initials' ? (
+                <span className="workspace-settings-menu__people-preview-separator">|</span>
+              ) : null}
+              <span className="workspace-settings-menu__people-preview-letter">{letter}</span>
+            </span>
+          ))}
+        </span>
+      ))}
+    </span>
+  )
+}
+
+export function AssemblyPeopleDisplayPicker({
+  display,
+  onChange,
+}: {
+  display: AssemblyPeopleDisplay
+  onChange: (display: AssemblyPeopleDisplay) => void
+}) {
+  const detailsRef = useRef<HTMLDetailsElement>(null)
+  const summaryRef = useRef<HTMLElement>(null)
+  const selectedLabel = display === 'initials' ? 'Plain initials' : 'Letter circles'
+  const choose = (nextDisplay: AssemblyPeopleDisplay) => {
+    onChange(nextDisplay)
+    if (detailsRef.current) detailsRef.current.open = false
+    window.requestAnimationFrame(() => summaryRef.current?.focus())
+  }
+
+  return (
+    <details className="workspace-settings-menu__people-display" ref={detailsRef}>
+      <summary
+        ref={summaryRef}
+        aria-label={`Assembly people display: ${selectedLabel}. Change display.`}
+      >
+        <span>{selectedLabel}</span>
+        <PeopleDisplayPreview display={display} />
+        <span className="workspace-settings-menu__people-display-arrow" aria-hidden="true">⌄</span>
+      </summary>
+      <div className="workspace-settings-menu__people-display-options" role="group" aria-label="Assembly people display options">
+        <button
+          type="button"
+          aria-label="Use plain initials separated by bars"
+          aria-pressed={display === 'initials'}
+          onClick={() => choose('initials')}
+        >
+          <span>Plain initials</span>
+          <PeopleDisplayPreview display="initials" />
+        </button>
+        <button
+          type="button"
+          aria-label="Use letter circles"
+          aria-pressed={display === 'circles'}
+          onClick={() => choose('circles')}
+        >
+          <span>Letter circles</span>
+          <PeopleDisplayPreview display="circles" />
+        </button>
+      </div>
+    </details>
+  )
+}
+
 /** App-wide settings trigger and accessible, portal-mounted settings dialog. */
 export function WorkspaceSettingsMenu({
   triggerLabel = 'Settings',
   theme,
   onToggleTheme,
+  assemblyPeopleDisplay,
+  onAssemblyPeopleDisplayChange,
+  assemblyPeopleThreshold,
+  onAssemblyPeopleThresholdChange,
   onOpenChange,
   boardId,
   boardName,
@@ -155,8 +240,23 @@ export function WorkspaceSettingsMenu({
   const triggerRef = useRef<HTMLButtonElement>(null)
   const dialogRef = useRef<HTMLElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
+  const peopleThresholdInputRef = useRef<HTMLInputElement>(null)
 
   const close = useCallback(() => setOpen(false), [])
+
+  const commitPeopleThreshold = () => {
+    const thresholdDraft = peopleThresholdInputRef.current?.value ?? ''
+    const parsedThreshold = thresholdDraft.trim() === ''
+      ? Number.NaN
+      : Number(thresholdDraft)
+    const normalizedThreshold = Number.isFinite(parsedThreshold)
+      ? normalizeAssemblyPeopleThreshold(parsedThreshold)
+      : assemblyPeopleThreshold
+    if (peopleThresholdInputRef.current) {
+      peopleThresholdInputRef.current.value = String(normalizedThreshold)
+    }
+    onAssemblyPeopleThresholdChange(normalizedThreshold)
+  }
 
   useEffect(() => {
     onOpenChange?.(open)
@@ -177,6 +277,14 @@ export function WorkspaceSettingsMenu({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault()
+        const openPeopleDisplay = dialogRef.current?.querySelector<HTMLDetailsElement>(
+          '.workspace-settings-menu__people-display[open]',
+        )
+        if (openPeopleDisplay) {
+          openPeopleDisplay.open = false
+          openPeopleDisplay.querySelector<HTMLElement>('summary')?.focus()
+          return
+        }
         close()
         return
       }
@@ -276,6 +384,44 @@ export function WorkspaceSettingsMenu({
                     Use {theme === 'dark' ? 'light' : 'dark'} theme
                   </button>
                 </div>
+              </section>
+
+              <section className="workspace-settings-menu__section" aria-labelledby={`${titleId}-assembly-people`}>
+                <div className="workspace-settings-menu__section-heading">
+                  <h3 id={`${titleId}-assembly-people`}>Assembly people</h3>
+                  <span>this device</span>
+                </div>
+                <p className="workspace-settings-menu__note">
+                  Choose how assigned people appear in the production table.
+                </p>
+                <AssemblyPeopleDisplayPicker
+                  display={assemblyPeopleDisplay}
+                  onChange={onAssemblyPeopleDisplayChange}
+                />
+                <label className="workspace-settings-menu__field workspace-settings-menu__people-threshold">
+                  <span>Show individual initials up to</span>
+                  <input
+                    key={assemblyPeopleThreshold}
+                    ref={peopleThresholdInputRef}
+                    type="number"
+                    inputMode="numeric"
+                    min={ASSEMBLY_PEOPLE_THRESHOLD_MIN}
+                    max={ASSEMBLY_PEOPLE_THRESHOLD_MAX}
+                    step="1"
+                    aria-label="People initials threshold"
+                    aria-describedby={`${titleId}-assembly-people-threshold-help`}
+                    defaultValue={assemblyPeopleThreshold}
+                    onBlur={commitPeopleThreshold}
+                    onKeyDown={(event) => {
+                      if (event.key !== 'Enter') return
+                      event.preventDefault()
+                      event.currentTarget.blur()
+                    }}
+                  />
+                  <small id={`${titleId}-assembly-people-threshold-help`}>
+                    From {ASSEMBLY_PEOPLE_THRESHOLD_MIN} to {ASSEMBLY_PEOPLE_THRESHOLD_MAX}. Above this number, the table shows one count.
+                  </small>
+                </label>
               </section>
 
               <section className="workspace-settings-menu__section" aria-labelledby={`${titleId}-boards`}>

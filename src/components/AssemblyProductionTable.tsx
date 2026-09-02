@@ -1,4 +1,5 @@
 import { Fragment, useId, useState, type KeyboardEvent } from 'react'
+import type { AssemblyPeopleDisplay } from '../app/browserSession'
 import {
   OSA_OPERATION_INSTRUCTION_MODE,
   OSA_OPERATION_STATUS,
@@ -29,9 +30,12 @@ type AssemblyProductionTableProps = {
   annotationTargets: SketchAnnotationTarget[]
   readOnly: boolean
   actions: AssemblyViewActions
+  peopleDisplay: AssemblyPeopleDisplay
+  peopleThreshold: number
+  visualGallerySuspended: boolean
   onFocusCard: (operationId: string) => void
   onOpenOperation: (operationId: string) => void
-  onEditVisual: (visualId: string, operationId: string) => void
+  onEditVisual: (visualId: string, operationId: string, returnToGallery?: boolean) => void
 }
 
 function statusCode(status: OsaOperationStatus) {
@@ -53,6 +57,9 @@ export function AssemblyProductionTable({
   annotationTargets,
   readOnly,
   actions,
+  peopleDisplay,
+  peopleThreshold,
+  visualGallerySuspended,
   onFocusCard,
   onOpenOperation,
   onEditVisual,
@@ -233,6 +240,8 @@ export function AssemblyProductionTable({
                       <AssemblyPeopleCell
                         operation={operation}
                         readOnly={!canEditProperties}
+                        display={peopleDisplay}
+                        threshold={peopleThreshold}
                         onChange={!canEditProperties ? undefined : (people) => actions.onPropertyChange?.(
                           operation.id,
                           OSA_PROPERTY.operationPeople,
@@ -261,7 +270,10 @@ export function AssemblyProductionTable({
                         annotationTargets={annotationTargets}
                         readOnly={readOnly}
                         actions={actions}
-                        onEditVisual={(visualId) => onEditVisual(visualId, operation.id)}
+                        visualGallerySuspended={visualGallerySuspended}
+                        onEditVisual={(visualId, returnToGallery) => (
+                          onEditVisual(visualId, operation.id, returnToGallery)
+                        )}
                       />
                     </td>
                   </tr>

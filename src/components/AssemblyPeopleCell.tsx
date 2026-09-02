@@ -1,4 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import type { AssemblyPeopleDisplay } from '../app/browserSession'
 import type { TextFlowNode } from '../graph/textNode'
 import { operationPeople } from './assemblyPeopleData'
 import { AssemblyPeople } from './AssemblyPeople'
@@ -8,6 +10,8 @@ import './AssemblyPeopleCell.css'
 type AssemblyPeopleCellProps = {
   operation: TextFlowNode
   readOnly: boolean
+  display?: AssemblyPeopleDisplay
+  threshold?: number
   onChange?: (people: string[]) => void
 }
 
@@ -19,6 +23,8 @@ function personInitial(person: string) {
 export function AssemblyPeopleCell({
   operation,
   readOnly,
+  display = 'initials',
+  threshold = 3,
   onChange,
 }: AssemblyPeopleCellProps) {
   const [open, setOpen] = useState(false)
@@ -28,6 +34,8 @@ export function AssemblyPeopleCell({
   const people = operationPeople(operation)
   const title = nodeTitle(operation)
   const fullNames = people.join(', ')
+  const initials = people.map(personInitial).join(' | ')
+  const showCount = people.length > threshold
 
   useEffect(() => {
     if (!open) return undefined
@@ -67,36 +75,8 @@ export function AssemblyPeopleCell({
     }
   }, [open])
 
-  return (
-    <div className="assembly-people-cell">
-      <button
-        ref={triggerRef}
-        className="assembly-people-cell__trigger"
-        type="button"
-        aria-label={`${title} people: ${fullNames || 'none'}`}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        onClick={(event) => {
-          event.stopPropagation()
-          setOpen(true)
-        }}
-      >
-        {people.length ? people.map((person) => (
-          <span
-            className="assembly-people-cell__initial"
-            title={person}
-            key={person.toLocaleLowerCase()}
-          >
-            {personInitial(person)}
-          </span>
-        )) : <span className="assembly-people-cell__empty">—</span>}
-      </button>
-
-      <span className="assembly-people-cell__preview" role="tooltip">
-        {fullNames || 'No people assigned'}
-      </span>
-
-      {open ? (
+  const dialog = open && typeof document !== 'undefined'
+    ? createPortal(
         <div
           className="assembly-people-cell__backdrop"
           role="presentation"
@@ -128,8 +108,60 @@ export function AssemblyPeopleCell({
               <span className="assembly-people-cell__dialog-empty">No people assigned.</span>
             ) : null}
           </div>
-        </div>
-      ) : null}
+        </div>,
+        document.body,
+      )
+    : null
+
+  return (
+    <div className="assembly-people-cell">
+      <button
+        ref={triggerRef}
+        className="assembly-people-cell__trigger"
+        type="button"
+        aria-label={showCount
+          ? `${title} people: ${people.length} assigned — ${fullNames}`
+          : `${title} people: ${fullNames || 'none'}`}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={(event) => {
+          event.stopPropagation()
+          setOpen(true)
+        }}
+      >
+        {showCount ? (
+          <span
+            className={`assembly-people-cell__count${display === 'circles' ? ' is-circle' : ''}`}
+            title={fullNames}
+            aria-hidden="true"
+          >
+            {people.length}
+          </span>
+        ) : people.length && display === 'circles' ? people.map((person) => (
+          <span
+            className="assembly-people-cell__initial"
+            title={person}
+            key={person.toLocaleLowerCase()}
+            aria-hidden="true"
+          >
+            {personInitial(person)}
+          </span>
+        )) : people.length ? (
+          <span
+            className="assembly-people-cell__initials"
+            title={fullNames}
+            aria-hidden="true"
+          >
+            {initials}
+          </span>
+        ) : <span className="assembly-people-cell__empty">—</span>}
+      </button>
+
+      <span className="assembly-people-cell__preview" role="tooltip">
+        {fullNames || 'No people assigned'}
+      </span>
+
+      {dialog}
     </div>
   )
 }

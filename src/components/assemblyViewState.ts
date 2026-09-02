@@ -21,6 +21,8 @@ export type AssemblyViewUiState = {
   editingVisualId: string | null
   /** The card that opened the Visual editor; node-card canvases leave this null. */
   editingOperationId: string | null
+  /** Reopen the production Visual gallery when its full-screen editor closes. */
+  visualEditorReturnToGallery: boolean
   drawingCardId: string | null
   toolDraft: string
   toolDraftFor: AssemblyToolDraft | null
@@ -36,6 +38,7 @@ export function createAssemblyViewUiState(): AssemblyViewUiState {
     lockedCardId: null,
     editingVisualId: null,
     editingOperationId: null,
+    visualEditorReturnToGallery: false,
     drawingCardId: null,
     toolDraft: '',
     toolDraftFor: null,

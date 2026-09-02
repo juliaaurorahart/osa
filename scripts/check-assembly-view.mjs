@@ -20,6 +20,9 @@ try {
     '/src/components/AssemblyDescription.tsx',
   )
   const { AssemblyView } = await server.ssrLoadModule('/src/components/AssemblyView.tsx')
+  const { AssemblyPeopleDisplayPicker } = await server.ssrLoadModule(
+    '/src/components/WorkspaceSettingsMenu.tsx',
+  )
   const {
     instructionPhotoFileFromUrl,
     instructionPhotoFiles,
@@ -30,6 +33,9 @@ try {
   )
   const { AssemblyPeople } = await server.ssrLoadModule(
     '/src/components/AssemblyPeople.tsx',
+  )
+  const { AssemblyVisualsCell } = await server.ssrLoadModule(
+    '/src/components/AssemblyVisualsCell.tsx',
   )
   const { AssemblyInstructionsView, StepCanvasViewer } = await server.ssrLoadModule(
     '/src/components/AssemblyInstructionsView.tsx',
@@ -47,6 +53,14 @@ try {
   const { createAssemblyViewUiState } = await server.ssrLoadModule(
     '/src/components/assemblyViewState.ts',
   )
+  const {
+    DEFAULT_ASSEMBLY_PEOPLE_THRESHOLD,
+    normalizeAssemblyPeopleThreshold,
+    readAssemblyPeopleDisplay,
+    readAssemblyPeopleThreshold,
+    writeAssemblyPeopleDisplay,
+    writeAssemblyPeopleThreshold,
+  } = await server.ssrLoadModule('/src/app/browserSession.ts')
   const {
     operationPeople,
     serializeOperationPeople,
@@ -308,6 +322,8 @@ try {
     uiState = focusedUiState,
     boardNodes = nodes,
     readOnly = false,
+    peopleDisplay = 'initials',
+    peopleThreshold = DEFAULT_ASSEMBLY_PEOPLE_THRESHOLD,
   ) => renderToStaticMarkup(createElement(AssemblyView, {
     assemblies: boardNodes.filter((node) => osaRole(node) === 'assembly'),
     nodes: boardNodes,
@@ -320,6 +336,8 @@ try {
     actions,
     onInspectNode: noop,
     readOnly,
+    peopleDisplay,
+    peopleThreshold,
   }))
   const articleFor = (markup, ariaLabel) => {
     const start = markup.indexOf(`aria-label="${ariaLabel}"`)
@@ -1078,10 +1096,56 @@ try {
     'Connector Box Drill',
   )
   assert.match(peopleProductionRow, /aria-label="Connector Box Drill people: Bria, Sam"/)
-  assert.match(peopleProductionRow, /assembly-people-cell__initial" title="Bria">B<\/span>/)
-  assert.match(peopleProductionRow, /assembly-people-cell__initial" title="Sam">S<\/span>/)
+  assert.match(peopleProductionRow, /assembly-people-cell__initials" title="Bria, Sam" aria-hidden="true">B \| S<\/span>/)
+  assert.doesNotMatch(peopleProductionRow, /assembly-people-cell__initial\b/)
   assert.match(peopleProductionRow, /aria-label="Connector Box Drill number built" value="0"/)
   assert.doesNotMatch(peopleProductionRow, />Bria<\/span>|>Sam<\/span>|add person|remove Bria/)
+
+  const equalThresholdPlainRow = productionRowFor(
+    renderAssembly(edges, createAssemblyViewUiState(), peopleNodes, false, 'initials', 2),
+    'Connector Box Drill',
+  )
+  assert.match(equalThresholdPlainRow, />B \| S<\/span>/)
+  assert.doesNotMatch(equalThresholdPlainRow, /assembly-people-cell__count/)
+  const equalThresholdCircleRow = productionRowFor(
+    renderAssembly(edges, createAssemblyViewUiState(), peopleNodes, false, 'circles', 2),
+    'Connector Box Drill',
+  )
+  assert.match(equalThresholdCircleRow, /assembly-people-cell__initial" title="Bria"[^>]*>B<\/span>/)
+  assert.match(equalThresholdCircleRow, /assembly-people-cell__initial" title="Sam"[^>]*>S<\/span>/)
+  assert.doesNotMatch(equalThresholdCircleRow, /assembly-people-cell__count/)
+
+  const crowdedPeopleValue = serializeOperationPeople(['Bria', 'Sam', 'Olivia', 'Julia'])
+  const crowdedPeopleNodes = peopleNodes.map((node) => node.id === connectorBoxDrill.id
+    ? {
+        ...node,
+        data: {
+          ...node.data,
+          properties: {
+            ...node.data.properties,
+            [OSA_PROPERTY.operationPeople]: crowdedPeopleValue,
+          },
+        },
+      }
+    : node)
+  const crowdedPlainRow = productionRowFor(
+    renderAssembly(edges, createAssemblyViewUiState(), crowdedPeopleNodes, false, 'initials', 3),
+    'Connector Box Drill',
+  )
+  assert.match(crowdedPlainRow, /aria-label="Connector Box Drill people: 4 assigned — Bria, Sam, Olivia, Julia"/)
+  assert.match(crowdedPlainRow, /assembly-people-cell__count" title="Bria, Sam, Olivia, Julia" aria-hidden="true">4<\/span>/)
+  assert.doesNotMatch(crowdedPlainRow, /assembly-people-cell__initials|assembly-people-cell__initial\b/)
+  const crowdedCircleRow = productionRowFor(
+    renderAssembly(edges, createAssemblyViewUiState(), crowdedPeopleNodes, false, 'circles', 3),
+    'Connector Box Drill',
+  )
+  assert.match(crowdedCircleRow, /aria-label="Connector Box Drill people: 4 assigned — Bria, Sam, Olivia, Julia"/)
+  assert.match(crowdedCircleRow, /assembly-people-cell__count is-circle" title="Bria, Sam, Olivia, Julia" aria-hidden="true">4<\/span>/)
+  assert.doesNotMatch(crowdedCircleRow, /assembly-people-cell__initials|assembly-people-cell__initial"/)
+
+  const noPeopleRow = productionRowFor(peopleMarkup, 'Shako Wrap Punch Holes')
+  assert.match(noPeopleRow, /aria-label="Shako Wrap Punch Holes people: none"/)
+  assert.match(noPeopleRow, /assembly-people-cell__empty">—<\/span>/)
 
   const assemblyIndexCardCss = await readFile(
     new URL('../src/components/AssemblyIndexCard.css', import.meta.url),
@@ -1142,8 +1206,7 @@ try {
   assert.match(sharedMainMarkup, />shared assembly · read-only<\/span>/)
   assert.match(sharedMainMarkup, /aria-label="Open Connector Box Drill instruction\. Status: Pending"/)
   assert.match(sharedMainMarkup, /aria-label="Connector Box Drill people: Bria, Sam"/)
-  assert.match(sharedMainMarkup, /title="Bria">B<\/span>/)
-  assert.match(sharedMainMarkup, /title="Sam">S<\/span>/)
+  assert.match(sharedMainMarkup, /title="Bria, Sam" aria-hidden="true">B \| S<\/span>/)
   assert.doesNotMatch(sharedMainMarkup, /Reorder instructions|>\+ instruction<|add person|remove Bria/)
   assert.doesNotMatch(
     sharedMainMarkup,
@@ -1209,6 +1272,21 @@ try {
     /aria-label="Hide top menu"[\s\S]*?onClick=\{dismissWorkspaceChrome\}/,
     'The Hide button uses the explicit dismissal path so its own focus cannot keep the menu open.',
   )
+  assert.match(
+    appSource,
+    /closeLabel=\{assemblyViewState\.visualEditorReturnToGallery[\s\S]*?← Back to gallery/,
+    'A Visual opened from the production gallery gets an explicit way back to that gallery.',
+  )
+  const settingsSource = await readFile(
+    new URL('../src/components/WorkspaceSettingsMenu.tsx', import.meta.url),
+    'utf8',
+  )
+  assert.match(settingsSource, /<details className="workspace-settings-menu__people-display"/)
+  assert.match(settingsSource, /<PeopleDisplayPreview display=\{display\} \/>/)
+  assert.match(settingsSource, /Plain initials[\s\S]*?Letter circles/)
+  assert.match(settingsSource, /\['P', 'E', 'O'\], \['P', 'L', 'E'\]/)
+  assert.match(settingsSource, /People initials threshold/)
+  assert.match(settingsSource, /'summary'/, 'The Settings focus trap includes its People display disclosure.')
 
   const instructionsMarkup = renderToStaticMarkup(createElement(AssemblyInstructionsView, {
     assembly,
@@ -1362,9 +1440,12 @@ try {
 
   const require = createRequire(import.meta.url)
   const { JSDOM } = createRequire(require.resolve('fabric'))('jsdom')
-  const descriptionDom = new JSDOM('<div id="description-root"></div>', {
+  const descriptionDom = new JSDOM(
+    '<div id="description-root"></div><div id="visual-gallery-root"></div><div id="people-settings-root"></div>',
+    {
     url: 'http://localhost',
-  })
+    },
+  )
   const domGlobalNames = [
     'window',
     'document',
@@ -1380,6 +1461,8 @@ try {
     Object.getOwnPropertyDescriptor(globalThis, name),
   ]))
   let descriptionRoot
+  let visualGalleryRoot
+  let peopleSettingsRoot
   try {
     const { window } = descriptionDom
     const lineHeight = 20
@@ -1431,7 +1514,69 @@ try {
       IS_REACT_ACT_ENVIRONMENT: true,
     })
     window.ResizeObserver = TestResizeObserver
+    window.localStorage.clear()
+    assert.equal(readAssemblyPeopleDisplay(), 'initials')
+    writeAssemblyPeopleDisplay('circles')
+    assert.equal(readAssemblyPeopleDisplay(), 'circles')
+    window.localStorage.setItem('osa:assembly-people-display', 'unknown')
+    assert.equal(readAssemblyPeopleDisplay(), 'initials')
+    assert.equal(DEFAULT_ASSEMBLY_PEOPLE_THRESHOLD, 3)
+    assert.equal(readAssemblyPeopleThreshold(), 3)
+    writeAssemblyPeopleThreshold(5)
+    assert.equal(readAssemblyPeopleThreshold(), 5)
+    writeAssemblyPeopleThreshold(99)
+    assert.equal(readAssemblyPeopleThreshold(), 12)
+    window.localStorage.setItem('osa:assembly-people-threshold', 'not-a-number')
+    assert.equal(readAssemblyPeopleThreshold(), 3)
+    assert.equal(normalizeAssemblyPeopleThreshold(2.9), 2)
+    assert.equal(normalizeAssemblyPeopleThreshold(0), 1)
+    assert.equal(normalizeAssemblyPeopleThreshold(Number.NaN), 3)
     const { createRoot } = await import('react-dom/client')
+    const peopleDisplayChanges = []
+    peopleSettingsRoot = createRoot(window.document.getElementById('people-settings-root'))
+    await act(async () => {
+      peopleSettingsRoot.render(createElement(AssemblyPeopleDisplayPicker, {
+        display: 'initials',
+        onChange: (display) => peopleDisplayChanges.push(display),
+      }))
+    })
+    const peopleDisplayDetails = window.document.querySelector(
+      '.workspace-settings-menu__people-display',
+    )
+    const peopleDisplaySummary = peopleDisplayDetails.querySelector('summary')
+    assert.equal(
+      peopleDisplaySummary.getAttribute('aria-label'),
+      'Assembly people display: Plain initials. Change display.',
+    )
+    const selectedPeoplePreviewRows = peopleDisplaySummary.querySelectorAll(
+      '.workspace-settings-menu__people-preview-row',
+    )
+    assert.equal(selectedPeoplePreviewRows[0].textContent, 'P|E|O')
+    assert.equal(selectedPeoplePreviewRows[1].textContent, 'P|L|E')
+    peopleDisplayDetails.open = true
+    const circleDisplayButton = peopleDisplayDetails.querySelector(
+      '[aria-label="Use letter circles"]',
+    )
+    await act(async () => {
+      circleDisplayButton.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+    })
+    assert.deepEqual(peopleDisplayChanges, ['circles'])
+    assert.equal(peopleDisplayDetails.open, false)
+    assert.equal(window.document.activeElement, peopleDisplaySummary)
+    await act(async () => {
+      peopleSettingsRoot.render(createElement(AssemblyPeopleDisplayPicker, {
+        display: 'circles',
+        onChange: (display) => peopleDisplayChanges.push(display),
+      }))
+    })
+    assert.equal(
+      peopleDisplaySummary.getAttribute('aria-label'),
+      'Assembly people display: Letter circles. Change display.',
+    )
+    assert.match(
+      peopleDisplaySummary.querySelector('.workspace-settings-menu__people-preview').className,
+      /is-circles/,
+    )
     descriptionRoot = createRoot(window.document.getElementById('description-root'))
     await act(async () => {
       descriptionRoot.render(createElement(AssemblyDescription, {
@@ -1475,7 +1620,63 @@ try {
       /is-collapsed/,
       'Changing expanded content to a short Description resets the compact state.',
     )
+
+    const openedVisuals = []
+    visualGalleryRoot = createRoot(window.document.getElementById('visual-gallery-root'))
+    const renderVisualGallery = async (visualGallerySuspended) => {
+      await act(async () => {
+        visualGalleryRoot.render(createElement(AssemblyVisualsCell, {
+          operationId: connectorBoxDrill.id,
+          operationTitle: 'Connector Box Drill',
+          visuals: connectorInstructionVisuals,
+          nodes,
+          edges,
+          annotationTargets: [],
+          readOnly: true,
+          actions,
+          visualGallerySuspended,
+          onEditVisual: (...args) => openedVisuals.push(args),
+        }))
+      })
+    }
+    await renderVisualGallery(false)
+    const galleryTrigger = window.document.querySelector(
+      '[aria-label^="Open Connector Box Drill visual gallery."]',
+    )
+    assert.ok(galleryTrigger, 'Expected a Visual count that opens the production gallery.')
+    await act(async () => {
+      galleryTrigger.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+    })
+    const galleryDialog = () => window.document.querySelector('.assembly-visuals-cell__dialog')
+    assert.ok(galleryDialog(), 'The Visual count opens the gallery.')
+    const hero = galleryDialog().querySelector('.assembly-visuals-cell__hero-button')
+    await act(async () => {
+      hero.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+    })
+    assert.equal(openedVisuals.length, 1)
+    assert.equal(openedVisuals[0][1], true, 'A full-screen Visual remembers to return to its gallery.')
+    await renderVisualGallery(true)
+    assert.equal(
+      galleryDialog(),
+      null,
+      'The gallery is suspended below its full-screen Visual instead of competing as another overlay.',
+    )
+    await renderVisualGallery(false)
+    assert.ok(
+      galleryDialog(),
+      'Closing the full-screen Visual restores the same gallery instead of dropping back to the table.',
+    )
+    const restoredClose = galleryDialog().querySelector(
+      '[aria-label="Close Connector Box Drill visual gallery"]',
+    )
+    assert.ok(restoredClose, 'The restored gallery keeps its ordinary Close action.')
+    await act(async () => {
+      restoredClose.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+    })
+    assert.equal(galleryDialog(), null, 'The restored gallery still closes normally.')
   } finally {
+    if (peopleSettingsRoot) await act(async () => peopleSettingsRoot.unmount())
+    if (visualGalleryRoot) await act(async () => visualGalleryRoot.unmount())
     if (descriptionRoot) await act(async () => descriptionRoot.unmount())
     descriptionDom.window.close()
     for (const [name, descriptor] of previousDomGlobals) {

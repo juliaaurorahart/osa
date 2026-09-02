@@ -90,22 +90,29 @@
 
 .assembly-alerts-cell__backdrop {
   position: fixed;
-  z-index: 1000;
+  z-index: 3000;
   inset: 0;
   display: grid;
   place-items: center;
+  box-sizing: border-box;
+  height: 100dvh;
+  max-height: 100dvh;
   padding: 18px;
+  overflow: hidden;
   background: rgb(0 0 0 / 68%);
+  overscroll-behavior: contain;
 }
 
 .assembly-alerts-cell__dialog {
   display: grid;
   box-sizing: border-box;
   width: min(680px, 100%);
-  max-height: min(82vh, 760px);
+  max-height: min(760px, calc(100dvh - 36px));
   gap: 18px;
   padding: clamp(18px, 3vw, 28px);
   overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   border: 1px solid var(--osa-border);
   border-radius: 14px;
   background: var(--osa-surface);
@@ -234,12 +241,13 @@
 @media (max-width: 600px) {
   .assembly-alerts-cell__backdrop {
     align-items: end;
-    padding: 0;
+    padding: max(8px, env(safe-area-inset-top)) 0 0;
   }
 
   .assembly-alerts-cell__dialog {
     width: 100%;
-    max-height: 90vh;
+    max-height: 100%;
+    padding-block-end: max(18px, env(safe-area-inset-bottom));
     border-radius: 16px 16px 0 0;
   }
 

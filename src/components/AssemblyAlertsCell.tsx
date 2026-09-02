@@ -6,6 +6,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from 'react'
+import { createPortal } from 'react-dom'
 import type { TextFlowNode } from '../graph/textNode'
 import { nodeTitle } from './assemblyProjection'
 import {
@@ -111,36 +112,8 @@ export function AssemblyAlertsCell({
     event: ReactMouseEvent<HTMLElement> | ReactKeyboardEvent<HTMLElement>,
   ) => event.stopPropagation()
 
-  return (
-    <div
-      className={`assembly-alerts-cell${alerts.length ? ' has-alerts' : ' is-empty'}${isOpen ? ' is-open' : ''}`}
-      onClick={stopPropagation}
-      onKeyDown={stopPropagation}
-    >
-      <button
-        ref={triggerRef}
-        className="assembly-alerts-cell__trigger"
-        type="button"
-        aria-label={`${title}: ${alerts.length} ${alerts.length === 1 ? 'alert' : 'alerts'}. ${editorReadOnly ? 'View alerts' : 'View or edit alerts'}.`}
-        aria-describedby={alerts.length ? previewId : undefined}
-        aria-haspopup="dialog"
-        aria-expanded={isOpen}
-        onClick={openDialog}
-      >
-        <span className="assembly-alerts-cell__dot" aria-hidden="true" />
-        <span className="assembly-alerts-cell__count">{alerts.length}</span>
-      </button>
-
-      {alerts.length ? (
-        <div className="assembly-alerts-cell__preview" id={previewId}>
-          <strong>{alerts.length === 1 ? 'Alert' : `${alerts.length} alerts`}</strong>
-          <ul>
-            {alerts.map((alert, index) => <li key={`${index}-${alert}`}>{alert}</li>)}
-          </ul>
-        </div>
-      ) : null}
-
-      {isOpen ? (
+  const dialog = isOpen && typeof document !== 'undefined'
+    ? createPortal(
         <div
           className="assembly-alerts-cell__backdrop"
           role="presentation"
@@ -236,8 +209,41 @@ export function AssemblyAlertsCell({
               )}
             </footer>
           </section>
+        </div>,
+        document.body,
+      )
+    : null
+
+  return (
+    <div
+      className={`assembly-alerts-cell${alerts.length ? ' has-alerts' : ' is-empty'}${isOpen ? ' is-open' : ''}`}
+      onClick={stopPropagation}
+      onKeyDown={stopPropagation}
+    >
+      <button
+        ref={triggerRef}
+        className="assembly-alerts-cell__trigger"
+        type="button"
+        aria-label={`${title}: ${alerts.length} ${alerts.length === 1 ? 'alert' : 'alerts'}. ${editorReadOnly ? 'View alerts' : 'View or edit alerts'}.`}
+        aria-describedby={alerts.length ? previewId : undefined}
+        aria-haspopup="dialog"
+        aria-expanded={isOpen}
+        onClick={openDialog}
+      >
+        <span className="assembly-alerts-cell__dot" aria-hidden="true" />
+        <span className="assembly-alerts-cell__count">{alerts.length}</span>
+      </button>
+
+      {alerts.length ? (
+        <div className="assembly-alerts-cell__preview" id={previewId}>
+          <strong>{alerts.length === 1 ? 'Alert' : `${alerts.length} alerts`}</strong>
+          <ul>
+            {alerts.map((alert, index) => <li key={`${index}-${alert}`}>{alert}</li>)}
+          </ul>
         </div>
       ) : null}
+
+      {dialog}
     </div>
   )
 }

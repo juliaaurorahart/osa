@@ -98,6 +98,8 @@ type VisualCanvasEditorProps = {
   availableVisuals?: TextFlowNode[]
   readOnly?: boolean
   onClose: () => void
+  /** Replaces the generic close control when returning to a suspended gallery. */
+  closeLabel?: string
   /** Removes this canvas from the card that opened the editor, not from its owner. */
   onRemoveFromCard?: () => void
   onNameChange: (id: string, value: string) => void
@@ -172,6 +174,7 @@ export function VisualCanvasEditor({
   availableVisuals = [],
   readOnly = false,
   onClose,
+  closeLabel,
   onRemoveFromCard,
   onNameChange,
   nameReadOnly = false,
@@ -495,6 +498,15 @@ export function VisualCanvasEditor({
         onDrop={onDrop}
       >
         <header className="visual-canvas-editor__header">
+          {closeLabel ? (
+            <button
+              className="visual-canvas-editor__back-button"
+              type="button"
+              onClick={closeEditor}
+            >
+              {closeLabel}
+            </button>
+          ) : null}
           <input
             aria-label="Canvas name"
             value={draft.name}
@@ -604,7 +616,7 @@ export function VisualCanvasEditor({
               <LabCaptureButton capture={captureDisplayedCanvas}
                 onSave={async (capture) => (await captureToLabNotebook(capture)).id} />
             ) : null}
-            <button type="button" onClick={closeEditor}>close</button>
+            {!closeLabel ? <button type="button" onClick={closeEditor}>close</button> : null}
           </div>
         </header>
         {imageImportError ? <p role="alert">{imageImportError}</p> : null}

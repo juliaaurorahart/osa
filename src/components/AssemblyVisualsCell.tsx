@@ -28,7 +28,8 @@ type AssemblyVisualsCellProps = {
   annotationTargets: SketchAnnotationTarget[]
   readOnly: boolean
   actions: AssemblyViewActions
-  onEditVisual: (visualId: string) => void
+  visualGallerySuspended: boolean
+  onEditVisual: (visualId: string, returnToGallery?: boolean) => void
 }
 
 const FOCUSABLE_SELECTOR = [
@@ -53,6 +54,7 @@ export function AssemblyVisualsCell({
   annotationTargets,
   readOnly,
   actions,
+  visualGallerySuspended,
   onEditVisual,
 }: AssemblyVisualsCellProps) {
   const [galleryOpen, setGalleryOpen] = useState(false)
@@ -68,7 +70,7 @@ export function AssemblyVisualsCell({
     : visuals
   const visualCount = galleryVisuals.length
   const safeActiveIndex = Math.min(activeIndex, Math.max(0, visualCount - 1))
-  const isGalleryOpen = galleryOpen
+  const isGalleryOpen = galleryOpen && !visualGallerySuspended
   const firstContentIndex = galleryVisuals.findIndex(({ visual }) => (
     visualHasInstructionContent(visual, nodes, edges)
   ))
@@ -136,8 +138,7 @@ export function AssemblyVisualsCell({
 
   const openVisual = (visualId: string) => {
     openingVisualRef.current = true
-    setGalleryOpen(false)
-    onEditVisual(visualId)
+    onEditVisual(visualId, true)
   }
 
   const previousVisual = () => {
@@ -241,7 +242,10 @@ export function AssemblyVisualsCell({
                         : `Open ${nodeTitle(placement.visual)} in the visual editor`}
                       aria-current={index === safeActiveIndex ? 'true' : undefined}
                       key={placement.edgeId ?? placement.visual.id}
-                      onClick={() => openVisual(placement.visual.id)}
+                      onClick={() => {
+                        setActiveIndex(index)
+                        openVisual(placement.visual.id)
+                      }}
                     >
                       <VisualCanvasPreview
                         visual={placement.visual}
