@@ -163,16 +163,20 @@ export function AssemblyProductionTable({
                       )}
                     </th>
                     <td className="assembly-production__status">
-                      <label
+                      <div
                         className="assembly-production__status-control"
                         data-status={status}
                         title={statusLabel}
                         onClick={stopTableControl}
                       >
-                        <span className="assembly-production__status-dot" aria-hidden="true" />
-                        {!canEditProperties ? (
-                          <span aria-label={`${title} status: ${statusLabel}`}>{statusCode(status)}</span>
-                        ) : (
+                        <span
+                          className="assembly-production__status-badge"
+                          aria-hidden={canEditProperties ? 'true' : undefined}
+                          aria-label={canEditProperties ? undefined : `${title} status: ${statusLabel}`}
+                        >
+                          {statusCode(status)}
+                        </span>
+                        {canEditProperties ? (
                           <select
                             aria-label={`${title} status`}
                             value={status}
@@ -187,9 +191,9 @@ export function AssemblyProductionTable({
                             <option value={OSA_OPERATION_STATUS.partialComplete}>PC — Partial Complete</option>
                             <option value={OSA_OPERATION_STATUS.complete}>C — Complete</option>
                           </select>
-                        )}
+                        ) : null}
                         <span className="assembly-production__hover-info" role="tooltip">{statusLabel}</span>
-                      </label>
+                      </div>
                     </td>
                     <td className="assembly-production__built">
                       <label

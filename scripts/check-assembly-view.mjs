@@ -385,7 +385,17 @@ try {
   assert.equal(
     (compactMarkup.match(/class="assembly-production__status-control" data-status="not-started"/g) ?? []).length,
     6,
-    'Every production row shows a status light.',
+    'Every production row shows a status control.',
+  )
+  assert.equal(
+    (compactMarkup.match(/class="assembly-production__status-badge" aria-hidden="true">P<\/span>/g) ?? []).length,
+    6,
+    'Every Pending production row centers its P inside the colored status circle.',
+  )
+  assert.doesNotMatch(
+    compactMarkup,
+    /assembly-production__status-dot/,
+    'The production status circle replaces the old separate dot.',
   )
   assert.equal(
     (compactMarkup.match(/class="assembly-production__hover-info" role="tooltip">Pending<\/span>/g) ?? []).length,
@@ -797,6 +807,30 @@ try {
     new URL('../src/components/AssemblyView.css', import.meta.url),
     'utf8',
   )
+  const productionTableCss = await readFile(
+    new URL('../src/components/AssemblyProductionTable.css', import.meta.url),
+    'utf8',
+  )
+  assert.match(
+    productionTableCss,
+    /\.assembly-production__status-badge\s*\{[^}]*place-items:\s*center;[^}]*border-radius:\s*50%;[^}]*background:\s*var\(--production-status-background\);/s,
+    'Production statuses render as one centered colored circle.',
+  )
+  assert.match(
+    productionTableCss,
+    /\.assembly-production__status-control\s*\{[^}]*--production-status:\s*var\(--osa-status-not-started\);[^}]*--production-status-background:\s*color-mix\(\s*in srgb,\s*var\(--production-status\) 12%,\s*var\(--osa-surface-raised\)\s*\);[^}]*--production-status-text:\s*var\(--osa-muted\);/s,
+    'Pending uses a subdued gray circle and muted P instead of competing with active work.',
+  )
+  assert.match(
+    productionTableCss,
+    /\.assembly-production__status-control\[data-status='partial-complete'\]\s*\{[^}]*--production-status:\s*color-mix\(\s*in srgb,\s*var\(--osa-status-in-progress\) 42%,\s*var\(--osa-status-complete\)\s*\);/s,
+    'Partial Complete uses a distinct yellow-green between In Progress yellow and Complete green.',
+  )
+  assert.match(
+    productionTableCss,
+    /\.assembly-production__status-control select\s*\{[^}]*appearance:\s*none;[^}]*opacity:\s*0;/s,
+    'The full-circle status selector remains clickable without displaying a dropdown arrow.',
+  )
   assert.match(
     assemblyViewCss,
     /\.assembly-operation-status\s*\{[^}]*--assembly-status-background:\s*var\(--osa-surface-raised\);[^}]*--assembly-status-text:\s*var\(--osa-muted\);[^}]*background:\s*var\(--assembly-status-background\);[^}]*color:\s*var\(--assembly-status-text\);/s,
@@ -988,6 +1022,7 @@ try {
     'Connector Box Drill',
   )
   assert.match(attentionProductionRow, /data-status="partial-complete"/)
+  assert.match(attentionProductionRow, /class="assembly-production__status-badge" aria-hidden="true">PC<\/span>/)
   assert.match(attentionProductionRow, /<option value="partial-complete" selected="">PC — Partial Complete<\/option>/)
   assert.match(attentionProductionRow, /aria-label="Connector Box Drill: 1 alert\. View or edit alerts\."/)
   assert.match(attentionProductionRow, /assembly-alerts-cell__count">1<\/span>/)
