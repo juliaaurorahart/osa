@@ -1,0 +1,163 @@
+.assembly-people-cell {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+
+.assembly-people-cell__trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 3px;
+  width: 100%;
+  min-width: 42px;
+  min-height: 38px;
+  padding: 3px 5px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--osa-text);
+  cursor: pointer;
+  font: inherit;
+}
+
+.assembly-people-cell__trigger:hover,
+.assembly-people-cell__trigger:focus-visible {
+  border-color: var(--osa-focus);
+  background: var(--osa-hover-surface);
+  outline: 0;
+}
+
+.assembly-people-cell__initial {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 27px;
+  height: 27px;
+  border: 1px solid var(--osa-border);
+  border-radius: 50%;
+  background: var(--osa-surface-raised);
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.assembly-people-cell__empty {
+  color: var(--osa-muted);
+}
+
+.assembly-people-cell__preview {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  left: 50%;
+  width: max-content;
+  max-width: min(300px, 80vw);
+  padding: 7px 9px;
+  border: 1px solid var(--osa-border);
+  border-radius: 7px;
+  background: var(--osa-surface-raised);
+  box-shadow: 0 10px 24px rgb(0 0 0 / 36%);
+  color: var(--osa-text);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  opacity: 0;
+  pointer-events: none;
+  text-align: left;
+  transform: translate(-50%, -3px);
+  transition: opacity 100ms ease, transform 100ms ease;
+}
+
+.assembly-people-cell:hover .assembly-people-cell__preview,
+.assembly-people-cell:focus-within .assembly-people-cell__preview {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.assembly-people-cell__backdrop {
+  position: fixed;
+  z-index: 90;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  padding: 18px;
+  background: rgb(0 0 0 / 68%);
+}
+
+.assembly-people-cell__dialog {
+  display: grid;
+  gap: 14px;
+  box-sizing: border-box;
+  width: min(540px, 100%);
+  max-height: min(720px, calc(100dvh - 36px));
+  padding: 18px;
+  overflow: auto;
+  border: 1px solid var(--osa-border);
+  border-radius: 12px;
+  background: var(--osa-surface);
+  box-shadow: 0 24px 80px rgb(0 0 0 / 55%);
+  color: var(--osa-text);
+}
+
+.assembly-people-cell__dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.assembly-people-cell__dialog-header strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.assembly-people-cell__dialog-header button {
+  min-height: 38px;
+  padding: 5px 10px;
+  border: 1px solid var(--osa-border);
+  border-radius: 999px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
+  cursor: pointer;
+  font: inherit;
+}
+
+.assembly-people-cell__dialog .assembly-people {
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 0;
+  border: 0;
+}
+
+.assembly-people-cell__dialog .assembly-people__label {
+  display: none;
+}
+
+.assembly-people-cell__dialog-empty {
+  color: var(--osa-muted);
+}
+
+@media (hover: none) {
+  .assembly-people-cell__preview {
+    display: none;
+  }
+}
+
+@media (max-width: 700px) {
+  .assembly-people-cell__trigger {
+    min-height: 44px;
+  }
+
+  .assembly-people-cell__initial {
+    width: 30px;
+    height: 30px;
+  }
+
+  .assembly-people-cell__dialog {
+    width: 100%;
+    max-height: calc(100dvh - 24px);
+    padding: 15px;
+  }
+}

@@ -171,24 +171,33 @@
   padding-top: clamp(10px, 1.5vw, 14px);
 }
 
-.assembly-operation-card__attention {
+.assembly-operation-card__alerts {
   display: grid;
-  grid-template-columns: minmax(120px, auto) minmax(0, 1fr);
-  align-items: center;
-  gap: 8px 12px;
+  gap: 10px;
   margin: 0;
-  padding: 10px 0;
+  padding: 10px 0 12px;
+  border-bottom: 1px solid var(--osa-border-subtle);
   color: var(--osa-danger-text);
 }
 
-.assembly-operation-card__attention.is-read-only {
-  grid-template-columns: auto minmax(0, 1fr);
+.assembly-operation-card__alerts.is-empty {
+  padding-block: 6px;
+  border-bottom: 0;
 }
 
-.assembly-operation-card__attention-heading {
+.assembly-operation-card__alerts-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.assembly-operation-card__alerts-heading {
   display: inline-flex;
   align-items: center;
   gap: 7px;
+  font-size: clamp(1.05rem, 1.5vw, 1.25rem);
   font-weight: 700;
 }
 
@@ -202,33 +211,14 @@
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--osa-danger-border) 22%, transparent);
 }
 
-.assembly-operation-card__attention input {
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 40px;
-  padding: 7px 9px;
-  border: 1px solid color-mix(in srgb, var(--osa-danger-border) 52%, var(--osa-border));
-  border-radius: 7px;
-  background: var(--osa-input);
+.assembly-operation-card__alerts-list {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding-left: 1.35rem;
   color: var(--osa-danger-text);
-  font: inherit;
-}
-
-.assembly-operation-card__attention input::placeholder {
-  color: color-mix(in srgb, var(--osa-danger-text) 58%, var(--osa-muted));
-}
-
-.assembly-operation-card__attention input:focus-visible {
-  outline: 2px solid var(--osa-danger-border);
-  outline-offset: 1px;
-}
-
-.assembly-operation-card__attention-add {
-  justify-self: start;
-  min-height: 38px;
-  padding: 3px 5px;
-  color: var(--osa-muted);
-  font-weight: 600;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .assembly-operation-card__description {
@@ -356,12 +346,7 @@
     align-items: flex-start;
   }
 
-  .assembly-operation-card__attention {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   .assembly-operation-card__description-add,
-  .assembly-operation-card__attention-add,
   .assembly-view .assembly-operation-card__description-toggle {
     min-height: 44px;
   }

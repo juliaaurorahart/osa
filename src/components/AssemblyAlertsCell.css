@@ -1,0 +1,261 @@
+.assembly-alerts-cell {
+  position: relative;
+  display: inline-flex;
+  justify-content: center;
+  min-width: 0;
+}
+
+.assembly-alerts-cell__trigger {
+  display: inline-flex;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 54px;
+  min-height: 42px;
+  padding: 6px 12px;
+  border: 1px solid var(--osa-border);
+  border-radius: 999px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.assembly-alerts-cell.has-alerts .assembly-alerts-cell__trigger {
+  border-color: color-mix(in srgb, var(--osa-danger-border) 62%, var(--osa-border));
+  background: color-mix(in srgb, var(--osa-danger-border) 10%, var(--osa-surface-raised));
+  color: var(--osa-danger-text);
+}
+
+.assembly-alerts-cell__trigger:hover,
+.assembly-alerts-cell__trigger:focus-visible {
+  border-color: var(--osa-focus);
+  outline: 2px solid transparent;
+}
+
+.assembly-alerts-cell__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--osa-muted);
+}
+
+.assembly-alerts-cell.has-alerts .assembly-alerts-cell__dot {
+  background: var(--osa-danger-border);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--osa-danger-border) 22%, transparent);
+}
+
+.assembly-alerts-cell__preview {
+  position: absolute;
+  z-index: 12;
+  top: calc(100% + 8px);
+  right: 0;
+  display: none;
+  box-sizing: border-box;
+  width: min(340px, calc(100vw - 28px));
+  max-height: 240px;
+  padding: 12px 14px;
+  overflow: auto;
+  border: 1px solid var(--osa-border);
+  border-radius: 10px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
+  box-shadow: 0 14px 34px rgb(0 0 0 / 26%);
+  font-size: 0.9rem;
+  line-height: 1.4;
+  text-align: left;
+}
+
+.assembly-alerts-cell__preview strong {
+  color: var(--osa-danger-text);
+}
+
+.assembly-alerts-cell__preview ul,
+.assembly-alerts-cell__read-list {
+  display: grid;
+  gap: 7px;
+  margin: 8px 0 0;
+  padding-left: 1.2rem;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .assembly-alerts-cell:not(.is-open):hover .assembly-alerts-cell__preview,
+  .assembly-alerts-cell:not(.is-open):focus-within .assembly-alerts-cell__preview {
+    display: block;
+  }
+}
+
+.assembly-alerts-cell__backdrop {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgb(0 0 0 / 68%);
+}
+
+.assembly-alerts-cell__dialog {
+  display: grid;
+  box-sizing: border-box;
+  width: min(680px, 100%);
+  max-height: min(82vh, 760px);
+  gap: 18px;
+  padding: clamp(18px, 3vw, 28px);
+  overflow: auto;
+  border: 1px solid var(--osa-border);
+  border-radius: 14px;
+  background: var(--osa-surface);
+  color: var(--osa-text);
+  box-shadow: 0 26px 80px rgb(0 0 0 / 45%);
+  text-align: left;
+}
+
+.assembly-alerts-cell__dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.assembly-alerts-cell__eyebrow {
+  color: var(--osa-danger-text);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.assembly-alerts-cell__dialog h2 {
+  margin: 3px 0 0;
+  font-size: clamp(1.4rem, 4vw, 2rem);
+  line-height: 1.15;
+}
+
+.assembly-alerts-cell__close {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--osa-border);
+  border-radius: 50%;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 1.5rem;
+}
+
+.assembly-alerts-cell__editor-list {
+  display: grid;
+  gap: 14px;
+}
+
+.assembly-alerts-cell__editor-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.assembly-alerts-cell__editor-row label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--osa-muted);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.assembly-alerts-cell__editor-row textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 74px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--osa-danger-border) 45%, var(--osa-border));
+  border-radius: 8px;
+  background: var(--osa-input);
+  color: var(--osa-text);
+  font: inherit;
+  line-height: 1.4;
+  resize: vertical;
+}
+
+.assembly-alerts-cell__editor-row textarea:focus-visible,
+.assembly-alerts-cell__close:focus-visible,
+.assembly-alerts-cell__dialog-actions button:focus-visible {
+  border-color: var(--osa-focus);
+  outline: 2px solid var(--osa-focus);
+  outline-offset: 2px;
+}
+
+.assembly-alerts-cell__add {
+  justify-self: start;
+  min-height: 40px;
+}
+
+.assembly-alerts-cell__empty-message {
+  margin: 0;
+  color: var(--osa-muted);
+}
+
+.assembly-alerts-cell__dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid var(--osa-border-subtle);
+}
+
+.assembly-alerts-cell__dialog-actions button {
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 1px solid var(--osa-border);
+  border-radius: 999px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+
+.assembly-alerts-cell__dialog-actions button.is-primary {
+  border-color: var(--osa-focus);
+  background: color-mix(in srgb, var(--osa-focus) 20%, var(--osa-surface-raised));
+}
+
+@media (max-width: 600px) {
+  .assembly-alerts-cell__backdrop {
+    align-items: end;
+    padding: 0;
+  }
+
+  .assembly-alerts-cell__dialog {
+    width: 100%;
+    max-height: 90vh;
+    border-radius: 16px 16px 0 0;
+  }
+
+  .assembly-alerts-cell__editor-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .assembly-alerts-cell__editor-row > button {
+    justify-self: start;
+    min-height: 44px;
+  }
+}
+
+@media print {
+  .assembly-alerts-cell__preview,
+  .assembly-alerts-cell__backdrop {
+    display: none !important;
+  }
+}

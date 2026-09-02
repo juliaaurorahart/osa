@@ -2,14 +2,18 @@ import { useId, useState } from 'react'
 import type { GraphEdge } from '../graph/graphEdge'
 import { OSA_PROPERTY } from '../graph/osaData'
 import type { SketchAnnotationTarget, TextFlowNode } from '../graph/textNode'
+import { AssemblyAlertsCell } from './AssemblyAlertsCell'
 import { AssemblyInstructionVisuals } from './AssemblyInstructionVisuals'
 import { AssemblyOperationStatus } from './AssemblyOperationStatus'
+import {
+  operationAlerts,
+  serializeOperationAlerts,
+} from './assemblyAlertsData'
 import { serializeOperationPeople } from './assemblyPeopleData'
 import { AssemblyPeople } from './AssemblyPeople'
 import { AssemblyPartsAndTools } from './AssemblyPartsAndTools'
 import {
   nodeTitle,
-  operationAttentionNote,
   operationCompletedCount,
   type InstructionVisual,
 } from './assemblyProjection'
@@ -85,7 +89,6 @@ export function AssemblyOperationCard({
   onToolDraftForChange,
 }: AssemblyOperationCardProps) {
   const [isDescriptionEditing, setIsDescriptionEditing] = useState(false)
-  const [isAttentionEditing, setIsAttentionEditing] = useState(false)
   const descriptionId = useId()
   const {
     ref: descriptionRef,
@@ -97,9 +100,9 @@ export function AssemblyOperationCard({
     autoSize: true,
   })
   const completedCount = operationCompletedCount(operation)
-  const attentionValue = operation.data.properties[OSA_PROPERTY.operationAttention] ?? ''
-  const attentionNote = operationAttentionNote(operation)
+  const alerts = operationAlerts(operation)
   const title = nodeTitle(operation)
+  const canEditProperties = !readOnly && Boolean(actions.onPropertyChange)
 
   return (
     <article
@@ -149,7 +152,7 @@ export function AssemblyOperationCard({
           >
             <AssemblyOperationStatus
               operation={operation}
-              onChange={!readOnly && actions.onPropertyChange
+              onChange={canEditProperties
                 ? (status) => actions.onPropertyChange?.(
                     operation.id,
                     OSA_PROPERTY.operationStatus,
@@ -157,7 +160,7 @@ export function AssemblyOperationCard({
                   )
                 : undefined}
             />
-            {!readOnly ? (
+            {canEditProperties ? (
               <label
                 className="assembly-operation-card__complete-count"
                 onClick={(event) => event.stopPropagation()}
@@ -190,7 +193,7 @@ export function AssemblyOperationCard({
             )}
             <AssemblyPeople
               operation={operation}
-              editable={!readOnly && Boolean(actions.onPropertyChange)}
+              editable={canEditProperties}
               onChange={(people) => actions.onPropertyChange?.(
                 operation.id,
                 OSA_PROPERTY.operationPeople,
@@ -211,10 +214,10 @@ export function AssemblyOperationCard({
                     aria-label={`${title} description`}
                     placeholder="Description"
                     value={description}
-                    readOnly={readOnly}
-                    autoFocus={isDescriptionEditing && !description.trim()}
+                    readOnly={!canEditProperties}
+                    autoFocus={canEditProperties && isDescriptionEditing && !description.trim()}
                     onFocus={() => {
-                      if (!readOnly) setIsDescriptionEditing(true)
+                      if (canEditProperties) setIsDescriptionEditing(true)
                       onFocusCard()
                     }}
                     onBlur={() => {
@@ -224,7 +227,7 @@ export function AssemblyOperationCard({
                       }
                     }}
                     onChange={(event) => {
-                      if (readOnly) return
+                      if (!canEditProperties) return
                       actions.onTextChange(operation.id, event.currentTarget.value)
                       actions.onPropertyChange?.(
                         operation.id,
@@ -248,7 +251,7 @@ export function AssemblyOperationCard({
                   </button>
                 ) : null}
               </div>
-            ) : !readOnly ? (
+            ) : canEditProperties ? (
               <button
                 className="assembly-operation-card__description-add text-action"
                 type="button"
@@ -265,50 +268,40 @@ export function AssemblyOperationCard({
               </button>
             ) : null}
 
-            {readOnly ? (
-              attentionNote ? (
-                <p className="assembly-operation-card__attention is-read-only">
-                  <span className="assembly-operation-card__attention-dot" aria-hidden="true" />
-                  <span>{attentionNote}</span>
-                </p>
-              ) : null
-            ) : attentionValue.trim() || isAttentionEditing ? (
-              <label className="assembly-operation-card__attention">
-                <span className="assembly-operation-card__attention-heading">
-                  {attentionValue.trim() ? (
-                    <span className="assembly-operation-card__attention-dot" aria-hidden="true" />
-                  ) : null}
-                  Attention note
-                </span>
-                <input
-                  aria-label={`${title} attention note`}
-                  placeholder="shortage or blocker"
-                  value={attentionValue}
-                  autoFocus={isAttentionEditing && !attentionValue.trim()}
-                  onFocus={() => {
-                    setIsAttentionEditing(true)
-                    onFocusCard()
-                  }}
-                  onBlur={() => {
-                    if (!attentionValue.trim()) setIsAttentionEditing(false)
-                  }}
-                  onChange={(event) => actions.onPropertyChange?.(
-                    operation.id,
-                    OSA_PROPERTY.operationAttention,
-                    event.currentTarget.value,
-                  )}
-                />
-              </label>
-            ) : (
-              <button
-                className="assembly-operation-card__attention-add text-action"
-                type="button"
-                onPointerDown={() => setIsAttentionEditing(true)}
-                onClick={() => setIsAttentionEditing(true)}
+            {alerts.length || !readOnly ? (
+              <section
+                className={`assembly-operation-card__alerts${alerts.length ? ' has-alerts' : ' is-empty'}`}
+                aria-label={`${title} alerts`}
               >
-                + attention note
-              </button>
-            )}
+                <header className="assembly-operation-card__alerts-header">
+                  <span className="assembly-operation-card__alerts-heading">
+                    {alerts.length ? (
+                      <span className="assembly-operation-card__attention-dot" aria-hidden="true" />
+                    ) : null}
+                    Alerts
+                  </span>
+                  <AssemblyAlertsCell
+                    operation={operation}
+                    readOnly={!canEditProperties}
+                    onChange={(nextAlerts) => {
+                      if (readOnly) return
+                      actions.onPropertyChange?.(
+                        operation.id,
+                        OSA_PROPERTY.operationAttention,
+                        serializeOperationAlerts(nextAlerts),
+                      )
+                    }}
+                  />
+                </header>
+                {alerts.length ? (
+                  <ol className="assembly-operation-card__alerts-list">
+                    {alerts.map((alert, index) => (
+                      <li key={`${index}-${alert}`}>{alert}</li>
+                    ))}
+                  </ol>
+                ) : null}
+              </section>
+            ) : null}
 
             <AssemblyInstructionVisuals
               operationId={operation.id}

@@ -20,9 +20,6 @@ try {
     '/src/components/AssemblyDescription.tsx',
   )
   const { AssemblyView } = await server.ssrLoadModule('/src/components/AssemblyView.tsx')
-  const { AssemblyIndexCard } = await server.ssrLoadModule(
-    '/src/components/AssemblyIndexCard.tsx',
-  )
   const {
     instructionPhotoFileFromUrl,
     instructionPhotoFiles,
@@ -54,6 +51,10 @@ try {
     operationPeople,
     serializeOperationPeople,
   } = await server.ssrLoadModule('/src/components/assemblyPeopleData.ts')
+  const {
+    operationAlerts,
+    serializeOperationAlerts,
+  } = await server.ssrLoadModule('/src/components/assemblyAlertsData.ts')
   const {
     OSA_OPERATION_INSTRUCTION_MODE,
     OSA_OPERATION_STATUS,
@@ -336,6 +337,14 @@ try {
     assert.ok(button >= 0 && start >= 0 && end >= 0, `Expected ${operationTitle} summary row.`)
     return markup.slice(start, end + '</li>'.length)
   }
+  const productionRowFor = (markup, operationTitle) => {
+    const marker = `aria-label="${operationTitle} instruction name"`
+    const input = markup.indexOf(marker)
+    const start = markup.lastIndexOf('<tr', input)
+    const end = markup.indexOf('</tr>', input)
+    assert.ok(input >= 0 && start >= 0 && end >= 0, `Expected ${operationTitle} production row.`)
+    return markup.slice(start, end + '</tr>'.length)
+  }
 
   const connectorInstructionVisuals = instructionVisualsForOperation(
     connectorBoxDrill.id,
@@ -374,19 +383,29 @@ try {
     'The summary has one row per instruction.',
   )
   assert.equal(
-    (compactMarkup.match(/data-status="not-started"/g) ?? []).length,
+    (compactMarkup.match(/class="assembly-production__status-control" data-status="not-started"/g) ?? []).length,
     6,
-    'Every instruction summary shows a status light.',
+    'Every production row shows a status light.',
   )
   assert.equal(
-    (compactMarkup.match(/status: Pending/g) ?? []).length,
+    (compactMarkup.match(/class="assembly-production__hover-info" role="tooltip">Pending<\/span>/g) ?? []).length,
     6,
-    'Status remains readable text as well as color.',
+    'Every compact status code retains its full hover label.',
   )
   assert.equal(
-    (compactMarkup.match(/aria-label="[^"]+ number built"><b>0<\/b> built<\/span>/g) ?? []).length,
+    (compactMarkup.match(/aria-label="[^"]+ number built" value="0"/g) ?? []).length,
     6,
-    'Every summary row retains its physical completion count.',
+    'Every production row exposes its physical completion count editor.',
+  )
+  assert.match(compactMarkup, /title="Status"><span aria-hidden="true">S<\/span><span class="assembly-production__full-label">Status<\/span>/)
+  assert.match(compactMarkup, /title="Built"><span aria-hidden="true">B<\/span><span class="assembly-production__full-label">Built<\/span>/)
+  assert.match(compactMarkup, /title="People"><span aria-hidden="true">P<\/span><span class="assembly-production__full-label">People<\/span>/)
+  assert.match(compactMarkup, /title="Alerts"><span aria-hidden="true">A<\/span><span class="assembly-production__full-label">Alerts<\/span>/)
+  assert.match(compactMarkup, /title="Visuals"><span aria-hidden="true">V<\/span><span class="assembly-production__full-label">Visuals<\/span>/)
+  assert.equal(
+    (compactMarkup.match(/class="assembly-production__row"/g) ?? []).length,
+    6,
+    'The production table has one compact editable row per instruction.',
   )
 
   const connectorSummary = summaryRowFor(compactMarkup, 'Connector Box Drill')
@@ -395,13 +414,12 @@ try {
     1,
     'Each compact row has one instruction-title heading.',
   )
-  assert.match(connectorSummary, /class="assembly-index-card__summary-progress"/)
   assert.ok(
     connectorSummary.indexOf('assembly-index-card__summary-step')
-      < connectorSummary.indexOf('assembly-index-card__summary-info has-picture')
-      && connectorSummary.indexOf('assembly-index-card__summary-info has-picture')
-      < connectorSummary.indexOf('assembly-index-card__summary-progress'),
-    'The compact card reads title, one large picture, then progress and ownership.',
+      < connectorSummary.indexOf('assembly-index-card__summary-description')
+      && connectorSummary.indexOf('assembly-index-card__summary-description')
+      < connectorSummary.indexOf('assembly-index-card__summary-info has-picture'),
+    'The visual card reads title, expandable description, then one large picture.',
   )
   assert.match(connectorSummary, /aria-label="Connector Box Drill visual"/)
   assert.equal(
@@ -428,7 +446,7 @@ try {
   assert.doesNotMatch(
     compactMarkup,
     /aria-label="[^"]+ tools"|<dt>tools<\/dt>/,
-    'The summary card is reserved for one picture, status, built count, and names.',
+    'The production table and visual cards omit unrelated tool counts.',
   )
 
   const authorMarkup = renderAssembly()
@@ -548,7 +566,6 @@ try {
   for (const conciseAction of [
     '+ person',
     '+ description',
-    '+ attention note',
     '+ part',
     '+ tool',
     '+ add photos',
@@ -593,6 +610,11 @@ try {
     (emptyEditorCard.match(/aria-label="Empty instruction number complete"/g) ?? []).length,
     1,
     'Cleaning empty fields does not remove # complete.',
+  )
+  assert.equal(
+    (emptyEditorCard.match(/aria-label="Empty instruction: 0 alerts\. View or edit alerts\."/g) ?? []).length,
+    1,
+    'An empty instruction keeps one compact alert editor without explanatory placeholder copy.',
   )
   assert.deepEqual(
     instructionPhotoFiles([
@@ -903,39 +925,6 @@ try {
   assert.match(openedIndexMarkup, /aria-label="Move Connector Box Drill to position"/)
   assert.match(openedIndexMarkup, />Position 1<\/option>/)
   assert.match(openedIndexMarkup, />\+ instruction<\/button>/)
-  const moveRequests = []
-  const reorderTree = AssemblyIndexCard({
-    assembly,
-    instructionSummaries: [connectorBoxDrill, afterOnlyOperation].map((operation) => ({
-      operation,
-      visuals: [],
-      completedCount: 0,
-    })),
-    nodes,
-    edges,
-    annotationTargets: [],
-    readOnly: false,
-    isOpen: true,
-    onOpen: noop,
-    onClose: noop,
-    onFocusCard: noop,
-    onOpenOperation: noop,
-    onNameChange: noop,
-    onMoveOperation: (...request) => moveRequests.push(request),
-    onRemoveOperation: noop,
-    onAddCard: noop,
-  })
-  const positionSelect = findElement(reorderTree, (element) => (
-    element.type === 'select'
-    && element.props['aria-label'] === 'Move Connector Box Drill to position'
-  ))
-  assert.ok(positionSelect, 'Expected a position selector for Connector Box Drill.')
-  positionSelect.props.onChange({ currentTarget: { value: '2' } })
-  assert.deepEqual(
-    moveRequests,
-    [[connectorBoxDrill.id, 2]],
-    'Selecting a position sends the intended instruction id and one-based destination.',
-  )
 
   const completedNodes = nodes.map((node) => node.id === connectorBoxDrill.id
     ? {
@@ -950,7 +939,7 @@ try {
       }
     : node)
   const completedMarkup = renderAssembly(edges, createAssemblyViewUiState(), completedNodes)
-  assert.match(completedMarkup, /aria-label="Connector Box Drill number built"><b>12<\/b> built/)
+  assert.match(completedMarkup, /aria-label="Connector Box Drill number built" value="12"/)
   assert.equal(operationCompletedCount(
     completedNodes.find((node) => node.id === connectorBoxDrill.id),
   ), 12)
@@ -991,20 +980,25 @@ try {
   assert.equal(operationStatus(attentionOperation), OSA_OPERATION_STATUS.partialComplete)
   assert.equal(operationStatusLabel(operationStatus(attentionOperation)), 'Partial Complete')
   assert.equal(operationAttentionNote(attentionOperation), attentionText)
-  const attentionSummary = summaryRowFor(
-    renderAssembly(edges, createAssemblyViewUiState(), attentionNodes),
+  assert.deepEqual(operationAlerts(attentionOperation), [attentionText])
+  assert.equal(serializeOperationAlerts([attentionText, 'Second blocker.']), `${attentionText}\nSecond blocker.`)
+  const attentionMarkup = renderAssembly(edges, createAssemblyViewUiState(), attentionNodes)
+  const attentionProductionRow = productionRowFor(
+    attentionMarkup,
     'Connector Box Drill',
   )
-  assert.match(attentionSummary, /data-status="partial-complete"/)
-  assert.match(attentionSummary, />Partial Complete<\/span>/)
-  assert.match(attentionSummary, /assembly-index-card__attention-note/)
-  assert.match(attentionSummary, /10 more regular and 5 more large requested\./)
+  assert.match(attentionProductionRow, /data-status="partial-complete"/)
+  assert.match(attentionProductionRow, /<option value="partial-complete" selected="">PC — Partial Complete<\/option>/)
+  assert.match(attentionProductionRow, /aria-label="Connector Box Drill: 1 alert\. View or edit alerts\."/)
+  assert.match(attentionProductionRow, /assembly-alerts-cell__count">1<\/span>/)
+  assert.match(attentionProductionRow, /10 more regular and 5 more large requested\./)
   const attentionAuthorCard = articleFor(
     renderAssembly(edges, focusedUiState, attentionNodes),
     'Connector Box Drill card',
   )
-  assert.match(attentionAuthorCard, /aria-label="Connector Box Drill attention note"/)
-  assert.match(attentionAuthorCard, /value="10 more regular and 5 more large requested\."/)
+  assert.match(attentionAuthorCard, /aria-label="Connector Box Drill: 1 alert\. View or edit alerts\."/)
+  assert.match(attentionAuthorCard, /assembly-operation-card__alerts-list/)
+  assert.match(attentionAuthorCard, /10 more regular and 5 more large requested\./)
 
   const peopleValue = serializeOperationPeople(['Bria', ' Sam ', 'bria'])
   assert.equal(peopleValue, '["Bria","Sam"]')
@@ -1033,27 +1027,16 @@ try {
     },
   }), ['Olivia', 'Bria'], 'Early plain-text names remain readable and deduplicated.')
 
-  const peopleSummary = summaryRowFor(
-    renderAssembly(edges, createAssemblyViewUiState(), peopleNodes),
+  const peopleMarkup = renderAssembly(edges, createAssemblyViewUiState(), peopleNodes)
+  const peopleProductionRow = productionRowFor(
+    peopleMarkup,
     'Connector Box Drill',
   )
-  assert.match(peopleSummary, /aria-label="Connector Box Drill people"/)
-  assert.match(peopleSummary, />Bria<\/span>/)
-  assert.match(peopleSummary, />Sam<\/span>/)
-  assert.match(peopleSummary, /class="assembly-index-card__summary-built"[^>]*><b>0<\/b> built<\/span>/)
-  assert.match(peopleSummary, /class="assembly-index-card__summary-info has-picture"/)
-  assert.doesNotMatch(peopleSummary, /add person|remove Bria/)
-  assert.ok(
-    peopleSummary.indexOf('assembly-index-card__summary-step')
-      < peopleSummary.indexOf('assembly-index-card__summary-info has-picture')
-      && peopleSummary.indexOf('assembly-index-card__summary-info has-picture')
-        < peopleSummary.indexOf('assembly-index-card__summary-progress')
-      && peopleSummary.indexOf('assembly-index-card__summary-progress')
-        < peopleSummary.indexOf('assembly-index-card__summary-built')
-      && peopleSummary.indexOf('assembly-index-card__summary-built')
-        < peopleSummary.indexOf('aria-label="Connector Box Drill people"'),
-    'The photo sits above one compact status, built-count, and assigned-names row.',
-  )
+  assert.match(peopleProductionRow, /aria-label="Connector Box Drill people: Bria, Sam"/)
+  assert.match(peopleProductionRow, /assembly-people-cell__initial" title="Bria">B<\/span>/)
+  assert.match(peopleProductionRow, /assembly-people-cell__initial" title="Sam">S<\/span>/)
+  assert.match(peopleProductionRow, /aria-label="Connector Box Drill number built" value="0"/)
+  assert.doesNotMatch(peopleProductionRow, />Bria<\/span>|>Sam<\/span>|add person|remove Bria/)
 
   const assemblyIndexCardCss = await readFile(
     new URL('../src/components/AssemblyIndexCard.css', import.meta.url),
@@ -1061,13 +1044,13 @@ try {
   )
   assert.match(
     assemblyIndexCardCss,
-    /\.assembly-index-card__summary-progress\s*>\s*\.assembly-people\.is-compact\s+\.assembly-people__label\s*\{[^}]*display:\s*none;/s,
-    'Overview ownership shows the assigned names without a redundant People label.',
+    /\.assembly-index-card__summary-index\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/s,
+    'The visual follow-up view uses a calm two-column card grid on wider screens.',
   )
   assert.match(
     assemblyIndexCardCss,
-    /\.assembly-index-card__summary-progress\s*>\s*\.assembly-people\.is-compact\s+\.assembly-people__person\s*\{[^}]*min-height:\s*38px;[^}]*font-size:\s*clamp\(/s,
-    'Overview names use larger, touch-legible chips.',
+    /@media \(max-width: 700px\)[\s\S]*?\.assembly-index-card__summary-index\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/s,
+    'The visual follow-up view becomes one legible column on phones.',
   )
 
   const peopleAuthorCard = articleFor(
@@ -1113,9 +1096,15 @@ try {
   )
   assert.match(sharedMainMarkup, />shared assembly · read-only<\/span>/)
   assert.match(sharedMainMarkup, /aria-label="Open Connector Box Drill instruction\. Status: Pending"/)
-  assert.match(sharedMainMarkup, /aria-label="Connector Box Drill people"/)
-  assert.match(sharedMainMarkup, />Bria<\/span>/)
+  assert.match(sharedMainMarkup, /aria-label="Connector Box Drill people: Bria, Sam"/)
+  assert.match(sharedMainMarkup, /title="Bria">B<\/span>/)
+  assert.match(sharedMainMarkup, /title="Sam">S<\/span>/)
   assert.doesNotMatch(sharedMainMarkup, /Reorder instructions|>\+ instruction<|add person|remove Bria/)
+  assert.doesNotMatch(
+    sharedMainMarkup,
+    /assembly-production__name-input|aria-label="Connector Box Drill number built"|aria-label="Connector Box Drill status"/,
+    'The read-only production table exposes no direct mutation controls.',
+  )
 
   const sharedAttentionCard = articleFor(
     renderAssembly(edges, focusedUiState, attentionNodes, true),
@@ -1130,7 +1119,7 @@ try {
   assert.doesNotMatch(sharedAttentionCard, /Roleless legacy picture|<figcaption/)
   assert.doesNotMatch(
     sharedAttentionCard,
-    /attention note"|placeholder="add a shortage|Add photos to|Link existing Visual|>\+ new canvas</,
+    /Save alerts|>\+ alert<|Remove alert|placeholder="shortage, blocker, or problem"|Add photos to|Link existing Visual|>\+ new canvas</,
     'Read-only instruction details expose neither editing nor photo-import controls.',
   )
 

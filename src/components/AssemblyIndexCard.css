@@ -130,12 +130,72 @@
   gap: 8px 14px;
 }
 
+.assembly-index-card__summary-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px 10px;
+  min-width: 0;
+}
+
+.assembly-index-card__filter-label {
+  color: var(--osa-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.assembly-index-card__filters {
+  display: flex;
+  gap: 5px;
+  min-width: 0;
+  padding: 2px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.assembly-index-card__filters button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 4px 9px;
+  border: 1px solid var(--osa-border);
+  border-radius: 999px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+.assembly-index-card__filters button:hover,
+.assembly-index-card__filters button:focus-visible,
+.assembly-index-card__filters button[aria-pressed='true'] {
+  border-color: var(--osa-focus);
+  background: var(--osa-hover-surface);
+  color: var(--osa-text);
+  outline: 0;
+}
+
+.assembly-index-card__filters b {
+  min-width: 1.2em;
+  color: inherit;
+  text-align: center;
+}
+
 .assembly-index-card__summary-index {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.assembly-index-card__visual-heading {
+  margin: 3px 0 -1px;
+  font-size: clamp(1.05rem, 1.5vw, 1.3rem);
 }
 
 .assembly-index-card__summary-index > li {
@@ -197,95 +257,28 @@
   overflow-wrap: anywhere;
 }
 
-.assembly-index-card__summary-progress {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 12px;
-  min-width: 0;
-  padding: 12px 14px 14px;
-  border-top: 1px solid var(--osa-border-subtle);
-  background: color-mix(in srgb, var(--osa-surface) 68%, transparent);
-}
-
-.assembly-index-card__summary-progress > .assembly-operation-status {
-  flex: 0 0 auto;
-  min-height: 40px;
-  padding-inline: 12px;
-}
-
-.assembly-index-card__summary-progress > .assembly-people.is-compact {
-  display: flex;
-  flex: 1 1 240px;
-  align-items: center;
-  min-width: 0;
-  padding: 0;
-  border: 0;
-}
-
-.assembly-index-card__summary-progress > .assembly-people.is-compact .assembly-people__label {
-  display: none;
-}
-
-.assembly-index-card__summary-progress > .assembly-people.is-compact .assembly-people__list {
-  justify-content: flex-start;
-}
-
-.assembly-index-card__summary-progress > .assembly-people.is-compact .assembly-people__person {
-  min-height: 38px;
-  padding: 3px 12px;
-  font-size: clamp(1rem, 1.3vw, 1.2rem);
-  font-weight: 600;
-}
-
-.assembly-index-card__summary-built {
-  display: inline-flex;
-  box-sizing: border-box;
-  flex: 0 0 auto;
-  align-items: baseline;
-  gap: 5px;
-  min-height: 40px;
-  padding: 6px 12px;
-  border: 1px solid var(--osa-border);
-  border-radius: 999px;
-  color: var(--osa-muted);
-  font-size: clamp(1rem, 1.25vw, 1.16rem);
-  line-height: 1.2;
-  white-space: nowrap;
-}
-
-.assembly-index-card__summary-built b {
-  color: var(--osa-text);
-  font-size: 1.08em;
-}
-
-.assembly-index-card__attention-note {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin: 0 12px 12px;
-  padding: 7px 10px;
-  border: 1px solid color-mix(in srgb, var(--osa-danger-border) 42%, var(--osa-border-subtle));
-  border-left-width: 3px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--osa-danger-border) 8%, transparent);
-  color: var(--osa-danger-text);
-  font-size: 0.82rem;
-  line-height: 1.35;
-  text-align: left;
-  overflow-wrap: anywhere;
-}
-
-.assembly-index-card__attention-dot {
-  margin-top: 0.2em;
-}
-
 .assembly-index-card__summary-info {
   display: block;
   min-width: 0;
   padding: 2px 14px 14px;
   border-top: 1px solid var(--osa-border-subtle);
   background: var(--osa-surface-raised);
+}
+
+.assembly-index-card__summary-description {
+  min-width: 0;
+  padding: 12px 14px 14px;
+  border-top: 1px solid var(--osa-border-subtle);
+  background: color-mix(in srgb, var(--osa-surface) 42%, transparent);
+}
+
+.assembly-index-card__summary-description-text {
+  max-height: calc(1.45em * 5);
+  margin: 0;
+  color: var(--osa-text);
+  font-size: clamp(0.95rem, 1.1vw, 1.08rem);
+  line-height: 1.45;
+  white-space: pre-wrap;
 }
 
 .assembly-index-card__summary-info.has-picture {
@@ -358,38 +351,30 @@
     gap: 4px;
   }
 
+  .assembly-index-card__summary-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .assembly-index-card__filters button {
+    min-height: 44px;
+  }
+
+  .assembly-index-card__summary-index {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .assembly-index-card__summary-step {
     grid-template-columns: 34px minmax(0, 1fr);
     align-items: center;
-  }
-
-  .assembly-index-card__summary-progress {
-    align-items: center;
-    padding: 11px 10px 12px;
-  }
-
-  .assembly-index-card__summary-progress > .assembly-people.is-compact {
-    flex-basis: 100%;
-    width: 100%;
   }
 
   .assembly-index-card__summary-step-title {
     overflow-wrap: break-word;
   }
 
-  .assembly-index-card__attention-note {
-    margin-right: 10px;
-    margin-left: 10px;
-  }
-
   .assembly-index-card__summary-info {
     padding-right: 10px;
     padding-left: 10px;
-  }
-}
-
-@media (max-width: 520px) {
-  .assembly-index-card__summary-progress {
-    gap: 8px;
   }
 }

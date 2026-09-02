@@ -10,10 +10,8 @@ import {
 } from '../graph/osaData'
 import type { TextFlowNode } from '../graph/textNode'
 import { annotationTargetsForNodes } from '../graph/sketchAnnotation'
-import {
-  AssemblyIndexCard,
-  type AssemblyInstructionSummary,
-} from './AssemblyIndexCard'
+import { AssemblyIndexCard } from './AssemblyIndexCard'
+import type { AssemblyInstructionSummary } from './assemblyInstructionSummary'
 import { AssemblyOperationCard } from './AssemblyOperationCard'
 import { AssemblyViewControls } from './AssemblyViewControls'
 import type { AssemblyToolDraft, AssemblyViewUiState } from './assemblyViewState'
@@ -102,22 +100,33 @@ export function AssemblyView({
   const assemblyOperations = useMemo(() => selectedAssembly
     ? operationsForAssembly(selectedAssembly.id, operations, edges)
     : [], [edges, operations, selectedAssembly])
-  const instructionSummaries = useMemo(() => assemblyOperations.map((operation): AssemblyInstructionSummary => {
+  const instructionSummaries = useMemo(() => assemblyOperations.map((operation, operationIndex): AssemblyInstructionSummary => {
     const steps = stepsForOperation(operation.id, nodes, edges)
-    const instructionVisuals = instructionVisualsForOperation(
+    const allInstructionVisuals = instructionVisualsForOperation(
       operation.id,
       steps,
       nodes,
       edges,
-    ).filter(({ visual }) => visualHasInstructionContent(visual, nodes, edges))
+    )
+    const visibleInstructionVisuals = allInstructionVisuals
+      .filter(({ visual }) => visualHasInstructionContent(visual, nodes, edges))
+    const displayedInstructionVisuals = readOnly
+      ? publishedInstructionVisuals(visibleInstructionVisuals)
+      : allInstructionVisuals
+    const overviewInstructionVisuals = readOnly
+      ? displayedInstructionVisuals
+      : visibleInstructionVisuals
 
     return {
       operation,
-      visuals: compactInstructionVisuals(instructionVisuals)
+      position: operationIndex + 1,
+      description: instructionDescription(operation, steps),
+      instructionVisuals: displayedInstructionVisuals,
+      visuals: compactInstructionVisuals(overviewInstructionVisuals)
         .map(({ visual }) => visual),
       completedCount: operationCompletedCount(operation),
     }
-  }), [assemblyOperations, edges, nodes])
+  }), [assemblyOperations, edges, nodes, readOnly])
   const assemblyParts = useMemo(() => selectedAssembly
     ? connectedTargets(
       selectedAssembly.id,
@@ -285,6 +294,8 @@ export function AssemblyView({
             )}
             onRemoveOperation={actions.onRemoveOperation}
             onAddCard={addCard}
+            actions={actions}
+            onEditVisual={(visualId, operationId) => setEditingVisual(visualId, operationId)}
           />
         ) : null}
 
@@ -301,17 +312,17 @@ export function AssemblyView({
             /\b(tool|tools)\b/i,
           )
           const steps = stepsForOperation(operation.id, nodes, edges)
-          const instructionVisuals = instructionVisualsForOperation(
+          const allInstructionVisuals = instructionVisualsForOperation(
             operation.id,
             steps,
             nodes,
             edges,
           )
           const displayedInstructionVisuals = readOnly
-            ? publishedInstructionVisuals(instructionVisuals).filter(({ visual }) => (
+            ? publishedInstructionVisuals(allInstructionVisuals).filter(({ visual }) => (
                 visualHasInstructionContent(visual, nodes, edges)
               ))
-            : instructionVisuals
+            : allInstructionVisuals
           // Older boards used one undirected operation-item relationship.
           const legacyInputParts = connectedTargets(
             operation.id,

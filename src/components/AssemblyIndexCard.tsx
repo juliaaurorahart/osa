@@ -1,26 +1,31 @@
+import { useState } from 'react'
 import type { GraphEdge } from '../graph/graphEdge'
+import {
+  OSA_OPERATION_STATUS,
+  type OsaOperationStatus,
+} from '../graph/osaData'
 import type { SketchAnnotationTarget, TextFlowNode } from '../graph/textNode'
 import { visualEmbedsForCanvas } from '../graph/visualEmbed'
+import { AssemblyDescription } from './AssemblyDescription'
+import type { AssemblyInstructionSummary } from './assemblyInstructionSummary'
 import {
   nodeTitle,
   operationAttentionNote,
   operationStatus,
   operationStatusLabel,
 } from './assemblyProjection'
-import { AssemblyOperationStatus } from './AssemblyOperationStatus'
-import { AssemblyPeople } from './AssemblyPeople'
+import { AssemblyProductionTable } from './AssemblyProductionTable'
 import {
   ASSEMBLY_INDEX_CARD_ID,
   transparentInput,
 } from './assemblyViewPresentation'
+import type { AssemblyViewActions } from './assemblyViewTypes'
 import { VisualCanvasPreview } from './VisualCanvas'
 import './AssemblyIndexCard.css'
 
-export type AssemblyInstructionSummary = {
-  operation: TextFlowNode
-  visuals: TextFlowNode[]
-  completedCount: number
-}
+export type { AssemblyInstructionSummary } from './assemblyInstructionSummary'
+
+type AssemblySummaryFilter = 'all' | 'attention' | OsaOperationStatus
 
 type AssemblyIndexCardProps = {
   assembly: TextFlowNode
@@ -38,6 +43,8 @@ type AssemblyIndexCardProps = {
   onMoveOperation: (operationId: string, position: number) => void
   onRemoveOperation: (operationId: string) => void
   onAddCard: () => void
+  actions: AssemblyViewActions
+  onEditVisual: (visualId: string, operationId: string) => void
 }
 
 /** The Assembly title and ordered table-of-contents card. */
@@ -57,8 +64,24 @@ export function AssemblyIndexCard({
   onMoveOperation,
   onRemoveOperation,
   onAddCard,
+  actions,
+  onEditVisual,
 }: AssemblyIndexCardProps) {
+  const [summaryFilter, setSummaryFilter] = useState<AssemblySummaryFilter>('all')
   const operations = instructionSummaries.map(({ operation }) => operation)
+  const filteredSummaries = instructionSummaries.filter(({ operation }) => {
+    if (summaryFilter === 'all') return true
+    if (summaryFilter === 'attention') return Boolean(operationAttentionNote(operation))
+    return operationStatus(operation) === summaryFilter
+  })
+  const filterOptions: Array<{ value: AssemblySummaryFilter, label: string, title: string }> = [
+    { value: 'all', label: 'All', title: 'All instructions' },
+    { value: 'attention', label: 'A', title: 'Instructions with alerts' },
+    { value: OSA_OPERATION_STATUS.notStarted, label: 'P', title: 'Pending' },
+    { value: OSA_OPERATION_STATUS.inProgress, label: 'IP', title: 'In progress' },
+    { value: OSA_OPERATION_STATUS.partialComplete, label: 'PC', title: 'Partial Complete' },
+    { value: OSA_OPERATION_STATUS.complete, label: 'C', title: 'Complete' },
+  ]
 
   return (
     <article
@@ -205,17 +228,57 @@ export function AssemblyIndexCard({
               ) : null}
             </span>
           </div>
+          <div className="assembly-index-card__summary-toolbar">
+            <span className="assembly-index-card__filter-label">Show</span>
+            <div className="assembly-index-card__filters" role="group" aria-label="Filter instructions">
+              {filterOptions.map((option) => {
+                const count = instructionSummaries.filter(({ operation }) => {
+                  if (option.value === 'all') return true
+                  if (option.value === 'attention') return Boolean(operationAttentionNote(operation))
+                  return operationStatus(operation) === option.value
+                }).length
+                return (
+                  <button
+                    type="button"
+                    key={option.value}
+                    title={option.title}
+                    aria-label={`${option.title}: ${count}`}
+                    aria-pressed={summaryFilter === option.value}
+                    onClick={() => setSummaryFilter(option.value)}
+                  >
+                    <span>{option.label}</span>
+                    <b>{count}</b>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+          <AssemblyProductionTable
+            instructionSummaries={filteredSummaries}
+            nodes={nodes}
+            edges={edges}
+            annotationTargets={annotationTargets}
+            readOnly={readOnly}
+            actions={actions}
+            onFocusCard={onFocusCard}
+            onOpenOperation={onOpenOperation}
+            onEditVisual={onEditVisual}
+          />
+          {filteredSummaries.length ? (
+            <h2 className="assembly-index-card__visual-heading">Visual overview</h2>
+          ) : null}
           {operations.length ? (
             <ol className="assembly-index-card__summary-index" aria-label="instruction cards">
-              {instructionSummaries.map((summary, operationIndex) => {
+              {filteredSummaries.map((summary) => {
                 const {
                   operation,
+                  description,
                   visuals,
-                  completedCount,
                 } = summary
                 const operationTitle = nodeTitle(operation)
                 const attentionNote = operationAttentionNote(operation)
                 const statusLabel = operationStatusLabel(operationStatus(operation))
+                const operationIndex = operations.findIndex((candidate) => candidate.id === operation.id)
                 const overviewVisual = visuals[0]
                 const renderPicture = overviewVisual ? (
                   <div
@@ -253,6 +316,15 @@ export function AssemblyIndexCard({
                         </span>
                       </button>
                     </div>
+                    {description.trim() ? (
+                      <div className="assembly-index-card__summary-description">
+                        <AssemblyDescription
+                          text={description}
+                          title={operationTitle}
+                          className="assembly-index-card__summary-description-text"
+                        />
+                      </div>
+                    ) : null}
                     {renderPicture ? (
                       <div
                         className="assembly-index-card__summary-info has-picture"
@@ -261,32 +333,15 @@ export function AssemblyIndexCard({
                         {renderPicture}
                       </div>
                     ) : null}
-                    <div
-                      className="assembly-index-card__summary-progress"
-                      role="group"
-                      aria-label={`${operationTitle} progress: ${completedCount} built`}
-                    >
-                      <AssemblyOperationStatus operation={operation} />
-                      <span
-                        className="assembly-index-card__summary-built"
-                        aria-label={`${operationTitle} number built`}
-                      >
-                        <b>{completedCount}</b> built
-                      </span>
-                      <AssemblyPeople operation={operation} compact />
-                    </div>
-                    {attentionNote ? (
-                      <div className="assembly-index-card__attention-note">
-                        <span className="assembly-index-card__attention-dot" aria-hidden="true" />
-                        <span>{attentionNote}</span>
-                      </div>
-                    ) : null}
                   </li>
                 )
               })}
             </ol>
+          ) : null}
+          {operations.length && filteredSummaries.length === 0 ? (
+            <p className="assembly-index-card__empty">No instructions match this filter.</p>
           ) : (
-            <p className="assembly-index-card__empty">No instructions yet.</p>
+            operations.length ? null : <p className="assembly-index-card__empty">No instructions yet.</p>
           )}
           {!readOnly ? (
             <button className="text-action assembly-index-card__summary-add" type="button" onClick={onAddCard}>

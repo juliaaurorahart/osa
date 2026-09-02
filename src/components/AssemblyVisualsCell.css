@@ -1,0 +1,418 @@
+.assembly-visuals-cell {
+  position: relative;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+}
+
+.assembly-visuals-cell__summary {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.assembly-visuals-cell__count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 58px;
+  min-height: 38px;
+  padding: 6px 11px;
+  border: 1px solid var(--osa-border);
+  border-radius: 999px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.92rem;
+}
+
+.assembly-visuals-cell__count b {
+  color: var(--osa-text);
+  font-size: 1.05em;
+}
+
+.assembly-visuals-cell__count:hover,
+.assembly-visuals-cell__count:focus-visible {
+  border-color: var(--osa-focus);
+  color: var(--osa-text);
+  outline: 2px solid color-mix(in srgb, var(--osa-focus) 30%, transparent);
+  outline-offset: 2px;
+}
+
+.assembly-visuals-cell__count:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.assembly-visuals-cell__hover-preview {
+  position: absolute;
+  z-index: 40;
+  inset-block-end: calc(100% + 9px);
+  inset-inline-start: 0;
+  display: none;
+  box-sizing: border-box;
+  width: min(300px, calc(100vw - 32px));
+  padding: 7px;
+  border: 1px solid var(--osa-border);
+  border-radius: 10px;
+  background: var(--osa-surface);
+  box-shadow: 0 14px 38px rgb(0 0 0 / 32%);
+  pointer-events: none;
+}
+
+.assembly-visuals-cell__hover-image {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 6px;
+  background: var(--osa-surface-raised);
+  object-fit: contain;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .assembly-visuals-cell__summary:hover .assembly-visuals-cell__hover-preview,
+  .assembly-visuals-cell__summary:focus-within .assembly-visuals-cell__hover-preview {
+    display: block;
+  }
+}
+
+.assembly-visuals-cell__manage {
+  position: relative;
+  min-width: 0;
+}
+
+.assembly-visuals-cell__manage > summary {
+  min-height: 32px;
+  padding: 5px 2px;
+  color: var(--osa-muted);
+  cursor: pointer;
+  font-size: 0.86rem;
+  font-weight: 650;
+}
+
+.assembly-visuals-cell__manage > summary:hover,
+.assembly-visuals-cell__manage > summary:focus-visible {
+  color: var(--osa-text);
+}
+
+.assembly-visuals-cell__manage-panel {
+  position: absolute;
+  z-index: 45;
+  inset-block-start: calc(100% + 7px);
+  inset-inline-end: 0;
+  box-sizing: border-box;
+  width: min(720px, calc(100vw - 32px));
+  max-height: min(70vh, 680px);
+  padding: 16px;
+  overflow: auto;
+  border: 1px solid var(--osa-border);
+  border-radius: 10px;
+  background: var(--osa-surface);
+  box-shadow: 0 18px 46px rgb(0 0 0 / 35%);
+}
+
+.assembly-visuals-cell__manage-panel .assembly-instruction-visuals {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.assembly-visuals-cell__manage-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--osa-border-subtle);
+}
+
+.assembly-visuals-cell__manage-header button {
+  min-height: 36px;
+  padding: 5px 10px;
+  border: 1px solid var(--osa-border);
+  border-radius: 999px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
+  cursor: pointer;
+  font: inherit;
+}
+
+.assembly-visuals-cell__manage-header button:hover,
+.assembly-visuals-cell__manage-header button:focus-visible {
+  border-color: var(--osa-focus);
+  outline: 2px solid color-mix(in srgb, var(--osa-focus) 30%, transparent);
+  outline-offset: 2px;
+}
+
+.assembly-visuals-cell__backdrop {
+  position: fixed;
+  z-index: 1500;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  padding: clamp(10px, 3vw, 30px);
+  background: rgb(0 0 0 / 74%);
+}
+
+.assembly-visuals-cell__dialog {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  gap: 12px;
+  box-sizing: border-box;
+  width: min(1040px, 100%);
+  max-height: 94vh;
+  padding: clamp(14px, 2.5vw, 24px);
+  overflow: auto;
+  border: 1px solid var(--osa-border);
+  border-radius: 14px;
+  background: var(--osa-surface);
+  color: var(--osa-text);
+  box-shadow: 0 28px 80px rgb(0 0 0 / 48%);
+}
+
+.assembly-visuals-cell__empty-message {
+  margin: 0;
+  padding: 30px 14px;
+  border: 1px dashed var(--osa-border);
+  border-radius: 10px;
+  color: var(--osa-muted);
+  text-align: center;
+}
+
+.assembly-visuals-cell__dialog .assembly-visuals-cell__manage {
+  width: 100%;
+}
+
+.assembly-visuals-cell__dialog .assembly-visuals-cell__manage-panel {
+  position: static;
+  width: 100%;
+  max-height: min(58vh, 680px);
+  margin-top: 8px;
+  box-shadow: none;
+}
+
+.assembly-visuals-cell__dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.assembly-visuals-cell__dialog-header p,
+.assembly-visuals-cell__dialog-header h2 {
+  margin: 0;
+}
+
+.assembly-visuals-cell__dialog-header p {
+  color: var(--osa-muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.assembly-visuals-cell__dialog-header h2 {
+  margin-top: 2px;
+  font-size: clamp(1.25rem, 2.4vw, 2rem);
+  line-height: 1.15;
+}
+
+.assembly-visuals-cell__dialog-header button,
+.assembly-visuals-cell__gallery-arrow {
+  min-height: 40px;
+  padding: 7px 12px;
+  border: 1px solid var(--osa-border);
+  border-radius: 999px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
+  cursor: pointer;
+  font: inherit;
+}
+
+.assembly-visuals-cell__dialog-header button:hover,
+.assembly-visuals-cell__dialog-header button:focus-visible,
+.assembly-visuals-cell__gallery-arrow:hover,
+.assembly-visuals-cell__gallery-arrow:focus-visible {
+  border-color: var(--osa-focus);
+  outline: 2px solid color-mix(in srgb, var(--osa-focus) 30%, transparent);
+  outline-offset: 2px;
+}
+
+.assembly-visuals-cell__hero-shell {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 0;
+}
+
+.assembly-visuals-cell__hero-button {
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--osa-border);
+  border-radius: 10px;
+  background: var(--osa-surface-raised);
+  color: inherit;
+  cursor: zoom-in;
+}
+
+.assembly-visuals-cell__hero-button:hover,
+.assembly-visuals-cell__hero-button:focus-visible {
+  border-color: var(--osa-focus);
+  outline: 2px solid var(--osa-focus);
+  outline-offset: 2px;
+}
+
+.assembly-visuals-cell__hero {
+  display: block;
+  width: 100%;
+  height: min(58vh, 620px);
+  background: var(--osa-surface-raised);
+  object-fit: contain;
+}
+
+.assembly-visuals-cell__gallery-arrow {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  min-width: 44px;
+  padding: 0;
+  font-size: 1.2rem;
+}
+
+.assembly-visuals-cell__gallery-status {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  color: var(--osa-muted);
+  font-size: 0.88rem;
+}
+
+.assembly-visuals-cell__gallery-status strong {
+  min-width: 0;
+  color: var(--osa-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assembly-visuals-cell__thumbnails {
+  display: grid;
+  grid-auto-columns: minmax(116px, 160px);
+  grid-auto-flow: column;
+  gap: 9px;
+  padding: 3px 3px 9px;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+
+.assembly-visuals-cell__thumbnail-button {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 5px;
+  min-width: 0;
+  padding: 5px;
+  border: 1px solid var(--osa-border-subtle);
+  border-radius: 8px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.76rem;
+  text-align: left;
+}
+
+.assembly-visuals-cell__thumbnail-button:hover,
+.assembly-visuals-cell__thumbnail-button:focus-visible,
+.assembly-visuals-cell__thumbnail-button.is-active {
+  border-color: var(--osa-focus);
+  color: var(--osa-text);
+  outline: 0;
+}
+
+.assembly-visuals-cell__thumbnail {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 5px;
+  background: var(--osa-surface);
+  object-fit: contain;
+}
+
+.assembly-visuals-cell__thumbnail-button > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 700px) {
+  .assembly-visuals-cell {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .assembly-visuals-cell__count,
+  .assembly-visuals-cell__manage > summary {
+    min-height: 44px;
+  }
+
+  .assembly-visuals-cell__manage-panel {
+    position: fixed;
+    z-index: 1100;
+    inset: 12px;
+    width: auto;
+    max-height: calc(100dvh - 24px);
+  }
+
+  .assembly-visuals-cell__backdrop {
+    padding: 0;
+  }
+
+  .assembly-visuals-cell__dialog {
+    width: 100%;
+    max-height: 100dvh;
+    min-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .assembly-visuals-cell__hero-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .assembly-visuals-cell__hero {
+    height: min(54vh, 520px);
+  }
+
+  .assembly-visuals-cell__gallery-arrow {
+    position: absolute;
+    z-index: 1;
+    top: 50%;
+    transform: translateY(-50%);
+    background: color-mix(in srgb, var(--osa-surface) 88%, transparent);
+  }
+
+  .assembly-visuals-cell__gallery-arrow.is-previous {
+    left: 8px;
+  }
+
+  .assembly-visuals-cell__gallery-arrow.is-next {
+    right: 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .assembly-visuals-cell__dialog,
+  .assembly-visuals-cell__hover-preview {
+    scroll-behavior: auto;
+  }
+}
