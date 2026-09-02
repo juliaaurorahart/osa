@@ -191,6 +191,7 @@ export const CURRENT_SOURCE_PATHS = [
   "src/lab/useSyncedLabNotebook.ts",
   "src/main.tsx",
   "src/starters/index.ts",
+  "src/starters/publicDemo.ts",
   "src/starters/shakoLightWrap.ts",
   "src/starters/starter.ts"
 ] as const

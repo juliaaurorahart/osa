@@ -1,4 +1,4 @@
-import { shakoLightWrapStarter } from './shakoLightWrap'
+import { publicDemoStarter } from './publicDemo'
 
 /** The project starter currently shipped with OSA. */
-export const bundledStarter = shakoLightWrapStarter
+export const bundledStarter = publicDemoStarter
