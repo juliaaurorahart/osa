@@ -324,6 +324,7 @@ try {
     readOnly = false,
     peopleDisplay = 'initials',
     peopleThreshold = DEFAULT_ASSEMBLY_PEOPLE_THRESHOLD,
+    onBackToSpace,
   ) => renderToStaticMarkup(createElement(AssemblyView, {
     assemblies: boardNodes.filter((node) => osaRole(node) === 'assembly'),
     nodes: boardNodes,
@@ -338,7 +339,33 @@ try {
     readOnly,
     peopleDisplay,
     peopleThreshold,
+    onBackToSpace,
   }))
+
+  const escapableAssemblyMarkup = renderAssembly(
+    edges,
+    createAssemblyViewUiState(),
+    nodes,
+    false,
+    'initials',
+    DEFAULT_ASSEMBLY_PEOPLE_THRESHOLD,
+    noop,
+  )
+  assert.match(escapableAssemblyMarkup, /aria-label="Assembly workspace navigation"/)
+  assert.match(escapableAssemblyMarkup, /aria-label="Back to Space workspace"/)
+  assert.match(escapableAssemblyMarkup, /> Back to Space<\/button>/)
+  assert.doesNotMatch(renderAssembly(), /aria-label="Back to Space workspace"/)
+
+  const emptyEscapableAssemblyMarkup = renderAssembly(
+    [],
+    createAssemblyViewUiState(),
+    [],
+    false,
+    'initials',
+    DEFAULT_ASSEMBLY_PEOPLE_THRESHOLD,
+    noop,
+  )
+  assert.match(emptyEscapableAssemblyMarkup, /aria-label="Back to Space workspace"/)
   const articleFor = (markup, ariaLabel) => {
     const start = markup.indexOf(`aria-label="${ariaLabel}"`)
     const articleStart = markup.lastIndexOf('<article', start)
@@ -825,9 +852,23 @@ try {
     new URL('../src/components/AssemblyView.css', import.meta.url),
     'utf8',
   )
+  const assemblyViewControlsCss = await readFile(
+    new URL('../src/components/AssemblyViewControls.css', import.meta.url),
+    'utf8',
+  )
   const productionTableCss = await readFile(
     new URL('../src/components/AssemblyProductionTable.css', import.meta.url),
     'utf8',
+  )
+  assert.match(
+    assemblyViewControlsCss,
+    /\.assembly-view__workspace-navigation\s*\{[^}]*position:\s*fixed;[^}]*z-index:\s*20;[^}]*top:\s*max\(8px, env\(safe-area-inset-top\)\);[^}]*left:\s*max\(8px, env\(safe-area-inset-left\)\);/s,
+    'Back to Space remains fixed at a safe top corner while the Assembly table scrolls.',
+  )
+  assert.match(
+    assemblyViewControlsCss,
+    /\.assembly-view__workspace-exit\s*\{[^}]*min-height:\s*44px;/s,
+    'Back to Space keeps a comfortable phone hit target.',
   )
   assert.match(
     productionTableCss,
@@ -1257,6 +1298,17 @@ try {
     'Read-only detail omits the visual region when no visible picture exists.',
   )
   const appSource = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
+  const appStyles = await readFile(new URL('../src/App.css', import.meta.url), 'utf8')
+  assert.match(
+    appStyles,
+    /\.workspace-switcher-reveal\s*\{[^}]*box-shadow:[^}]*var\(--notebook-sketch-accent\) 52%/s,
+    'The hidden top-menu ramp keeps a restrained pink locator glow.',
+  )
+  assert.match(
+    appSource,
+    /onBackToSpace=\{\(\) => setWorkspaceView\('nodes'\)\}/,
+    'The local Assembly has a direct navigation path back to Space.',
+  )
   assert.match(
     appSource,
     /<VisualCanvasEditor[\s\S]*?readOnly=\{boardAccess === 'viewer' \|\| isSharedAssembly \|\| assemblyInstructionsPreview\}/,

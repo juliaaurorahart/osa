@@ -17,6 +17,48 @@
   white-space: nowrap;
 }
 
+.assembly-view__workspace-navigation {
+  position: fixed;
+  z-index: 20;
+  top: max(8px, env(safe-area-inset-top));
+  left: max(8px, env(safe-area-inset-left));
+  display: flex;
+  width: fit-content;
+}
+
+.assembly-view__workspace-exit {
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid var(--osa-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--osa-surface-raised) 94%, transparent);
+  box-shadow: 0 8px 24px var(--osa-shadow);
+  color: var(--osa-text);
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+}
+
+.assembly-view__workspace-exit:hover,
+.assembly-view__workspace-exit:focus-visible {
+  border-color: var(--osa-focus);
+  background: var(--osa-hover-surface);
+  color: var(--osa-hover-text);
+}
+
+.assembly-view__workspace-exit:focus-visible {
+  outline: 2px solid var(--osa-focus);
+  outline-offset: 2px;
+}
+
+@media print {
+  .assembly-view__workspace-navigation {
+    display: none;
+  }
+}
+
 .assembly-view__access-status {
   display: flex;
   align-items: center;

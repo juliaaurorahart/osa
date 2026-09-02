@@ -67,6 +67,8 @@ type AssemblyViewProps = {
   peopleDisplay?: AssemblyPeopleDisplay
   /** Individual People entries collapse to a count above this device-level limit. */
   peopleThreshold?: number
+  /** The editable workspace can always return to its graph Space. */
+  onBackToSpace?: () => void
   /** Local read-only preview can return to the authoring Assembly. */
   onBackToAssembly?: () => void
   /** Optional project starter presented when building an Assembly. */
@@ -96,6 +98,7 @@ export function AssemblyView({
   readOnly = false,
   peopleDisplay = 'initials',
   peopleThreshold = 3,
+  onBackToSpace,
   onBackToAssembly,
   starterAction,
 }: AssemblyViewProps) {
@@ -233,11 +236,13 @@ export function AssemblyView({
   if (!selectedAssembly) {
     return (
       <section className="work-view assembly-view" aria-label="Assembly">
-        {readOnly ? (
-          <div className="assembly-view__access-status">
-            <span className="assembly-view__shared-label">shared assembly · read-only</span>
-          </div>
-        ) : null}
+        <AssemblyViewControls
+          readOnly={readOnly}
+          activeLockedCardId={null}
+          onUnlockCardView={() => undefined}
+          onBackToSpace={onBackToSpace}
+          onBackToAssembly={onBackToAssembly}
+        />
         <div className="assembly-view__empty-state">
           <p className="work-view__empty">there is no assembly board open yet.</p>
           {readOnly ? (
@@ -275,6 +280,7 @@ export function AssemblyView({
         readOnly={readOnly}
         activeLockedCardId={activeLockedCardId}
         onUnlockCardView={() => setLockedCardId(null)}
+        onBackToSpace={onBackToSpace}
         onBackToAssembly={onBackToAssembly}
       />
 

@@ -3789,6 +3789,7 @@ function Flow({ identity, startupDraft }: { identity: string | null; startupDraf
               peopleDisplay={assemblyPeopleDisplay}
               peopleThreshold={assemblyPeopleThreshold}
               readOnly={boardAccess === 'viewer'}
+              onBackToSpace={() => setWorkspaceView('nodes')}
               starterAction={{
                 label: bundledStarter.openActionLabel,
                 onLoad: openBundledStarter,

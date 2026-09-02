@@ -4,6 +4,7 @@ type AssemblyViewControlsProps = {
   readOnly: boolean
   activeLockedCardId: string | null
   onUnlockCardView: () => void
+  onBackToSpace?: () => void
   onBackToAssembly?: () => void
 }
 
@@ -15,10 +16,24 @@ export function AssemblyViewControls({
   readOnly,
   activeLockedCardId,
   onUnlockCardView,
+  onBackToSpace,
   onBackToAssembly,
 }: AssemblyViewControlsProps) {
   return (
     <>
+      {onBackToSpace ? (
+        <nav className="assembly-view__workspace-navigation" aria-label="Assembly workspace navigation">
+          <button
+            className="assembly-view__workspace-exit"
+            type="button"
+            aria-label="Back to Space workspace"
+            onClick={onBackToSpace}
+          >
+            <span aria-hidden="true">←</span> Back to Space
+          </button>
+        </nav>
+      ) : null}
+
       {readOnly ? (
         <div className="assembly-view__access-status">
           {onBackToAssembly ? (
