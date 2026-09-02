@@ -287,21 +287,21 @@
   --production-status-background: var(--production-status);
   --production-status-border: color-mix(in srgb, var(--production-status) 74%, var(--osa-border));
   --production-status-shadow: color-mix(in srgb, var(--production-status) 20%, transparent);
-  --production-status-text: var(--osa-surface);
+  --production-status-text: #fff;
 }
 
 .assembly-production__status-badge {
   display: grid;
   flex: 0 0 auto;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 28px;
+  height: 28px;
   border: 1px solid var(--production-status-border);
   border-radius: 50%;
   background: var(--production-status-background);
   box-shadow: 0 0 0 2px var(--production-status-shadow);
   color: var(--production-status-text);
-  font-size: 0.7rem;
+  font-size: 0.64rem;
   font-weight: 900;
   line-height: 1;
   text-align: center;
@@ -514,11 +514,6 @@
 
   .assembly-production__status-control {
     min-width: 44px;
-  }
-
-  .assembly-production__status-badge {
-    width: 38px;
-    height: 38px;
   }
 
   .assembly-production__expanded-content {

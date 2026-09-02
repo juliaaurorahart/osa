@@ -813,8 +813,8 @@ try {
   )
   assert.match(
     productionTableCss,
-    /\.assembly-production__status-badge\s*\{[^}]*place-items:\s*center;[^}]*border-radius:\s*50%;[^}]*background:\s*var\(--production-status-background\);/s,
-    'Production statuses render as one centered colored circle.',
+    /\.assembly-production__status-badge\s*\{[^}]*place-items:\s*center;[^}]*width:\s*28px;[^}]*height:\s*28px;[^}]*border-radius:\s*50%;[^}]*background:\s*var\(--production-status-background\);/s,
+    'Production statuses render as one small centered colored circle.',
   )
   assert.match(
     productionTableCss,
@@ -825,6 +825,16 @@ try {
     productionTableCss,
     /\.assembly-production__status-control\[data-status='partial-complete'\]\s*\{[^}]*--production-status:\s*color-mix\(\s*in srgb,\s*var\(--osa-status-in-progress\) 42%,\s*var\(--osa-status-complete\)\s*\);/s,
     'Partial Complete uses a distinct yellow-green between In Progress yellow and Complete green.',
+  )
+  assert.match(
+    productionTableCss,
+    /\.assembly-production__status-control\[data-status='in-progress'\],\s*\.assembly-production__status-control\[data-status='partial-complete'\],\s*\.assembly-production__status-control\[data-status='complete'\]\s*\{[^}]*--production-status-text:\s*#fff;/s,
+    'IP, PC, and C use white letters while Pending alone remains muted gray.',
+  )
+  assert.match(
+    productionTableCss,
+    /@media \(max-width: 700px\)[\s\S]*\.assembly-production__status-control\s*\{[^}]*min-width:\s*44px;/s,
+    'The smaller status circle keeps a comfortable 44px phone hit target.',
   )
   assert.match(
     productionTableCss,
