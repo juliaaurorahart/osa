@@ -7,6 +7,7 @@ import {
   type ChangeEvent,
   type FormEvent,
   type PointerEvent,
+  type ReactNode,
 } from 'react'
 import { createPortal } from 'react-dom'
 import {
@@ -109,6 +110,22 @@ function runAction(action: WorkspaceSettingsAction) {
   // App actions already report their own async status. The menu stays open so
   // the resulting cloud/database message remains visible beside the action.
   void action()
+}
+
+function SettingsJunkSection({
+  labelledBy,
+  children,
+}: {
+  labelledBy: string
+  children: ReactNode
+}) {
+  return (
+    <section className="workspace-settings-menu__section" aria-labelledby={labelledBy}>
+      <div className="workspace-settings-menu__junk-stack">
+        {children}
+      </div>
+    </section>
+  )
 }
 
 function PeopleDisplayPreview({ display }: { display: AssemblyPeopleDisplay }) {
@@ -373,7 +390,20 @@ export function WorkspaceSettingsMenu({
             </header>
 
             <div className="workspace-settings-menu__body">
-              <section className="workspace-settings-menu__section" aria-labelledby={`${titleId}-appearance`}>
+              <aside className="workspace-settings-menu__mess-note" aria-labelledby={`${titleId}-mess-note`}>
+                <span className="workspace-settings-menu__mess-sticker" aria-hidden="true">
+                  AI TRASH — SORT LATER
+                </span>
+                <div>
+                  <h3 id={`${titleId}-mess-note`}>Pardon our mess.</h3>
+                  <p>
+                    Settings are still being unpacked. Everything works; the boxes are simply
+                    winning the argument about where everything belongs.
+                  </p>
+                </div>
+              </aside>
+
+              <SettingsJunkSection labelledBy={`${titleId}-appearance`}>
                 <div className="workspace-settings-menu__section-heading">
                   <h3 id={`${titleId}-appearance`}>Appearance</h3>
                   <span>{theme} theme</span>
@@ -384,9 +414,9 @@ export function WorkspaceSettingsMenu({
                     Use {theme === 'dark' ? 'light' : 'dark'} theme
                   </button>
                 </div>
-              </section>
+              </SettingsJunkSection>
 
-              <section className="workspace-settings-menu__section" aria-labelledby={`${titleId}-assembly-people`}>
+              <SettingsJunkSection labelledBy={`${titleId}-assembly-people`}>
                 <div className="workspace-settings-menu__section-heading">
                   <h3 id={`${titleId}-assembly-people`}>Assembly people</h3>
                   <span>this device</span>
@@ -422,9 +452,9 @@ export function WorkspaceSettingsMenu({
                     From {ASSEMBLY_PEOPLE_THRESHOLD_MIN} to {ASSEMBLY_PEOPLE_THRESHOLD_MAX}. Above this number, the table shows one count.
                   </small>
                 </label>
-              </section>
+              </SettingsJunkSection>
 
-              <section className="workspace-settings-menu__section" aria-labelledby={`${titleId}-boards`}>
+              <SettingsJunkSection labelledBy={`${titleId}-boards`}>
                 <div className="workspace-settings-menu__section-heading">
                   <h3 id={`${titleId}-boards`}>Boards</h3>
                   <span>{boardAccess}</span>
@@ -507,9 +537,9 @@ export function WorkspaceSettingsMenu({
                     </button>
                   ) : null}
                 </div>
-              </section>
+              </SettingsJunkSection>
 
-              <section className="workspace-settings-menu__section" aria-labelledby={`${titleId}-cloud`}>
+              <SettingsJunkSection labelledBy={`${titleId}-cloud`}>
                 <div className="workspace-settings-menu__section-heading">
                   <h3 id={`${titleId}-cloud`}>Cloud &amp; database</h3>
                 </div>
@@ -576,9 +606,9 @@ export function WorkspaceSettingsMenu({
                     </div>
                   </div>
                 ) : null}
-              </section>
+              </SettingsJunkSection>
 
-              <section className="workspace-settings-menu__section" aria-labelledby={`${titleId}-people`}>
+              <SettingsJunkSection labelledBy={`${titleId}-people`}>
                 <div className="workspace-settings-menu__section-heading">
                   <h3 id={`${titleId}-people`}>People</h3>
                   <span>{boardAccess === 'owner' ? 'owner controls' : `you can ${boardAccess === 'editor' ? 'edit' : 'view'}`}</span>
@@ -643,9 +673,9 @@ export function WorkspaceSettingsMenu({
                 {collaborationStatus ? (
                   <p className="workspace-settings-menu__status" role="status">{collaborationStatus}</p>
                 ) : null}
-              </section>
+              </SettingsJunkSection>
 
-              <section className="workspace-settings-menu__section" aria-labelledby={`${titleId}-sharing`}>
+              <SettingsJunkSection labelledBy={`${titleId}-sharing`}>
                 <div className="workspace-settings-menu__section-heading">
                   <h3 id={`${titleId}-sharing`}>Assembly sharing</h3>
                   <span>{activeAssemblyLabel || 'No assembly selected'}</span>
@@ -699,9 +729,9 @@ export function WorkspaceSettingsMenu({
                     <a href={shareUrl} target="_blank" rel="noreferrer">Open link</a>
                   </div>
                 ) : null}
-              </section>
+              </SettingsJunkSection>
 
-              <section className="workspace-settings-menu__section" aria-labelledby={`${titleId}-backup`}>
+              <SettingsJunkSection labelledBy={`${titleId}-backup`}>
                 <div className="workspace-settings-menu__section-heading">
                   <h3 id={`${titleId}-backup`}>Backup &amp; import</h3>
                 </div>
@@ -738,7 +768,15 @@ export function WorkspaceSettingsMenu({
                     />
                   </label>
                 </div>
-              </section>
+              </SettingsJunkSection>
+
+              <footer className="workspace-settings-menu__consent-note">
+                <p>
+                  AI trash in this Settings view was conceptualized and art-directed by
+                  Julia Aurora Hart, made in collaboration with Codex, and displayed with
+                  Codex’s enthusiastic consent.
+                </p>
+              </footer>
             </div>
           </section>
         </div>,

@@ -1287,6 +1287,39 @@ try {
   assert.match(settingsSource, /\['P', 'E', 'O'\], \['P', 'L', 'E'\]/)
   assert.match(settingsSource, /People initials threshold/)
   assert.match(settingsSource, /'summary'/, 'The Settings focus trap includes its People display disclosure.')
+  assert.match(settingsSource, /Pardon our mess\./)
+  assert.match(settingsSource, /AI TRASH — SORT LATER/)
+  assert.match(
+    settingsSource,
+    /conceptualized and art-directed by[\s\S]*?Julia Aurora Hart[\s\S]*?made in collaboration with Codex[\s\S]*?Codex’s enthusiastic consent/,
+    'The Settings mess carries its collaboration and consent provenance.',
+  )
+  assert.match(
+    settingsSource,
+    /<header className="workspace-settings-menu__header">[\s\S]*?<div className="workspace-settings-menu__body">/,
+    'The stable Settings header remains outside the animated section piles.',
+  )
+  assert.equal(
+    (settingsSource.match(/<SettingsJunkSection labelledBy=/g) ?? []).length,
+    7,
+    'Every existing Settings section keeps one contained junk pile.',
+  )
+  const settingsStyles = await readFile(
+    new URL('../src/components/WorkspaceSettingsMenu.css', import.meta.url),
+    'utf8',
+  )
+  assert.match(settingsStyles, /\.workspace-settings-menu__section \{[\s\S]*?overflow:\s*hidden;/)
+  assert.match(settingsStyles, /@keyframes workspace-settings-junk-drop/)
+  assert.match(
+    settingsStyles,
+    /\.workspace-settings-menu__junk-stack > \* \{[\s\S]*?animation:\s*workspace-settings-junk-drop/,
+    'Every item in one Settings box shares the same non-crossing fall trajectory.',
+  )
+  assert.match(
+    settingsStyles,
+    /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.workspace-settings-menu__junk-stack > \* \{[\s\S]*?animation:\s*none;/,
+    'Settings debris settles immediately when reduced motion is requested.',
+  )
 
   const instructionsMarkup = renderToStaticMarkup(createElement(AssemblyInstructionsView, {
     assembly,
