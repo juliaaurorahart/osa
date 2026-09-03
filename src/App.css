@@ -42,6 +42,7 @@
   padding: 4px 12px;
   background: var(--osa-surface);
   color: var(--osa-text);
+  font-size: 1.25rem;
   box-shadow: 0 12px 34px var(--workspace-switcher-glow);
   pointer-events: auto;
   scrollbar-width: thin;
@@ -1661,8 +1662,8 @@
     min-width: 0;
     width: 100%;
     justify-content: flex-start;
-    gap: 6px;
-    padding-inline: 4px;
+    gap: 12px;
+    padding-inline: 10px;
     font-size: 1.25rem;
   }
 
@@ -1676,7 +1677,7 @@
   }
 
   .workspace-switcher__account-actions {
-    gap: 4px;
+    gap: 10px;
   }
 
   .workspace-switcher__sign-in {
