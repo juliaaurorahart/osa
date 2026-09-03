@@ -31,6 +31,19 @@ export type CanvasLabProps = {
   onToggleTheme: () => void
   onExit: () => void
   workspaceSettingsMenu?: ReactNode
+  showSignIn?: boolean
+  signInHref?: string
+}
+
+function LabSignInLink({ href, locked = false }: { href: string; locked?: boolean }) {
+  return locked
+    ? <span className="lab-shell__sign-in is-disabled">Close editor to sign in</span>
+    : <a className="lab-shell__sign-in" href={href}>Sign In</a>
+}
+
+function currentLabSignInHref() {
+  const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`
+  return `/api/login?returnTo=${encodeURIComponent(returnTo)}`
 }
 
 function navButtonClass(active: boolean) {
@@ -64,6 +77,8 @@ export function CanvasLab({
   onToggleTheme,
   onExit,
   workspaceSettingsMenu,
+  showSignIn = false,
+  signInHref,
 }: CanvasLabProps) {
   const [route, setRouteState] = useState<LabRoute>({ page: 'home' })
   const [sectionLocked, setSectionLocked] = useState(false)
@@ -407,6 +422,7 @@ export function CanvasLab({
   const statusLabel = draftFailed ? 'Draft needs attention' : saving ? 'Saving…' : project?.mode === 'saved' ? 'Saved · read only'
     : !supportsDrafts ? 'Manual save' : workingDrafts.state.kind === 'saving' ? 'Saving draft…'
       : currentDraft?.draftActive ? 'Draft saved locally' : project?.artifactId ? 'Saved to notebook' : 'Working draft'
+  const accountSignInHref = signInHref ?? currentLabSignInHref()
 
   return (
     <LabCaptureContext.Provider value={saveProject}>
@@ -414,6 +430,7 @@ export function CanvasLab({
     <section className={`lab-shell is-${route.page}${focusedEditor ? ' is-focus' : ''}`} aria-label="OSA Lab">
       <div className="lab-shell__restore-bar" hidden={!navigationHidden}>
         <button type="button" aria-expanded="false" aria-controls="lab-navigation lab-project-bar" onClick={() => setNavigationHidden(false)}>Show Lab bar ▾</button>
+        {showSignIn ? <LabSignInLink href={accountSignInHref} locked={sectionLocked} /> : null}
       </div>
       <header id="lab-navigation" className="lab-shell__header" hidden={!!activeLab || navigationHidden}>
         <button className="lab-shell__brand" type="button" onClick={() => setRoute({ page: 'home' })}>
@@ -444,6 +461,7 @@ export function CanvasLab({
 
         <div className="lab-shell__actions">
           <button type="button" aria-expanded="true" aria-controls="lab-navigation" onClick={() => setNavigationHidden(true)}>Hide top bar ↑</button>
+          {showSignIn ? <LabSignInLink href={accountSignInHref} locked={sectionLocked} /> : null}
           <LabMenu className="lab-shell__more" label="More">
             <label className="lab-shell__menu-picker"><span>Open a workbench</span><select
               aria-label="Choose Lab instrument" disabled={!notebook.isReady} value={route.page === 'workbench' ? route.workbenchId : ''}
@@ -485,6 +503,7 @@ export function CanvasLab({
         <button className="lab-shell__notebook-link" type="button" title="Back to notebook" onClick={() => setRoute({ page: 'notebook' })}>Notebook</button>
         <button className="lab-shell__focus-toggle" type="button" aria-pressed={focusedEditor} onClick={() => setFocusedEditor((value) => !value)}>{focusedEditor ? 'Show navigation' : 'Focus'}</button>
         <button type="button" aria-expanded="true" aria-controls="lab-project-bar" onClick={() => setNavigationHidden(true)}>Hide top bar ↑</button>
+        {showSignIn ? <LabSignInLink href={accountSignInHref} locked={sectionLocked} /> : null}
         <LabMenu label="More">
           <div ref={setFileTarget} />
           {savedArtifact && canContinueInKonva(savedArtifact) ? <button type="button" disabled={saving}
@@ -531,7 +550,7 @@ export function CanvasLab({
             ? <p className="lab-notebook-command-attention" role="alert">{notebook.message}
               <button type="button" onClick={() => setNotebookControlsOpen(true)}>Show controls</button></p> : null}
           <div id="lab-notebook-controls" className="lab-notebook-controls" hidden={!notebookControlsOpen}>
-            <LabNotebookSync key={`sync:${notebook.scope}`} notebook={notebook} hasDraft={hasUnaddedIdea} hasProject={Boolean(project)} beforeSwitch={flushDrafts} locked={sectionLocked} />
+            <LabNotebookSync key={`sync:${notebook.scope}`} notebook={notebook} hasDraft={hasUnaddedIdea} hasProject={Boolean(project)} beforeSwitch={flushDrafts} locked={sectionLocked} signInHref={accountSignInHref} />
             <nav className="lab-notebook-views" aria-label="Notebook view">
               {(['library', 'cells', 'page'] as const).map((view) => <button key={view} type="button" aria-pressed={notebookView === view} disabled={!notebook.isReady}
                 onClick={() => { void selectNotebookView(view).catch((error) => setProjectFailure(error instanceof Error ? error.message : 'The current editor could not save.')) }}>

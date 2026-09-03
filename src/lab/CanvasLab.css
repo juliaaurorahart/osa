@@ -24,10 +24,10 @@
   box-shadow: 0 8px 28px var(--osa-shadow);
 }
 
-.lab-shell__restore-bar { grid-row: 1; display: flex; justify-content: flex-end; padding: 2px 10px; background: var(--osa-bg); border-bottom: 1px solid var(--osa-border); }
+.lab-shell__restore-bar { grid-row: 1; display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 2px 10px; background: var(--osa-bg); border-bottom: 1px solid var(--osa-border); }
 .lab-shell__restore-bar button { font: inherit; font-size: .8rem; cursor: pointer; color: var(--osa-muted); background: transparent; border: 0; border-radius: 5px; padding: 6px 10px; min-height: 32px; }
 .lab-shell__restore-bar button:focus-visible { outline: 2px solid var(--osa-focus); outline-offset: -2px; }
-@media (pointer: coarse) { .lab-shell__restore-bar button { min-height: 44px; } }
+@media (pointer: coarse) { .lab-shell__restore-bar button, .lab-shell__sign-in { min-height: 44px; } }
 
 /* Home is an instrument surface. Keep its entrance clear; the spatial stations
    provide Notebook, Settings, and workbench navigation inside the scene. */
@@ -173,6 +173,42 @@
 
 .lab-shell__actions {
   justify-self: end;
+}
+
+.lab-shell__sign-in {
+  display: inline-flex;
+  box-sizing: border-box;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 9px;
+  border: 1px solid color-mix(in srgb, var(--osa-danger-border) 62%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--osa-danger-surface) 34%, transparent);
+  color: var(--osa-danger-border);
+  font: inherit;
+  font-size: .82rem;
+  font-weight: 750;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.lab-shell__sign-in:hover,
+.lab-shell__sign-in:focus-visible {
+  border-color: var(--osa-danger-border);
+  background: color-mix(in srgb, var(--osa-danger-surface) 64%, transparent);
+  outline: none;
+}
+
+.lab-shell__sign-in:focus-visible {
+  outline: 2px solid var(--osa-focus);
+  outline-offset: 2px;
+}
+
+.lab-shell__sign-in.is-disabled {
+  border-color: var(--osa-border);
+  background: transparent;
+  color: var(--osa-muted);
 }
 
 .lab-shell__actions button {

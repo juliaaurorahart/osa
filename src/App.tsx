@@ -3595,6 +3595,7 @@ function Flow({ identity, startupDraft }: { identity: string | null; startupDraf
             onToggleTheme={toggleTheme}
             onExit={closeCanvasLab}
             workspaceSettingsMenu={renderWorkspaceSettingsMenu('Open OSA workspace settings')}
+            showSignIn={!identity || needsSignIn}
           />
         </Suspense>
       ) : null}

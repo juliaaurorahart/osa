@@ -10,6 +10,7 @@ try {
   const routing = await server.ssrLoadModule('/src/app/browserSession.ts')
   const { LAB_ORIGIN, OSA_ORIGIN, isSameOsaDeploymentOrigin } = await server.ssrLoadModule('/src/config/osaDeployment.ts')
   const { LabNotebookSync } = await server.ssrLoadModule('/src/lab/LabNotebookSync.tsx')
+  const { onRequestGet: completeLogin } = await server.ssrLoadModule('/functions/api/login.ts')
 
   function browserAt(href) {
     const history = []
@@ -90,6 +91,20 @@ try {
     assert.ok(isSameOsaDeploymentOrigin(unrelated, unrelated), 'Existing same-origin deployment behavior stays intact')
     assert.equal(isSameOsaDeploymentOrigin(LAB_ORIGIN, unrelated), false)
     assert.equal(isSameOsaDeploymentOrigin(unrelated, OSA_ORIGIN), false)
+  }
+
+  const loginResponse = (url) => completeLogin({ request: new Request(url) })
+  let response = loginResponse(`${OSA_ORIGIN}/api/login`)
+  assert.equal(response.headers.get('location'), `${OSA_ORIGIN}/`, 'A sign-in without a return location uses the current host root.')
+  response = loginResponse(`${OSA_ORIGIN}/api/login?returnTo=${encodeURIComponent('/?lab=canvas&deploy=preview#ink')}`)
+  assert.equal(response.headers.get('location'), `${OSA_ORIGIN}/?lab=canvas&deploy=preview#ink`, 'Sign-in returns to the same Lab view.')
+  response = loginResponse(`${LAB_ORIGIN}/api/login?returnTo=${encodeURIComponent('/?keep=1#notebook')}`)
+  assert.equal(response.headers.get('location'), `${LAB_ORIGIN}/?keep=1#notebook`, 'The dedicated Lab host returns to its own view.')
+  response = loginResponse(`${LAB_ORIGIN}/api/login?returnTo=${encodeURIComponent(`${OSA_ORIGIN}/?lab=canvas`)}`)
+  assert.equal(response.headers.get('location'), `${LAB_ORIGIN}/`, 'Sign-in never moves a return across OSA deployment hosts.')
+  for (const unsafe of ['https://attacker.example/steal', '//attacker.example/steal', '\\\\attacker.example/steal', 'javascript:alert(1)', '/api/login?returnTo=/api/login', '/api/login/']) {
+    response = loginResponse(`${OSA_ORIGIN}/api/login?returnTo=${encodeURIComponent(unsafe)}`)
+    assert.equal(response.headers.get('location'), `${OSA_ORIGIN}/`, `Unsafe login return is rejected: ${unsafe}`)
   }
 
   const notebook = {

@@ -210,6 +210,7 @@ const { CanvasLab } = loadModule('src/lab/CanvasLab.tsx', {
 
 const root = createRoot(document.getElementById('root'))
 const findButton = (text, container = document) => [...container.querySelectorAll('button')].find((button) => !button.closest('[hidden]') && button.textContent.trim() === text)
+const findLink = (text, container = document) => [...container.querySelectorAll('a')].find((link) => !link.closest('[hidden]') && link.textContent.trim() === text)
 const click = (element) => React.act(async () => {
   assert.ok(element, 'Expected action exists')
   for (let disclosure = element.closest('details'); disclosure; disclosure = disclosure.parentElement?.closest('details')) disclosure.open = true
@@ -239,13 +240,15 @@ const exitWarnings = []
 let exitAction = () => { exitWarnings.push(warnsBeforeUnload()) }
 
 try {
-  await React.act(async () => root.render(React.createElement(CanvasLab, { theme: 'dark', onToggleTheme() {}, onExit: () => exitAction() })))
+  await React.act(async () => root.render(React.createElement(CanvasLab, { theme: 'dark', onToggleTheme() {}, onExit: () => exitAction(), showSignIn: true })))
   assert.ok(findButton('Back to OSA'), 'The Lab landing page links back to OSA.')
+  assert.equal(findLink('Sign In', document.querySelector('.lab-shell__header'))?.getAttribute('href'), '/api/login?returnTo=%2F', 'Signed-out Lab rooms expose the trusted sign-in route and preserve their location.')
   await clickButton('Back to OSA')
   assert.equal(exitWarnings.pop(), false, 'The OSA link uses the normal guarded Lab exit.')
   await clickButton('Hide top bar ↑', document.querySelector('.lab-shell__header'))
   assert.equal(document.querySelector('.lab-shell__header').hidden, true)
   assert.equal(document.querySelector('.lab-shell__restore-bar').hidden, false)
+  assert.equal(findLink('Sign In', document.querySelector('.lab-shell__restore-bar'))?.getAttribute('href'), '/api/login?returnTo=%2F', 'Sign In stays reachable while the Lab bar is hidden.')
   await clickButton('Show Lab bar ▾')
   assert.equal(document.querySelector('.lab-shell__header').hidden, false)
   shellBody().scrollTop = 640
@@ -255,6 +258,7 @@ try {
   assert.equal(mountedEditors, 1)
   const firstEditor = editor()
   const firstInstance = firstEditor.dataset.editorInstance
+  assert.equal(findLink('Sign In', workbar())?.getAttribute('href'), '/api/login?returnTo=%2F', 'Signed-out workbenches keep a direct Sign In action in their shared bar.')
   await clickButton('Hide top bar ↑', workbar())
   assert.equal(workbar().hidden, true)
   assert.strictEqual(editor(), firstEditor, 'Hiding the top bar never unmounts the current editor')
@@ -435,7 +439,7 @@ try {
   assert.equal(warnsBeforeUnload(), true)
 
   draftTesting = true
-  await React.act(async () => root.render(React.createElement(CanvasLab, { key: 'draft-flow', theme: 'dark', onToggleTheme() {}, onExit() {} })))
+  await React.act(async () => root.render(React.createElement(CanvasLab, { key: 'draft-flow', theme: 'dark', onToggleTheme() {}, onExit() {}, showSignIn: true })))
   await changeValue(document.querySelector('[aria-label="Choose Lab instrument"]'), 'ink', 'change')
   await changeValue(editorText(), 'First saved text')
   await clickButton('Save', workbar())
@@ -491,6 +495,8 @@ try {
   await React.act(async () => { sectionGuardLocked = true; sectionFixture.onEditorLockChange(true) })
   assert.equal(syncFixture.locked, true, 'Storage/notebook switching is locked during draw.io editing')
   assert.equal(document.querySelector('[aria-label="Switch to light mode"]').disabled, true)
+  assert.equal(findLink('Sign In', document.querySelector('.lab-shell__header')), undefined, 'A locked editor cannot be abandoned through Sign In.')
+  assert.ok(document.querySelector('.lab-shell__header').textContent.includes('Close editor to sign in'), 'The locked Sign In action explains how to proceed.')
   await clickButton('Page')
   assert.equal(sectionFixture.sectionView, 'page', 'Page reprojects the same mounted editing section without closing it')
   assert.equal(activeSection.closest('[hidden]'), null)
@@ -508,6 +514,7 @@ try {
   const departure = new window.Event('osa:lab-before-leave', { cancelable: true })
   await React.act(async () => { window.dispatchEvent(departure) }); assert.equal(departure.defaultPrevented, true)
   await React.act(async () => { sectionGuardLocked = false; sectionFixture.onEditorLockChange(false) })
+  assert.ok(findLink('Sign In', document.querySelector('.lab-shell__header')), 'Sign In returns when the active editor is safe to leave.')
   await clickButton('Home'); assert.ok(document.querySelector('.lab-shell').classList.contains('is-home'))
 
   // Continue a Saved painting without a download/upload detour. Failed opens

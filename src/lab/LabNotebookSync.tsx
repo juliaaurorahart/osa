@@ -2,10 +2,10 @@ import type { useSyncedLabNotebook } from './useSyncedLabNotebook'
 import { useState } from 'react'
 import { LAB_ORIGIN, OSA_ORIGIN } from '../config/osaDeployment'
 
-type Props = { notebook: ReturnType<typeof useSyncedLabNotebook>; hasDraft: boolean; hasProject?: boolean; beforeSwitch?: () => Promise<void>; locked?: boolean }
+type Props = { notebook: ReturnType<typeof useSyncedLabNotebook>; hasDraft: boolean; hasProject?: boolean; beforeSwitch?: () => Promise<void>; locked?: boolean; signInHref?: string }
 
 /** A small control strip, not another settings system. Account adoption is explicit. */
-export function LabNotebookSync({ notebook, hasDraft, hasProject = false, beforeSwitch, locked = false }: Props) {
+export function LabNotebookSync({ notebook, hasDraft, hasProject = false, beforeSwitch, locked = false, signInHref = '/api/login' }: Props) {
   const [pendingCopy, setPendingCopy] = useState(false)
   const [switchError, setSwitchError] = useState('')
   const [naming, setNaming] = useState<'new' | 'rename' | null>(null)
@@ -47,7 +47,7 @@ export function LabNotebookSync({ notebook, hasDraft, hasProject = false, before
       </select></label>
       <button type="button" disabled={blocked || !notebook.isReady} onClick={() => { setName(''); setSaveLocation(notebook.email ? 'account' : 'local'); setNaming('new') }}>New</button>
       <button type="button" disabled={blocked || !notebook.isReady} onClick={() => { setName(notebook.name); setNaming('rename') }}>Rename</button>
-      {!notebook.email && notebook.cloudAvailable ? locked ? <span className="lab-notebook-sync__account">Close editor to sign in</span> : <a href="/api/login">Sign in</a> : <span className="lab-notebook-sync__account">{notebook.email}</span>}
+      {!notebook.email && notebook.cloudAvailable ? locked ? <span className="lab-notebook-sync__account">Close editor to sign in</span> : <a href={signInHref}>Sign in</a> : <span className="lab-notebook-sync__account">{notebook.email}</span>}
     </div>
     {naming ? <form className="lab-notebook-sync__naming" aria-label={naming === 'new' ? 'New notebook' : 'Rename notebook'} onSubmit={(event) => {
       event.preventDefault()
@@ -84,7 +84,7 @@ export function LabNotebookSync({ notebook, hasDraft, hasProject = false, before
       }}>Keep recovery copy &amp; load latest</button> : null}
       {!notebook.isLocal && !notebook.conflict ? <button type="button" disabled={blocked} onClick={() => { void notebook.syncNow() }}>Sync now</button> : null}
       {notebook.isLocal && notebook.cloudAvailable ? <>
-        {!notebook.email && !locked ? <a href="/api/login">Sign in to sync</a> : null}
+        {!notebook.email && !locked ? <a href={signInHref}>Sign in to sync</a> : null}
         <button type="button" disabled={blocked || !notebook.isReady} onClick={() => setPendingCopy(true)}>Copy to default account notebook</button>
       </> : null}
       {!notebook.isLocal ? <button type="button" disabled={blocked} onClick={() => confirmSwitch(() => { void notebook.openLocalNotebook() })}>Open local notebook</button> : null}
