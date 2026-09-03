@@ -158,19 +158,45 @@ export function AssemblyProductionTable({
                         <span aria-hidden="true">{expanded ? '⌄' : '›'}</span>
                         <span className="assembly-production__number">{position}</span>
                       </button>
-                      {readOnly ? (
-                        <span className="assembly-production__name">{title}</span>
-                      ) : (
-                        <input
-                          className="assembly-production__name-input"
-                          aria-label={`${title} instruction name`}
-                          value={operation.data.name}
-                          placeholder="instruction name"
-                          onClick={stopTableControl}
-                          onFocus={() => onFocusCard(operation.id)}
-                          onChange={(event) => actions.onNameChange(operation.id, event.currentTarget.value)}
-                        />
-                      )}
+                      <div className="assembly-production__instruction-content">
+                        {readOnly ? (
+                          <span className="assembly-production__name">{title}</span>
+                        ) : (
+                          <input
+                            className="assembly-production__name-input"
+                            aria-label={`${title} instruction name`}
+                            value={operation.data.name}
+                            placeholder="instruction name"
+                            onClick={stopTableControl}
+                            onFocus={() => onFocusCard(operation.id)}
+                            onChange={(event) => actions.onNameChange(operation.id, event.currentTarget.value)}
+                          />
+                        )}
+                        <div className="assembly-production__instruction-actions">
+                          <button
+                            type="button"
+                            aria-label={`${expanded ? 'Hide' : 'Show'} ${title} description`}
+                            aria-controls={descriptionId}
+                            aria-expanded={expanded}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              toggleExpanded(operation.id)
+                            }}
+                          >
+                            Description <span aria-hidden="true">{expanded ? '⌃' : '⌄'}</span>
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Open full ${title} instruction`}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              onOpenOperation(operation.id)
+                            }}
+                          >
+                            Open <span aria-hidden="true">↗</span>
+                          </button>
+                        </div>
+                      </div>
                     </th>
                     <td className="assembly-production__status">
                       <div

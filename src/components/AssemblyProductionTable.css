@@ -148,6 +148,38 @@
   text-align: center;
 }
 
+.assembly-production__instruction-content {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.assembly-production__instruction-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.assembly-production__instruction-actions button {
+  min-width: 44px;
+  min-height: 36px;
+  padding: 4px 7px;
+  border: 1px solid var(--osa-border-subtle);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--osa-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+}
+
+.assembly-production__instruction-actions button:hover,
+.assembly-production__instruction-actions button:focus-visible {
+  background: var(--osa-surface);
+  outline: 2px solid var(--osa-focus);
+  outline-offset: 1px;
+}
+
 .assembly-production__name,
 .assembly-production__name-input {
   min-width: 0;
@@ -465,8 +497,12 @@
   }
 
   .assembly-production__table {
-    min-width: 480px;
+    min-width: 560px;
     font-size: 0.82rem;
+  }
+
+  .assembly-production__instruction-column {
+    width: 238px;
   }
 
   .assembly-production__status-column {
@@ -507,6 +543,7 @@
 
   .assembly-production__expand,
   .assembly-production__name-input,
+  .assembly-production__instruction-actions button,
   .assembly-production__status-control,
   .assembly-production__built-control {
     min-height: 44px;
@@ -517,7 +554,17 @@
   }
 
   .assembly-production__expanded-content {
+    position: sticky;
+    left: 0;
+    box-sizing: border-box;
+    width: calc(100vw - 32px);
+    max-width: 100%;
     padding: 12px 10px 15px;
+  }
+
+  .assembly-production .assembly-production__name-input,
+  .assembly-production .assembly-production__description-editor textarea {
+    font-size: 1rem;
   }
 
   .assembly-production__description-editor textarea {

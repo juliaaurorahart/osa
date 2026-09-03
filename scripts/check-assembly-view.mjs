@@ -20,6 +20,9 @@ try {
     '/src/components/AssemblyDescription.tsx',
   )
   const { AssemblyView } = await server.ssrLoadModule('/src/components/AssemblyView.tsx')
+  const { AssemblyProductionTable } = await server.ssrLoadModule(
+    '/src/components/AssemblyProductionTable.tsx',
+  )
   const { AssemblyPeopleDisplayPicker } = await server.ssrLoadModule(
     '/src/components/WorkspaceSettingsMenu.tsx',
   )
@@ -436,6 +439,13 @@ try {
     6,
     'The production table has one compact editable row per instruction.',
   )
+  assert.equal(
+    (compactMarkup.match(/class="assembly-production__instruction-actions"/g) ?? []).length,
+    6,
+    'Each production title has visible Description and Open controls.',
+  )
+  assert.match(compactMarkup, /aria-label="Show Connector Box Drill description"/)
+  assert.match(compactMarkup, /aria-label="Open full Connector Box Drill instruction"/)
 
   const connectorSummary = summaryRowFor(compactMarkup, 'Connector Box Drill')
   assert.equal(
@@ -1588,7 +1598,7 @@ try {
   const require = createRequire(import.meta.url)
   const { JSDOM } = createRequire(require.resolve('fabric'))('jsdom')
   const descriptionDom = new JSDOM(
-    '<div id="description-root"></div><div id="visual-gallery-root"></div><div id="people-settings-root"></div>',
+    '<div id="description-root"></div><div id="visual-gallery-root"></div><div id="people-settings-root"></div><div id="production-root"></div>',
     {
     url: 'http://localhost',
     },
@@ -1610,6 +1620,7 @@ try {
   let descriptionRoot
   let visualGalleryRoot
   let peopleSettingsRoot
+  let productionRoot
   try {
     const { window } = descriptionDom
     const lineHeight = 20
@@ -1768,6 +1779,98 @@ try {
       'Changing expanded content to a short Description resets the compact state.',
     )
 
+    const focusedInstructions = []
+    const openedInstructions = []
+    const productionPropertyChanges = []
+    const productionHost = window.document.getElementById('production-root')
+    productionRoot = createRoot(productionHost)
+    await act(async () => {
+      productionRoot.render(createElement(AssemblyProductionTable, {
+        instructionSummaries: [{
+          operation: connectorBoxDrill,
+          position: 1,
+          description: shortDescription,
+          instructionVisuals: [],
+          visuals: [],
+          completedCount: 0,
+        }],
+        nodes,
+        edges,
+        annotationTargets: [],
+        readOnly: false,
+        actions: {
+          ...actions,
+          onPropertyChange: (...args) => productionPropertyChanges.push(args),
+        },
+        peopleDisplay: 'initials',
+        peopleThreshold: DEFAULT_ASSEMBLY_PEOPLE_THRESHOLD,
+        visualGallerySuspended: false,
+        onFocusCard: (id) => focusedInstructions.push(id),
+        onOpenOperation: (id) => openedInstructions.push(id),
+        onEditVisual: noop,
+      }))
+    })
+    const productionRow = productionHost.querySelector('.assembly-production__row')
+    const directDescription = productionHost.querySelector(
+      '[aria-label="Show Connector Box Drill description"]',
+    )
+    const directOpen = productionHost.querySelector(
+      '[aria-label="Open full Connector Box Drill instruction"]',
+    )
+    assert.ok(directDescription, 'Description is reachable without finding the small row chevron.')
+    assert.ok(directOpen, 'The full instruction opens directly without first expanding its row.')
+    const clickProductionControl = async (control) => {
+      await act(async () => {
+        control.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+      })
+    }
+    await clickProductionControl(directOpen)
+    assert.deepEqual(openedInstructions, [connectorBoxDrill.id])
+    assert.equal(productionRow.getAttribute('aria-expanded'), 'false')
+    assert.deepEqual(focusedInstructions, [], 'Open does not bubble into the row disclosure.')
+    await clickProductionControl(directDescription)
+    assert.equal(productionRow.getAttribute('aria-expanded'), 'true')
+    assert.deepEqual(focusedInstructions, [connectorBoxDrill.id], 'Description toggles exactly once.')
+    assert.equal(directDescription.getAttribute('aria-label'), 'Hide Connector Box Drill description')
+    assert.equal(directDescription.getAttribute('aria-expanded'), 'true')
+    assert.equal(
+      directDescription.getAttribute('aria-controls'),
+      productionHost.querySelector('.assembly-production__expanded-content').id,
+    )
+    assert.equal(
+      productionHost.querySelector('textarea[aria-label="Connector Box Drill description"]').value,
+      shortDescription,
+      'The visible Description control exposes the existing inline editor.',
+    )
+    await clickProductionControl(directOpen)
+    assert.deepEqual(openedInstructions, [connectorBoxDrill.id, connectorBoxDrill.id])
+    assert.equal(productionRow.getAttribute('aria-expanded'), 'true', 'Open does not collapse an expanded row.')
+    await clickProductionControl(directDescription)
+    assert.equal(productionRow.getAttribute('aria-expanded'), 'false')
+    assert.equal(focusedInstructions.length, 2, 'Closing Description also toggles only once.')
+
+    const nameEditor = productionHost.querySelector('input[aria-label="Connector Box Drill instruction name"]')
+    const builtEditor = productionHost.querySelector('input[aria-label="Connector Box Drill number built"]')
+    const statusEditor = productionHost.querySelector('select[aria-label="Connector Box Drill status"]')
+    assert.ok(nameEditor && !nameEditor.readOnly && !nameEditor.disabled, 'The title remains directly editable.')
+    assert.ok(builtEditor && !builtEditor.readOnly && !builtEditor.disabled, 'Built remains directly editable.')
+    assert.ok(statusEditor && !statusEditor.disabled, 'Status remains directly editable.')
+    for (const control of [nameEditor, builtEditor, statusEditor]) {
+      await clickProductionControl(control)
+      assert.equal(productionRow.getAttribute('aria-expanded'), 'false', 'Editing an attribute does not open Description.')
+    }
+    await act(async () => {
+      statusEditor.value = OSA_OPERATION_STATUS.inProgress
+      statusEditor.dispatchEvent(new window.Event('change', { bubbles: true }))
+    })
+    assert.deepEqual(productionPropertyChanges, [[
+      connectorBoxDrill.id,
+      OSA_PROPERTY.operationStatus,
+      OSA_OPERATION_STATUS.inProgress,
+    ]])
+    assert.equal(productionRow.getAttribute('aria-expanded'), 'false')
+    assert.equal(focusedInstructions.length, 2, 'Attribute controls do not trigger row disclosure callbacks.')
+
     const openedVisuals = []
     visualGalleryRoot = createRoot(window.document.getElementById('visual-gallery-root'))
     const renderVisualGallery = async (visualGallerySuspended) => {
@@ -1822,6 +1925,7 @@ try {
     })
     assert.equal(galleryDialog(), null, 'The restored gallery still closes normally.')
   } finally {
+    if (productionRoot) await act(async () => productionRoot.unmount())
     if (peopleSettingsRoot) await act(async () => peopleSettingsRoot.unmount())
     if (visualGalleryRoot) await act(async () => visualGalleryRoot.unmount())
     if (descriptionRoot) await act(async () => descriptionRoot.unmount())

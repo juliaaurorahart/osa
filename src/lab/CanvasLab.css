@@ -27,7 +27,7 @@
 .lab-shell__restore-bar { grid-row: 1; display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 2px 10px; background: var(--osa-bg); border-bottom: 1px solid var(--osa-border); }
 .lab-shell__restore-bar button { font: inherit; font-size: .8rem; cursor: pointer; color: var(--osa-muted); background: transparent; border: 0; border-radius: 5px; padding: 6px 10px; min-height: 32px; }
 .lab-shell__restore-bar button:focus-visible { outline: 2px solid var(--osa-focus); outline-offset: -2px; }
-@media (pointer: coarse) { .lab-shell__restore-bar button, .lab-shell__sign-in { min-height: 44px; } }
+@media (pointer: coarse) { .lab-shell__restore-bar button { min-height: 44px; } }
 
 /* Home is an instrument surface. Keep its entrance clear; the spatial stations
    provide Notebook, Settings, and workbench navigation inside the scene. */
@@ -210,6 +210,8 @@
   background: transparent;
   color: var(--osa-muted);
 }
+
+@media (pointer: coarse), (max-width: 700px) { .lab-shell__sign-in { min-height: 44px; } }
 
 .lab-shell__actions button {
   border-color: var(--osa-border);
