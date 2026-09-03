@@ -1,7 +1,6 @@
-import { Fragment, useId, useState, type KeyboardEvent } from 'react'
+import { useId, type ReactNode } from 'react'
 import type { AssemblyPeopleDisplay } from '../app/browserSession'
 import {
-  OSA_OPERATION_INSTRUCTION_MODE,
   OSA_OPERATION_STATUS,
   OSA_PROPERTY,
   type OsaOperationStatus,
@@ -11,7 +10,6 @@ import {
   serializeOperationAlerts,
   serializeOperationAlertStates,
 } from './assemblyAlertsData'
-import { AssemblyDescription } from './AssemblyDescription'
 import type { AssemblyInstructionSummary } from './assemblyInstructionSummary'
 import { serializeOperationPeople } from './assemblyPeopleData'
 import { AssemblyPeopleCell } from './AssemblyPeopleCell'
@@ -26,6 +24,11 @@ import type { GraphEdge } from '../graph/graphEdge'
 import type { SketchAnnotationTarget, TextFlowNode } from '../graph/textNode'
 import './AssemblyProductionTable.css'
 
+export type AssemblyColumnFilters = Partial<Record<
+  'status' | 'built' | 'people' | 'alerts' | 'visuals',
+  { active: boolean; content: ReactNode }
+>>
+
 type AssemblyProductionTableProps = {
   instructionSummaries: AssemblyInstructionSummary[]
   nodes: TextFlowNode[]
@@ -38,6 +41,8 @@ type AssemblyProductionTableProps = {
   visualGallerySuspended: boolean
   onFocusCard: (operationId: string) => void
   onOpenOperation: (operationId: string) => void
+  onManageInstructions?: () => void
+  columnFilters?: AssemblyColumnFilters
   onEditVisual: (visualId: string, operationId: string, returnToGallery?: boolean) => void
 }
 
@@ -52,7 +57,7 @@ function stopTableControl(event: { stopPropagation: () => void }) {
   event.stopPropagation()
 }
 
-/** Compact production state with direct editors and expandable descriptions. */
+/** Readable instruction titles open the full details; production fields edit in place. */
 export function AssemblyProductionTable({
   instructionSummaries,
   nodes,
@@ -65,30 +70,15 @@ export function AssemblyProductionTable({
   visualGallerySuspended,
   onFocusCard,
   onOpenOperation,
+  onManageInstructions,
+  columnFilters,
   onEditVisual,
 }: AssemblyProductionTableProps) {
-  const [expandedOperationId, setExpandedOperationId] = useState<string | null>(null)
-  const tableDescriptionId = useId()
+  const filterId = useId()
   const canEditProperties = !readOnly && Boolean(actions.onPropertyChange)
-
-  const toggleExpanded = (operationId: string) => {
-    setExpandedOperationId((current) => current === operationId ? null : operationId)
-    onFocusCard(operationId)
-  }
-
-  const rowKeyDown = (event: KeyboardEvent<HTMLTableRowElement>, operationId: string) => {
-    if (event.target !== event.currentTarget) return
-    if (event.key !== 'Enter' && event.key !== ' ') return
-    event.preventDefault()
-    toggleExpanded(operationId)
-  }
 
   return (
     <section className="assembly-production" aria-label="Production status">
-      <div className="assembly-production__heading">
-        <h2>Production</h2>
-        <span>{instructionSummaries.length}</span>
-      </div>
       <div className="assembly-production__scroll">
         <table className="assembly-production__table">
           <colgroup>
@@ -101,102 +91,70 @@ export function AssemblyProductionTable({
           </colgroup>
           <thead>
             <tr>
-              <th scope="col">Instruction</th>
-              <th scope="col" title="Status">
-                <span aria-hidden="true">S</span><span className="assembly-production__full-label">Status</span>
+              <th scope="col">
+                <button className="assembly-production__column-heading" type="button" aria-label="Manage instructions" onClick={onManageInstructions}>
+                  Instructions
+                </button>
               </th>
-              <th scope="col" title="Built">
-                <span aria-hidden="true">B</span><span className="assembly-production__full-label">Built</span>
-              </th>
-              <th scope="col" title="People">
-                <span aria-hidden="true">P</span><span className="assembly-production__full-label">People</span>
-              </th>
-              <th scope="col" title="Alerts">
-                <span aria-hidden="true">A</span><span className="assembly-production__full-label">Alerts</span>
-              </th>
-              <th scope="col" title="Visuals">
-                <span aria-hidden="true">V</span><span className="assembly-production__full-label">Visuals</span>
-              </th>
+              {(['status', 'built', 'people', 'alerts', 'visuals'] as const).map((column) => {
+                const label = column[0].toUpperCase() + column.slice(1)
+                const filter = columnFilters?.[column]
+                const popoverId = `${filterId}-${column}`
+                return (
+                  <th scope="col" key={column}>
+                    <button
+                      className={`assembly-production__column-heading${filter?.active ? ' is-filtered' : ''}`}
+                      type="button"
+                      aria-label={`Filter by ${column}`}
+                      aria-haspopup="dialog"
+                      popoverTarget={popoverId}
+                    >
+                      {label}
+                    </button>
+                    <div id={popoverId} popover="auto" role="dialog" aria-label={`${label} filter`} className="assembly-production__filter-popover">
+                      <header>
+                        <strong>{label}</strong>
+                        <button type="button" popoverTarget={popoverId} popoverTargetAction="hide" aria-label={`Close ${label.toLowerCase()} filter`}>×</button>
+                      </header>
+                      {filter?.content}
+                    </div>
+                  </th>
+                )
+              })}
             </tr>
           </thead>
           <tbody>
-            {instructionSummaries.map((summary, index) => {
+            {instructionSummaries.map((summary) => {
               const {
                 operation,
                 position,
-                description,
                 instructionVisuals,
                 completedCount,
               } = summary
               const title = nodeTitle(operation)
               const status = operationStatus(operation)
               const statusLabel = operationStatusLabel(status)
-              const expanded = expandedOperationId === operation.id
-              const descriptionId = `${tableDescriptionId}-${index}`
 
               return (
-                <Fragment key={operation.id}>
                   <tr
-                    className={`assembly-production__row${expanded ? ' is-expanded' : ''}`}
-                    tabIndex={0}
-                    aria-expanded={expanded}
-                    onClick={() => toggleExpanded(operation.id)}
-                    onKeyDown={(event) => rowKeyDown(event, operation.id)}
+                    key={operation.id}
+                    className="assembly-production__row"
+                    onClick={() => onOpenOperation(operation.id)}
                   >
                     <th scope="row" className="assembly-production__instruction">
                       <button
-                        className="assembly-production__expand"
+                        className="assembly-production__instruction-link"
                         type="button"
-                        aria-controls={descriptionId}
-                        aria-expanded={expanded}
-                        aria-label={`${expanded ? 'Hide' : readOnly ? 'View' : 'Edit'} ${title} name and description`}
+                        aria-label={`Open full ${title} instruction`}
+                        onFocus={() => onFocusCard(operation.id)}
                         onClick={(event) => {
                           event.stopPropagation()
-                          toggleExpanded(operation.id)
+                          onOpenOperation(operation.id)
                         }}
                       >
-                        <span aria-hidden="true">{expanded ? '⌄' : '›'}</span>
-                        <span className="assembly-production__number">{position}</span>
+                        <span className="assembly-production__number" aria-hidden="true">{position}</span>
+                        <span className="assembly-production__name">{title}</span>
                       </button>
-                      <div className="assembly-production__instruction-content">
-                        {readOnly ? (
-                          <span className="assembly-production__name">{title}</span>
-                        ) : (
-                          <input
-                            className="assembly-production__name-input"
-                            aria-label={`${title} instruction name`}
-                            value={operation.data.name}
-                            placeholder="instruction name"
-                            onClick={stopTableControl}
-                            onFocus={() => onFocusCard(operation.id)}
-                            onChange={(event) => actions.onNameChange(operation.id, event.currentTarget.value)}
-                          />
-                        )}
-                        <div className="assembly-production__instruction-actions">
-                          <button
-                            type="button"
-                            aria-label={`${expanded ? 'Hide' : 'Show'} ${title} description`}
-                            aria-controls={descriptionId}
-                            aria-expanded={expanded}
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              toggleExpanded(operation.id)
-                            }}
-                          >
-                            Description <span aria-hidden="true">{expanded ? '⌃' : '⌄'}</span>
-                          </button>
-                          <button
-                            type="button"
-                            aria-label={`Open full ${title} instruction`}
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              onOpenOperation(operation.id)
-                            }}
-                          >
-                            Open <span aria-hidden="true">↗</span>
-                          </button>
-                        </div>
-                      </div>
                     </th>
                     <td className="assembly-production__status">
                       <div
@@ -313,53 +271,6 @@ export function AssemblyProductionTable({
                       />
                     </td>
                   </tr>
-                  {expanded ? (
-                    <tr className="assembly-production__expanded-row">
-                      <td colSpan={6}>
-                        <div id={descriptionId} className="assembly-production__expanded-content">
-                          {!canEditProperties ? (
-                            description.trim() ? (
-                              <AssemblyDescription
-                                text={description}
-                                title={title}
-                                className="assembly-production__description-text"
-                              />
-                            ) : <span className="assembly-production__empty-description">No description.</span>
-                          ) : (
-                            <label className="assembly-production__description-editor">
-                              <span>Description</span>
-                              <textarea
-                                aria-label={`${title} description`}
-                                placeholder="Description"
-                                value={description}
-                                onClick={stopTableControl}
-                                onFocus={() => onFocusCard(operation.id)}
-                                onChange={(event) => {
-                                  actions.onTextChange(operation.id, event.currentTarget.value)
-                                  actions.onPropertyChange?.(
-                                    operation.id,
-                                    OSA_PROPERTY.operationInstructionMode,
-                                    OSA_OPERATION_INSTRUCTION_MODE.single,
-                                  )
-                                }}
-                              />
-                            </label>
-                          )}
-                          <button
-                            className="text-action assembly-production__open-full"
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              onOpenOperation(operation.id)
-                            }}
-                          >
-                            Open full instruction
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : null}
-                </Fragment>
               )
             })}
           </tbody>

@@ -8,7 +8,9 @@ import {
 import type { SketchAnnotationTarget, TextFlowNode } from '../graph/textNode'
 import { visualEmbedsForCanvas } from '../graph/visualEmbed'
 import { AssemblyDescription } from './AssemblyDescription'
+import { operationAlerts } from './assemblyAlertsData'
 import type { AssemblyInstructionSummary } from './assemblyInstructionSummary'
+import { operationPeople } from './assemblyPeopleData'
 import {
   nodeTitle,
   operationAttentionNote,
@@ -26,7 +28,8 @@ import './AssemblyIndexCard.css'
 
 export type { AssemblyInstructionSummary } from './assemblyInstructionSummary'
 
-type AssemblySummaryFilter = 'all' | 'attention' | OsaOperationStatus
+type AlertFilter = 'all' | 'open' | 'closed' | 'none'
+type VisualFilter = 'all' | 'with' | 'without'
 
 type AssemblyIndexCardProps = {
   assembly: TextFlowNode
@@ -74,21 +77,125 @@ export function AssemblyIndexCard({
   visualGallerySuspended,
   onEditVisual,
 }: AssemblyIndexCardProps) {
-  const [summaryFilter, setSummaryFilter] = useState<AssemblySummaryFilter>('all')
+  const [statusFilter, setStatusFilter] = useState<OsaOperationStatus[]>([])
+  const [minimumBuilt, setMinimumBuilt] = useState('')
+  const [maximumBuilt, setMaximumBuilt] = useState('')
+  const [peopleFilter, setPeopleFilter] = useState<string[]>([])
+  const [alertFilter, setAlertFilter] = useState<AlertFilter>('all')
+  const [visualFilter, setVisualFilter] = useState<VisualFilter>('all')
   const operations = instructionSummaries.map(({ operation }) => operation)
-  const filteredSummaries = instructionSummaries.filter(({ operation }) => {
-    if (summaryFilter === 'all') return true
-    if (summaryFilter === 'attention') return Boolean(operationAttentionNote(operation))
-    return operationStatus(operation) === summaryFilter
+  const peopleOptions = Array.from(new Map(
+    operations.flatMap(operationPeople).map((name) => [name.toLocaleLowerCase(), name]),
+  )).sort(([, a], [, b]) => a.localeCompare(b))
+  const filteredSummaries = instructionSummaries.filter(({ operation, completedCount, instructionVisuals }) => {
+    if (statusFilter.length && !statusFilter.includes(operationStatus(operation))) return false
+    if (minimumBuilt !== '' && completedCount < Number(minimumBuilt)) return false
+    if (maximumBuilt !== '' && completedCount > Number(maximumBuilt)) return false
+    if (peopleFilter.length) {
+      const people = operationPeople(operation).map((name) => name.toLocaleLowerCase())
+      if (!people.some((name) => peopleFilter.includes(name)) && !(people.length === 0 && peopleFilter.includes(''))) return false
+    }
+    if (alertFilter !== 'all') {
+      const alerts = operationAlerts(operation)
+      if (alertFilter === 'open' && !alerts.some((alert) => alert.open)) return false
+      if (alertFilter === 'closed' && !alerts.some((alert) => !alert.open)) return false
+      if (alertFilter === 'none' && alerts.length > 0) return false
+    }
+    if (visualFilter === 'with' && !instructionVisuals.length) return false
+    if (visualFilter === 'without' && instructionVisuals.length > 0) return false
+    return true
   })
-  const filterOptions: Array<{ value: AssemblySummaryFilter, label: string, title: string }> = [
-    { value: 'all', label: 'All', title: 'All instructions' },
-    { value: 'attention', label: 'A', title: 'Instructions with open alerts' },
-    { value: OSA_OPERATION_STATUS.notStarted, label: 'P', title: 'Pending' },
-    { value: OSA_OPERATION_STATUS.inProgress, label: 'IP', title: 'In progress' },
-    { value: OSA_OPERATION_STATUS.partialComplete, label: 'PC', title: 'Partial Complete' },
-    { value: OSA_OPERATION_STATUS.complete, label: 'C', title: 'Complete' },
+  const statusOptions: Array<{ value: OsaOperationStatus, label: string }> = [
+    { value: OSA_OPERATION_STATUS.notStarted, label: 'Pending' },
+    { value: OSA_OPERATION_STATUS.inProgress, label: 'In progress' },
+    { value: OSA_OPERATION_STATUS.partialComplete, label: 'Partial Complete' },
+    { value: OSA_OPERATION_STATUS.complete, label: 'Complete' },
   ]
+  const columnFilters = {
+    status: {
+      active: statusFilter.length > 0,
+      content: (
+        <div className="assembly-index-card__column-filter" role="group" aria-label="Filter status">
+          {statusOptions.map(({ value, label }) => (
+            <label className="assembly-index-card__filter-option" key={value}>
+              <input
+                type="checkbox"
+                checked={statusFilter.includes(value)}
+                onChange={(event) => setStatusFilter((selected) => event.target.checked
+                  ? [...selected, value]
+                  : selected.filter((status) => status !== value))}
+              />
+              <span>{label}</span>
+            </label>
+          ))}
+          <button type="button" aria-label="Clear status filter" onClick={() => setStatusFilter([])}>Clear</button>
+        </div>
+      ),
+    },
+    built: {
+      active: minimumBuilt !== '' || maximumBuilt !== '',
+      content: (
+        <div className="assembly-index-card__column-filter">
+          <label className="assembly-index-card__filter-field">
+            <span>Minimum</span>
+            <input type="number" min="0" aria-label="Minimum built" value={minimumBuilt} onChange={(event) => setMinimumBuilt(event.target.value)} />
+          </label>
+          <label className="assembly-index-card__filter-field">
+            <span>Maximum</span>
+            <input type="number" min="0" aria-label="Maximum built" value={maximumBuilt} onChange={(event) => setMaximumBuilt(event.target.value)} />
+          </label>
+          <button type="button" aria-label="Clear built filter" onClick={() => { setMinimumBuilt(''); setMaximumBuilt('') }}>Clear</button>
+        </div>
+      ),
+    },
+    people: {
+      active: peopleFilter.length > 0,
+      content: (
+        <div className="assembly-index-card__column-filter" role="group" aria-label="Filter people">
+          {([['', 'Unassigned'], ...peopleOptions]).map(([value, label]) => (
+            <label className="assembly-index-card__filter-option" key={value}>
+              <input
+                type="checkbox"
+                checked={peopleFilter.includes(value)}
+                onChange={(event) => setPeopleFilter((selected) => event.target.checked
+                  ? [...selected, value]
+                  : selected.filter((person) => person !== value))}
+              />
+              <span>{label}</span>
+            </label>
+          ))}
+          <button type="button" aria-label="Clear people filter" onClick={() => setPeopleFilter([])}>Clear</button>
+        </div>
+      ),
+    },
+    alerts: {
+      active: alertFilter !== 'all',
+      content: (
+        <div className="assembly-index-card__column-filter">
+          <select aria-label="Filter alerts" value={alertFilter} onChange={(event) => setAlertFilter(event.target.value as AlertFilter)}>
+            <option value="all">All</option>
+            <option value="open">Open alerts</option>
+            <option value="closed">Closed alerts</option>
+            <option value="none">No alerts</option>
+          </select>
+          <button type="button" aria-label="Clear alerts filter" onClick={() => setAlertFilter('all')}>Clear</button>
+        </div>
+      ),
+    },
+    visuals: {
+      active: visualFilter !== 'all',
+      content: (
+        <div className="assembly-index-card__column-filter">
+          <select aria-label="Filter visuals" value={visualFilter} onChange={(event) => setVisualFilter(event.target.value as VisualFilter)}>
+            <option value="all">All</option>
+            <option value="with">With visuals</option>
+            <option value="without">Without visuals</option>
+          </select>
+          <button type="button" aria-label="Clear visuals filter" onClick={() => setVisualFilter('all')}>Clear</button>
+        </div>
+      ),
+    },
+  }
 
   return (
     <article
@@ -222,46 +329,11 @@ export function AssemblyIndexCard({
             >
               <strong className="assembly-card__summary-title">{nodeTitle(assembly)}</strong>
             </button>
-            <span className="assembly-index-card__summary-actions">
-              {operations.length ? (
-                <span className="assembly-index-card__summary-total">
-                  {operations.length} {operations.length === 1 ? 'instruction' : 'instructions'}
-                </span>
-              ) : null}
-              {!readOnly && operations.length > 1 ? (
-                <button className="text-action" type="button" onClick={onOpen}>
-                  Reorder instructions
-                </button>
-              ) : null}
-            </span>
-          </div>
-          <div className="assembly-index-card__summary-toolbar">
-            <span className="assembly-index-card__filter-label">Show</span>
-            <div className="assembly-index-card__filters" role="group" aria-label="Filter instructions">
-              {filterOptions.map((option) => {
-                const count = instructionSummaries.filter(({ operation }) => {
-                  if (option.value === 'all') return true
-                  if (option.value === 'attention') return Boolean(operationAttentionNote(operation))
-                  return operationStatus(operation) === option.value
-                }).length
-                return (
-                  <button
-                    type="button"
-                    key={option.value}
-                    title={option.title}
-                    aria-label={`${option.title}: ${count}`}
-                    aria-pressed={summaryFilter === option.value}
-                    onClick={() => setSummaryFilter(option.value)}
-                  >
-                    <span>{option.label}</span>
-                    <b>{count}</b>
-                  </button>
-                )
-              })}
-            </div>
           </div>
           <AssemblyProductionTable
             instructionSummaries={filteredSummaries}
+            onManageInstructions={onOpen}
+            columnFilters={columnFilters}
             nodes={nodes}
             edges={edges}
             annotationTargets={annotationTargets}
@@ -353,11 +425,6 @@ export function AssemblyIndexCard({
           ) : (
             operations.length ? null : <p className="assembly-index-card__empty">No instructions yet.</p>
           )}
-          {!readOnly ? (
-            <button className="text-action assembly-index-card__summary-add" type="button" onClick={onAddCard}>
-              + instruction
-            </button>
-          ) : null}
         </div>
       )}
     </article>

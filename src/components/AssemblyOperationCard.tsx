@@ -91,6 +91,11 @@ export function AssemblyOperationCard({
 }: AssemblyOperationCardProps) {
   const [isDescriptionEditing, setIsDescriptionEditing] = useState(false)
   const descriptionId = useId()
+  const { ref: titleRef } = useLineLimitedElement<HTMLTextAreaElement>({
+    value: isOpen ? operation.data.name : '',
+    autoSize: true,
+    lines: Number.POSITIVE_INFINITY,
+  })
   const {
     ref: descriptionRef,
     hasOverflow: descriptionHasOverflow,
@@ -122,7 +127,9 @@ export function AssemblyOperationCard({
       {isOpen ? (
         <>
           <header className="assembly-operation-card__header">
-            <input
+            <textarea
+              ref={titleRef}
+              rows={1}
               className="assembly-card__title"
               aria-label={`${title} title`}
               placeholder="instruction title"
@@ -130,7 +137,7 @@ export function AssemblyOperationCard({
               readOnly={readOnly}
               onFocus={onFocusCard}
               onChange={(event) => {
-                if (!readOnly) actions.onNameChange(operation.id, event.target.value)
+                if (!readOnly) actions.onNameChange(operation.id, event.target.value.replace(/\s*\n\s*/g, ' '))
               }}
               style={transparentInput}
             />
@@ -208,7 +215,6 @@ export function AssemblyOperationCard({
             {description.trim() || isDescriptionEditing ? (
               <div className="assembly-operation-card__description-shell">
                 <label className="assembly-operation-card__description">
-                  <span>Description</span>
                   <textarea
                     id={descriptionId}
                     ref={descriptionRef}

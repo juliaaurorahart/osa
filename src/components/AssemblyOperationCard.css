@@ -7,6 +7,9 @@
 
 .assembly-view .assembly-operation-card__header .assembly-card__title {
   font-size: clamp(1.9rem, 4vw, 3.1rem) !important;
+  resize: none;
+  overflow: hidden;
+  overflow-wrap: anywhere;
 }
 
 .assembly-operation-card__header {
@@ -240,11 +243,6 @@
 
 .assembly-operation-card__description-shell .assembly-operation-card__description {
   width: 100%;
-}
-
-.assembly-operation-card__description > span {
-  font-size: clamp(1.1rem, 1.7vw, 1.4rem);
-  font-weight: 700;
 }
 
 .assembly-operation-card__description textarea {

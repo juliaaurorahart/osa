@@ -95,7 +95,7 @@
 
 .assembly-index-card__summary-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 14px;
 }
@@ -117,71 +117,68 @@
   outline: 0;
 }
 
-.assembly-index-card__summary-total {
-  flex: 0 0 auto;
-  color: var(--osa-muted);
-  font-size: 0.92rem;
-}
-
-.assembly-index-card__summary-actions {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 8px 14px;
-}
-
-.assembly-index-card__summary-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 7px 10px;
+.assembly-index-card__column-filter {
+  display: grid;
+  gap: 8px;
   min-width: 0;
+  color: var(--osa-text);
+  font-size: 1rem;
 }
 
-.assembly-index-card__filter-label {
-  color: var(--osa-muted);
-  font-size: 0.78rem;
-  font-weight: 700;
-}
-
-.assembly-index-card__filters {
+.assembly-index-card__filter-option {
   display: flex;
-  gap: 5px;
-  min-width: 0;
-  padding: 2px;
-  overflow-x: auto;
-  scrollbar-width: thin;
-}
-
-.assembly-index-card__filters button {
-  display: inline-flex;
-  flex: 0 0 auto;
   align-items: center;
-  gap: 6px;
-  min-height: 34px;
-  padding: 4px 9px;
-  border: 1px solid var(--osa-border);
-  border-radius: 999px;
-  background: var(--osa-surface-raised);
-  color: var(--osa-muted);
+  gap: 10px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 6px;
   cursor: pointer;
-  font: inherit;
-  font-size: 0.78rem;
 }
 
-.assembly-index-card__filters button:hover,
-.assembly-index-card__filters button:focus-visible,
-.assembly-index-card__filters button[aria-pressed='true'] {
+.assembly-index-card__filter-option input {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  accent-color: var(--osa-focus);
+}
+
+.assembly-index-card__filter-option span {
+  overflow-wrap: anywhere;
+}
+
+.assembly-index-card__filter-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.assembly-index-card__filter-field input,
+.assembly-index-card__column-filter select,
+.assembly-index-card__column-filter button {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--osa-border);
+  border-radius: 7px;
+  background: var(--osa-surface);
+  color: var(--osa-text);
+  font: inherit;
+}
+
+.assembly-index-card__column-filter button {
+  justify-self: start;
+  cursor: pointer;
+}
+
+.assembly-index-card__column-filter button:hover {
   border-color: var(--osa-focus);
   background: var(--osa-hover-surface);
-  color: var(--osa-text);
-  outline: 0;
 }
 
-.assembly-index-card__filters b {
-  min-width: 1.2em;
-  color: inherit;
-  text-align: center;
+.assembly-index-card__column-filter :is(input, select, button):focus-visible {
+  outline: 2px solid var(--osa-focus);
+  outline-offset: 2px;
 }
 
 .assembly-index-card__summary-index {
@@ -307,10 +304,6 @@
   object-fit: contain;
 }
 
-.assembly-index-card__summary-add {
-  justify-self: start;
-}
-
 .assembly-index-card__empty {
   margin: 0;
   color: var(--osa-muted);
@@ -325,8 +318,7 @@
     grid-template-columns: 30px minmax(0, 1fr) 118px;
   }
 
-  .assembly-index-card__organize-heading,
-  .assembly-index-card__summary-actions {
+  .assembly-index-card__organize-heading {
     align-items: flex-start;
     flex-direction: column;
   }
@@ -336,8 +328,7 @@
     min-width: 44px;
   }
 
-  .assembly-index-card__organize-position,
-  .assembly-index-card__summary-actions .text-action {
+  .assembly-index-card__organize-position {
     min-height: 44px;
   }
 
@@ -347,17 +338,7 @@
 
   .assembly-index-card__summary-header {
     align-items: flex-start;
-    flex-direction: column;
     gap: 4px;
-  }
-
-  .assembly-index-card__summary-toolbar {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .assembly-index-card__filters button {
-    min-height: 44px;
   }
 
   .assembly-index-card__summary-index {

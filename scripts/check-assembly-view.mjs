@@ -23,6 +23,9 @@ try {
   const { AssemblyProductionTable } = await server.ssrLoadModule(
     '/src/components/AssemblyProductionTable.tsx',
   )
+  const { AssemblyIndexCard } = await server.ssrLoadModule(
+    '/src/components/AssemblyIndexCard.tsx',
+  )
   const { AssemblyPeopleDisplayPicker } = await server.ssrLoadModule(
     '/src/components/WorkspaceSettingsMenu.tsx',
   )
@@ -360,11 +363,11 @@ try {
     return markup.slice(start, end + '</li>'.length)
   }
   const productionRowFor = (markup, operationTitle) => {
-    const marker = `aria-label="${operationTitle} instruction name"`
-    const input = markup.indexOf(marker)
-    const start = markup.lastIndexOf('<tr', input)
-    const end = markup.indexOf('</tr>', input)
-    assert.ok(input >= 0 && start >= 0 && end >= 0, `Expected ${operationTitle} production row.`)
+    const marker = `aria-label="Open full ${operationTitle} instruction"`
+    const button = markup.indexOf(marker)
+    const start = markup.lastIndexOf('<tr', button)
+    const end = markup.indexOf('</tr>', button)
+    assert.ok(button >= 0 && start >= 0 && end >= 0, `Expected ${operationTitle} production row.`)
     return markup.slice(start, end + '</tr>'.length)
   }
 
@@ -398,7 +401,9 @@ try {
     'The default Assembly view is one summary card, not nested detail cards.',
   )
   assert.match(compactMarkup, /is-summary-surface/)
-  assert.match(compactMarkup, />6 instructions</)
+  assert.doesNotMatch(compactMarkup, /assembly-production__heading|>6 instructions<|>Show<\/span>/)
+  assert.doesNotMatch(compactMarkup, /aria-label="Table controls"|assembly-index-card__filters/)
+  assert.match(compactMarkup, /aria-label="Manage instructions"/)
   assert.equal(
     (compactMarkup.match(/class="assembly-index-card__summary-step"/g) ?? []).length,
     6,
@@ -429,23 +434,31 @@ try {
     6,
     'Every production row exposes its physical completion count editor.',
   )
-  assert.match(compactMarkup, /title="Status"><span aria-hidden="true">S<\/span><span class="assembly-production__full-label">Status<\/span>/)
-  assert.match(compactMarkup, /title="Built"><span aria-hidden="true">B<\/span><span class="assembly-production__full-label">Built<\/span>/)
-  assert.match(compactMarkup, /title="People"><span aria-hidden="true">P<\/span><span class="assembly-production__full-label">People<\/span>/)
-  assert.match(compactMarkup, /title="Alerts"><span aria-hidden="true">A<\/span><span class="assembly-production__full-label">Alerts<\/span>/)
-  assert.match(compactMarkup, /title="Visuals"><span aria-hidden="true">V<\/span><span class="assembly-production__full-label">Visuals<\/span>/)
+  for (const label of ['Status', 'Built', 'People', 'Alerts', 'Visuals']) {
+    assert.match(compactMarkup, new RegExp(`aria-label="Filter by ${label.toLowerCase()}"`))
+    assert.match(compactMarkup, new RegExp(`aria-label="${label} filter"`))
+  }
   assert.equal(
     (compactMarkup.match(/class="assembly-production__row"/g) ?? []).length,
     6,
     'The production table has one compact editable row per instruction.',
   )
   assert.equal(
-    (compactMarkup.match(/class="assembly-production__instruction-actions"/g) ?? []).length,
+    (compactMarkup.match(/class="assembly-production__instruction-link"/g) ?? []).length,
     6,
-    'Each production title has visible Description and Open controls.',
+    'Each readable production title is one direct link to the full instruction.',
   )
-  assert.match(compactMarkup, /aria-label="Show Connector Box Drill description"/)
+  assert.doesNotMatch(
+    compactMarkup,
+    /assembly-production__instruction-actions|assembly-production__name-input|aria-label="Show Connector Box Drill description"/,
+    'The production table has no repeated Description/Open action row or inline title editor.',
+  )
   assert.match(compactMarkup, /aria-label="Open full Connector Box Drill instruction"/)
+  assert.match(
+    productionRowFor(compactMarkup, 'Connector Box Drill'),
+    /class="assembly-production__name">Connector Box Drill<\/span>/,
+    'The title is readable text rather than a clipped single-line input.',
+  )
 
   const connectorSummary = summaryRowFor(compactMarkup, 'Connector Box Drill')
   assert.equal(
@@ -496,12 +509,26 @@ try {
   )
   assert.doesNotMatch(authorMarkup, /assembly-index-card/)
   const connectorCard = articleFor(authorMarkup, 'Connector Box Drill card')
-  assert.match(connectorCard, /aria-label="Connector Box Drill title"/)
-  assert.equal((connectorCard.match(/>Description<\/span>/g) ?? []).length, 1)
-  assert.equal((connectorCard.match(/<textarea\b/g) ?? []).length, 1)
+  assert.match(connectorCard, /<textarea[^>]*aria-label="Connector Box Drill title"/)
+  assert.doesNotMatch(
+    connectorCard,
+    />\s*Description\s*<\//,
+    'The full instruction shows its description without a redundant standalone Description label.',
+  )
+  assert.equal((connectorCard.match(/<textarea\b/g) ?? []).length, 2, 'Title and description both have wrapping editors.')
   assert.match(connectorCard, /aria-label="Connector Box Drill description"/)
   assert.match(connectorCard, /Drill the 5\/16 in side hole/)
   assert.match(connectorCard, /Confirm the opening is clean before continuing\./)
+  const longInstructionTitle = 'Connect the shako wrap to the power assembly and secure the wires inside the connector box'
+  const longTitleNodes = nodes.map((node) => node.id === connectorBoxDrill.id
+    ? { ...node, data: { ...node.data, name: longInstructionTitle } }
+    : node)
+  const longTitleCard = articleFor(
+    renderAssembly(edges, focusedUiState, longTitleNodes),
+    `${longInstructionTitle} card`,
+  )
+  assert.match(longTitleCard, new RegExp(`<textarea[^>]*aria-label="${longInstructionTitle} title"[^>]*>${longInstructionTitle}</textarea>`))
+  assert.doesNotMatch(longTitleCard, new RegExp(`<input[^>]*aria-label="${longInstructionTitle} title"`))
   assert.doesNotMatch(
     connectorCard,
     /add step|add another|remove step|assembly-operation-step|assembly-operation-steps|aria-label="[^"]+ instructions"|>Step(?: \d+)?</i,
@@ -617,7 +644,7 @@ try {
   }
   assert.doesNotMatch(
     emptyEditorCard,
-    /<textarea\b|aria-label="Empty instruction description"/,
+    /aria-label="Empty instruction description"/,
     'An empty Description stays collapsed with no textarea until its concise action is chosen.',
   )
   assert.equal(
@@ -985,6 +1012,11 @@ try {
     'The editable textarea uses the same measured five-line, accessible disclosure behavior.',
   )
   assert.match(
+    operationCardSource,
+    /ref: titleRef[^]*?useLineLimitedElement<HTMLTextAreaElement>\(\{[^}]*autoSize:\s*true,[^}]*lines:\s*Number\.POSITIVE_INFINITY/,
+    'Long instruction titles auto-size without a fixed line cap.',
+  )
+  assert.match(
     instructionsViewSource,
     /<AssemblyDescription[\s\S]*?className="assembly-instructions-view__description"[\s\S]*?text=\{description\}[\s\S]*?title=\{nodeTitle\(operation\)\}/,
     'Read-only instructions use the shared measured Description rather than a separate always-expanded paragraph.',
@@ -1135,8 +1167,6 @@ try {
   assert.match(attentionProductionRow, /10 more regular and 5 more large requested\./)
   assert.match(attentionProductionRow, /Second current problem\./)
   assert.match(attentionProductionRow, /Old shortage resolved\. <small>\(closed\)<\/small>/)
-  assert.match(attentionMarkup, /aria-label="Instructions with open alerts: 1"/,
-    'The top A count is instructions with open alerts, not the number of open alerts.')
   const attentionAuthorCard = articleFor(
     renderAssembly(edges, focusedUiState, attentionNodes),
     'Connector Box Drill card',
@@ -1168,8 +1198,6 @@ try {
   assert.match(closedOnlyProductionRow, /aria-label="Connector Box Drill: 0 open alerts, 3 closed\. View or edit alerts\."/)
   assert.match(closedOnlyProductionRow, /assembly-alerts-cell has-closed-alerts/)
   assert.doesNotMatch(closedOnlyProductionRow, /assembly-alerts-cell has-alerts/)
-  assert.match(closedOnlyMarkup, /aria-label="Instructions with open alerts: 0"/,
-    'An instruction with only closed history is not counted as needing attention.')
 
   const peopleValue = serializeOperationPeople(['Bria', ' Sam ', 'bria'])
   assert.equal(peopleValue, '["Bria","Sam"]')
@@ -1320,6 +1348,11 @@ try {
     sharedMainMarkup,
     /assembly-production__name-input|aria-label="Connector Box Drill number built"|aria-label="Connector Box Drill status"/,
     'The read-only production table exposes no direct mutation controls.',
+  )
+  assert.match(
+    productionRowFor(sharedMainMarkup, 'Connector Box Drill'),
+    /class="assembly-production__instruction-link"[^>]*aria-label="Open full Connector Box Drill instruction"/,
+    'Read-only visitors can still open the full instruction from its title.',
   )
 
   const sharedAttentionCard = articleFor(
@@ -1598,7 +1631,7 @@ try {
   const require = createRequire(import.meta.url)
   const { JSDOM } = createRequire(require.resolve('fabric'))('jsdom')
   const descriptionDom = new JSDOM(
-    '<div id="description-root"></div><div id="visual-gallery-root"></div><div id="people-settings-root"></div><div id="production-root"></div>',
+    '<div id="description-root"></div><div id="visual-gallery-root"></div><div id="people-settings-root"></div><div id="production-root"></div><div id="filter-root"></div>',
     {
     url: 'http://localhost',
     },
@@ -1621,6 +1654,7 @@ try {
   let visualGalleryRoot
   let peopleSettingsRoot
   let productionRoot
+  let filterRoot
   try {
     const { window } = descriptionDom
     const lineHeight = 20
@@ -1782,10 +1816,11 @@ try {
     const focusedInstructions = []
     const openedInstructions = []
     const productionPropertyChanges = []
+    const productionNameChanges = []
     const productionHost = window.document.getElementById('production-root')
     productionRoot = createRoot(productionHost)
-    await act(async () => {
-      productionRoot.render(createElement(AssemblyProductionTable, {
+    const renderProductionTable = async (readOnly = false) => {
+      await act(async () => productionRoot.render(createElement(AssemblyProductionTable, {
         instructionSummaries: [{
           operation: connectorBoxDrill,
           position: 1,
@@ -1797,67 +1832,55 @@ try {
         nodes,
         edges,
         annotationTargets: [],
-        readOnly: false,
+        readOnly,
         actions: {
           ...actions,
           onPropertyChange: (...args) => productionPropertyChanges.push(args),
+          onNameChange: (...args) => productionNameChanges.push(args),
         },
         peopleDisplay: 'initials',
         peopleThreshold: DEFAULT_ASSEMBLY_PEOPLE_THRESHOLD,
         visualGallerySuspended: false,
         onFocusCard: (id) => focusedInstructions.push(id),
         onOpenOperation: (id) => openedInstructions.push(id),
+        onManageInstructions: noop,
+        columnFilters: {},
         onEditVisual: noop,
-      }))
-    })
+      })))
+    }
+    await renderProductionTable()
     const productionRow = productionHost.querySelector('.assembly-production__row')
-    const directDescription = productionHost.querySelector(
-      '[aria-label="Show Connector Box Drill description"]',
-    )
     const directOpen = productionHost.querySelector(
       '[aria-label="Open full Connector Box Drill instruction"]',
     )
-    assert.ok(directDescription, 'Description is reachable without finding the small row chevron.')
-    assert.ok(directOpen, 'The full instruction opens directly without first expanding its row.')
+    assert.ok(directOpen, 'The readable title opens the full instruction in one click.')
+    assert.equal(directOpen.tagName, 'BUTTON', 'The title is keyboard-accessible without a separate row tab stop.')
+    assert.equal(directOpen.querySelector('.assembly-production__name').textContent, 'Connector Box Drill')
+    assert.equal(productionHost.querySelector('.assembly-production__instruction-actions'), null)
+    assert.equal(productionHost.querySelector('input[aria-label="Connector Box Drill instruction name"]'), null)
+    assert.equal(productionHost.querySelector('.assembly-production__expanded'), null)
     const clickProductionControl = async (control) => {
       await act(async () => {
         control.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
       })
     }
+    await act(async () => directOpen.focus())
+    assert.deepEqual(focusedInstructions, [connectorBoxDrill.id], 'Keyboard focus still focuses the corresponding instruction.')
+    assert.deepEqual(openedInstructions, [], 'Focusing an instruction does not open it.')
     await clickProductionControl(directOpen)
-    assert.deepEqual(openedInstructions, [connectorBoxDrill.id])
-    assert.equal(productionRow.getAttribute('aria-expanded'), 'false')
-    assert.deepEqual(focusedInstructions, [], 'Open does not bubble into the row disclosure.')
-    await clickProductionControl(directDescription)
-    assert.equal(productionRow.getAttribute('aria-expanded'), 'true')
-    assert.deepEqual(focusedInstructions, [connectorBoxDrill.id], 'Description toggles exactly once.')
-    assert.equal(directDescription.getAttribute('aria-label'), 'Hide Connector Box Drill description')
-    assert.equal(directDescription.getAttribute('aria-expanded'), 'true')
-    assert.equal(
-      directDescription.getAttribute('aria-controls'),
-      productionHost.querySelector('.assembly-production__expanded-content').id,
-    )
-    assert.equal(
-      productionHost.querySelector('textarea[aria-label="Connector Box Drill description"]').value,
-      shortDescription,
-      'The visible Description control exposes the existing inline editor.',
-    )
-    await clickProductionControl(directOpen)
+    assert.deepEqual(openedInstructions, [connectorBoxDrill.id], 'The title opens exactly once without bubbling to its row.')
+    assert.deepEqual(productionNameChanges, [], 'Opening the instruction never edits its title.')
+    await clickProductionControl(productionRow)
     assert.deepEqual(openedInstructions, [connectorBoxDrill.id, connectorBoxDrill.id])
-    assert.equal(productionRow.getAttribute('aria-expanded'), 'true', 'Open does not collapse an expanded row.')
-    await clickProductionControl(directDescription)
-    assert.equal(productionRow.getAttribute('aria-expanded'), 'false')
-    assert.equal(focusedInstructions.length, 2, 'Closing Description also toggles only once.')
+    assert.equal(productionHost.querySelector('textarea'), null, 'Row clicks navigate instead of adding a second inline description editor.')
 
-    const nameEditor = productionHost.querySelector('input[aria-label="Connector Box Drill instruction name"]')
     const builtEditor = productionHost.querySelector('input[aria-label="Connector Box Drill number built"]')
     const statusEditor = productionHost.querySelector('select[aria-label="Connector Box Drill status"]')
-    assert.ok(nameEditor && !nameEditor.readOnly && !nameEditor.disabled, 'The title remains directly editable.')
     assert.ok(builtEditor && !builtEditor.readOnly && !builtEditor.disabled, 'Built remains directly editable.')
     assert.ok(statusEditor && !statusEditor.disabled, 'Status remains directly editable.')
-    for (const control of [nameEditor, builtEditor, statusEditor]) {
+    for (const control of [builtEditor, statusEditor]) {
       await clickProductionControl(control)
-      assert.equal(productionRow.getAttribute('aria-expanded'), 'false', 'Editing an attribute does not open Description.')
+      assert.equal(openedInstructions.length, 2, 'Editing an attribute does not open the full instruction.')
     }
     await act(async () => {
       statusEditor.value = OSA_OPERATION_STATUS.inProgress
@@ -1868,8 +1891,176 @@ try {
       OSA_PROPERTY.operationStatus,
       OSA_OPERATION_STATUS.inProgress,
     ]])
-    assert.equal(productionRow.getAttribute('aria-expanded'), 'false')
-    assert.equal(focusedInstructions.length, 2, 'Attribute controls do not trigger row disclosure callbacks.')
+    assert.equal(openedInstructions.length, 2)
+    assert.equal(focusedInstructions.length, 1, 'Attribute controls do not trigger title focus callbacks.')
+
+    for (const [triggerClass, dialogClass, closeSelector] of [
+      ['.assembly-people-cell__trigger', '.assembly-people-cell__dialog', '.assembly-people-cell__dialog button'],
+      ['.assembly-alerts-cell__trigger', '.assembly-alerts-cell__dialog', '.assembly-alerts-cell__close'],
+      ['.assembly-visuals-cell__count', '.assembly-visuals-cell__dialog', '.assembly-visuals-cell__dialog-header button'],
+    ]) {
+      await clickProductionControl(productionHost.querySelector(triggerClass))
+      assert.ok(window.document.querySelector(dialogClass), `${triggerClass} opens its own field popup.`)
+      assert.equal(openedInstructions.length, 2, 'Field popups do not also open the full instruction.')
+      await clickProductionControl(window.document.querySelector(closeSelector))
+      assert.equal(window.document.querySelector(dialogClass), null)
+      assert.equal(openedInstructions.length, 2, 'Closing a field popup does not open the instruction either.')
+    }
+
+    await renderProductionTable(true)
+    assert.equal(productionHost.querySelector('input, select, textarea'), null)
+    await clickProductionControl(productionHost.querySelector('.assembly-production__instruction-link'))
+    assert.equal(openedInstructions.length, 3, 'Read-only visitors open details from the same readable title.')
+    assert.equal(openedInstructions.at(-1), connectorBoxDrill.id)
+    assert.deepEqual(productionNameChanges, [])
+
+    const filterWrites = []
+    const filterNavigation = []
+    const filterFixture = [
+      ['Pending work', OSA_OPERATION_STATUS.notStarted, 2, ['Julia'], [], false],
+      ['Complete work', OSA_OPERATION_STATUS.complete, 8, ['Alex'], savedAlerts, true],
+      ['In-progress work', OSA_OPERATION_STATUS.inProgress, 12, ['Julia'], closedOnlyAlerts, true],
+      ['Partial work', OSA_OPERATION_STATUS.partialComplete, 5, [], [], false],
+    ]
+    const filterSummaries = filterFixture.map(([name, status, built, people, alerts, hasVisuals], index) => ({
+      operation: {
+        ...connectorBoxDrill,
+        id: `column-filter-${index}`,
+        data: {
+          ...connectorBoxDrill.data,
+          name,
+          properties: {
+            ...connectorBoxDrill.data.properties,
+            [OSA_PROPERTY.operationStatus]: status,
+            [OSA_PROPERTY.operationCompletedCount]: String(built),
+            [OSA_PROPERTY.operationPeople]: serializeOperationPeople(people),
+            [OSA_PROPERTY.operationAttention]: serializeOperationAlerts(alerts),
+            [OSA_PROPERTY.operationAlertStates]: serializeOperationAlertStates(alerts),
+          },
+        },
+      },
+      position: index + 1,
+      description: shortDescription,
+      completedCount: built,
+      instructionVisuals: hasVisuals ? [connectorInstructionVisuals[0]] : [],
+      visuals: hasVisuals ? [connectorInstructionVisuals[0].visual] : [],
+    }))
+    const filterDataBefore = JSON.stringify(filterSummaries)
+    const filterHost = window.document.getElementById('filter-root')
+    filterRoot = createRoot(filterHost)
+    const recordFilterWrite = (...args) => filterWrites.push(args)
+    await act(async () => filterRoot.render(createElement(AssemblyIndexCard, {
+      assembly,
+      instructionSummaries: filterSummaries,
+      nodes,
+      edges,
+      annotationTargets: [],
+      readOnly: false,
+      isOpen: false,
+      onOpen: () => filterNavigation.push('manage'),
+      onClose: noop,
+      onFocusCard: noop,
+      onOpenOperation: (id) => filterNavigation.push(id),
+      onNameChange: recordFilterWrite,
+      onMoveOperation: recordFilterWrite,
+      onRemoveOperation: recordFilterWrite,
+      onAddCard: recordFilterWrite,
+      actions: Object.fromEntries(Object.keys(actions).map((key) => [key, recordFilterWrite])),
+      peopleDisplay: 'initials',
+      peopleThreshold: DEFAULT_ASSEMBLY_PEOPLE_THRESHOLD,
+      visualGallerySuspended: false,
+      onEditVisual: noop,
+    })))
+    const checkFilteredTitles = (...expected) => {
+      assert.deepEqual(
+        [...filterHost.querySelectorAll('.assembly-production__name')].map((element) => element.textContent),
+        expected,
+        'Column filters select the expected production rows.',
+      )
+      assert.deepEqual(
+        [...filterHost.querySelectorAll('.assembly-index-card__summary-step-title')].map((element) => element.textContent),
+        expected,
+        'The visual overview follows the same filters as the table.',
+      )
+    }
+    const filterDialog = (column) => filterHost.querySelector(`[aria-label="${column} filter"]`)
+    const clickFilterCheckbox = async (column, label) => {
+      const field = [...filterDialog(column).querySelectorAll('label')]
+        .find((element) => element.textContent.trim() === label)?.querySelector('input[type="checkbox"]')
+      assert.ok(field, `Expected the ${column} checkbox ${label}.`)
+      await clickProductionControl(field)
+    }
+    const setFilterValue = async (label, value) => {
+      const control = filterHost.querySelector(`[aria-label="${label}"]`)
+      assert.ok(control, `Expected ${label}.`)
+      await act(async () => {
+        const prototype = control.tagName === 'SELECT' ? window.HTMLSelectElement.prototype : window.HTMLInputElement.prototype
+        Object.getOwnPropertyDescriptor(prototype, 'value').set.call(control, value)
+        control.dispatchEvent(new window.Event(control.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }))
+      })
+    }
+    const clearFilter = async (column) => clickProductionControl(
+      filterHost.querySelector(`[aria-label="Clear ${column} filter"]`),
+    )
+    for (const column of ['Status', 'Built', 'People', 'Alerts', 'Visuals']) {
+      const heading = filterHost.querySelector(`[aria-label="Filter by ${column.toLowerCase()}"]`)
+      const dialog = filterDialog(column)
+      assert.equal(heading.textContent, column, 'Each column states its purpose without requiring single-letter knowledge.')
+      assert.equal(heading.getAttribute('popovertarget'), dialog.id)
+      assert.equal(dialog.getAttribute('popover'), 'auto', 'The native top-layer popup avoids clipped table overflow.')
+    }
+    checkFilteredTitles('Pending work', 'Complete work', 'In-progress work', 'Partial work')
+    await clickFilterCheckbox('Status', 'Pending')
+    assert.ok(filterHost.querySelector('[aria-label="Filter by status"]').classList.contains('is-filtered'))
+    checkFilteredTitles('Pending work')
+    await clickFilterCheckbox('Status', 'Complete')
+    checkFilteredTitles('Pending work', 'Complete work')
+    await clickFilterCheckbox('People', 'Julia')
+    checkFilteredTitles('Pending work')
+    await clickFilterCheckbox('People', 'Alex')
+    checkFilteredTitles('Pending work', 'Complete work')
+    await setFilterValue('Minimum built', '3')
+    checkFilteredTitles('Complete work')
+    await setFilterValue('Maximum built', '7')
+    checkFilteredTitles()
+    await clearFilter('built')
+    checkFilteredTitles('Pending work', 'Complete work')
+    await setFilterValue('Filter alerts', 'open')
+    checkFilteredTitles('Complete work')
+    await setFilterValue('Filter alerts', 'closed')
+    checkFilteredTitles('Complete work')
+    await setFilterValue('Filter alerts', 'none')
+    checkFilteredTitles('Pending work')
+    await clearFilter('alerts')
+    await setFilterValue('Filter visuals', 'with')
+    checkFilteredTitles('Complete work')
+    await setFilterValue('Filter visuals', 'without')
+    checkFilteredTitles('Pending work')
+    await clearFilter('visuals')
+    await clearFilter('status')
+    await clearFilter('people')
+    checkFilteredTitles('Pending work', 'Complete work', 'In-progress work', 'Partial work')
+    await clickFilterCheckbox('People', 'Unassigned')
+    checkFilteredTitles('Partial work')
+    await clickFilterCheckbox('People', 'Julia')
+    checkFilteredTitles('Pending work', 'In-progress work', 'Partial work')
+    await clearFilter('people')
+    await clickFilterCheckbox('Status', 'Pending')
+    await clickFilterCheckbox('Status', 'Pending')
+    checkFilteredTitles('Pending work', 'Complete work', 'In-progress work', 'Partial work')
+    assert.ok(!filterHost.querySelector('[aria-label="Filter by status"]').classList.contains('is-filtered'))
+    await setFilterValue('Filter alerts', 'open')
+    checkFilteredTitles('Complete work')
+    await setFilterValue('Filter alerts', 'closed')
+    checkFilteredTitles('Complete work', 'In-progress work')
+    await setFilterValue('Filter alerts', 'none')
+    checkFilteredTitles('Pending work', 'Partial work')
+    await clearFilter('alerts')
+    assert.deepEqual(filterWrites, [], 'Filtering never writes any project data.')
+    assert.deepEqual(filterNavigation, [], 'Filtering stays in the current view.')
+    assert.equal(JSON.stringify(filterSummaries), filterDataBefore, 'Filtering leaves every source instruction untouched.')
+    await clickProductionControl(filterHost.querySelector('[aria-label="Manage instructions"]'))
+    assert.deepEqual(filterNavigation, ['manage'], 'The Instructions header opens existing instruction management.')
 
     const openedVisuals = []
     visualGalleryRoot = createRoot(window.document.getElementById('visual-gallery-root'))
@@ -1925,6 +2116,7 @@ try {
     })
     assert.equal(galleryDialog(), null, 'The restored gallery still closes normally.')
   } finally {
+    if (filterRoot) await act(async () => filterRoot.unmount())
     if (productionRoot) await act(async () => productionRoot.unmount())
     if (peopleSettingsRoot) await act(async () => peopleSettingsRoot.unmount())
     if (visualGalleryRoot) await act(async () => visualGalleryRoot.unmount())

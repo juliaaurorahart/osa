@@ -6,27 +6,6 @@
   border-bottom: 1px solid var(--osa-border-subtle);
 }
 
-.assembly-production__heading {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.assembly-production__heading h2,
-.assembly-production__heading span {
-  margin: 0;
-}
-
-.assembly-production__heading h2 {
-  font-size: clamp(1.05rem, 1.5vw, 1.3rem);
-}
-
-.assembly-production__heading span {
-  color: var(--osa-muted);
-  font-size: 0.82rem;
-}
-
 .assembly-production__scroll {
   min-width: 0;
   overflow-x: auto;
@@ -38,11 +17,11 @@
 
 .assembly-production__table {
   width: 100%;
-  min-width: 600px;
+  min-width: 660px;
   border-collapse: collapse;
   table-layout: fixed;
   color: var(--osa-text);
-  font-size: clamp(0.82rem, 1vw, 0.96rem);
+  font-size: 1rem;
 }
 
 .assembly-production__instruction-column {
@@ -62,7 +41,7 @@
 }
 
 .assembly-production__count-column {
-  width: 62px;
+  width: 76px;
 }
 
 .assembly-production__table th,
@@ -74,27 +53,76 @@
 }
 
 .assembly-production__table thead th {
-  color: var(--osa-muted);
-  font-size: 0.72rem;
+  color: var(--osa-text);
+  font-size: 1rem;
   font-weight: 800;
-  letter-spacing: 0.08em;
   text-align: center;
-  text-transform: uppercase;
 }
 
 .assembly-production__table thead th:first-child {
   text-align: left;
 }
 
-.assembly-production__full-label {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
+.assembly-production__column-heading {
+  width: 100%;
+  min-height: 44px;
+  padding: 4px 0;
   border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.assembly-production__table thead th:first-child .assembly-production__column-heading {
+  text-align: left;
+  padding-left: 7px;
+}
+
+.assembly-production__column-heading:hover,
+.assembly-production__column-heading.is-filtered {
+  color: var(--osa-focus);
+  box-shadow: inset 0 -2px var(--osa-focus);
+}
+
+.assembly-production__column-heading:focus-visible {
+  outline: 2px solid var(--osa-focus);
+}
+
+.assembly-production__filter-popover {
+  box-sizing: border-box;
+  width: min(320px, calc(100vw - 32px));
+  max-height: min(75dvh, 540px);
+  margin: auto;
+  padding: 14px;
+  overflow: auto;
+  border: 1px solid var(--osa-border);
+  border-radius: 10px;
+  background: var(--osa-surface-raised);
+  color: var(--osa-text);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 45%);
+  font-size: 1rem;
+  font-weight: 400;
+  text-align: left;
+}
+
+.assembly-production__filter-popover > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.assembly-production__filter-popover > header button {
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
 }
 
 .assembly-production__table tbody tr:last-child > * {
@@ -107,107 +135,51 @@
 }
 
 .assembly-production__row:hover,
-.assembly-production__row:focus-visible,
-.assembly-production__row.is-expanded {
+.assembly-production__row:focus-within {
   background: var(--osa-hover-surface);
   outline: 0;
 }
 
 .assembly-production__instruction {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 6px;
   min-width: 0;
   text-align: left;
 }
 
-.assembly-production__expand {
-  display: inline-grid;
-  grid-template-columns: 14px 22px;
+.assembly-production__instruction-link {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
   align-items: center;
-  gap: 2px;
-  min-height: 38px;
-  padding: 2px 3px;
+  gap: 6px;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 3px;
   border: 0;
   border-radius: 5px;
   background: transparent;
-  color: var(--osa-muted);
+  color: var(--osa-text);
   cursor: pointer;
   font: inherit;
+  text-align: left;
 }
 
-.assembly-production__expand:hover,
-.assembly-production__expand:focus-visible {
-  background: var(--osa-surface-raised);
-  color: var(--osa-text);
+.assembly-production__instruction-link:focus-visible {
   outline: 2px solid var(--osa-focus);
+  outline-offset: -2px;
 }
 
 .assembly-production__number {
+  color: var(--osa-muted);
+  font-size: 0.8em;
   text-align: center;
 }
 
-.assembly-production__instruction-content {
-  display: grid;
-  gap: 2px;
+.assembly-production__name {
   min-width: 0;
-}
-
-.assembly-production__instruction-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.assembly-production__instruction-actions button {
-  min-width: 44px;
-  min-height: 36px;
-  padding: 4px 7px;
-  border: 1px solid var(--osa-border-subtle);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--osa-text);
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.8rem;
-}
-
-.assembly-production__instruction-actions button:hover,
-.assembly-production__instruction-actions button:focus-visible {
-  background: var(--osa-surface);
-  outline: 2px solid var(--osa-focus);
-  outline-offset: 1px;
-}
-
-.assembly-production__name,
-.assembly-production__name-input {
-  min-width: 0;
-  overflow: hidden;
   font: inherit;
   font-weight: 700;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.assembly-production__name-input {
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 38px;
-  padding: 5px 7px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--osa-text);
-}
-
-.assembly-production__name-input:hover,
-.assembly-production__name-input:focus-visible {
-  border-color: var(--osa-border);
-  background: var(--osa-input);
-  outline: 2px solid var(--osa-focus);
-  outline-offset: 1px;
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .assembly-production__status,
@@ -413,68 +385,6 @@
   transform: translate(-50%, 0);
 }
 
-.assembly-production__expanded-row > td {
-  padding: 0;
-  background: color-mix(in srgb, var(--osa-surface) 84%, transparent);
-}
-
-.assembly-production__expanded-content {
-  display: grid;
-  gap: 10px;
-  padding: 12px 14px 15px 50px;
-}
-
-.assembly-production__description-editor {
-  display: grid;
-  gap: 6px;
-}
-
-.assembly-production__description-editor > span {
-  color: var(--osa-muted);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.assembly-production__description-editor textarea {
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 112px;
-  padding: 9px 10px;
-  resize: vertical;
-  border: 1px solid var(--osa-border);
-  border-radius: 7px;
-  background: var(--osa-input);
-  color: var(--osa-text);
-  font: inherit;
-  line-height: 1.45;
-}
-
-.assembly-production__description-editor textarea:focus-visible {
-  border-color: var(--osa-focus);
-  outline: 2px solid var(--osa-focus);
-  outline-offset: 1px;
-}
-
-.assembly-production__description-text {
-  max-height: calc(1.45em * 5);
-  margin: 0;
-  color: var(--osa-text);
-  font-size: 0.94rem;
-  line-height: 1.45;
-  white-space: pre-wrap;
-}
-
-.assembly-production__empty-description {
-  color: var(--osa-muted);
-  font-style: italic;
-}
-
-.assembly-production__open-full {
-  justify-self: start;
-}
-
 @media (hover: none) {
   .assembly-production__hover-info {
     display: none;
@@ -486,10 +396,6 @@
     margin-inline: -8px;
   }
 
-  .assembly-production__heading {
-    padding-inline: 8px;
-  }
-
   .assembly-production__scroll {
     border-right: 0;
     border-left: 0;
@@ -497,7 +403,7 @@
   }
 
   .assembly-production__table {
-    min-width: 560px;
+    min-width: 636px;
     font-size: 0.82rem;
   }
 
@@ -506,7 +412,7 @@
   }
 
   .assembly-production__status-column {
-    width: 58px;
+    width: 76px;
   }
 
   .assembly-production__built-column {
@@ -518,7 +424,7 @@
   }
 
   .assembly-production__count-column {
-    width: 48px;
+    width: 76px;
   }
 
   .assembly-production__table th,
@@ -536,14 +442,10 @@
   }
 
   .assembly-production__row:hover .assembly-production__instruction,
-  .assembly-production__row:focus-visible .assembly-production__instruction,
-  .assembly-production__row.is-expanded .assembly-production__instruction {
+  .assembly-production__row:focus-within .assembly-production__instruction {
     background: var(--osa-hover-surface);
   }
 
-  .assembly-production__expand,
-  .assembly-production__name-input,
-  .assembly-production__instruction-actions button,
   .assembly-production__status-control,
   .assembly-production__built-control {
     min-height: 44px;
@@ -553,21 +455,7 @@
     min-width: 44px;
   }
 
-  .assembly-production__expanded-content {
-    position: sticky;
-    left: 0;
-    box-sizing: border-box;
-    width: calc(100vw - 32px);
-    max-width: 100%;
-    padding: 12px 10px 15px;
-  }
-
-  .assembly-production .assembly-production__name-input,
-  .assembly-production .assembly-production__description-editor textarea {
+  .assembly-production .assembly-production__instruction-link {
     font-size: 1rem;
-  }
-
-  .assembly-production__description-editor textarea {
-    min-height: 132px;
   }
 }
