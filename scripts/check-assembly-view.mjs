@@ -1414,6 +1414,11 @@ try {
     /\{!identity \|\| needsSignIn \? \([\s\S]*?className="workspace-switcher__sign-in" href="\/api\/login"[\s\S]*?>\s*Sign In\s*</,
     'Signed-out workspaces put a direct Sign In action beside Settings.',
   )
+  assert.doesNotMatch(
+    appSource,
+    /\{ id: 'assembly', label: 'Assembly' \}/,
+    'Assembly stays off the top menu; Space and Lab remain the everyday rooms.',
+  )
   assert.match(
     appSource,
     /<VisualCanvasEditor[\s\S]*?readOnly=\{boardAccess === 'viewer' \|\| isSharedAssembly \|\| assemblyInstructionsPreview\}/,
@@ -1439,6 +1444,11 @@ try {
     'utf8',
   )
   assert.match(settingsSource, /<details className="workspace-settings-menu__people-display"/)
+  assert.match(
+    settingsSource,
+    /Open Assembly/,
+    'Settings keeps a way back into the Assembly page.',
+  )
   assert.match(settingsSource, /<PeopleDisplayPreview display=\{display\} \/>/)
   assert.match(settingsSource, /Plain initials[\s\S]*?Letter circles/)
   assert.match(settingsSource, /\['P', 'E', 'O'\], \['P', 'L', 'E'\]/)

@@ -3374,6 +3374,11 @@ function Flow({ identity, startupDraft }: { identity: string | null; startupDraf
       shareUrl={shareUrl}
       onShareSlugChange={setShareSlug}
       onCreateAssemblyShare={boardAccess === 'owner' ? createAssemblyShareLink : undefined}
+      onOpenAssembly={() => {
+        closeCanvasLab()
+        setAssemblyInstructionsPreview(false)
+        setWorkspaceView('assembly')
+      }}
       onPreviewAssembly={activeAssembly ? () => setAssemblyInstructionsPreview(true) : undefined}
       onDownloadJsonBackup={saveBoardAsJson}
       onLoadJsonBackup={loadBoardFromJson}
@@ -3438,6 +3443,9 @@ function Flow({ identity, startupDraft }: { identity: string | null; startupDraf
         openPointerPalette(event.clientX, event.clientY)
       }}
       onlyRenderVisibleElements
+      panOnScroll
+      zoomOnPinch
+      nodeDragThreshold={4}
       minZoom={0.05}
       maxZoom={8}
       colorMode={theme}
@@ -3619,23 +3627,17 @@ function Flow({ identity, startupDraft }: { identity: string | null; startupDraf
                 >
                   Hide
                 </button>
-                {([
-                  { id: 'assembly', label: 'Assembly' },
-                  { id: 'nodes', label: 'Space' },
-                ] as const).map((view) => (
-                  <button
-                    className={workspaceView === view.id ? 'is-active' : undefined}
-                    type="button"
-                    key={view.id}
-                    aria-current={workspaceView === view.id ? 'page' : undefined}
-                    onClick={() => {
-                      setAssemblyInstructionsPreview(false)
-                      setWorkspaceView(view.id)
-                    }}
-                  >
-                    {view.label}
-                  </button>
-                ))}
+                <button
+                  className={workspaceView === 'nodes' ? 'is-active' : undefined}
+                  type="button"
+                  aria-current={workspaceView === 'nodes' ? 'page' : undefined}
+                  onClick={() => {
+                    setAssemblyInstructionsPreview(false)
+                    setWorkspaceView('nodes')
+                  }}
+                >
+                  Space
+                </button>
                 <button
                   type="button"
                   aria-label="Open visual tools Lab"

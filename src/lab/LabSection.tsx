@@ -73,6 +73,18 @@ export function LabSection({ notebook, theme, isActive, sectionView, controlsVis
   useEffect(() => { activeRef.current = active; notebookRef.current = notebook }, [active, notebook])
   useEffect(() => { if (active?.sessionId) editorRef.current?.scrollIntoView?.({ block: 'nearest' }) }, [active?.sessionId])
   useEffect(() => {
+    if (mode !== 'focus' || !active) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      const target = event.target
+      if (target instanceof HTMLElement && target.closest('dialog, [role="dialog"]')) return
+      event.preventDefault()
+      setMode('inline')
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [mode, active])
+  useEffect(() => {
     const bar = creationRef.current
     if (!bar || typeof ResizeObserver === 'undefined') return
     const measure = () => sectionRef.current?.style.setProperty('--section-add-height', `${bar.getBoundingClientRect().height}px`)
@@ -185,6 +197,7 @@ export function LabSection({ notebook, theme, isActive, sectionView, controlsVis
     }
     if (!mounted.current || notebookRef.current.scope !== current.scope || openGeneration.current !== generation) return
     readerRef.current = null; activeRef.current = next; setActive(next); setNoteStatus(''); setPicker(false)
+    if (next.artifact && isSectionWorkspace(next.artifact.toolId)) setMode('focus')
   }, [notes])
   const startVersionedEditor = async (version: 'saved' | 'draft') => {
     const session = activeRef.current
@@ -320,7 +333,7 @@ export function LabSection({ notebook, theme, isActive, sectionView, controlsVis
         {sectionView === 'cells' ? <div className="lab-section__organization-group"><strong>Editing layout</strong>
           <div className="lab-section__modes" role="group" aria-label="Editing layout">
             {(['inline', 'split', 'focus'] as const).map((value) => <button type="button" key={value} aria-pressed={mode === value}
-              onClick={() => setMode(value)}>{value === 'inline' ? 'In place' : value === 'split' ? 'Split' : 'Focus'}</button>)}
+              onClick={() => setMode(value)}>{value === 'inline' ? 'In place' : value === 'split' ? 'Split' : 'Full screen'}</button>)}
           </div></div> : null}
         <div className="lab-section__organization-group"><strong>Topics{topicIds.length ? ` · ${topicIds.length}` : ''}</strong>
           <div className="lab-section__topic-list">{notebook.topics.map((topic) => <label key={topic.id}><input type="checkbox" checked={topicIds.includes(topic.id)} disabled={!notebook.isReady || busy}
@@ -380,6 +393,7 @@ export function LabSection({ notebook, theme, isActive, sectionView, controlsVis
             ? <input className="lab-section__editor-title" aria-label="Cell note title" value={active.note.title === 'Untitled note' ? '' : active.note.title}
               placeholder="Title (optional)" onChange={(event) => editNote({ title: event.target.value })} />
             : <strong>{active?.artifact?.toolId || 'File'}</strong>}<div ref={setSaveTarget} />
+            {sectionView === 'cells' ? <button type="button" aria-pressed={mode === 'focus'} onClick={() => setMode(mode === 'focus' ? 'inline' : 'focus')}>{mode === 'focus' ? 'Exit full screen' : 'Full screen'}</button> : null}
             {managedEditing ? <button type="button" disabled={busy} onClick={() => void closeManagedEditor().catch(() => undefined)}>Close editor</button> : null}
             <button type="button" aria-label="Move active cell up" disabled={busy || index <= 0} onClick={() => active && void run(() => moveCell(active.cell.id, -1))}>↑</button>
             <button type="button" aria-label="Move active cell down" disabled={busy || index === displayedCells.length - 1} onClick={() => active && void run(() => moveCell(active.cell.id, 1))}>↓</button>

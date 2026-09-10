@@ -136,6 +136,18 @@ export function CanvasLab({
   }, [])
   const [focusedEditor, setFocusedEditor] = useState(false)
   const [navigationHidden, setNavigationHidden] = useState(false)
+  useEffect(() => {
+    if (!focusedEditor) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      const target = event.target
+      if (target instanceof HTMLElement && target.closest('dialog, [role="dialog"]')) return
+      event.preventDefault()
+      setFocusedEditor(false)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [focusedEditor])
   const [saveTarget, setSaveTarget] = useState<HTMLDivElement | null>(null)
   const [fileTarget, setFileTarget] = useState<HTMLDivElement | null>(null)
   const [sessionScope, setSessionScope] = useState(notebook.scope)
@@ -501,7 +513,7 @@ export function CanvasLab({
         </LabMenu>
         <div className="lab-shell__save-slot" ref={setSaveTarget} inert={project?.mode === 'saved' || undefined} />
         <button className="lab-shell__notebook-link" type="button" title="Back to notebook" onClick={() => setRoute({ page: 'notebook' })}>Notebook</button>
-        <button className="lab-shell__focus-toggle" type="button" aria-pressed={focusedEditor} onClick={() => setFocusedEditor((value) => !value)}>{focusedEditor ? 'Show navigation' : 'Focus'}</button>
+        <button className="lab-shell__focus-toggle" type="button" aria-pressed={focusedEditor} onClick={() => setFocusedEditor((value) => !value)}>{focusedEditor ? 'Exit full screen' : 'Full screen'}</button>
         <button type="button" aria-expanded="true" aria-controls="lab-project-bar" onClick={() => setNavigationHidden(true)}>Hide top bar ↑</button>
         {showSignIn ? <LabSignInLink href={accountSignInHref} locked={sectionLocked} /> : null}
         <LabMenu label="More">

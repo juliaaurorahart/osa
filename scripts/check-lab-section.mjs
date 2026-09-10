@@ -292,7 +292,7 @@ try {
 
   const editorNode = document.querySelector('[data-editor-instance]'), instance = lastEditor.instance
   await clickDisclosure('View & organization')
-  for (const mode of ['Split', 'Focus', 'In place']) {
+  for (const mode of ['Split', 'Full screen', 'In place']) {
     await click(mode); assert.equal(lastEditor.instance, instance); assert.equal(document.querySelector('[data-editor-instance]'), editorNode)
     assert.equal(lastEditor.text, 'unrun code survives')
   }
@@ -401,7 +401,7 @@ try {
   assert.ok(confirmations.at(-1).includes('embed.diagrams.net'))
   assert.equal(sectionLocked, true, document.body.textContent)
   const frame = document.querySelector('iframe')
-  for (const mode of ['Split', 'Focus', 'In place']) { await click(mode); assert.equal(document.querySelector('iframe'), frame) }
+  for (const mode of ['Split', 'Full screen', 'In place']) { await click(mode); assert.equal(document.querySelector('iframe'), frame) }
   const cellCount = sections[0].cells.length
   await click('+ Text'); await selectCell(textCell.id)
   assert.equal(sections[0].cells.length, cellCount); assert.equal(document.querySelector('iframe'), frame)
@@ -462,7 +462,7 @@ try {
   assert.equal(confirmations.length, confirmationCount, 'The self-hosted painter needs no external sharing consent')
   assert.deepEqual(await bytes(klecks.initial), new Uint8Array(starter))
   const paintingFrame = document.querySelector('iframe')
-  for (const layout of ['Split', 'Focus', 'In place']) { await click(layout); assert.equal(document.querySelector('iframe'), paintingFrame) }
+  for (const layout of ['Split', 'Full screen', 'In place']) { await click(layout); assert.equal(document.querySelector('iframe'), paintingFrame) }
   assert.equal(sectionLocked, true)
   await React.act(async () => assert.rejects(closeSection, /Close the Klecks editor first/))
   const painted = painting(125)

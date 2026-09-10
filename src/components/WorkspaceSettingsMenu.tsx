@@ -88,6 +88,7 @@ export type WorkspaceSettingsMenuProps = {
   shareStatus?: string
   shareUrl?: string
   onShareSlugChange: (slug: string) => void
+  onOpenAssembly?: WorkspaceSettingsAction
   onCreateAssemblyShare?: WorkspaceSettingsAction
   onPreviewAssembly?: WorkspaceSettingsAction
 
@@ -243,6 +244,7 @@ export function WorkspaceSettingsMenu({
   shareStatus,
   shareUrl,
   onShareSlugChange,
+  onOpenAssembly,
   onCreateAssemblyShare,
   onPreviewAssembly,
   onDownloadJsonBackup,
@@ -680,6 +682,21 @@ export function WorkspaceSettingsMenu({
                   <h3 id={`${titleId}-sharing`}>Assembly sharing</h3>
                   <span>{activeAssemblyLabel || 'No assembly selected'}</span>
                 </div>
+                {onOpenAssembly ? (
+                  <div className="workspace-settings-menu__row">
+                    <p>Assembly is hidden from the top menu for now. The page is still here.</p>
+                    <button
+                      className="workspace-settings-menu__button workspace-settings-menu__button--primary"
+                      type="button"
+                      onClick={() => {
+                        runAction(onOpenAssembly)
+                        close()
+                      }}
+                    >
+                      Open Assembly
+                    </button>
+                  </div>
+                ) : null}
                 <label className="workspace-settings-menu__field">
                   <span>Public link name</span>
                   <input

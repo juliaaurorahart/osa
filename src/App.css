@@ -1102,14 +1102,9 @@
   height: 0;
 }
 
-.space-canvas:not(.is-dense) .react-flow__edge-path {
-  filter: url('#hand-drawn-line');
+.space-canvas .react-flow__edge-path {
   stroke-linecap: round;
   stroke-linejoin: round;
-}
-
-.space-canvas.is-dense .react-flow__edge-path {
-  filter: none;
 }
 
 .board-dock.is-preview,

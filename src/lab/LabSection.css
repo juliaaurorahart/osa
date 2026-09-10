@@ -73,7 +73,7 @@
 .lab-section__text > textarea { border: 0; resize: vertical; width: 100%; min-height: 280px; padding: 12px 4px; box-sizing: border-box; background: transparent; color: var(--osa-text); line-height: 1.7; font-size: 1rem; }
 .lab-section__editor .ink-lab { border: 0; border-radius: 0; }
 .lab-section__editor .ink-lab__header > div:first-child { display: none; }
-.lab-section__editor .ink-lab__page { min-height: 350px; }
+.lab-section__editor .ink-lab__stage { min-height: 350px; }
 .lab-section__editor .code-editor-lab { border: 0; }
 .lab-section__versions { padding: 12px; }
 .lab-section__versions [role=group] { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
@@ -101,8 +101,19 @@
 .lab-section.is-split .mermaid-lab__editor { flex-basis: auto; min-width: 0; }
 .lab-section.is-split .mermaid-lab__editor textarea { flex-basis: 300px; min-height: 240px; }
 .lab-section.is-focus.has-active .lab-section__cell { display: none; }
-.lab-section.is-focus .lab-section__editor { grid-row: 1; }
-.lab-section.is-focus .lab-section__text > textarea { min-height: 55dvh; }
+.lab-section.is-focus.has-active .lab-section__editor {
+  position: fixed; inset: 0; z-index: 80; grid-row: auto; display: flex; flex-direction: column;
+  width: 100%; height: 100dvh; max-height: none; border-radius: 0; overflow: hidden;
+}
+.lab-section.is-focus.has-active .lab-section__editor > :last-child,
+.lab-section.is-focus.has-active .lab-section__editor .lab-section__text { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.lab-section.is-focus.has-active .lab-section__text > textarea { min-height: 0; flex: 1; resize: none; }
+.lab-section.is-focus.has-active .lab-section__editor :is(.excalidraw-lab, .ink-lab, .klecks-lab, .drawio-embed-lab, .vega-lab, .mermaid-lab, .code-editor-lab) {
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+}
+.lab-section.is-focus.has-active .lab-section__editor :is(.excalidraw-lab__stage, .ink-lab__stage, .klecks-lab__frame, .drawio-embed-lab__editor, .drawio-embed-lab__editor iframe, .code-editor-lab__body, .mermaid-lab__layout, .vega-lab__chart-wrap) {
+  height: auto; flex: 1; min-height: 0; max-height: none;
+}
 .lab-section.is-page .lab-section__toolbar, .lab-section.is-page .lab-section__creation, .lab-section.is-page .lab-section__flow {
   width: min(100%, 900px); margin-left: auto; margin-right: auto;
 }

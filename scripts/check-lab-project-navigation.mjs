@@ -267,10 +267,10 @@ try {
   await changeValue(editorText(), 'My unsaved drawing')
   await changeValue(document.querySelector('[aria-label="Project name"]'), '  Named study  ')
   assert.equal(firstEditor.querySelector('.lab-capture'), null, 'Save is in the shared bar, not a second editor header')
-  await clickButton('Focus', workbar())
+  await clickButton('Full screen', workbar())
   assert.ok(document.querySelector('.lab-shell').classList.contains('is-focus'))
-  assert.strictEqual(editor(), firstEditor, 'Focus does not restart the editor')
-  await clickButton('Show navigation', workbar())
+  assert.strictEqual(editor(), firstEditor, 'Full screen does not restart the editor')
+  await clickButton('Exit full screen', workbar())
   await clickButton('Save', workbar())
   assert.equal(saveCalls[0].capture.name, 'Named study', 'The shell passes the trimmed project name to the save operation.')
   const firstSavedId = saveCalls[0].id
